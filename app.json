@@ -1,0 +1,10 @@
+{
+  "expo": {
+    "name": "Thợ ĐMX",
+    "slug": "tho-dmx-app",
+    "version": "3.0.8",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "platforms": ["ios", "android", "web"]
+  }
+}

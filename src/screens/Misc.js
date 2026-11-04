@@ -1,0 +1,1032 @@
+import React, { useMemo, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TextInput, Platform, Image, Linking } from 'react-native';
+import { C, R, shadow, toneOf, STATUS_META } from '../theme';
+import {
+  ALL_SERVICES, CATEGORIES, POPULAR_SEARCHES, FAQ, REDEEM_OPTIONS, VOUCHERS, ORDER_STEPS, HOTLINE, STATUS_DESC, stepIndexOf,
+  getService, formatVND, normalize, catLabel, tierOf, TIERS, TIME_SLOTS,
+} from '../data';
+import { useApp, fmtDateTime, timeAgo, warrantyInfo, LAST_SERVICE_OPTIONS, isActiveOrder, orderTotal, lateDiscountAmount, normalizeTechRep } from '../store';
+import {
+  Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Chip, Badge, Stars, Field, Sheet, Radio,
+  EmptyState, ServiceGrid, ServiceRow, Progress, Media, ListRow, PseudoQR, HScroll, ui,
+} from '../ui';
+import { pickImage } from '../media';
+
+const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+const nextDays = (n) => Array.from({ length: n }, (_, i) => {
+  const d = new Date();
+  d.setDate(d.getDate() + i);
+  return {
+    label: i === 0 ? 'Hôm nay' : i === 1 ? 'Ngày mai' : WEEKDAYS[d.getDay()],
+    ddmm: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`,
+    key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+  };
+});
+const newAttId = () => `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+
+// =========================================================== TÌM KIẾM
+export function SearchScreen() {
+  const { s, a, nav } = useApp();
+  const [q, setQ] = useState('');
+  const results = useMemo(() => {
+    const t = normalize(q.trim());
+    if (!t) return [];
+    return ALL_SERVICES.filter((x) => normalize(`${x.name} ${catLabel(x.category)}`).includes(t));
+  }, [q]);
+  const pick = (text) => { setQ(text); a.addSearch(text); };
+
+  return (
+    <View style={{ flex: 1 }}>
+      <View style={mx.searchBar}>
+        <IconBtn icon="‹" size={38} onPress={nav.back} label="Quay lại" />
+        <View style={mx.searchBox}>
+          <Text>🔍</Text>
+          <TextInput
+            autoFocus
+            value={q}
+            onChangeText={setQ}
+            onSubmitEditing={() => a.addSearch(q)}
+            placeholder="Tìm dịch vụ, thiết bị…"
+            placeholderTextColor={C.faint}
+            style={mx.searchInput}
+            returnKeyType="search"
+          />
+          {q ? <Tap onPress={() => setQ('')} hitSlop={8}><Text style={{ color: C.faint }}>✕</Text></Tap> : null}
+        </View>
+      </View>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }} keyboardShouldPersistTaps="handled">
+        {!q.trim() ? (
+          <View>
+            {s.searches.length ? (
+              <View>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={mx.h}>Tìm kiếm gần đây</Text>
+                  <Tap onPress={a.clearSearches}><Text style={[ui.link, { color: C.muted }]}>Xoá</Text></Tap>
+                </View>
+                <View style={mx.chips}>{s.searches.map((t) => <Chip key={t} label={`🕘 ${t}`} onPress={() => pick(t)} />)}</View>
+              </View>
+            ) : null}
+            <Text style={[mx.h, { marginTop: 18 }]}>Tìm kiếm phổ biến</Text>
+            <View style={mx.chips}>{POPULAR_SEARCHES.map((t) => <Chip key={t} label={`🔥 ${t}`} onPress={() => pick(t)} />)}</View>
+            <Text style={[mx.h, { marginTop: 18 }]}>Danh mục</Text>
+            <Card style={{ padding: 0, overflow: 'hidden' }}>
+              {CATEGORIES.map((c, i) => (
+                <ListRow key={c.id} icon={c.icon} iconBg={toneOf(c.id).bg} label={c.label} last={i === CATEGORIES.length - 1} onPress={() => nav.services('bao-duong', c.id)} />
+              ))}
+            </Card>
+          </View>
+        ) : results.length === 0 ? (
+          <EmptyState icon="🔎" title="Không tìm thấy dịch vụ" body={`Không có kết quả cho "${q}". Thử từ khoá khác hoặc gọi hotline ${HOTLINE} để được tư vấn.`} />
+        ) : (
+          <View>
+            <Text style={[ui.meta, { marginBottom: 10 }]}>{results.length} kết quả cho "{q}"</Text>
+            {results.map((it) => (
+              <ServiceRow
+                key={it.id}
+                item={it}
+                onPress={() => { a.addSearch(q); nav.push('detail', { id: it.id }); }}
+                right={(
+                  <Tap style={mx.addSq} onPress={() => a.addToCart(it.id)} hitSlop={6}>
+                    <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>+</Text>
+                  </Tap>
+                )}
+              />
+            ))}
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+// =========================================================== THÔNG BÁO
+export function NotificationsScreen() {
+  const { s, a, nav } = useApp();
+  return (
+    <View style={{ flex: 1 }}>
+      <TopBar title="Thông báo" right={s.notifications.some((n) => !n.read) ? <Tap onPress={a.readAll}><Text style={ui.link}>Đọc hết</Text></Tap> : null} />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
+        {s.notifications.length === 0 ? <EmptyState icon="🔔" title="Chưa có thông báo" body="Cập nhật về đơn hàng, ưu đãi và lịch bảo dưỡng sẽ hiện ở đây." /> : s.notifications.map((n) => (
+          <Tap key={n.id} style={[mx.notif, !n.read && mx.notifUnread]} onPress={() => { a.readNotif(n.id); nav.open(n.link); }}>
+            <IconBox icon={n.icon || '🔔'} size={44} bg={n.read ? '#F1F4F9' : C.primarySoft} radius={14} />
+            <View style={{ flex: 1 }}>
+              <Text style={[mx.notifTitle, !n.read && { color: C.ink }]}>{n.title}</Text>
+              <Text style={mx.notifBody}>{n.body}</Text>
+              <Text style={[ui.meta, { marginTop: 4 }]}>{timeAgo(n.at)}</Text>
+            </View>
+            {!n.read ? <View style={mx.dot} /> : null}
+          </Tap>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+// =========================================================== CHI TIẾT ĐƠN
+const CANCEL_REASONS = ['Tôi muốn đổi lịch khác', 'Đặt nhầm dịch vụ', 'Không còn nhu cầu', 'Thợ liên hệ không phù hợp', 'Lý do khác'];
+const REJECT_REASONS = ['Giá cao hơn dự kiến', 'Muốn tham khảo thêm', 'Không cần sửa nữa', 'Lý do khác'];
+
+export function OrderScreen({ params }) {
+  const { s, a, nav, ui: u } = useApp();
+  const [showCancel, setShowCancel] = useState(false);
+  const [reason, setReason] = useState(CANCEL_REASONS[0]);
+  const [showReject, setShowReject] = useState(false);
+  const [rejectReason, setRejectReason] = useState(REJECT_REASONS[0]);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editNote, setEditNote] = useState('');
+  const [editDayIdx, setEditDayIdx] = useState(1);
+  const [editSlot, setEditSlot] = useState(TIME_SLOTS[2]);
+  const [editAtts, setEditAtts] = useState([]);
+  const o = s.orders.find((x) => x.code === params.code);
+  if (!o) return <View style={{ flex: 1 }}><TopBar title="Không tìm thấy đơn" /></View>;
+  const meta = STATUS_META[o.status];
+  const curIdx = o.status === 'cancelled' ? -1 : stepIndexOf(o.status);
+  const at = (k) => [...o.history].reverse().find((h) => h.status === k)?.at;
+  const winfo = warrantyInfo(o, s.orders);
+  const canCancel = ['pending', 'confirmed'].includes(o.status);
+  const canEdit = o.status === 'pending';
+  const active = isActiveOrder(o);
+  const reorder = () => nav.push('checkout', { items: o.items.map(({ id, qty }) => ({ id, qty })) });
+  const evidence = o.evidence || [];
+  const editDays = nextDays(7);
+  const nowH = new Date().getHours();
+  const editSlotPassed = (sl) => editDayIdx === 0 && parseInt(sl, 10) <= nowH + 1;
+
+  const openEdit = () => {
+    const days = nextDays(7);
+    const idx = Math.max(0, days.findIndex((d) => d.key === o.dateKey));
+    setEditDayIdx(idx >= 0 ? idx : 1);
+    setEditSlot(o.slot || TIME_SLOTS[2]);
+    setEditNote(o.note || '');
+    setEditAtts([...(o.attachments || [])]);
+    setShowEdit(true);
+  };
+  const addEditAtt = async () => {
+    if (editAtts.length >= 5) { u.alert('Giới hạn ảnh', 'Tối đa 5 ảnh đính kèm.', '📷'); return; }
+    const uri = await pickImage();
+    if (uri === null) { u.alert('Chưa hỗ trợ', 'Chọn ảnh đang khả dụng trên bản web.', '📷'); return; }
+    if (!uri) return;
+    setEditAtts((p) => [...p, { id: newAttId(), uri, at: Date.now() }]);
+  };
+  const saveEdit = () => {
+    if (editSlotPassed(editSlot)) { u.alert('Khung giờ đã qua', 'Chọn khung giờ hoặc ngày khác.', '⏰'); return; }
+    const day = editDays[editDayIdx];
+    a.updatePendingRequest(o.code, {
+      note: editNote,
+      slot: editSlot,
+      dateLabel: `${day.label} (${day.ddmm})`,
+      dateKey: day.key,
+      attachments: editAtts,
+    });
+    setShowEdit(false);
+  };
+
+  return (
+    <View style={{ flex: 1 }}>
+      <TopBar title={o.kind === 'warranty' ? 'Đơn bảo hành' : 'Chi tiết đơn hàng'} sub={o.code} />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
+        <View style={[mx.statusHero, { backgroundColor: meta.bg }]}>
+          <Text style={[mx.statusLabel, { color: meta.fg }]}>{meta.label}</Text>
+          <Text style={[mx.statusDesc, { color: meta.fg }]}>
+            {o.status === 'cancelled' ? (o.cancelReason || 'Đơn đã được huỷ') : (o.status === 'pending' && o.dispatchNote) || STATUS_DESC[o.status]}
+          </Text>
+        </View>
+        {o.checkIn ? (
+          <Card style={{ marginTop: 12, backgroundColor: C.primarySoft, borderColor: '#D6E4FF' }}>
+            <Text style={mx.tlTitle}>📍 Check-in tại nhà bạn</Text>
+            <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
+              {o.checkIn.label || (o.checkIn.simulated ? 'Vị trí mô phỏng' : 'GPS thiết bị')}
+              {o.checkIn.at ? ` · ${fmtDateTime(o.checkIn.at)}` : ''}
+              {o.checkIn.lat != null ? ` · ${Number(o.checkIn.lat).toFixed(5)}, ${Number(o.checkIn.lng).toFixed(5)}` : ''}
+            </Text>
+          </Card>
+        ) : null}
+        {o.lateCompensation ? (
+          <Card style={{ marginTop: 12, backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }}>
+            <Text style={mx.tlTitle}>⏰ Bồi thường đến muộn</Text>
+            <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
+              Thợ check-in trễ {o.lateCompensation.minutesLate} phút.
+              {lateDiscountAmount(o)
+                ? ` Đã trừ ${formatVND(lateDiscountAmount(o))} vào tổng thanh toán (${o.lateCompensation.percent}% phí nhân công).`
+                : ' Hệ thống đã ghi nhận (mức cảnh báo, chưa trừ tiền).'}
+              {o.lateCompensation.voucherCode ? ` Mã thêm: ${o.lateCompensation.voucherCode} (Quyền lợi).` : ''}
+            </Text>
+          </Card>
+        ) : null}
+        {(o.releaseLog || []).length && o.status === 'pending' ? (
+          <Card style={{ marginTop: 12, backgroundColor: C.primarySoft, borderColor: '#D6E4FF' }}>
+            <Text style={mx.tlTitle}>🔄 Đang đổi thợ</Text>
+            <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
+              Thợ trước đã trả việc. Hệ thống đang điều phối thợ khác; kiểm tra thông báo để nhận voucher xin lỗi (nếu có).
+            </Text>
+          </Card>
+        ) : null}
+        {o.kind === 'followup' ? (
+          <Card style={{ marginTop: 12, backgroundColor: C.cyanSoft || '#E8F7FB', borderColor: '#B6E4F0' }}>
+            <Text style={mx.tlTitle}>🔄 Đơn tái khám</Text>
+            <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
+              Theo dõi sau đơn {o.parentCode || o.followUp?.of || '—'}.
+              {o.followUp?.reason ? ` Lý do: ${o.followUp.reason}` : ''}
+              {o.followUp?.remaining ? ` · Còn lại: ${o.followUp.remaining}` : ''}
+            </Text>
+            {(o.parentCode || o.followUp?.of) ? (
+              <Tap onPress={() => nav.push('order', { code: o.parentCode || o.followUp.of })}>
+                <Text style={[ui.link, { marginTop: 8 }]}>Xem đơn gốc ›</Text>
+              </Tap>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {/* ===== Báo giá chờ duyệt (khách duyệt / từ chối) ===== */}
+        {o.status === 'quoted' && o.quote ? (
+          <Card style={{ marginTop: 12, borderColor: '#F5D77A', backgroundColor: '#FFFBEB' }}>
+            <Text style={mx.tlTitle}>🧾 Báo giá từ thợ {o.tech?.name}</Text>
+            {o.quote.symptoms ? <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 6 }]}>Triệu chứng: {o.quote.symptoms}</Text> : null}
+            <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 4 }]}>Chẩn đoán: {o.quote.diagnosis}</Text>
+            {o.quote.recommendation ? <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 4 }]}>Đề xuất: {o.quote.recommendation}</Text> : null}
+            <View style={{ marginTop: 10 }}>
+              {o.quote.lines.map((l, i) => (
+                <View key={`${l.name}-${i}`} style={{ flexDirection: 'row', paddingVertical: 4, gap: 8 }}>
+                  <Text style={{ flex: 1, color: C.ink2 }} numberOfLines={2}>{l.type === 'part' ? '🔩' : '🛠'} {l.name} x{l.qty}</Text>
+                  <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(l.price * l.qty)}</Text>
+                </View>
+              ))}
+            </View>
+            <Bill l="Giá bạn đã đặt" v={formatVND(o.quote.booked)} />
+            <Bill l="Phát sinh" v={`+${formatVND(o.quote.total - o.quote.booked)}`} />
+            {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
+            <View style={mx.totalRow}>
+              <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>Tổng sau báo giá</Text>
+              <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(Math.max(0, o.quote.total - (o.voucherDiscount || 0)))}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+              <Btn title="Từ chối" variant="dangerSoft" style={{ flex: 1 }} onPress={() => setShowReject(true)} />
+              <Btn title="Đồng ý báo giá" style={{ flex: 2 }} onPress={() => a.respondQuote(o.code, true)} />
+            </View>
+          </Card>
+        ) : null}
+
+        {o.status !== 'cancelled' ? (
+          <Card style={{ marginTop: 12 }}>
+            {ORDER_STEPS.map((step, i) => {
+              const quoteSkipped = step.key === 'quoted'
+                && curIdx > i
+                && !(o.history || []).some((h) => h.status === 'quoted');
+              const done = i < curIdx || (i === curIdx && o.status === 'done') || quoteSkipped;
+              const current = i === curIdx && o.status !== 'done' && !quoteSkipped;
+              return (
+                <View key={step.key} style={{ flexDirection: 'row' }}>
+                  <View style={{ width: 28, alignItems: 'center' }}>
+                    <View style={[
+                      mx.tlDot,
+                      done && { backgroundColor: C.green, borderColor: C.green },
+                      current && { backgroundColor: meta.fg, borderColor: meta.fg },
+                    ]}>
+                      {done ? <Text style={{ color: '#fff', fontSize: 11, fontWeight: '900' }}>✓</Text> : current ? <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>●</Text> : null}
+                    </View>
+                    {i < ORDER_STEPS.length - 1 ? <View style={[mx.tlLine, i < curIdx && { backgroundColor: C.green }]} /> : null}
+                  </View>
+                  <View style={{ flex: 1, paddingLeft: 8, paddingBottom: i < ORDER_STEPS.length - 1 ? 16 : 0 }}>
+                    <Text style={[mx.tlTitle, !done && !current && { color: C.faint }, current && { color: meta.fg }]}>
+                      {step.label}{current && step.key === 'quoted' ? ' · Cần bạn duyệt' : ''}
+                    </Text>
+                    <Text style={ui.meta}>
+                      {quoteSkipped
+                        ? 'Không phát sinh — bỏ qua bước duyệt'
+                        : at(step.key)
+                          ? fmtDateTime(at(step.key))
+                          : step.desc}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </Card>
+        ) : null}
+
+        {o.tech ? (
+          <Card style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={mx.techAvatar}><Text style={{ fontSize: 26 }}>👷</Text></View>
+            <View style={{ flex: 1 }}>
+              <Text style={mx.tlTitle}>{o.tech.name}</Text>
+              <Text style={ui.meta}>
+                {o.tech.code} · ★ {o.tech.rating}
+                {o.tech.jobs != null ? ` · ${Number(o.tech.jobs).toLocaleString('vi-VN')} đơn` : ''}
+                {o.tech.reputation != null ? ` · Uy tín ${normalizeTechRep(o.tech).reputation}` : ''}
+              </Text>
+              {o.lateCompensation?.tier && o.lateCompensation.tier !== 'ok' ? (
+                <Text style={[ui.meta, { color: C.orange, fontWeight: '700', marginTop: 2 }]}>
+                  Check-in muộn {o.lateCompensation.minutesLate} phút
+                </Text>
+              ) : o.arrivedAt ? (
+                <Text style={[ui.meta, { color: C.green, fontWeight: '700', marginTop: 2 }]}>Đã check-in đúng chính sách giờ hẹn</Text>
+              ) : null}
+            </View>
+            <IconBtn icon="📞" onPress={() => Linking.openURL(`tel:${o.tech.phone || ''}`).catch(() => {})} style={{ backgroundColor: C.greenSoft }} label="Gọi thợ" />
+          </Card>
+        ) : active ? (
+          <View style={[mx.bonus, { backgroundColor: C.primarySoft }]}>
+            <Text style={{ color: C.primary, fontWeight: '600', lineHeight: 19 }}>👷 Đơn đang chờ thợ nhận. Bạn sẽ thấy thợ và tiến độ ngay khi có người nhận việc.</Text>
+          </View>
+        ) : null}
+
+        <Card style={{ marginTop: 12 }}>
+          <InfoLine icon="📅" label="Lịch hẹn" value={`${o.dateLabel} · ${o.slot}`} />
+          <InfoLine icon="📍" label={`${o.address?.gender === 'Nữ' ? 'Chị' : 'Anh'} ${o.address?.name || ''} · ${o.address?.phone || ''}`} value={o.address?.full} />
+          <InfoLine icon="💳" label="Thanh toán" value={o.payment} />
+          {o.note ? <InfoLine icon="📝" label="Ghi chú" value={o.note} /> : null}
+          {(o.attachments || []).length ? (
+            <View style={{ marginTop: 4, marginBottom: 4 }}>
+              <Text style={{ fontSize: 12, color: C.muted, fontWeight: '600', marginBottom: 6 }}>📷 Ảnh đính kèm</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {o.attachments.map((att) => (
+                  <View key={att.id} style={mx.thumb}>
+                    {att.uri ? <Image source={{ uri: att.uri }} style={{ width: '100%', height: '100%' }} /> : <Text style={{ fontSize: 22 }}>🖼️</Text>}
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+          {o.workerCode ? <InfoLine icon="🧑‍🔧" label="Thợ Now" value={o.workerCode} /> : null}
+          {o.warrantyOf ? (
+            <Tap onPress={() => nav.push('order', { code: o.warrantyOf })}><InfoLine icon="🔗" label="Bảo hành cho đơn" value={`${o.warrantyOf} ›`} link /></Tap>
+          ) : null}
+        </Card>
+
+        <Text style={mx.sec}>Dịch vụ</Text>
+        {o.items.map((it) => {
+          const svc = getService(it.id);
+          return svc ? <ServiceRow key={it.id} item={svc} right={<Text style={{ fontWeight: '800', color: C.ink2 }}>x{it.qty}</Text>} /> : null;
+        })}
+
+        {/* ===== Thông tin thợ gửi lên ===== */}
+        {o.quote && o.status !== 'quoted' ? (
+          <Card style={{ marginTop: 4 }}>
+            <Text style={mx.tlTitle}>🔍 Chẩn đoán của thợ</Text>
+            {o.quote.symptoms ? <Text style={[ui.meta, { marginTop: 6 }]}>Triệu chứng: {o.quote.symptoms}</Text> : null}
+            <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>{o.quote.diagnosis}</Text>
+            {o.quote.recommendation ? <Text style={[ui.meta, { marginTop: 6 }]}>Đề xuất: {o.quote.recommendation}</Text> : null}
+            {o.quote.lines.filter((l) => l.type === 'part').map((l, i) => (
+              <Text key={`${l.name}-${i}`} style={[ui.meta, { fontSize: 13 }]}>🔩 {l.name} x{l.qty} · {formatVND(l.price * l.qty)}</Text>
+            ))}
+            {o.quote.rejectReason ? <Text style={[ui.meta, { color: C.red }]}>Bạn đã từ chối báo giá: {o.quote.rejectReason}</Text> : null}
+          </Card>
+        ) : null}
+        {(o.progress || []).length ? (
+          <Card style={{ marginTop: 12 }}>
+            <Text style={mx.tlTitle}>📈 Tiến độ</Text>
+            {o.progress.map((p) => (
+              <View key={p.id} style={{ marginTop: 10 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <Text style={{ fontWeight: '800', color: C.purple }}>{p.percent}%</Text>
+                  <Text style={ui.meta}>{fmtDateTime(p.at)}</Text>
+                </View>
+                <Progress value={p.percent / 100} color={C.purple} style={{ marginTop: 4 }} />
+                {p.note ? <Text style={{ color: C.ink2, marginTop: 4 }}>{p.note}</Text> : null}
+              </View>
+            ))}
+          </Card>
+        ) : null}
+        {(o.materials || []).length && ['diagnosing', 'quoted', 'repairing', 'done'].includes(o.status) ? (
+          <Card style={{ marginTop: 12 }}>
+            <Text style={mx.tlTitle}>🔩 Vật tư / linh kiện</Text>
+            {o.materials.map((m) => (
+              <View key={m.id} style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, gap: 8 }}>
+                <Text style={{ flex: 1, color: C.ink2 }} numberOfLines={2}>{m.name} · {m.qty} {m.unit}</Text>
+                {m.price != null ? <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(m.price * m.qty)}</Text> : null}
+              </View>
+            ))}
+          </Card>
+        ) : null}
+        {(o.repairNotes || []).length ? (
+          <Card style={{ marginTop: 12 }}>
+            <Text style={mx.tlTitle}>📝 Nhật ký sửa chữa</Text>
+            {o.repairNotes.map((n) => (
+              <View key={n.id} style={{ marginTop: 8 }}>
+                <Text style={{ color: C.ink2, lineHeight: 20 }}>{n.text}</Text>
+                <Text style={ui.meta}>{fmtDateTime(n.at)}</Text>
+              </View>
+            ))}
+          </Card>
+        ) : null}
+        {evidence.length ? (
+          <Card style={{ marginTop: 12 }}>
+            <Text style={mx.tlTitle}>📷 Ảnh minh chứng</Text>
+            {[
+              { id: 'diagnosis', label: 'Chẩn đoán' },
+              { id: 'before', label: 'Trước khi làm' },
+              { id: 'after', label: 'Sau khi làm' },
+            ].map((stg) => (evidence.some((e) => e.stage === stg.id) ? (
+              <View key={stg.id} style={{ marginTop: 10 }}>
+                <Text style={[ui.meta, { fontWeight: '700', marginBottom: 6 }]}>{stg.label}</Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {evidence.filter((e) => e.stage === stg.id).map((e) => (
+                    <View key={e.id} style={mx.thumb}>
+                      {e.uri ? <Image source={{ uri: e.uri }} style={{ width: '100%', height: '100%' }} /> : <Text style={{ fontSize: 24 }}>🖼️</Text>}
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null))}
+          </Card>
+        ) : null}
+        {o.report ? (
+          <Card style={{ marginTop: 12, backgroundColor: '#F3FBF7', borderColor: '#CDEFDD' }}>
+            <Text style={mx.tlTitle}>✅ Biên bản hoàn thành</Text>
+            <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>{o.report.summary}</Text>
+            {(o.materials || []).length ? <Text style={[ui.meta, { marginTop: 6 }]}>Vật tư: {o.materials.map((m) => `${m.name} (${m.qty} ${m.unit})`).join(', ')}</Text> : null}
+            <Text style={[ui.meta, { marginTop: 6 }]}>{fmtDateTime(o.report.at)} · Thợ {o.report.tech}</Text>
+            {o.followUpCreated ? (
+              <Tap onPress={() => nav.push('order', { code: o.followUpCreated })}>
+                <Text style={[ui.link, { marginTop: 8 }]}>Xem lịch tái khám {o.followUpCreated} ›</Text>
+              </Tap>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {o.kind !== 'warranty' && o.kind !== 'followup' ? (
+          <Card style={{ marginTop: 12 }}>
+            <Text style={[mx.tlTitle, { marginBottom: 6 }]}>💳 Chi phí & thanh toán</Text>
+            <Bill l="Tổng tiền dịch vụ" v={formatVND(o.goods)} />
+            {o.productDiscount ? <Bill l="Giảm giá dịch vụ" v={`-${formatVND(o.productDiscount)}`} green /> : null}
+            {o.quote?.approved && o.quote.total !== o.quote.booked ? <Bill l="Phát sinh theo báo giá" v={`${o.quote.total > o.quote.booked ? '+' : ''}${formatVND(o.quote.total - o.quote.booked)}`} /> : null}
+            {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
+            {lateDiscountAmount(o) ? (
+              <Bill l={`Bồi thường đến muộn (−${o.lateCompensation.percent}% NC)`} v={`−${formatVND(lateDiscountAmount(o))}`} green />
+            ) : null}
+            <Bill l="Phí đi lại" v="Miễn phí" green />
+            <Bill l="Hình thức" v={o.payment || 'Thanh toán khi nhận hàng'} />
+            <Bill
+              l="Trạng thái thu"
+              v={o.status === 'cancelled' ? 'Đã huỷ' : o.report?.paid ? 'Đã thanh toán' : o.status === 'done' ? 'Chờ xác nhận' : 'Chưa thanh toán'}
+              green={!!o.report?.paid}
+            />
+            <View style={mx.totalRow}>
+              <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>Tổng thanh toán</Text>
+              <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(o.status === 'cancelled' ? o.total : orderTotal(o))}</Text>
+            </View>
+            {o.status === 'done' && !o.report?.paid ? (
+              <Btn
+                title="Xác nhận đã thanh toán"
+                icon="💳"
+                style={{ marginTop: 12 }}
+                onPress={() => u.confirm(
+                  'Xác nhận đã thanh toán?',
+                  `Hình thức: ${o.payment || 'Tại nhà'}. Tổng ${formatVND(orderTotal(o))}.`,
+                  () => a.confirmPayment(o.code),
+                  'Xác nhận',
+                )}
+              />
+            ) : null}
+            {o.status === 'done' && o.report?.paid ? (
+              <View style={{ marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: C.greenSoft }}>
+                <Text style={{ fontWeight: '800', color: C.green }}>🧾 Biên lai điện tử</Text>
+                <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
+                  Mã đơn {o.code} · {formatVND(orderTotal(o))} · {o.payment || 'Tại nhà'}
+                  {o.report.paidAt ? `\nXác nhận lúc ${fmtDateTime(o.report.paidAt)}` : ''}
+                </Text>
+              </View>
+            ) : null}
+          </Card>
+        ) : null}
+
+        {o.kind !== 'warranty' && o.status !== 'cancelled' ? (
+          <Card style={{ marginTop: 12, backgroundColor: winfo.ok ? '#F3FBF7' : '#fff' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Text style={{ fontSize: 24 }}>🛡️</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={mx.tlTitle}>Bảo hành 60 ngày</Text>
+                <Text style={[ui.meta, winfo.ok && { color: C.green, fontWeight: '700' }]}>{winfo.text}</Text>
+              </View>
+            </View>
+            {winfo.ok ? (
+              <Btn
+                title="Yêu cầu bảo hành"
+                variant="soft"
+                small
+                style={{ marginTop: 12 }}
+                onPress={() => u.confirm('Gửi yêu cầu bảo hành?', 'Thợ sẽ quay lại kiểm tra miễn phí.', () => { const c = a.requestWarranty(o.code); if (c) nav.push('order', { code: c }); }, 'Gửi')}
+              />
+            ) : null}
+            {winfo.openCode ? (
+              <Btn title={`Xem đơn bảo hành ${winfo.openCode}`} variant="outline" small style={{ marginTop: 12 }} onPress={() => nav.push('order', { code: winfo.openCode })} />
+            ) : null}
+          </Card>
+        ) : null}
+
+        {o.rating ? (
+          <Card style={{ marginTop: 12 }}>
+            <Text style={mx.tlTitle}>Đánh giá của bạn</Text>
+            <View style={{ marginTop: 6 }}><Stars value={o.rating.stars} size={18} /></View>
+            {o.rating.text ? <Text style={[ui.meta, { fontSize: 14, color: C.ink2, marginTop: 6 }]}>{o.rating.text}</Text> : null}
+          </Card>
+        ) : null}
+
+        <Text style={[ui.meta, { textAlign: 'center', marginTop: 16 }]}>Đặt lúc {fmtDateTime(o.createdAt)}</Text>
+      </ScrollView>
+
+      {(canEdit || canCancel || (o.status === 'done' && o.kind !== 'warranty') || (o.status === 'cancelled' && o.kind !== 'warranty') || (o.kind === 'warranty' && !active)) ? (
+        <View style={mx.dock}>
+          {canEdit ? <Btn title="Sửa yêu cầu" variant="soft" style={{ flex: 1 }} onPress={openEdit} /> : null}
+          {canCancel ? <Btn title="Huỷ đơn" variant="dangerSoft" style={{ flex: 1 }} onPress={() => setShowCancel(true)} /> : null}
+          {o.status === 'done' && !o.report?.paid && o.kind !== 'warranty' && o.kind !== 'followup' ? (
+            <Btn title="Đã thanh toán" icon="💳" variant="soft" style={{ flex: 1 }} onPress={() => a.confirmPayment(o.code)} />
+          ) : null}
+          {o.status === 'done' && !o.rating && o.kind !== 'warranty' ? <Btn title="Đánh giá" icon="⭐" variant="gold" style={{ flex: 1 }} onPress={() => nav.push('rate', { code: o.code })} /> : null}
+          {['done', 'cancelled'].includes(o.status) && o.kind !== 'warranty' ? <Btn title="Đặt lại" style={{ flex: 1 }} onPress={reorder} /> : null}
+          {o.kind === 'warranty' && !active ? <Btn title="Liên hệ hỗ trợ" variant="soft" style={{ flex: 1 }} onPress={u.call} /> : null}
+        </View>
+      ) : null}
+
+      <Sheet
+        visible={showCancel}
+        onClose={() => setShowCancel(false)}
+        title="Lý do huỷ đơn"
+        footer={<Btn title="Xác nhận huỷ" variant="danger" onPress={() => { setShowCancel(false); a.cancelOrder(o.code, reason); }} />}
+      >
+        {CANCEL_REASONS.map((r) => (
+          <Tap key={r} style={mx.option} onPress={() => setReason(r)}>
+            <Radio on={reason === r} />
+            <Text style={{ fontSize: 15, color: C.ink, flex: 1 }}>{r}</Text>
+          </Tap>
+        ))}
+      </Sheet>
+      <Sheet
+        visible={showReject}
+        onClose={() => setShowReject(false)}
+        title="Từ chối báo giá"
+        footer={<Btn title="Xác nhận từ chối" variant="danger" onPress={() => { setShowReject(false); a.respondQuote(o.code, false, rejectReason); }} />}
+      >
+        <Text style={[ui.meta, { fontSize: 13, marginBottom: 6 }]}>Đơn sẽ kết thúc và bạn không phải trả phí.</Text>
+        {REJECT_REASONS.map((r) => (
+          <Tap key={r} style={mx.option} onPress={() => setRejectReason(r)}>
+            <Radio on={rejectReason === r} />
+            <Text style={{ fontSize: 15, color: C.ink, flex: 1 }}>{r}</Text>
+          </Tap>
+        ))}
+      </Sheet>
+      <Sheet
+        visible={showEdit}
+        onClose={() => setShowEdit(false)}
+        title="Sửa yêu cầu dịch vụ"
+        footer={<Btn title="Lưu thay đổi" onPress={saveEdit} />}
+      >
+        <Text style={[ui.meta, { marginBottom: 8 }]}>Chỉ sửa được khi đơn còn chờ thợ nhận.</Text>
+        <Text style={{ fontWeight: '800', color: C.ink, marginBottom: 8 }}>Ngày hẹn</Text>
+        <HScroll contentContainerStyle={{ gap: 8, marginBottom: 10 }}>
+          {editDays.map((dd, i) => (
+            <Tap key={dd.key} onPress={() => setEditDayIdx(i)} style={[mx.day, editDayIdx === i && mx.dayOn]}>
+              <Text style={[mx.dayLabel, editDayIdx === i && { color: 'rgba(255,255,255,0.85)' }]}>{dd.label}</Text>
+              <Text style={[mx.dayDate, editDayIdx === i && { color: '#fff' }]}>{dd.ddmm}</Text>
+            </Tap>
+          ))}
+        </HScroll>
+        <Text style={{ fontWeight: '800', color: C.ink, marginBottom: 8 }}>Khung giờ</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+          {TIME_SLOTS.map((sl) => {
+            const off = editSlotPassed(sl);
+            const on = editSlot === sl && !off;
+            return (
+              <Tap key={sl} disabled={off} onPress={() => setEditSlot(sl)} style={[mx.slot, on && mx.slotOn, off && { opacity: 0.35 }]}>
+                <Text style={[mx.slotText, on && { color: '#fff' }]}>{sl}</Text>
+              </Tap>
+            );
+          })}
+        </View>
+        <Field label="Mô tả tình trạng" multiline value={editNote} onChangeText={setEditNote} placeholder="Cập nhật mô tả lỗi…" style={{ marginTop: 4 }} />
+        <Text style={{ fontWeight: '800', color: C.ink, marginTop: 8, marginBottom: 8 }}>Ảnh đính kèm</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {editAtts.map((att) => (
+            <View key={att.id} style={mx.thumb}>
+              <Image source={{ uri: att.uri }} style={{ width: '100%', height: '100%' }} />
+              <Tap style={mx.thumbX} onPress={() => setEditAtts((p) => p.filter((x) => x.id !== att.id))} hitSlop={6}>
+                <Text style={{ color: '#fff', fontWeight: '800', fontSize: 12 }}>✕</Text>
+              </Tap>
+            </View>
+          ))}
+          {editAtts.length < 5 ? (
+            <Tap style={mx.thumbAdd} onPress={addEditAtt}>
+              <Text style={{ fontSize: 20, color: C.primary }}>+</Text>
+            </Tap>
+          ) : null}
+        </View>
+      </Sheet>
+    </View>
+  );
+}
+
+const InfoLine = ({ icon, label, value, link }) => (
+  <View style={{ flexDirection: 'row', gap: 10, paddingVertical: 8 }}>
+    <Text style={{ fontSize: 16, width: 22 }}>{icon}</Text>
+    <View style={{ flex: 1 }}>
+      <Text style={{ fontSize: 12, color: C.muted, fontWeight: '600' }}>{label}</Text>
+      <Text style={{ fontSize: 14, color: link ? C.primary : C.ink, fontWeight: '600', marginTop: 2, lineHeight: 20 }}>{value}</Text>
+    </View>
+  </View>
+);
+const Bill = ({ l, v, green }) => (
+  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
+    <Text style={{ color: C.muted, fontSize: 14 }}>{l}</Text>
+    <Text style={{ color: green ? C.green : C.ink, fontWeight: '700', fontSize: 14 }}>{v}</Text>
+  </View>
+);
+
+// =========================================================== ĐÁNH GIÁ
+const QUICK_TAGS = ['Đúng giờ', 'Tay nghề tốt', 'Thân thiện', 'Sạch sẽ', 'Giá hợp lý', 'Tư vấn tận tình'];
+export function RateScreen({ params }) {
+  const { s, a, nav } = useApp();
+  const o = s.orders.find((x) => x.code === params.code);
+  const [stars, setStars] = useState(5);
+  const [tags, setTags] = useState([]);
+  const [text, setText] = useState('');
+  if (!o) return null;
+  const svc = getService(o.items[0]?.id);
+  const LABEL = ['', 'Rất tệ', 'Chưa hài lòng', 'Bình thường', 'Hài lòng', 'Tuyệt vời!'];
+  const submit = () => {
+    const full = [tags.join(', '), text.trim()].filter(Boolean).join('. ');
+    a.rateOrder(o.code, stars, full);
+    nav.back();
+  };
+  return (
+    <View style={{ flex: 1 }}>
+      <TopBar title="Đánh giá dịch vụ" sub={o.code} />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+        <Card style={{ alignItems: 'center', paddingVertical: 24 }}>
+          <Media item={svc} height={72} width={72} radius={20} />
+          <Text style={[mx.tlTitle, { textAlign: 'center', marginTop: 12 }]}>{svc?.name}</Text>
+          <Text style={ui.meta}>Thợ {o.tech?.name}</Text>
+          <View style={{ marginTop: 18 }}><Stars value={stars} size={38} onChange={setStars} /></View>
+          <Text style={{ marginTop: 10, fontWeight: '800', color: C.orange, fontSize: 15 }}>{LABEL[stars]}</Text>
+        </Card>
+        <Text style={mx.sec}>Bạn hài lòng điều gì?</Text>
+        <View style={mx.chips}>
+          {QUICK_TAGS.map((t) => <Chip key={t} label={t} on={tags.includes(t)} onPress={() => setTags((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]))} />)}
+        </View>
+        <Field label="Nhận xét thêm" multiline value={text} onChangeText={setText} placeholder="Chia sẻ trải nghiệm của bạn…" />
+        <View style={mx.bonus}><Text style={{ color: C.goldInk, fontWeight: '700' }}>🎁 Nhận ngay +20 điểm thưởng khi gửi đánh giá</Text></View>
+      </ScrollView>
+      <View style={mx.dock}><Btn title="Gửi đánh giá" style={{ flex: 1 }} onPress={submit} /></View>
+    </View>
+  );
+}
+
+// =========================================================== QUYỀN LỢI
+export function RewardsScreen() {
+  const { s, a, nav, ui: u, setPendingVoucher } = useApp();
+  const { cur, next } = tierOf(s.lifetimePoints);
+  const progress = next ? (s.lifetimePoints - cur.min) / (next.min - cur.min) : 1;
+  // Ghi nhớ mã → màn Xác nhận đặt lịch sẽ tự áp dụng
+  const pickWalletVoucher = (v) => {
+    setPendingVoucher(v.code);
+    if (s.cart.length) {
+      nav.push('checkout', { items: s.cart.map(({ id, qty }) => ({ id, qty })), fromCart: true });
+    } else {
+      u.toast(`Chọn dịch vụ, mã ${v.code} sẽ tự áp dụng`, '🎟️');
+      nav.services();
+    }
+  };
+  return (
+    <View style={{ flex: 1 }}>
+      <TopBar title="Quyền lợi của tôi" />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
+        <View style={mx.pointsHero}>
+          <View style={[mx.blob, { width: 180, height: 180, right: -40, top: -60 }]} />
+          <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '600' }}>Điểm hiện có</Text>
+          <Text style={{ color: C.gold, fontSize: 40, fontWeight: '900', marginTop: 2 }}>{s.points}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+            <Badge text={`👑 ${cur.label}`} fg="#fff" bg={cur.color} />
+            <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12 }}>Tích luỹ: {s.lifetimePoints} điểm</Text>
+          </View>
+          <Progress value={progress} color={C.gold} style={{ marginTop: 14, backgroundColor: 'rgba(255,255,255,0.18)' }} />
+          <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 6 }}>{next ? `Còn ${next.min - s.lifetimePoints} điểm để lên hạng ${next.label}` : 'Bạn đã đạt hạng cao nhất 🎉'}</Text>
+        </View>
+
+        <View style={mx.tiers}>
+          {TIERS.map((t) => (
+            <View key={t.id} style={[mx.tierItem, cur.id === t.id && { borderColor: t.color, backgroundColor: '#fff' }]}>
+              <Text style={{ fontSize: 18 }}>👑</Text>
+              <Text style={{ fontSize: 11, fontWeight: '800', color: cur.id === t.id ? t.color : C.muted }}>{t.label}</Text>
+              <Text style={{ fontSize: 10, color: C.faint }}>{t.min}+</Text>
+            </View>
+          ))}
+        </View>
+
+        <SectionTitle title="Cách tích điểm" />
+        <Card style={{ padding: 0, overflow: 'hidden' }}>
+          <ListRow icon="🧾" iconBg={C.primarySoft} label="Hoàn thành đơn hàng" sub="10.000đ = 1 điểm" onPress={() => nav.services()} />
+          <ListRow icon="⭐" iconBg={C.goldSoft} label="Đánh giá sau khi dùng dịch vụ" sub="+20 điểm mỗi đơn" onPress={() => nav.activity('done')} last />
+        </Card>
+
+        <SectionTitle title="Đổi điểm lấy voucher" />
+        {REDEEM_OPTIONS.map((r) => {
+          const enough = s.points >= r.cost;
+          return (
+            <Card key={r.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+              <IconBox icon="🎁" size={46} bg={C.goldSoft} radius={14} />
+              <View style={{ flex: 1 }}>
+                <Text style={mx.tlTitle}>{r.title}</Text>
+                <Text style={[ui.meta, { color: C.goldInk, fontWeight: '700' }]}>{r.cost} điểm</Text>
+              </View>
+              <Btn title="Đổi" small variant={enough ? 'gold' : 'ghost'} onPress={() => u.confirm('Đổi voucher?', `Dùng ${r.cost} điểm để đổi ${r.title.toLowerCase()}.`, () => a.redeem(r.id), 'Đổi ngay')} />
+            </Card>
+          );
+        })}
+
+        <SectionTitle title={`Ví voucher (${s.myVouchers.length + VOUCHERS.length})`} />
+        {[...s.myVouchers, ...VOUCHERS].map((v) => (
+          <View key={v.code} style={mx.ticket}>
+            <View style={[mx.ticketLeft, v.wallet && { backgroundColor: C.gold }]}>
+              <Text style={{ fontSize: 22 }}>{v.wallet ? '🎁' : '🎟️'}</Text>
+            </View>
+            <View style={{ flex: 1, padding: 12 }}>
+              <Text style={{ fontWeight: '900', color: C.ink, letterSpacing: 0.5 }}>{v.code}</Text>
+              <Text style={ui.meta}>{v.label}</Text>
+            </View>
+            <Btn title="Dùng" small variant="soft" style={{ marginRight: 12 }} onPress={() => pickWalletVoucher(v)} />
+          </View>
+        ))}
+        <Text style={[ui.meta, { textAlign: 'center', marginTop: 6 }]}>Chọn mã ở bước Xác nhận đặt lịch để được giảm giá.</Text>
+      </ScrollView>
+    </View>
+  );
+}
+
+// =========================================================== YÊU THÍCH
+export function FavoritesScreen() {
+  const { s, nav } = useApp();
+  const list = s.favorites.map(getService).filter(Boolean);
+  return (
+    <View style={{ flex: 1 }}>
+      <TopBar title="Dịch vụ yêu thích" sub={list.length ? `${list.length} dịch vụ` : null} />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
+        {list.length ? <ServiceGrid data={list} /> : (
+          <EmptyState icon="♡" title="Chưa có dịch vụ yêu thích" body="Nhấn ♡ trên dịch vụ để lưu lại và đặt nhanh hơn lần sau." action="Khám phá dịch vụ" onAction={() => nav.services()} />
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+// =========================================================== HỒ SƠ
+export function ProfileScreen() {
+  const { s, a, d, nav, ui: u } = useApp();
+  const [name, setName] = useState(s.user.name || d.address?.name || '');
+  const [phone, setPhone] = useState(s.user.phone || d.address?.phone || '');
+  const [email, setEmail] = useState(s.user.email || '');
+  const [err, setErr] = useState({});
+  const [showPw, setShowPw] = useState(false);
+  const [curPw, setCurPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [newPw2, setNewPw2] = useState('');
+  const save = () => {
+    const e = {};
+    if (!name.trim()) e.name = 'Vui lòng nhập họ tên.';
+    if (phone && !/^0\d{9}$/.test(phone)) e.phone = 'Số điện thoại gồm 10 chữ số, bắt đầu bằng 0.';
+    if (email && !/^\S+@\S+\.\S+$/.test(email)) e.email = 'Email không hợp lệ.';
+    setErr(e);
+    if (Object.keys(e).length) return;
+    a.updateUser({ name: name.trim(), phone, email: email.trim() });
+    nav.back();
+  };
+  const savePw = () => {
+    if (newPw !== newPw2) { u.alert('Không khớp', 'Mật khẩu mới nhập lại chưa khớp.', '🔐'); return; }
+    const res = a.changePassword({ currentPassword: curPw, newPassword: newPw });
+    if (!res.ok) { u.alert('Không đổi được', res.error, '🔐'); return; }
+    setShowPw(false);
+    setCurPw(''); setNewPw(''); setNewPw2('');
+  };
+  return (
+    <View style={{ flex: 1 }}>
+      <TopBar title="Thông tin cá nhân" />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} keyboardShouldPersistTaps="handled">
+        <View style={{ alignItems: 'center', marginVertical: 8 }}>
+          <View style={mx.bigAvatar}><Text style={{ fontSize: 38, fontWeight: '900', color: C.navy }}>{(name || 'K').trim().charAt(0).toUpperCase()}</Text></View>
+        </View>
+        <Card>
+          <Field label="Họ và tên" value={name} onChangeText={setName} placeholder="Nguyễn Văn A" error={err.name} style={{ marginTop: -8 }} />
+          <Field label="Số điện thoại" value={phone} onChangeText={(t) => setPhone(t.replace(/[^0-9]/g, '').slice(0, 10))} keyboardType="phone-pad" placeholder="10 chữ số" error={err.phone} />
+          <Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" placeholder="email@example.com" error={err.email} />
+        </Card>
+        <Card style={{ marginTop: 12, padding: 0, overflow: 'hidden' }}>
+          <ListRow icon="📍" iconBg={C.redSoft} label="Sổ địa chỉ" value={`${s.addresses.length}`} onPress={() => nav.push('addresses')} />
+          <ListRow icon="🔐" iconBg={C.primarySoft} label="Đổi mật khẩu" onPress={() => setShowPw(true)} last />
+        </Card>
+      </ScrollView>
+      <View style={mx.dock}><Btn title="Lưu thay đổi" style={{ flex: 1 }} onPress={save} /></View>
+      <Sheet visible={showPw} onClose={() => setShowPw(false)} title="Đổi mật khẩu" footer={<Btn title="Cập nhật mật khẩu" onPress={savePw} />}>
+        <Field label="Mật khẩu hiện tại" value={curPw} onChangeText={setCurPw} secureTextEntry placeholder="••••••" style={{ marginTop: -8 }} />
+        <Field label="Mật khẩu mới" value={newPw} onChangeText={setNewPw} secureTextEntry placeholder="Ít nhất 6 ký tự" />
+        <Field label="Nhập lại mật khẩu mới" value={newPw2} onChangeText={setNewPw2} secureTextEntry placeholder="Nhập lại" />
+      </Sheet>
+    </View>
+  );
+}
+
+// =========================================================== TRỢ GIÚP
+const UC_CUSTOMER = [
+  ['Đăng ký / Đăng nhập / Quên·đổi mật khẩu', 'SUC-001…006'],
+  ['Hồ sơ & sổ địa chỉ', 'SUC-010…014'],
+  ['Đặt yêu cầu + đính kèm ảnh', 'SUC-018…021'],
+  ['Sửa / huỷ đơn khi chờ thợ', 'SUC-019'],
+  ['Theo dõi trạng thái & lịch sử', 'SUC-022'],
+  ['Duyệt / từ chối báo giá', 'SUC-023'],
+  ['Thanh toán · đánh giá · bảo hành', 'SUC-024…028'],
+];
+const UC_TECH = [
+  ['Trực tuyến · nhận / từ chối việc', 'SUC-040…041'],
+  ['Lịch làm việc & thông tin khách', 'SUC-042'],
+  ['Chẩn đoán + ảnh minh chứng', 'SUC-043…045'],
+  ['Báo giá · vật tư · tiến độ', 'SUC-046…048'],
+  ['Sửa chữa · nhật ký · ảnh trước/sau', 'SUC-049…051'],
+  ['Biên bản hoàn thành · tái khám', 'SUC-052…053'],
+  ['Hồ sơ thợ · đổi mật khẩu', 'SUC-054'],
+  ['Uy tín · phạt hủy sau nhận / đến muộn', 'KPI-TECH'],
+];
+
+export function HelpScreen() {
+  const { nav, ui: u } = useApp();
+  const [open, setOpen] = useState(0);
+  return (
+    <View style={{ flex: 1 }}>
+      <TopBar title="Trợ giúp" />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          {[
+            { i: '📞', t: 'Gọi hotline', onPress: u.call },
+            { i: '🛡️', t: 'Bảo hành', onPress: () => nav.warranty() },
+            { i: '📋', t: 'Đơn của tôi', onPress: () => nav.activity() },
+          ].map((x) => (
+            <Card key={x.t} style={{ flex: 1, alignItems: 'center', paddingVertical: 16 }} onPress={x.onPress}>
+              <Text style={{ fontSize: 26 }}>{x.i}</Text>
+              <Text style={{ fontWeight: '700', color: C.ink, marginTop: 6, fontSize: 13 }}>{x.t}</Text>
+            </Card>
+          ))}
+        </View>
+        <SectionTitle title="Luồng khách hàng (UC)" />
+        <Card style={{ marginBottom: 8 }}>
+          {UC_CUSTOMER.map(([t, id], i) => (
+            <View key={id} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8, paddingVertical: 8, borderTopWidth: i ? 1 : 0, borderTopColor: '#F0F3F8' }}>
+              <Text style={{ flex: 1, color: C.ink2, fontSize: 13, lineHeight: 18 }}>{t}</Text>
+              <Text style={{ color: C.primary, fontWeight: '700', fontSize: 11 }}>{id}</Text>
+            </View>
+          ))}
+        </Card>
+        <SectionTitle title="Luồng kỹ thuật viên (UC)" />
+        <Card style={{ marginBottom: 8 }}>
+          {UC_TECH.map(([t, id], i) => (
+            <View key={id} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8, paddingVertical: 8, borderTopWidth: i ? 1 : 0, borderTopColor: '#F0F3F8' }}>
+              <Text style={{ flex: 1, color: C.ink2, fontSize: 13, lineHeight: 18 }}>{t}</Text>
+              <Text style={{ color: C.primary, fontWeight: '700', fontSize: 11 }}>{id}</Text>
+            </View>
+          ))}
+        </Card>
+        <SectionTitle title="Câu hỏi thường gặp" />
+        {FAQ.map((f, i) => (
+          <Card key={f.q} style={{ marginBottom: 10 }} onPress={() => setOpen(open === i ? -1 : i)}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Text style={[mx.tlTitle, { flex: 1 }]}>{f.q}</Text>
+              <Text style={{ color: C.primary, fontSize: 18, fontWeight: '700' }}>{open === i ? '−' : '+'}</Text>
+            </View>
+            {open === i ? <Text style={{ color: C.ink2, lineHeight: 21, marginTop: 8, fontSize: 14 }}>{f.a}</Text> : null}
+          </Card>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+export function TermsScreen() {
+  const items = [
+    ['1. Phạm vi áp dụng', 'Điều khoản áp dụng cho mọi khách hàng đặt dịch vụ kỹ thuật tại nhà qua ứng dụng Thợ ĐMX.'],
+    ['2. Đặt lịch & huỷ lịch', 'Khách hàng có thể huỷ đơn miễn phí khi thợ chưa di chuyển. Lịch hẹn được xác nhận qua cuộc gọi của thợ.'],
+    ['3. Giá & thanh toán', 'Giá hiển thị gồm nhân công. Vật tư, linh kiện phát sinh được báo giá và chỉ thực hiện khi khách đồng ý.'],
+    ['4. Bảo hành', 'Dịch vụ vệ sinh, nạp gas được bảo hành 60 ngày kể từ ngày hoàn thành.'],
+    ['5. Điểm thưởng', 'Điểm được cộng khi đơn hoàn thành, không quy đổi thành tiền mặt và không chuyển nhượng.'],
+    ['6. Bảo mật', 'Thông tin cá nhân chỉ dùng để phục vụ đơn hàng và chăm sóc khách hàng.'],
+  ];
+  return (
+    <View style={{ flex: 1 }}>
+      <TopBar title="Điều khoản ứng dụng" />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
+        {items.map(([t, b]) => (
+          <Card key={t} style={{ marginBottom: 10 }}>
+            <Text style={mx.tlTitle}>{t}</Text>
+            <Text style={{ color: C.ink2, lineHeight: 21, marginTop: 6 }}>{b}</Text>
+          </Card>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+// =========================================================== QR
+export function QRScreen() {
+  const { s, d } = useApp();
+  const name = s.user.name || d.address?.name || 'Khách';
+  const phone = s.user.phone || d.address?.phone || '';
+  return (
+    <View style={{ flex: 1, backgroundColor: C.navy }}>
+      <TopBar title="Mã QR của tôi" />
+      <ScrollView contentContainerStyle={{ padding: 24, alignItems: 'center' }}>
+        <View style={mx.qrCard}>
+          <Text style={{ fontSize: 18, fontWeight: '900', color: C.ink }}>{name}</Text>
+          <Text style={[ui.meta, { marginBottom: 16 }]}>{phone || 'Chưa có số điện thoại'}</Text>
+          <PseudoQR value={`THODMX:${phone || name}`} size={210} />
+          <Text style={[ui.meta, { textAlign: 'center', marginTop: 16, lineHeight: 18 }]}>Đưa mã này cho thợ quét khi đến nhà để xác nhận đơn và tích điểm.</Text>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+// =========================================================== THÊM THIẾT BỊ
+const ROOMS = ['Phòng khách', 'Phòng ngủ', 'Bếp', 'Phòng tắm', 'Văn phòng'];
+export function DeviceFormScreen({ params }) {
+  const { a, nav } = useApp();
+  const [category, setCategory] = useState(params.category || 'may-lanh');
+  const [brand, setBrand] = useState('');
+  const [room, setRoom] = useState('');
+  const [last, setLast] = useState('unknown');
+  const save = () => {
+    a.addDevice({ category, brand, room, lastAgo: LAST_SERVICE_OPTIONS.find((x) => x.id === last)?.ago });
+    nav.back();
+  };
+  return (
+    <View style={{ flex: 1 }}>
+      <TopBar title="Thêm thiết bị" />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+        <Text style={[mx.sec, { marginTop: 0 }]}>Loại thiết bị</Text>
+        <View style={mx.devGrid}>
+          {CATEGORIES.map((c) => {
+            const on = category === c.id;
+            const tone = toneOf(c.id);
+            return (
+              <Tap key={c.id} style={[mx.devType, on && { borderColor: tone.fg, backgroundColor: tone.bg }]} onPress={() => setCategory(c.id)}>
+                <Text style={{ fontSize: 26 }}>{c.icon}</Text>
+                <Text style={[{ fontSize: 12, fontWeight: '700', color: C.ink2, textAlign: 'center', marginTop: 4 }, on && { color: tone.fg }]} numberOfLines={2}>{c.label}</Text>
+              </Tap>
+            );
+          })}
+        </View>
+        <Field label="Hãng / model" value={brand} onChangeText={setBrand} placeholder="VD: Daikin 1.5 HP Inverter" />
+        <Text style={mx.fl}>Vị trí trong nhà</Text>
+        <View style={mx.chips}>{ROOMS.map((r) => <Chip key={r} label={r} on={room === r} onPress={() => setRoom(room === r ? '' : r)} />)}</View>
+        <Text style={mx.fl}>Lần bảo dưỡng gần nhất</Text>
+        <View style={mx.chips}>{LAST_SERVICE_OPTIONS.map((o) => <Chip key={o.id} label={o.label} on={last === o.id} onPress={() => setLast(o.id)} />)}</View>
+        <View style={[mx.bonus, { backgroundColor: C.primarySoft, marginTop: 20 }]}>
+          <Text style={{ color: C.primary, fontWeight: '600', lineHeight: 19 }}>💡 Khi bạn hoàn thành đơn bảo dưỡng {catLabel(category).toLowerCase()} trên app, lịch nhắc sẽ tự động cập nhật.</Text>
+        </View>
+      </ScrollView>
+      <View style={mx.dock}><Btn title="Lưu thiết bị" style={{ flex: 1 }} onPress={save} /></View>
+    </View>
+  );
+}
+
+const webNoOutline = Platform.select({ web: { outlineStyle: 'none' }, default: {} });
+
+const mx = StyleSheet.create({
+  searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: C.line },
+  searchBox: { flex: 1, height: 44, borderRadius: 12, backgroundColor: '#F1F4F9', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 },
+  searchInput: { flex: 1, fontSize: 15, color: C.ink, height: 44, ...webNoOutline },
+  h: { fontSize: 15, fontWeight: '800', color: C.ink, marginBottom: 10 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  addSq: { width: 34, height: 34, borderRadius: 11, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center' },
+  notif: { flexDirection: 'row', gap: 12, padding: 14, backgroundColor: '#fff', borderRadius: R.lg, marginBottom: 10, borderWidth: 1, borderColor: '#EEF2F7' },
+  notifUnread: { backgroundColor: '#F5F9FF', borderColor: '#D6E4FF' },
+  notifTitle: { fontSize: 14, fontWeight: '800', color: C.ink2, lineHeight: 19 },
+  notifBody: { fontSize: 13, color: C.muted, lineHeight: 18, marginTop: 2 },
+  dot: { width: 9, height: 9, borderRadius: 5, backgroundColor: C.primary, marginTop: 6 },
+  statusHero: { borderRadius: R.lg, padding: 18 },
+  statusLabel: { fontSize: 20, fontWeight: '900' },
+  statusDesc: { fontSize: 13, marginTop: 4, fontWeight: '600', opacity: 0.85 },
+  tlDot: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D5DCE6', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  tlLine: { width: 2, flex: 1, backgroundColor: '#E3E8EF', marginVertical: 2 },
+  tlTitle: { fontSize: 15, fontWeight: '800', color: C.ink },
+  techAvatar: { width: 52, height: 52, borderRadius: 18, backgroundColor: C.goldSoft, alignItems: 'center', justifyContent: 'center' },
+  sec: { fontSize: 15, fontWeight: '800', color: C.ink, marginTop: 20, marginBottom: 10 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: C.line, paddingTop: 12, marginTop: 12 },
+  dock: { flexDirection: 'row', gap: 10, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
+  option: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F3F8' },
+  bonus: { backgroundColor: C.goldSoft, borderRadius: R.md, padding: 14, marginTop: 16 },
+  pointsHero: { backgroundColor: C.navy, borderRadius: 22, padding: 20, overflow: 'hidden' },
+  blob: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.07)' },
+  tiers: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  tierItem: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#F8FAFD' },
+  ticket: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: R.md, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: '#EEF2F7', ...shadow.sm },
+  ticketLeft: { width: 64, alignSelf: 'stretch', backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  thumb: { width: 76, height: 76, borderRadius: 14, backgroundColor: '#EEF2F7', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' },
+  thumbX: { position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(15,23,42,0.7)', alignItems: 'center', justifyContent: 'center' },
+  thumbAdd: { width: 76, height: 76, borderRadius: 14, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.primary, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  day: { width: 76, height: 64, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  dayOn: { backgroundColor: C.primary, borderColor: C.primary },
+  dayLabel: { fontSize: 12, color: C.muted, fontWeight: '600' },
+  dayDate: { fontSize: 14, color: C.ink, fontWeight: '800', marginTop: 2 },
+  slot: { paddingHorizontal: 10, height: 36, borderRadius: 11, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  slotOn: { backgroundColor: C.navy, borderColor: C.navy },
+  slotText: { fontSize: 12, color: C.ink, fontWeight: '700' },
+  bigAvatar: { width: 92, height: 92, borderRadius: 32, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center' },
+  qrCard: { width: '100%', maxWidth: 340, backgroundColor: '#fff', borderRadius: 26, padding: 22, alignItems: 'center', ...shadow.lg },
+  devGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  devType: { width: '31%', height: 92, borderRadius: R.lg, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  fl: { fontSize: 13, fontWeight: '700', color: C.ink2, marginTop: 18, marginBottom: 8 },
+});
