@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-// Bảng màu + token dùng chung — Thợ ĐMX (navy / gold / xanh dịch vụ)
+// Bảng màu + token dùng chung — Thợ HRMSS (navy / gold / xanh dịch vụ)
 export const C = {
   primary: '#1A5FFF',
   primaryDark: '#0A3FD4',

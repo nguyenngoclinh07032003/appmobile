@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { BackHandler, Linking, Platform } from 'react-native';
 import {
   getService, MAINT_MONTHS, TECH_ME, REDEEM_OPTIONS, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech,
-  tierOf, lookupDmxPurchasedDevices, comboDiscountFor,
+  tierOf, lookupHrmssPurchasedDevices, comboDiscountFor,
 } from './data';
 export { matchJobForTech, comboDiscountFor } from './data';
 import {
@@ -152,10 +152,10 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
 // ---------------------------------------------------------------------------
 // State ban đầu + lưu trữ (localStorage trên web)
 // ---------------------------------------------------------------------------
-const KEY = 'tho-dmx-state-v2';
+const KEY = 'tho-hrmss-state-v2';
 const welcome = () => ({
   id: uid(), at: Date.now(), read: false, icon: '🎉',
-  title: 'Chào mừng bạn đến với Thợ ĐMX',
+  title: 'Chào mừng bạn đến với Thợ HRMSS',
   body: 'Nhập mã THO20 để được giảm 20.000đ cho đơn từ 150.000đ.',
   link: { name: 'rewards' },
 });
@@ -267,16 +267,16 @@ export function AppProvider({ children }) {
     const user = session
       ? { name: session.name || '', phone: session.phone || '', email: session.email || '' }
       : (saved.user || { name: '', phone: '', email: '' });
-    const cleanOrders = (saved.orders || []).filter((o) => !String(o?.code || '').startsWith('DMXDEMO'));
-    const cleanDevices = (saved.devices || []).filter((d) => d?.id !== 'demo-dev-ml');
-    const cleanAddresses = (saved.addresses || []).filter((a) => a?.id !== 'demo-addr-hn');
+    const cleanOrders = (saved.orders || []);
+    const cleanDevices = (saved.devices || []);
+    const cleanAddresses = (saved.addresses || []);
     const baseState = {
       ...makeInitial(),
       ...saved,
       orders: cleanOrders,
       devices: cleanDevices,
       addresses: cleanAddresses,
-      selectedAddressId: saved.selectedAddressId === 'demo-addr-hn' ? (cleanAddresses[0]?.id || null) : saved.selectedAddressId,
+      selectedAddressId: saved.selectedAddressId,
       role,
       user,
       auth: session,
@@ -479,7 +479,7 @@ export function AppProvider({ children }) {
     call: () => setDialogCfg({
       icon: '📞',
       title: `Hotline ${HOTLINE}`,
-      message: 'Tổng đài hỗ trợ Thợ Điện Máy XANH hoạt động 7:30 – 22:00 mỗi ngày (miễn phí).',
+      message: 'Tổng đài hỗ trợ Thợ HRMSS hoạt động 7:30 – 22:00 mỗi ngày (miễn phí).',
       actions: [
         { label: 'Để sau', variant: 'ghost' },
         { label: 'Gọi ngay', variant: 'primary', onPress: () => Linking.openURL(`tel:${HOTLINE.replace(/\s/g, '')}`).catch(() => {}) },
@@ -556,16 +556,16 @@ export function AppProvider({ children }) {
         devices: [...p.devices, d],
         notifications: pushNotif(p, {
           icon: '📺', title: `Đã thêm ${catLabel(category)}`,
-          body: 'Thợ ĐMX sẽ nhắc bạn khi đến kỳ bảo dưỡng.', link: { tab: 'devices' },
+          body: 'Thợ HRMSS sẽ nhắc bạn khi đến kỳ bảo dưỡng.', link: { tab: 'devices' },
         }),
       }));
       ui.toast('Đã lưu thiết bị');
     },
     updateDevice: (id, patch) => up((p) => ({ devices: p.devices.map((d) => (d.id === id ? { ...d, ...patch } : d)) })),
     removeDevice: (id) => { up((p) => ({ devices: p.devices.filter((d) => d.id !== id) })); ui.toast('Đã xoá thiết bị'); },
-    syncDmxDevices: () => {
+    syncHrmssDevices: () => {
       const phone = s.auth?.phone || s.user?.phone || address?.phone || '';
-      const found = lookupDmxPurchasedDevices(phone);
+      const found = lookupHrmssPurchasedDevices(phone);
       let addedCount = 0;
       up((p) => {
         const existingSerials = new Set((p.devices || []).map((dv) => dv.serial).filter(Boolean));
@@ -578,16 +578,16 @@ export function AppProvider({ children }) {
           devices: [...toAdd, ...(p.devices || [])],
           notifications: pushNotif(p, {
             icon: '🔄',
-            title: `Đã đồng bộ ${addedCount} thiết bị mua tại Điện máy XANH`,
+            title: `Đã đồng bộ ${addedCount} thiết bị trên hệ thống HRMSS`,
             body: 'Hệ thống đã tự động nạp số Serial, hạn bảo hành chính hãng và chu kỳ bảo dưỡng.',
             link: { tab: 'devices' },
           }),
         };
       });
       if (addedCount > 0) {
-        ui.toast(`Đã đồng bộ ${addedCount} thiết bị mua tại ĐMX`, '🔄');
+        ui.toast(`Đã đồng bộ ${addedCount} thiết bị HRMSS`, '🔄');
       } else {
-        ui.toast('Tất cả thiết bị mua tại ĐMX đã được đồng bộ', '✓');
+        ui.toast('Tất cả thiết bị HRMSS đã được đồng bộ', '✓');
       }
       return addedCount;
     },
@@ -619,7 +619,7 @@ export function AppProvider({ children }) {
 
     // Đơn hàng
     placeOrder: (payload) => {
-      const code = `DMX${String(Date.now()).slice(-6)}`;
+      const code = `HRMSS${String(Date.now()).slice(-6)}`;
       const now = Date.now();
       const customerPhone = s.auth?.phone || s.user?.phone || address?.phone || '';
       const curTier = tierOf(s.lifetimePoints || 0).cur;
@@ -1119,7 +1119,7 @@ export function AppProvider({ children }) {
         const isAuto = raw === 'AUTO_SCAN';
         const cleanDigits = raw.replace(/\D/g, '');
         const valid = isAuto
-          || raw.toUpperCase().includes(`THODMX:${custPhone}`)
+          || raw.toUpperCase().includes(`HRMSS:${custPhone}`)
           || (custPhone && cleanDigits === custPhone)
           || (custPhone && cleanDigits.length >= 4 && custPhone.endsWith(cleanDigits));
         if (!valid) {
@@ -1136,7 +1136,7 @@ export function AppProvider({ children }) {
               at: now,
               by: myTechCode,
               phone: custPhone,
-              qrCode: `THODMX:${custPhone || o.address?.name || code}`,
+              qrCode: `HRMSS:${custPhone || o.address?.name || code}`,
             },
           },
           customer: {

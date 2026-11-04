@@ -175,7 +175,7 @@ function DesktopShowcase({ style }) {
         <View style={st.sidePillDot} />
         <Text style={st.sidePillText}>Dịch vụ Kỹ thuật Tại nhà Chính hãng</Text>
       </View>
-      <Text style={st.sideBrand}><Text style={{ color: C.gold }}>Thợ</Text> ĐMX</Text>
+      <Text style={st.sideBrand}><Text style={{ color: C.gold }}>Thợ</Text> HRMSS</Text>
       <Text style={st.sideText}>
         Đặt lịch vệ sinh, bảo dưỡng, sửa chữa và lắp đặt thiết bị điện máy tận nhà. Báo giá minh bạch, theo dõi hành trình trực tiếp và bảo hành 60 ngày.
       </Text>
@@ -209,14 +209,14 @@ function Frame({ children }) {
 
   useEffect(() => {
     if (!isWeb || typeof document === 'undefined') return;
-    document.title = 'Thợ ĐMX — Đặt thợ Điện Máy XANH';
+    document.title = 'Thợ HRMSS — Dịch vụ sửa chữa & bảo trì tại nhà HRMSS';
     document.body.style.margin = '0';
     document.body.style.backgroundColor = '#DCE4F2';
     document.body.style.overflow = 'hidden';
     // Ẩn thanh cuộn trình duyệt thô để khung điện thoại mượt như native app
-    if (!document.getElementById('tho-dmx-global-css')) {
+    if (!document.getElementById('tho-hrmss-global-css')) {
       const styleEl = document.createElement('style');
-      styleEl.id = 'tho-dmx-global-css';
+      styleEl.id = 'tho-hrmss-global-css';
       styleEl.textContent = `
         * { -webkit-tap-highlight-color: transparent; -webkit-font-smoothing: antialiased; box-sizing: border-box; }
         *::-webkit-scrollbar { width: 0px; height: 0px; display: none; }

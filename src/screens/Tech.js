@@ -1,5 +1,5 @@
 // ===========================================================================
-// APP THỢ (Technician) — Hệ thống kỹ thuật viên Thợ Điện máy XANH
+// APP THỢ (Technician) — Hệ thống kỹ thuật viên Thợ HRMSS
 //   Nhận từ hệ thống: việc được giao, địa chỉ & liên hệ khách, lịch làm việc, báo giá, thông báo
 //   Gửi lên hệ thống: chẩn đoán, tiến độ, vật tư sử dụng, ảnh minh chứng, biên bản hoàn thành
 // Dùng chung dữ liệu đơn hàng với app Khách hàng (src/store.js) nên hai bên cập nhật cho nhau.
@@ -35,7 +35,7 @@ const sameDay = (ts, key) => {
 const slotHour = (slot) => parseInt(slot, 10) || 0;
 const callPhone = (phone) => Linking.openURL(`tel:${(phone || '').replace(/\s/g, '')}`).catch(() => {});
 const openMap = (addr) => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr || '')}`).catch(() => {});
-// Tách bạch thu nhập của Thợ chuẩn ĐMX: 70% phí nhân công + 15% hoa hồng linh kiện/vật tư (85% vật tư nộp hoàn kho)
+// Tách bạch thu nhập của Thợ chuẩn HRMSS: 70% phí nhân công + 15% hoa hồng linh kiện/vật tư (85% vật tư nộp hoàn kho)
 const techIncomeBreakdown = (o) => {
   if (!o || o.kind === 'warranty' || o.kind === 'followup') {
     return { laborGross: 0, partsGross: 0, laborShare: 0, partCommission: 0, warehouseReturn: 0, total: 0 };
@@ -730,14 +730,14 @@ export function TechAccountScreen() {
         <Text style={[ui.meta, { marginTop: 12 }]}>Mã thợ: {me.code}</Text>
       </Sheet>
 
-      <Sheet visible={showIncome} onClose={() => setShowIncome(false)} title="Chi tiết thu nhập & chiết khấu ĐMX">
+      <Sheet visible={showIncome} onClose={() => setShowIncome(false)} title="Chi tiết thu nhập & chiết khấu HRMSS">
         <View style={tx.incomeHead}>
           <Text style={ui.meta}>Thực nhận tháng này (70% công + 15% vật tư)</Text>
           <Text style={[ui.price, { fontSize: 22 }]}>{formatVND(monthIncome)}</Text>
         </View>
         <View style={{ padding: 10, borderRadius: R.md, backgroundColor: C.primarySoft, marginTop: 10 }}>
           <Text style={{ fontSize: 12, color: C.primary, fontWeight: '700', lineHeight: 18 }}>
-            💡 Chính sách ĐMX: Thợ hưởng 70% phí dịch vụ nhân công + 15% phụ cấp vật tư/linh kiện chính hãng (85% giá trị vật tư đối soát hoàn kho).
+            💡 Chính sách HRMSS: Thợ hưởng 70% phí dịch vụ nhân công + 15% phụ cấp vật tư/linh kiện chính hãng (85% giá trị vật tư đối soát hoàn kho).
           </Text>
         </View>
         {monthDone.length === 0 ? (
@@ -1366,7 +1366,7 @@ export function TechJobScreen({ params }) {
           label="Hoặc nhập mã xác thực / SĐT khách"
           value={qrInput}
           onChangeText={setQrInput}
-          placeholder={`VD: THODMX:${o.address?.phone || '0344699180'}`}
+          placeholder={`VD: HRMSS:${o.address?.phone || '0344699180'}`}
           style={{ marginTop: 0 }}
         />
       </Sheet>
@@ -1471,7 +1471,7 @@ export function TechJobScreen({ params }) {
                 return;
               }
               if (safetyChecks.length < SAFETY_CHECKLIST_ITEMS.length) {
-                u.alert('Chưa đủ checklist an toàn', 'Vui lòng kiểm tra và xác nhận đủ 4 tiêu chuẩn an toàn kỹ thuật ĐMX trước khi bàn giao.', '⚡');
+                u.alert('Chưa đủ checklist an toàn', 'Vui lòng kiểm tra và xác nhận đủ 4 tiêu chuẩn an toàn kỹ thuật HRMSS trước khi bàn giao.', '⚡');
                 return;
               }
               const hasAfter = evidence.some((e) => e.stage === 'after');
@@ -1491,7 +1491,7 @@ export function TechJobScreen({ params }) {
         )}
       >
         <Field label="Nội dung công việc đã làm" multiline value={summary} onChangeText={setSummary} style={{ marginTop: -8 }} />
-        <Text style={[ui.fieldLabel, { marginTop: 10, marginBottom: 6 }]}>⚡ Checklist an toàn kỹ thuật & nghiệm thu chuẩn ĐMX</Text>
+        <Text style={[ui.fieldLabel, { marginTop: 10, marginBottom: 6 }]}>⚡ Checklist an toàn kỹ thuật & nghiệm thu chuẩn HRMSS</Text>
         <View style={{ padding: 10, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, marginBottom: 10, gap: 6 }}>
           {SAFETY_CHECKLIST_ITEMS.map((item) => {
             const checked = safetyChecks.includes(item);

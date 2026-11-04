@@ -159,7 +159,7 @@ function WarrantyView() {
           label="Số điện thoại hoặc mã đơn"
           value={warrantyQuery}
           onChangeText={setWarrantyQuery}
-          placeholder="VD: 0901234567 hoặc DMX123456"
+          placeholder="VD: 0901234567 hoặc HRMSS123456"
           autoCapitalize="characters"
           onSubmitEditing={() => lookup()}
           style={{ marginTop: -8 }}
@@ -211,10 +211,10 @@ export function DevicesScreen() {
     <View style={{ flex: 1 }}>
       <PageHead
         title="Thiết bị của tôi"
-        sub="Nhắc lịch bảo dưỡng & đồng bộ ĐMX"
+        sub="Nhắc lịch bảo dưỡng & đồng bộ HRMSS"
         right={(
           <View style={{ flexDirection: 'row', gap: 6 }}>
-            <Btn title="Đồng bộ ĐMX" icon="🔄" small variant="soft" onPress={a.syncDmxDevices} />
+            <Btn title="Đồng bộ HRMSS" icon="🔄" small variant="soft" onPress={a.syncHrmssDevices} />
             <Btn title="Thêm" icon="＋" small onPress={() => nav.push('device-form')} />
           </View>
         )}
@@ -226,18 +226,18 @@ export function DevicesScreen() {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 <Text style={{ fontSize: 28 }}>🏪</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '800', color: C.navy, fontSize: 14 }}>Đã mua máy tại Điện máy XANH?</Text>
+                  <Text style={{ fontWeight: '800', color: C.navy, fontSize: 14 }}>Đã có thiết bị trên hệ thống HRMSS?</Text>
                   <Text style={{ color: C.ink2, fontSize: 12.5, marginTop: 2, lineHeight: 18 }}>
                     Đồng bộ tự động danh sách Máy lạnh, Máy giặt, Tủ lạnh theo số điện thoại {s.user.phone || d.address?.phone || 'của bạn'} kèm số Serial & hạn bảo hành hãng.
                   </Text>
                 </View>
               </View>
-              <Btn title="🔄 Đồng bộ thiết bị đã mua tại ĐMX" small style={{ marginTop: 12 }} onPress={a.syncDmxDevices} />
+              <Btn title="🔄 Đồng bộ thiết bị từ HRMSS" small style={{ marginTop: 12 }} onPress={a.syncHrmssDevices} />
             </Card>
             <EmptyState
               icon="📺"
               title="Chưa có thiết bị nào"
-              body="Đồng bộ thiết bị mua tại Điện máy XANH hoặc tự thêm thiết bị trong nhà để được nhắc lịch bảo dưỡng định kỳ."
+              body="Đồng bộ thiết bị từ hệ thống HRMSS hoặc tự thêm thiết bị trong nhà để được nhắc lịch bảo dưỡng định kỳ."
               action="Thêm thiết bị thủ công"
               onAction={() => nav.push('device-form')}
             />
@@ -271,9 +271,9 @@ export function DevicesScreen() {
                     <Badge text={stt.short} fg={lv.fg} bg={lv.bg} />
                     <IconBtn icon="⋯" size={32} onPress={() => more(dev)} label="Tuỳ chọn" />
                   </View>
-                  {dev.dmxPurchased ? (
+                  {dev.hrmssPurchased ? (
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-                      <Badge text={`✓ Mua tại ĐMX · ${dev.dmxInvoice || 'Chính hãng'}`} fg={C.primary} bg={C.primarySoft} />
+                      <Badge text={`✓ Thiết bị HRMSS · ${dev.hrmssInvoice || 'Chính hãng'}`} fg={C.primary} bg={C.primarySoft} />
                       {dev.serial ? <Badge text={`SN: ${dev.serial}`} fg={C.ink2} bg="#F1F5F9" /> : null}
                       {dev.warrantyUntil ? <Badge text={`BH hãng đến ${fmtDate(dev.warrantyUntil)}`} fg={C.green} bg={C.greenSoft} /> : null}
                     </View>
@@ -327,7 +327,7 @@ export function ActivityScreen() {
           <EmptyState
             icon={actFilter === 'active' ? '🗓️' : actFilter === 'done' ? '✅' : '🗂️'}
             title={actFilter === 'active' ? 'Không có đơn đang xử lý' : actFilter === 'done' ? 'Chưa có đơn hoàn thành' : 'Không có đơn bị huỷ'}
-            body="Đặt dịch vụ để thợ ĐMX đến tận nhà. Đơn của bạn sẽ hiện tại đây."
+            body="Đặt dịch vụ để thợ HRMSS đến tận nhà. Đơn của bạn sẽ hiện tại đây."
             action="Đặt dịch vụ ngay"
             onAction={() => nav.services()}
           />

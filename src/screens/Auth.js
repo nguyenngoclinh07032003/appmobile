@@ -116,8 +116,8 @@ export default function AuthScreen() {
           <View style={st.brandRow}>
             <View style={st.brandMark}><Text style={{ fontSize: 18 }}>⚡</Text></View>
             <View>
-              <Text style={st.brand}><Text style={{ color: C.gold }}>Thợ</Text> Điện máy XANH</Text>
-              <Text style={{ color: C.gold, fontSize: 10.5, fontWeight: '800', letterSpacing: 0.6 }}>DỊCH VỤ KỸ THUẬT TẬN NHÀ CHÍNH HÃNG MWG</Text>
+              <Text style={st.brand}><Text style={{ color: C.gold }}>Thợ</Text> HRMSS</Text>
+              <Text style={{ color: C.gold, fontSize: 10.5, fontWeight: '800', letterSpacing: 0.6 }}>HỆ THỐNG DỊCH VỤ SỬA CHỮA & BẢO TRÌ TẠI NHÀ HRMSS</Text>
             </View>
           </View>
           <Text style={st.heroTitle}>

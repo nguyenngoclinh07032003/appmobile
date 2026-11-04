@@ -32,7 +32,7 @@ export default function HomeScreen() {
           <View style={{ flex: 1 }}>
             <Text style={st.hello}>{firstName ? `Xin chào, ${firstName} 👋` : 'Xin chào 👋'}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
-              <Text style={st.brand}><Text style={{ color: C.gold }}>Thợ</Text> Điện máy XANH</Text>
+              <Text style={st.brand}><Text style={{ color: C.gold }}>Thợ</Text> HRMSS</Text>
               <View style={{ backgroundColor: C.gold, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}>
                 <Text style={{ color: C.navy, fontSize: 10, fontWeight: '900' }}>CHÍNH HÃNG</Text>
               </View>
@@ -132,9 +132,9 @@ export default function HomeScreen() {
           </View>
           {s.devices.length === 0 ? (
             <View>
-              <Text style={st.body}>Đồng bộ thiết bị đã mua tại Điện máy XANH theo SĐT hoặc thêm thiết bị trong nhà để được tự động nhắc lịch bảo dưỡng định kỳ.</Text>
+              <Text style={st.body}>Đồng bộ thiết bị từ hệ thống HRMSS theo SĐT hoặc thêm thiết bị trong nhà để được tự động nhắc lịch bảo dưỡng định kỳ.</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                <Btn title="🔄 Đồng bộ thiết bị ĐMX" small onPress={a.syncDmxDevices} />
+                <Btn title="🔄 Đồng bộ thiết bị HRMSS" small onPress={a.syncHrmssDevices} />
                 <Btn title="Thêm thủ công" icon="＋" variant="soft" small onPress={() => nav.push('device-form')} />
               </View>
             </View>
@@ -184,7 +184,7 @@ export default function HomeScreen() {
 
       <View style={{ paddingHorizontal: 16 }}>
         {/* ---------------- Cam kết ---------------- */}
-        <SectionTitle title="Thợ ĐMX cam kết" />
+        <SectionTitle title="Thợ HRMSS cam kết" />
         <View style={st.commitGrid}>
           {COMMITMENTS.map((c, i) => (
             <Tap key={c.title} style={st.commit} onPress={() => setCommit(c)}>

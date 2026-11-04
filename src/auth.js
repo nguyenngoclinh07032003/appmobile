@@ -4,11 +4,11 @@
 
 import { TECH_ME } from './data';
 
-const ACCOUNTS_KEY = 'tho-dmx-accounts-v1';
-const SESSION_KEY = 'tho-dmx-session-v1';
+const ACCOUNTS_KEY = 'tho-hrmss-accounts-v1';
+const SESSION_KEY = 'tho-hrmss-session-v1';
 
 const encode = (pw) => {
-  try { return btoa(unescape(encodeURIComponent(`dmx:${pw}`))); } catch (e) { return `dmx:${pw}`; }
+  try { return btoa(unescape(encodeURIComponent(`hrmss:${pw}`))); } catch (e) { return `hrmss:${pw}`; }
 };
 const matchPw = (account, pw) => account.password === encode(pw);
 
@@ -36,7 +36,7 @@ const STARTER_ACCOUNTS = [
     role: 'customer',
     name: 'Nguyễn Minh Anh',
     phone: '0901234567',
-    email: 'khach@thodmx.vn',
+    email: 'khach@hrmss.vn',
     password: encode('123456'),
     createdAt: Date.now() - 86400000 * 30,
   },
@@ -45,7 +45,7 @@ const STARTER_ACCOUNTS = [
     role: 'tech',
     name: TECH_ME.name,
     phone: TECH_ME.phone,
-    email: 'tho@thodmx.vn',
+    email: 'tho@hrmss.vn',
     password: encode('123456'),
     techCode: TECH_ME.code,
     createdAt: Date.now() - 86400000 * 90,
@@ -117,7 +117,7 @@ export function registerAccount({ role, name, phone, email, password }) {
     email: e,
     password: encode(pw),
     createdAt: Date.now(),
-    ...(r === 'tech' ? { techCode: `TDMX${String(Math.floor(1000 + Math.random() * 9000))}` } : {}),
+    ...(r === 'tech' ? { techCode: `HRMSS${String(Math.floor(1000 + Math.random() * 9000))}` } : {}),
   };
   saveAccounts([...accounts, account]);
   setSession(account.id);

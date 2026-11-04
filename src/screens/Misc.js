@@ -273,7 +273,7 @@ export function OrderScreen({ params }) {
               <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(orderTotal(o))}</Text>
             </View>
             <Tap onPress={() => setShowMatPrice(true)} style={{ marginTop: 10 }}>
-              <Text style={ui.link}>📋 Đối chiếu bảng giá vật tư niêm yết Điện máy XANH ›</Text>
+              <Text style={ui.link}>📋 Đối chiếu bảng giá vật tư niêm yết HRMSS ›</Text>
             </Tap>
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
               <Btn title="Báo giá lại / Huỷ" variant="dangerSoft" style={{ flex: 1.1 }} onPress={() => { setRejectMode('revise'); setShowReject(true); }} />
@@ -519,7 +519,7 @@ export function OrderScreen({ params }) {
             {o.status === 'done' && !o.report?.paid && /vnpay|qr|chuyển khoản|atm|google pay|apple pay/i.test(o.payment || '') ? (
               <View style={{ marginTop: 14, alignItems: 'center', padding: 12, borderRadius: 14, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line }}>
                 <Text style={{ fontWeight: '800', color: C.ink, marginBottom: 8 }}>Mã QR thanh toán</Text>
-                <PseudoQR value={`THODMX|${o.code}|${orderTotal(o)}`} size={160} />
+                <PseudoQR value={`HRMSS|${o.code}|${orderTotal(o)}`} size={160} />
                 <Text style={[ui.meta, { marginTop: 8, textAlign: 'center', lineHeight: 18 }]}>
                   Quét mã bằng ứng dụng Ngân hàng / Ví điện tử · Nội dung: {o.code} · {formatVND(orderTotal(o))}
                 </Text>
@@ -615,11 +615,11 @@ export function OrderScreen({ params }) {
       <Sheet
         visible={showMatPrice}
         onClose={() => setShowMatPrice(false)}
-        title="Bảng giá vật tư niêm yết ĐMX"
+        title="Bảng giá vật tư niêm yết HRMSS"
         footer={<Btn title="Đã hiểu" onPress={() => setShowMatPrice(false)} />}
       >
         <Text style={[ui.meta, { marginBottom: 10, lineHeight: 18 }]}>
-          Đối chiếu đơn giá vật tư chính hãng của Điện máy XANH. Thợ không được thu cao hơn bảng giá niêm yết.
+          Đối chiếu đơn giá vật tư chính hãng của HRMSS. Thợ không được thu cao hơn bảng giá niêm yết.
         </Text>
         {refMaterials.map((m) => (
           <View key={m.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.line }}>
@@ -646,7 +646,7 @@ export function OrderScreen({ params }) {
         ) : <Btn title="Đóng phiếu" onPress={() => setShowCertificate(false)} />}
       >
         <View style={{ backgroundColor: C.navy, borderRadius: R.lg, padding: 16, alignItems: 'center', marginBottom: 14 }}>
-          <Text style={{ color: C.gold, fontWeight: '900', fontSize: 12, letterSpacing: 0.8 }}>THỢ ĐIỆN MÁY XANH · CHỨNG NHẬN ĐIỆN TỬ</Text>
+          <Text style={{ color: C.gold, fontWeight: '900', fontSize: 12, letterSpacing: 0.8 }}>THỢ HRMSS · CHỨNG NHẬN ĐIỆN TỬ</Text>
           <Text style={{ color: '#fff', fontWeight: '900', fontSize: 18, marginTop: 4 }}>
             Mã chứng nhận: {o.report?.warrantyCertificateCode || `BH-${o.code}`}
           </Text>
@@ -654,7 +654,7 @@ export function OrderScreen({ params }) {
             Đơn gốc: {o.code} · Hoàn thành: {fmtDateTime(o.doneAt || o.createdAt)}
           </Text>
           <View style={{ backgroundColor: '#fff', padding: 10, borderRadius: 16, marginTop: 12 }}>
-            <PseudoQR value={`DMX-WARRANTY|${o.code}|${o.address?.phone || ''}|${winfo.totalDays || 60}D`} size={130} />
+            <PseudoQR value={`HRMSS-WARRANTY|${o.code}|${o.address?.phone || ''}|${winfo.totalDays || 60}D`} size={130} />
           </View>
           <Badge
             text={winfo.ok ? `🛡️ Còn ${winfo.daysLeft}/${winfo.totalDays} ngày bảo hành (đến ${fmtDate(winfo.until)})` : winfo.text}
@@ -673,7 +673,7 @@ export function OrderScreen({ params }) {
               • Thiết bị: {catLabel(o.device.category)} {o.device.brand || ''} {o.device.room ? `(${o.device.room})` : ''}{o.device.serial ? ` · SN: ${o.device.serial}` : ''}
             </Text>
           ) : null}
-          <Text style={ui.meta}>• Kỹ thuật viên: {o.tech?.name || o.report?.tech || 'Thợ ĐMX'} ({o.tech?.code || o.report?.techCode || 'TDMX'})</Text>
+          <Text style={ui.meta}>• Kỹ thuật viên: {o.tech?.name || o.report?.tech || 'Thợ HRMSS'} ({o.tech?.code || o.report?.techCode || 'HRMSS'})</Text>
         </View>
 
         <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, gap: 6, marginTop: 10 }}>
@@ -1258,7 +1258,7 @@ export function HelpScreen() {
 
 export function TermsScreen() {
   const items = [
-    ['1. Phạm vi áp dụng', 'Điều khoản áp dụng cho mọi khách hàng đặt dịch vụ kỹ thuật tại nhà qua ứng dụng Thợ ĐMX.'],
+    ['1. Phạm vi áp dụng', 'Điều khoản áp dụng cho mọi khách hàng đặt dịch vụ kỹ thuật tại nhà qua ứng dụng Thợ HRMSS.'],
     ['2. Đặt lịch & huỷ lịch', 'Khách hàng có thể huỷ đơn miễn phí khi thợ chưa di chuyển. Lịch hẹn được xác nhận qua cuộc gọi của thợ.'],
     ['3. Giá & thanh toán', 'Giá hiển thị gồm nhân công. Vật tư, linh kiện phát sinh được báo giá và chỉ thực hiện khi khách đồng ý.'],
     ['4. Bảo hành', 'Dịch vụ vệ sinh, nạp gas được bảo hành 60 ngày kể từ ngày hoàn thành.'],
@@ -1292,9 +1292,9 @@ export function QRScreen() {
         <View style={mx.qrCard}>
           <Text style={{ fontSize: 18, fontWeight: '900', color: C.ink }}>{name}</Text>
           <Text style={[ui.meta, { marginBottom: 16 }]}>{phone || 'Chưa có số điện thoại'}</Text>
-          <PseudoQR value={`THODMX:${phone || name}`} size={210} />
+          <PseudoQR value={`HRMSS:${phone || name}`} size={210} />
           <View style={{ marginTop: 12, paddingHorizontal: 12, paddingVertical: 6, borderRadius: R.pill, backgroundColor: C.primarySoft }}>
-            <Text style={{ fontSize: 12, fontWeight: '800', color: C.primary }}>Mã xác thực: THODMX:{phone || name}</Text>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: C.primary }}>Mã xác thực: HRMSS:{phone || name}</Text>
           </View>
           <Text style={[ui.meta, { textAlign: 'center', marginTop: 12, lineHeight: 18 }]}>Đưa mã này cho thợ quét khi đến nhà để xác nhận đơn và tích điểm.</Text>
         </View>

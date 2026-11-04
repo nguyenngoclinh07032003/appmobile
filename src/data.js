@@ -1,4 +1,4 @@
-// Dữ liệu lấy theo video: giá, giảm giá, lượt bán, đánh giá hiển thị trên app Thợ ĐMX
+// Dữ liệu dịch vụ, giá niêm yết, lượt bán và đánh giá trên hệ thống Thợ HRMSS
 export const CATEGORIES = [
   { id: 'may-lanh', label: 'Máy lạnh', icon: '❄️' },
   { id: 'may-giat', label: 'Máy giặt/sấy', icon: '🧺' },
@@ -51,17 +51,17 @@ export const COMMITMENTS = [
   {
     title: 'Tay nghề giỏi',
     sub: '100% Thợ được tuyển chọn',
-    detail: 'Thợ Điện Máy XANH cam kết thợ có tay nghề chuyên môn cao mang đến cho Quý Khách dịch vụ chất lượng tốt và thẩm mỹ. Nếu Quý Khách không hài lòng về tay nghề của kỹ thuật viên Điện Máy XANH, chúng tôi sẽ cử quản lý kỹ thuật viên làm lại hoàn toàn miễn phí cho Quý Khách như một lời xin lỗi chân thành và sẽ đưa nhân viên vào quy trình kèm cặp/huấn luyện nâng cao tay nghề.',
+    detail: 'Thợ HRMSS cam kết thợ có tay nghề chuyên môn cao mang đến cho Quý Khách dịch vụ chất lượng tốt và thẩm mỹ. Nếu Quý Khách không hài lòng về tay nghề của kỹ thuật viên HRMSS, chúng tôi sẽ cử quản lý kỹ thuật viên làm lại hoàn toàn miễn phí cho Quý Khách như một lời xin lỗi chân thành và sẽ đưa nhân viên vào quy trình kèm cặp/huấn luyện nâng cao tay nghề.',
   },
   {
     title: 'Trung thực',
     sub: 'Báo giá rõ ràng trên app trước khi thực hiện',
-    detail: 'Thợ Điện Máy XANH cam kết thợ trung thực và nghiêm túc. Nếu Điện Máy XANH phát hiện bất kỳ gian lận nào của kỹ thuật viên chung, Thợ Điện Máy XANH sẽ bồi thường 2 lần giá trị gian lận của Quý Khách.',
+    detail: 'Thợ HRMSS cam kết thợ trung thực và nghiêm túc. Nếu HRMSS phát hiện bất kỳ gian lận nào của kỹ thuật viên chung, Thợ HRMSS sẽ bồi thường 2 lần giá trị gian lận của Quý Khách.',
   },
   {
     title: 'Thân thiện & Vui vẻ',
     sub: 'Không tư vấn thêm dịch vụ hay linh kiện không cần thiết',
-    detail: 'Được phục vụ Quý Khách là một vinh dự lớn với Thợ Điện Máy XANH và Thợ Điện Máy XANH luôn trân trọng. Thợ Điện Máy XANH cam kết mang đến cho Quý Khách dịch vụ thân thiện và vui vẻ. Nhân viên chỉ nhận thanh toán đúng số tiền trên đơn hàng. Nhân viên sẽ không được xin hoặc gợi ý tiền bồi dưỡng của Quý Khách. Nếu Quý Khách cảm thấy không hài lòng với thái độ, hành vi xin tiền bồi dưỡng của nhân viên, xin vui lòng phản ánh cho Thợ Điện Máy XANH để chúng tôi chấn chỉnh.',
+    detail: 'Được phục vụ Quý Khách là một vinh dự lớn với Thợ HRMSS và Thợ HRMSS luôn trân trọng. Thợ HRMSS cam kết mang đến cho Quý Khách dịch vụ thân thiện và vui vẻ. Nhân viên chỉ nhận thanh toán đúng số tiền trên đơn hàng. Nhân viên sẽ không được xin hoặc gợi ý tiền bồi dưỡng của Quý Khách. Nếu Quý Khách cảm thấy không hài lòng với thái độ, hành vi xin tiền bồi dưỡng của nhân viên, xin vui lòng phản ánh cho Thợ HRMSS để chúng tôi chấn chỉnh.',
   },
 ];
 
@@ -160,7 +160,7 @@ export const videoFor = (item) => {
   if (kind === 'install') {
     return {
       title: `Quy trình khảo sát & lắp đặt ${cat}`,
-      sub: 'Tiêu chuẩn kỹ thuật Thợ Điện Máy XANH · 4 bước an toàn',
+      sub: 'Tiêu chuẩn kỹ thuật Thợ HRMSS · 4 bước an toàn',
       duration: '45 – 90 phút',
       tools: ['Máy khoan chuyên dụng', 'Thước thủy cân bằng', 'Đồng hồ đo áp suất & dòng điện', 'Bộ dụng cụ bảo hộ & bạt che bụi'],
     };
@@ -170,7 +170,7 @@ export const videoFor = (item) => {
       title: `Quy trình kiểm tra & chẩn đoán ${cat}`,
       sub: 'Báo giá minh bạch trước khi sửa · Linh kiện chính hãng',
       duration: '30 – 60 phút',
-      tools: ['Đồng hồ vạn năng đo điện', 'Thiết bị đo nhiệt độ & áp suất', 'Bộ dụng cụ tháo lắp chuyên dụng', 'Tem bảo hành điện tử ĐMX'],
+      tools: ['Đồng hồ vạn năng đo điện', 'Thiết bị đo nhiệt độ & áp suất', 'Bộ dụng cụ tháo lắp chuyên dụng', 'Tem bảo hành điện tử HRMSS'],
     };
   }
   if (kind === 'gas') {
@@ -207,8 +207,7 @@ export const noteFor = (items) => {
   return '';
 };
 
-// Các tab còn lại trong video chỉ quay lướt phần tiêu đề, không quay chi tiết giá.
-// Bảng giá dịch vụ lắp đặt, sửa chữa & bảo dưỡng định kỳ chính hãng Thợ Điện máy XANH.
+// Bảng giá dịch vụ lắp đặt, sửa chữa & bảo dưỡng định kỳ chính hãng Thợ HRMSS.
 export const INSTALL_SERVICES = [
   { id: 'ld-ml', category: 'may-lanh', name: 'Lắp đặt máy lạnh treo tường 1 - 1.5 HP', price: 350000, rating: 0, sold: '', icon: '❄️', warranty: 'BH 60 ngày' },
   { id: 'ld-ml-2', category: 'may-lanh', name: 'Lắp đặt máy lạnh treo tường 2 - 2.5 HP', price: 450000, rating: 0, sold: '', icon: '❄️', warranty: 'BH 60 ngày' },
@@ -231,7 +230,7 @@ export const AREAS = [
 export const TIME_SLOTS = ['08h00 - 10h00', '10h00 - 12h00', '12h00 - 14h00', '14h00 - 16h00', '16h00 - 18h00', '18h00 - 20h00'];
 export const VOUCHERS = [
   { code: 'THO20', label: 'Giảm 20.000đ cho đơn từ 150.000đ', discount: 20000, min: 150000 },
-  { code: 'DMX10', label: 'Giảm 10% tối đa 50.000đ', percent: 10, max: 50000 },
+  { code: 'HRMSS10', label: 'Giảm 10% tối đa 50.000đ', percent: 10, max: 50000 },
 ];
 export const imgFor = (id) => `https://picsum.photos/seed/${id}/400/300`;
 
@@ -306,12 +305,12 @@ export const TIERS = [
     color: '#64748B',
     bg: '#F1F5F9',
     summary: 'Quyền lợi tiêu chuẩn bảo vệ khách hàng ngay từ đơn đầu tiên',
-    condition: 'Đăng ký tài khoản miễn phí trên ứng dụng Thợ ĐMX (từ 0 điểm tích luỹ).',
+    condition: 'Đăng ký tài khoản miễn phí trên ứng dụng Thợ HRMSS (từ 0 điểm tích luỹ).',
     pointRule: '10.000đ thanh toán = 1 điểm · Đánh giá đơn = +20 điểm',
     warrantyDays: 60,
     partDiscountPercent: 0,
     benefits: [
-      '🎁 Tặng ngay mã giảm 10% (THODMX10) cho đơn đặt lịch đầu tiên',
+      '🎁 Tặng ngay mã giảm 10% (HRMSS10) cho đơn đặt lịch đầu tiên',
       '💰 Tích luỹ 1 điểm cho mỗi 10.000đ thanh toán dịch vụ hoàn tất',
       '⭐ Thưởng thêm +20 điểm mỗi khi gửi đánh giá chất lượng thợ sau nghiệm thu',
       '🛡️ Bảo hành tiêu chuẩn 60 ngày cho dịch vụ vệ sinh, nạp gas & sửa chữa',
@@ -354,7 +353,7 @@ export const TIERS = [
     color: '#D69E00',
     bg: '#FEF3C7',
     summary: 'Đặc quyền giảm giá linh kiện chính hãng & bảo hành mở rộng 90 ngày',
-    condition: 'Đạt từ 500 điểm tích luỹ trọn đời trên hệ thống Thợ ĐMX.',
+    condition: 'Đạt từ 500 điểm tích luỹ trọn đời trên hệ thống Thợ HRMSS.',
     pointRule: 'Ưu tiên ghép lịch giờ cao điểm · Bảo hành 90 ngày',
     warrantyDays: 90,
     partDiscountPercent: 5,
@@ -378,7 +377,7 @@ export const TIERS = [
     color: '#2563EB',
     bg: '#DBEAFE',
     summary: 'Chăm sóc đặc quyền VIP, bảo hành 120 ngày & Thợ Trưởng phụ trách',
-    condition: 'Đạt từ 1.000 điểm tích luỹ trọn đời — Hạng thành viên danh giá nhất của Thợ ĐMX.',
+    condition: 'Đạt từ 1.000 điểm tích luỹ trọn đời — Hạng thành viên danh giá nhất của Thợ HRMSS.',
     pointRule: 'Đặc quyền trọn đời · Thợ Trưởng ★ 4.9+ · Bảo hành 120 ngày',
     warrantyDays: 120,
     partDiscountPercent: 10,
@@ -428,9 +427,9 @@ export const techStepIndexOf = (status) => {
 };
 
 export const TECHS = [
-  { name: 'Nguyễn Văn Hùng', code: 'TDMX1024', rating: 4.9, jobs: 1250 },
-  { name: 'Trần Minh Đức', code: 'TDMX2071', rating: 5.0, jobs: 860 },
-  { name: 'Lê Quốc Bảo', code: 'TDMX3318', rating: 4.8, jobs: 1520 },
+  { name: 'Nguyễn Văn Hùng', code: 'HRMSS1024', rating: 4.9, jobs: 1250 },
+  { name: 'Trần Minh Đức', code: 'HRMSS2071', rating: 5.0, jobs: 860 },
+  { name: 'Lê Quốc Bảo', code: 'HRMSS3318', rating: 4.8, jobs: 1520 },
 ];
 
 export const PAYMENTS = ['Thanh toán khi nhận hàng', 'Chuyển khoản ngân hàng', 'Qua thẻ ATM (có Internet Banking)', 'VNPay QR', 'Qua thẻ quốc tế', 'Google Pay', 'Apple Pay'];
@@ -459,12 +458,12 @@ export const voucherDiscount = (voucher, subtotal) => {
 };
 
 // ---------------------------------------------------------------------------
-// PHÍA THỢ (Technician) — Hệ thống điều phối kỹ thuật viên Thợ Điện máy XANH:
+// PHÍA THỢ (Technician) — Hệ thống điều phối kỹ thuật viên Thợ HRMSS:
 //   Thợ → Hệ thống: chẩn đoán, tiến độ sửa chữa, vật tư sử dụng, ảnh minh chứng, biên bản hoàn thành
 //   Hệ thống → Thợ: việc được giao, địa chỉ & liên hệ khách, lịch làm việc, báo giá, thông báo
 // ---------------------------------------------------------------------------
 export const TECH_ME = {
-  name: 'Nguyễn Văn Hùng', code: 'TDMX1024', rating: 4.9, jobs: 0, phone: '0987654321',
+  name: 'Nguyễn Văn Hùng', code: 'HRMSS1024', rating: 4.9, jobs: 0, phone: '0987654321',
   area: 'Cầu Giấy, Nam Từ Liêm, Hoài Đức', skills: ['Máy lạnh', 'Máy giặt', 'Tủ lạnh', 'Nạp gas'],
 };
 
@@ -572,7 +571,7 @@ export const matchJobForTech = (order, techProfile) => {
   };
 };
 
-// Điều kiện vị trí thi công chuẩn Điện máy XANH (để thợ chuẩn bị thang, giấy đăng ký BQL, đồ bảo hộ)
+// Điều kiện vị trí thi công chuẩn HRMSS (để thợ chuẩn bị thang, giấy đăng ký BQL, đồ bảo hộ)
 export const SITE_CONDITIONS = [
   { id: 'nha-pho', label: '🏠 Nhà phố / Tầng trệt', note: 'Vị trí dễ tiếp cận, tiêu chuẩn' },
   { id: 'chung-cu', label: '🏢 Chung cư / Căn hộ', note: 'Thợ cần đăng ký sảnh / BQL toà nhà' },
@@ -580,7 +579,7 @@ export const SITE_CONDITIONS = [
   { id: 'van-phong', label: '🏪 Văn phòng / Cửa hàng', note: 'Cần thi công gọn, giữ yên tĩnh' },
 ];
 
-// Checklist an toàn điện & nghiệm thu bắt buộc của Thợ ĐMX trước khi đóng đơn
+// Checklist an toàn điện & nghiệm thu bắt buộc của Thợ HRMSS trước khi đóng đơn
 export const SAFETY_CHECKLIST_ITEMS = [
   'Đã đo kiểm dòng điện & áp suất hoạt động an toàn',
   'Đã vận hành chạy thử thiết bị ổn định (≥15 phút)',
@@ -588,7 +587,7 @@ export const SAFETY_CHECKLIST_ITEMS = [
   'Đã kích hoạt bảo hành điện tử & hướng dẫn khách sử dụng',
 ];
 
-// Ưu đãi Combo nhiều máy chuẩn ĐMX: đặt từ 2 máy giảm 5% (tối đa 50k), từ 3 máy giảm 10% (tối đa 120k)
+// Ưu đãi Combo nhiều máy chuẩn HRMSS: đặt từ 2 máy giảm 5% (tối đa 50k), từ 3 máy giảm 10% (tối đa 120k)
 export const comboDiscountFor = (items = []) => {
   const totalQty = items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
   if (totalQty < 2) return { qty: totalQty, percent: 0, amount: 0, label: '' };
@@ -604,8 +603,8 @@ export const comboDiscountFor = (items = []) => {
   return { qty: totalQty, percent: 10, amount, label: `Combo ${totalQty} thiết bị (-10%)` };
 };
 
-// Danh sách thiết bị mua tại hệ thống Điện máy XANH tra cứu theo SĐT khách hàng
-export const lookupDmxPurchasedDevices = (phone = '') => {
+// Danh sách thiết bị trên hệ thống HRMSS tra cứu theo SĐT khách hàng
+export const lookupHrmssPurchasedDevices = (phone = '') => {
   const digits = String(phone || '').replace(/\D/g, '').slice(-4) || '9180';
   const now = Date.now();
   const DAY_MS = 86400000;
@@ -615,33 +614,33 @@ export const lookupDmxPurchasedDevices = (phone = '') => {
       brand: 'Daikin Inverter 1.5 HP ATKF35XVMV',
       room: 'Phòng ngủ',
       serial: `DK-${digits}-01`,
-      dmxInvoice: `HD-DMX-${digits}1`,
+      hrmssInvoice: `HD-HRMSS-${digits}1`,
       purchasedAt: now - 210 * DAY_MS,
       warrantyUntil: now + 520 * DAY_MS,
       lastService: now - 195 * DAY_MS, // đã đến kỳ bảo dưỡng 6 tháng
-      dmxPurchased: true,
+      hrmssPurchased: true,
     },
     {
       category: 'may-giat',
       brand: 'LG AI DD Inverter 10 kg FV1410S4P',
       room: 'Phòng tắm',
       serial: `LG-${digits}-02`,
-      dmxInvoice: `HD-DMX-${digits}2`,
+      hrmssInvoice: `HD-HRMSS-${digits}2`,
       purchasedAt: now - 160 * DAY_MS,
       warrantyUntil: now + 570 * DAY_MS,
       lastService: now - 155 * DAY_MS, // sắp đến kỳ bảo dưỡng
-      dmxPurchased: true,
+      hrmssPurchased: true,
     },
     {
       category: 'tu-lanh',
       brand: 'Panasonic Inverter 322L NR-BC360QKVN',
       room: 'Bếp',
       serial: `PA-${digits}-03`,
-      dmxInvoice: `HD-DMX-${digits}3`,
+      hrmssInvoice: `HD-HRMSS-${digits}3`,
       purchasedAt: now - 90 * DAY_MS,
       warrantyUntil: now + 640 * DAY_MS,
       lastService: now - 60 * DAY_MS,
-      dmxPurchased: true,
+      hrmssPurchased: true,
     },
   ];
 };

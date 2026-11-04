@@ -1,4 +1,4 @@
-/** Dịch vụ định vị GPS cho kỹ thuật viên Thợ Điện máy XANH */
+/** Dịch vụ định vị GPS cho kỹ thuật viên Thợ HRMSS */
 
 const DEFAULT_COORDS = { lat: 21.028511, lng: 105.804817, label: 'Đã xác thực toạ độ GPS (±18m)' };
 
