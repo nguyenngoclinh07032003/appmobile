@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { C, R, shadow, toneOf } from '../theme';
+import { C, R, shadow, toneOf, grad } from '../theme';
 import {
   CATEGORIES, SERVICES, COMMITMENTS, SERVICE_TYPES, TIPS, PARTNERS, CAT_SHORT, HOTLINE, catLabel, catIcon, getService,
 } from '../data';
@@ -65,18 +65,6 @@ export default function HomeScreen() {
       </View>
 
       <View style={{ paddingHorizontal: 16 }}>
-        {s.tips?.customerHome !== false ? (
-          <Card style={{ marginTop: 4, marginBottom: 8, backgroundColor: C.primarySoft, borderColor: '#D6E4FF' }}>
-            <Text style={{ fontWeight: '800', color: C.ink }}>Bắt đầu với Thợ ĐMX</Text>
-            <Text style={[ui.meta, { marginTop: 6, lineHeight: 18, color: C.ink2 }]}>
-              1) Thêm địa chỉ · 2) Chọn dịch vụ & đặt lịch (có thể đính kèm ảnh) · 3) Theo dõi ở Hoạt động · 4) Duyệt báo giá nếu có phát sinh · 5) Đánh giá sau khi xong.
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-              <Btn title="Thêm địa chỉ" small variant="soft" style={{ flex: 1 }} onPress={() => nav.push(d.address ? 'addresses' : 'address-form')} />
-              <Btn title="Đã hiểu" small style={{ flex: 1 }} onPress={() => a.dismissTip('customerHome')} />
-            </View>
-          </Card>
-        ) : null}
         {/* ---------------- Đơn đang xử lý ---------------- */}
         {active ? (
           <Card style={st.activeCard} onPress={() => nav.push('order', { code: active.code })}>
@@ -153,7 +141,7 @@ export default function HomeScreen() {
                   <Text style={st.dueName} numberOfLines={1}>{catLabel(dev.category)}{dev.brand ? ` · ${dev.brand}` : ''}</Text>
                   <Text style={[ui.meta, { color: stt.level === 'overdue' ? C.red : C.orange }]}>{stt.label}</Text>
                 </View>
-                <Btn title="Đặt lịch" small onPress={() => nav.services('bao-duong', dev.category)} />
+                <Btn title="Đặt lịch" small onPress={() => nav.services('bao-duong', dev.category, dev.id)} />
               </View>
             );
           })}
@@ -164,12 +152,12 @@ export default function HomeScreen() {
       </View>
       <HScroll contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
         {[
-          { bg: C.navy, fg: '#fff', tag: 'MÃ THO20', title: 'Giảm 20.000đ', body: 'Cho đơn từ 150.000đ', icon: '🎟️', onPress: () => nav.push('rewards') },
-          { bg: C.primary, fg: '#fff', tag: 'BÁN CHẠY', title: 'Vệ sinh máy lạnh 180K', body: 'Giảm 10% · Bảo hành 60 ngày', icon: '❄️', onPress: () => nav.push('detail', { id: 'vs-ml-1' }) },
-          { bg: C.gold, fg: C.navy, tag: 'TIẾT KIỆM', title: 'Bảo dưỡng trọn đời', body: 'Một lần đăng ký, thợ nhắc định kỳ', icon: '♾️', onPress: () => nav.services('tron-doi') },
+          { bg: C.navy, gradStyle: grad.navyCard, fg: '#fff', tag: 'MÃ THO20', title: 'Giảm 20.000đ', body: 'Cho đơn từ 150.000đ', icon: '🎟️', onPress: () => nav.push('rewards') },
+          { bg: C.primary, gradStyle: grad.primaryBtn, fg: '#fff', tag: 'BÁN CHẠY', title: 'Vệ sinh máy lạnh 180K', body: 'Giảm 10% · Bảo hành 60 ngày', icon: '❄️', onPress: () => nav.push('detail', { id: 'vs-ml-1' }) },
+          { bg: C.gold, gradStyle: grad.goldBtn, fg: C.navy, tag: 'TIẾT KIỆM', title: 'Bảo dưỡng trọn đời', body: 'Một lần đăng ký, thợ nhắc định kỳ', icon: '♾️', onPress: () => nav.services('tron-doi') },
         ].map((b) => (
-          <Tap key={b.tag} style={[st.promo, { backgroundColor: b.bg }]} onPress={b.onPress}>
-            <View style={[st.blob, { width: 130, height: 130, right: -30, top: -40, backgroundColor: 'rgba(255,255,255,0.12)' }]} />
+          <Tap key={b.tag} style={[st.promo, { backgroundColor: b.bg }, b.gradStyle]} onPress={b.onPress}>
+            <View style={[st.blob, { width: 130, height: 130, right: -30, top: -40, backgroundColor: 'rgba(255,255,255,0.14)' }]} />
             <Text style={st.promoIcon}>{b.icon}</Text>
             <Text style={[st.promoTag, { color: b.fg, borderColor: b.fg }]}>{b.tag}</Text>
             <Text style={[st.promoTitle, { color: b.fg }]}>{b.title}</Text>
@@ -254,7 +242,7 @@ export default function HomeScreen() {
 }
 
 export const st = StyleSheet.create({
-  header: { backgroundColor: C.navy, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 46, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: 'hidden' },
+  header: { backgroundColor: C.navy, ...grad.navyHero, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 46, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: 'hidden' },
   blob: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.06)' },
   headRow: { flexDirection: 'row', alignItems: 'center' },
   hello: { color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '500' },
@@ -299,7 +287,7 @@ export const st = StyleSheet.create({
   partners: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   partner: { backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: C.line },
   partnerText: { fontSize: 12, fontWeight: '800', color: C.ink2 },
-  hotline: { marginTop: 24, backgroundColor: C.navy, borderRadius: 20, padding: 16, flexDirection: 'row', alignItems: 'center' },
+  hotline: { marginTop: 24, backgroundColor: C.navy, ...grad.navyCard, borderRadius: 20, padding: 16, flexDirection: 'row', alignItems: 'center', ...shadow.md },
   sheetSub: { fontSize: 14, color: C.primary, fontWeight: '700', marginBottom: 10 },
   sheetBody: { fontSize: 15, color: C.ink2, lineHeight: 23 },
 });

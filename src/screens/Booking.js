@@ -30,12 +30,14 @@ export function DetailScreen({ params }) {
   const { s, a, d, nav } = useApp();
   const service = getService(params.id);
   const [more, setMore] = useState(false);
+  const [showVideo, setShowVideo] = useState(false);
   if (!service) return <View style={{ flex: 1 }}><TopBar title="Không tìm thấy" /></View>;
   const discount = discountOf(service);
   const fav = s.favorites.includes(service.id);
   const reviews = [...(s.userReviews[service.id] || []), ...(REVIEWS_BY_ID[service.id] || []).map((r) => ({ ...r, stars: 5 }))];
   const related = ALL_SERVICES.filter((x) => x.category === service.category && x.id !== service.id).slice(0, 6);
   const video = videoFor(service);
+  const steps = stepsFor(service);
   const inCart = s.cart.find((c) => c.id === service.id)?.qty || 0;
 
   return (
@@ -111,15 +113,16 @@ export function DetailScreen({ params }) {
           <Card style={{ marginTop: 12 }}>
             <Text style={bx.h}>Quy trình thực hiện</Text>
             {video ? (
-              <View style={bx.video}>
+              <Tap style={bx.video} onPress={() => setShowVideo(true)}>
                 <View style={bx.play}><Text style={{ color: C.navy, fontSize: 18, marginLeft: 3 }}>▶</Text></View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>{video.title}</Text>
-                  <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 }}>{video.sub}</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2 }}>{video.sub}</Text>
                 </View>
-              </View>
+                <Badge text="Xem ›" fg={C.navy} bg={C.gold} />
+              </Tap>
             ) : null}
-            {stepsFor(service).map((st, i, arr) => (
+            {steps.map((st, i, arr) => (
               <View key={st.title} style={{ flexDirection: 'row' }}>
                 <View style={{ width: 30, alignItems: 'center' }}>
                   <View style={bx.dot}><Text style={bx.dotText}>{i + 1}</Text></View>
@@ -172,6 +175,48 @@ export function DetailScreen({ params }) {
         </Tap>
         <Btn title={`Đặt ngay · ${formatVND(service.price)}`} style={{ flex: 1 }} onPress={() => nav.push('checkout', { items: [{ id: service.id, qty: 1 }] })} />
       </View>
+
+      <Sheet
+        visible={showVideo}
+        onClose={() => setShowVideo(false)}
+        title={video?.title || 'Quy trình thực hiện'}
+        footer={(
+          <Btn
+            title={`Đặt dịch vụ này · ${formatVND(service.price)}`}
+            onPress={() => { setShowVideo(false); nav.push('checkout', { items: [{ id: service.id, qty: 1 }] }); }}
+          />
+        )}
+      >
+        <View style={{ backgroundColor: C.navy, borderRadius: 16, padding: 16, marginBottom: 14 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View style={bx.play}><Text style={{ color: C.navy, fontSize: 18, marginLeft: 3 }}>▶</Text></View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: C.gold, fontWeight: '800', fontSize: 11 }}>TIÊU CHUẨN KỸ THUẬT THỢ ĐMX</Text>
+              <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15, marginTop: 2 }}>{service.name}</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2 }}>⏱ Thời gian dự kiến: {video?.duration || '45 – 60 phút'}</Text>
+            </View>
+          </View>
+        </View>
+        {video?.tools?.length ? (
+          <View style={{ marginBottom: 14 }}>
+            <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14, marginBottom: 8 }}>🧰 Dụng cụ & thiết bị chuyên dụng</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {video.tools.map((t) => (
+                <Badge key={t} text={`✓ ${t}`} fg={C.primary} bg={C.primarySoft} />
+              ))}
+            </View>
+          </View>
+        ) : null}
+        <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14, marginBottom: 10 }}>📋 Các bước thực hiện chuẩn tại nhà ({steps.length} bước)</Text>
+        {steps.map((st, i) => (
+          <View key={st.title} style={{ backgroundColor: '#F8FAFC', borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#E2E8F0' }}>
+            <Text style={{ fontWeight: '800', color: C.navy, fontSize: 13.5 }}>Bước {i + 1}: {st.title.replace(/^Bước\s+\d+:\s*/, '')}</Text>
+            {st.items.map((it) => (
+              <Text key={it} style={{ color: C.ink2, fontSize: 13, marginTop: 4, lineHeight: 18 }}>• {it}</Text>
+            ))}
+          </View>
+        ))}
+      </Sheet>
     </View>
   );
 }
@@ -240,7 +285,9 @@ export function CartScreen() {
 
 // =========================================================== THANH TOÁN
 export function CheckoutScreen({ params }) {
-  const { s, a, d, nav, ui: u, pendingVoucher, setPendingVoucher } = useApp();
+  const {
+    s, a, d, nav, ui: u, pendingVoucher, setPendingVoucher, pendingDeviceId, setPendingDeviceId,
+  } = useApp();
   const [items, setItems] = useState(params.items || []);
   const [note, setNote] = useState(() => noteFor((params.items || []).map((it) => ({ service: getService(it.id) }))));
   const [attachments, setAttachments] = useState([]);
@@ -251,10 +298,26 @@ export function CheckoutScreen({ params }) {
   const [voucherInput, setVoucherInput] = useState('');
   const [voucher, setVoucher] = useState(null);
   const [dayIdx, setDayIdx] = useState(1);
-  const [slot, setSlot] = useState('12h00 - 14h00');
+  const [slot, setSlot] = useState('14h00 - 16h00');
   const days = nextDays(7);
   const nowH = new Date().getHours();
   const slotPassed = (sl) => dayIdx === 0 && parseInt(sl, 10) <= nowH + 1;
+
+  const lines = items.map((it) => ({ ...it, svc: getService(it.id) })).filter((x) => x.svc);
+  const serviceCats = [...new Set(lines.map((x) => x.svc.category).filter(Boolean))];
+  const matchingDevices = s.devices.filter((dv) => serviceCats.includes(dv.category));
+  const candidateDevices = matchingDevices.length ? matchingDevices : s.devices;
+  const [selectedDeviceId, setSelectedDeviceId] = useState(() => (
+    params.deviceId || pendingDeviceId || matchingDevices[0]?.id || null
+  ));
+  const selectedDevice = s.devices.find((dv) => dv.id === selectedDeviceId) || null;
+
+  React.useEffect(() => {
+    if (pendingDeviceId) {
+      setSelectedDeviceId(pendingDeviceId);
+      setPendingDeviceId(null);
+    }
+  }, [pendingDeviceId, setPendingDeviceId]);
 
   const addAttachment = async () => {
     if (attachments.length >= 5) { u.alert('Giới hạn ảnh', 'Bạn chỉ đính kèm tối đa 5 ảnh cho yêu cầu.', '📷'); return; }
@@ -264,7 +327,6 @@ export function CheckoutScreen({ params }) {
     setAttachments((p) => [...p, { id: `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, uri, at: Date.now() }]);
   };
 
-  const lines = items.map((it) => ({ ...it, svc: getService(it.id) })).filter((x) => x.svc);
   const goods = lines.reduce((sum, x) => sum + (x.svc.oldPrice || x.svc.price) * x.qty, 0);
   const productDiscount = lines.reduce((sum, x) => sum + ((x.svc.oldPrice || x.svc.price) - x.svc.price) * x.qty, 0);
   const subtotal = goods - productDiscount;
@@ -306,6 +368,12 @@ export function CheckoutScreen({ params }) {
     if (slotPassed(slot)) { u.alert('Khung giờ đã qua', 'Vui lòng chọn khung giờ khác hoặc ngày khác.', '⏰'); return; }
     const code = a.placeOrder({
       items: lines.map(({ id, qty }) => ({ id, qty })),
+      device: selectedDevice ? {
+        id: selectedDevice.id,
+        category: selectedDevice.category,
+        brand: selectedDevice.brand || '',
+        room: selectedDevice.room || '',
+      } : null,
       goods, productDiscount, voucher: voucher ? { ...voucher } : null, voucherDiscount: vDiscount, total,
       dateLabel: `${days[dayIdx].label} (${days[dayIdx].ddmm})`, dateKey: days[dayIdx].key, slot, payment, note, workerCode: workerCode.trim(),
       attachments, fromCart: !!params.fromCart,
@@ -389,7 +457,60 @@ export function CheckoutScreen({ params }) {
         ))}
 
         <Field label="Mô tả tình trạng thiết bị" multiline value={note} onChangeText={setNote} placeholder="VD: Máy lạnh chảy nước, kém lạnh…" />
-        <Text style={[bx.sec, { marginTop: 4 }]}>📷  Ảnh đính kèm (tùy chọn)</Text>
+
+        {/* Thiết bị áp dụng (liên kết với Thiết bị của tôi) */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 18, marginBottom: 8 }}>
+          <Text style={[bx.sec, { marginTop: 0, marginBottom: 0 }]}>📺  Thiết bị tại nhà bạn</Text>
+          <Tap onPress={() => nav.push('device-form', { category: serviceCats[0] || 'may-lanh' })}>
+            <Text style={ui.link}>＋ Thêm thiết bị</Text>
+          </Tap>
+        </View>
+        {candidateDevices.length === 0 ? (
+          <Card style={{ backgroundColor: '#F8FAFC', borderColor: C.line }}>
+            <Text style={ui.meta}>Chưa có thiết bị nào được lưu. Thêm thiết bị để thợ biết rõ hãng/phòng và tự động nhắc lịch bảo dưỡng sau khi hoàn tất.</Text>
+          </Card>
+        ) : (
+          <HScroll contentContainerStyle={{ gap: 8, paddingBottom: 4 }}>
+            {candidateDevices.map((dv) => {
+              const on = selectedDeviceId === dv.id;
+              return (
+                <Tap
+                  key={dv.id}
+                  onPress={() => setSelectedDeviceId(on ? null : dv.id)}
+                  style={[
+                    {
+                      flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10,
+                      borderRadius: 14, borderWidth: 1.5, borderColor: on ? C.primary : C.line,
+                      backgroundColor: on ? C.primarySoft : '#fff',
+                    },
+                  ]}
+                >
+                  <Text style={{ fontSize: 18 }}>{catIcon(dv.category)}</Text>
+                  <View>
+                    <Text style={{ fontWeight: '800', fontSize: 13, color: on ? C.primary : C.ink }}>
+                      {catLabel(dv.category)}{dv.brand ? ` · ${dv.brand}` : ''}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: C.muted }}>
+                      {dv.room || 'Chưa ghi vị trí'}
+                    </Text>
+                  </View>
+                </Tap>
+              );
+            })}
+            <Tap
+              onPress={() => setSelectedDeviceId(null)}
+              style={{
+                justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 10,
+                borderRadius: 14, borderWidth: 1.5, borderColor: !selectedDeviceId ? C.navy : C.line,
+                backgroundColor: !selectedDeviceId ? '#EEF2F7' : '#fff',
+              }}
+            >
+              <Text style={{ fontWeight: '700', fontSize: 12.5, color: !selectedDeviceId ? C.navy : C.muted }}>Thiết bị khác</Text>
+            </Tap>
+          </HScroll>
+        )}
+
+        <Text style={[bx.sec, { marginTop: 14 }]}>📷  Ảnh đính kèm (tùy chọn)</Text>
         <Text style={[ui.meta, { marginBottom: 8 }]}>Gửi ảnh lỗi/thiết bị để thợ chuẩn bị vật tư (tối đa 5 ảnh).</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
           {attachments.map((att) => (

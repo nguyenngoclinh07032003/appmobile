@@ -154,10 +154,39 @@ export const featureFor = (item) => {
 };
 
 export const videoFor = (item) => {
-  if (serviceKind(item) === 'clean' && item?.category === 'may-lanh') {
-    return { title: 'Quy trình vệ sinh máy lạnh tại nhà', sub: 'Thợ Điện Máy XANH · Xem trên YouTube' };
+  if (!item) return null;
+  const kind = serviceKind(item);
+  const cat = catLabel(item.category).toLowerCase();
+  if (kind === 'install') {
+    return {
+      title: `Quy trình khảo sát & lắp đặt ${cat}`,
+      sub: 'Tiêu chuẩn kỹ thuật Thợ Điện Máy XANH · 4 bước an toàn',
+      duration: '45 – 90 phút',
+      tools: ['Máy khoan chuyên dụng', 'Thước thủy cân bằng', 'Đồng hồ đo áp suất & dòng điện', 'Bộ dụng cụ bảo hộ & bạt che bụi'],
+    };
   }
-  return null;
+  if (kind === 'repair') {
+    return {
+      title: `Quy trình kiểm tra & chẩn đoán ${cat}`,
+      sub: 'Báo giá minh bạch trước khi sửa · Linh kiện chính hãng',
+      duration: '30 – 60 phút',
+      tools: ['Đồng hồ vạn năng đo điện', 'Thiết bị đo nhiệt độ & áp suất', 'Bộ dụng cụ tháo lắp chuyên dụng', 'Tem bảo hành điện tử ĐMX'],
+    };
+  }
+  if (kind === 'gas') {
+    return {
+      title: 'Quy trình kiểm tra rò rỉ & nạp gas máy lạnh',
+      sub: 'Đo áp suất chuẩn hãng · Bảo hành 60 ngày',
+      duration: '30 – 45 phút',
+      tools: ['Đồng hồ đo áp suất gas đôi', 'Máy hút chân không chuyên dụng', 'Bình gas chính hãng R32/R410A/R22', 'Ampe kìm & máy đo nhiệt độ gió'],
+    };
+  }
+  return {
+    title: `Quy trình vệ sinh & bảo dưỡng ${cat} tại nhà`,
+    sub: 'Sạch sâu đúng kỹ thuật · Dọn dẹp gọn gàng · BH 60 ngày',
+    duration: durationText(item.id),
+    tools: ['Máy xịt rửa áp lực có chỉnh áp', 'Áo trùm hứng nước bẩn chuyên dụng', 'Dung dịch khử khuẩn an toàn', 'Đồng hồ đo dòng điện & nhiệt độ gió'],
+  };
 };
 
 export const REVIEWS_BY_ID = {
@@ -400,4 +429,53 @@ export const DIAG_TAGS = {
   'tu-lanh': ['Gioăng cửa hở', 'Dàn nóng bám bụi', 'Hỏng rơ-le', 'Đóng tuyết ngăn đá'],
   'nuoc-nong': ['Bám cặn thanh nhiệt', 'Thanh magie mòn', 'Rò rỉ nước'],
   all: ['Thiết bị hoạt động bình thường', 'Cần vệ sinh định kỳ', 'Nguồn điện không ổn định'],
+};
+
+// Map danh mục / loại dịch vụ sang kỹ năng của thợ để đối chiếu chuyên môn & khu vực
+const CAT_TO_SKILL = {
+  'may-lanh': 'Máy lạnh',
+  'may-giat': 'Máy giặt',
+  'tu-lanh': 'Tủ lạnh',
+  'nuoc-nong': 'Nóng lạnh',
+  'hut-mui': 'Hút mùi',
+  quat: 'Máy lạnh',
+  'loc-khong-khi': 'Máy lạnh',
+};
+
+export const matchJobForTech = (order, techProfile) => {
+  const me = techProfile || TECH_ME;
+  const skills = (me.skills || TECH_ME.skills || []).map((s) => normalize(s));
+  const areaTokens = String(me.area || TECH_ME.area || '')
+    .split(/[,;/·|-]+/)
+    .map((x) => normalize(x.trim()))
+    .filter((x) => x.length >= 3);
+
+  const items = order?.items || [];
+  const neededSkills = new Set();
+  items.forEach((it) => {
+    const sv = getService(it.id);
+    if (!sv) return;
+    const catSkill = CAT_TO_SKILL[sv.category];
+    if (catSkill) neededSkills.add(catSkill);
+    const k = serviceKind(sv);
+    if (k === 'gas') neededSkills.add('Nạp gas');
+    if (k === 'install') neededSkills.add('Lắp đặt');
+  });
+  const neededArr = [...neededSkills];
+  const skillMatch = neededArr.length === 0 || neededArr.some((sk) => skills.includes(normalize(sk)));
+
+  const orderAddrNorm = normalize(`${order?.address?.area || ''} ${order?.address?.full || ''}`);
+  const areaMatch = areaTokens.length === 0 || areaTokens.some((tok) => orderAddrNorm.includes(tok));
+
+  const assignedToMe = Boolean(
+    order?.workerCode && String(order.workerCode).trim().toUpperCase() === String(me.code || '').toUpperCase(),
+  );
+  const matchScore = (assignedToMe ? 4 : 0) + (skillMatch ? 2 : 0) + (areaMatch ? 1 : 0);
+  return {
+    skillMatch,
+    areaMatch,
+    assignedToMe,
+    matchScore,
+    neededSkills: neededArr,
+  };
 };

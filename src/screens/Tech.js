@@ -6,20 +6,21 @@
 // ===========================================================================
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Image, Linking } from 'react-native';
-import { C, R, shadow, STATUS_META, toneOf } from '../theme';
+import { C, R, shadow, STATUS_META, toneOf, grad } from '../theme';
 import {
-  getService, formatVND, catIcon, TECH_ME, MATERIALS, DIAG_TAGS, TIME_SLOTS, TECH_STATUS_DESC, TECH_ORDER_STEPS, techStepIndexOf, HOTLINE,
+  getService, formatVND, catIcon, catLabel, TECH_ME, MATERIALS, DIAG_TAGS, TIME_SLOTS, TECH_STATUS_DESC, TECH_ORDER_STEPS, techStepIndexOf, HOTLINE,
 } from '../data';
 import {
   useApp, orderTotal, bookedValue, isActiveOrder, dateKeyOf, todayKey, fmtDateTime, timeAgo,
-  TECH_POLICY, assessCancelAfterAccept, reputationTone, normalizeTechRep, slotStartTs,
+  TECH_POLICY, assessCancelAfterAccept, reputationTone, normalizeTechRep, slotStartTs, matchJobForTech,
 } from '../store';
 import { getCheckInLocation } from '../geo';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, PageHead, Segmented, Chip, Badge, Stars, Field, Sheet, Radio, Checkbox,
   EmptyState, StatusChip, Progress, Media, ListRow, Stepper, HScroll, ui,
 } from '../ui';
-import { pickImage } from '../media';
+import { pickImage, pickCamera } from '../media';
+import { TrackingCard, ChatCard } from '../orderLive';
 
 const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const DECLINE_REASONS = ['Bận lịch khác', 'Ngoài khu vực phục vụ', 'Không đúng chuyên môn', 'Lý do khác'];
@@ -68,12 +69,13 @@ function MetaLine({ icon, text, last }) {
 
 // =========================================================== THẺ CÔNG VIỆC
 function JobCard({ o, compact, onDecline, canAccept = true }) {
-  const { a, nav } = useApp();
+  const { s, a, nav } = useApp();
   const next = useNextAction()(o);
   const svc0 = getService(o.items[0]?.id);
   const meta = STATUS_META[o.status];
   const open = () => nav.push('tech-job', { code: o.code });
   const who = `${o.address?.gender === 'Nữ' ? 'Chị' : 'Anh'} ${o.address?.name} · ${o.address?.phone}`;
+  const match = o.status === 'pending' ? matchJobForTech(o, s.techProfile || TECH_ME) : null;
   return (
     <Card style={{ marginBottom: 12, padding: 0, overflow: 'hidden' }} onPress={open}>
       <View style={[tx.cardHead, { backgroundColor: meta.bg }]}>
@@ -97,13 +99,33 @@ function JobCard({ o, compact, onDecline, canAccept = true }) {
             <Text style={[ui.price, { fontSize: 15, marginTop: 2 }]}>{o.kind === 'warranty' ? '0đ' : formatVND(orderTotal(o))}</Text>
           </View>
         </View>
-        {o.workerCode ? (
-          <View style={{ marginTop: 10 }}>
-            <Badge text={`Chỉ định Thợ Now · ${o.workerCode}`} fg={C.navy} bg={C.goldSoft} />
+        {(o.workerCode || match) ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+            {o.workerCode ? <Badge text={`Chỉ định Thợ Now · ${o.workerCode}`} fg={C.navy} bg={C.goldSoft} /> : null}
+            {match ? (
+              <Badge
+                text={match.skillMatch ? '✓ Đúng chuyên môn' : '⚠ Trái chuyên môn'}
+                fg={match.skillMatch ? C.green : C.orange}
+                bg={match.skillMatch ? C.greenSoft : C.orangeSoft}
+              />
+            ) : null}
+            {match ? (
+              <Badge
+                text={match.areaMatch ? '📍 Trong khu vực' : '🗺️ Ngoài khu vực'}
+                fg={match.areaMatch ? C.primary : C.muted}
+                bg={match.areaMatch ? C.primarySoft : '#F1F5F9'}
+              />
+            ) : null}
           </View>
         ) : null}
         <View style={tx.metaBlock}>
           <MetaLine icon="📅" text={`${o.dateLabel} · ${o.slot}`} />
+          {o.device ? (
+            <MetaLine
+              icon="📺"
+              text={`${catLabel(o.device.category)}${o.device.brand ? ` · ${o.device.brand}` : ''}${o.device.room ? ` (${o.device.room})` : ''}`}
+            />
+          ) : null}
           <MetaLine icon="👤" text={who} last={compact} />
           {!compact ? <MetaLine icon="📍" text={o.address?.full || ''} last /> : null}
         </View>
@@ -133,6 +155,7 @@ export function TechJobsScreen() {
   const { s, a, d, nav } = useApp();
   const me = s.techProfile || TECH_ME;
   const [tab, setTab] = useState('new');
+  const [newFilter, setNewFilter] = useState('all'); // 'all' | 'skill' | 'area'
   const [declineTarget, setDeclineTarget] = useState(null);
   const [reason, setReason] = useState(DECLINE_REASONS[0]);
   const [reasonNote, setReasonNote] = useState('');
@@ -142,7 +165,14 @@ export function TechJobsScreen() {
   const working = [...d.workingJobs].sort((x, y) => dateKeyOf(x).localeCompare(dateKeyOf(y)) || slotHour(x.slot) - slotHour(y.slot));
   const nextJob = working[0];
   const nextAct = useNextAction()(nextJob || { status: '' });
-  const list = tab === 'new' ? d.newJobs : tab === 'working' ? working : done;
+  const filteredNewJobs = d.newJobs.filter((o) => {
+    if (newFilter === 'all') return true;
+    const m = matchJobForTech(o, me);
+    if (newFilter === 'skill') return m.skillMatch;
+    if (newFilter === 'area') return m.areaMatch;
+    return true;
+  });
+  const list = tab === 'new' ? filteredNewJobs : tab === 'working' ? working : done;
   const todayIncome = doneToday.reduce((sum, o) => sum + income(o), 0);
 
   return (
@@ -190,15 +220,6 @@ export function TechJobsScreen() {
         </View>
 
         <View style={{ paddingHorizontal: 16 }}>
-          {s.tips?.techJobs !== false ? (
-            <View style={[tx.offline, { marginTop: 14, backgroundColor: C.primarySoft, borderColor: '#D6E4FF' }]}>
-              <Text style={{ color: C.primary, fontWeight: '800' }}>Hướng dẫn nhanh ca làm</Text>
-              <Text style={{ color: C.primary, marginTop: 4, lineHeight: 18 }}>
-                Bật trực tuyến → Nhận việc → Đang đến → Check-in GPS → Chẩn đoán/báo giá → Sửa → Hoàn thành. Trả việc sau nhận sẽ trừ uy tín.
-              </Text>
-              <Btn title="Đã hiểu" small variant="soft" style={{ marginTop: 10, alignSelf: 'flex-start' }} onPress={() => a.dismissTip('techJobs')} />
-            </View>
-          ) : null}
           {d.techLocked ? (
             <View style={[tx.offline, { marginTop: 14, backgroundColor: C.redSoft }]}>
               <Text style={{ color: C.red, fontWeight: '800' }}>🚫 Hạn chế nhận việc mới</Text>
@@ -256,6 +277,13 @@ export function TechJobsScreen() {
               { id: 'done', label: 'Đã xong', count: done.length },
             ]}
           />
+          {tab === 'new' && d.newJobs.length > 0 ? (
+            <HScroll contentContainerStyle={{ gap: 8, paddingTop: 10 }}>
+              <Chip label={`Tất cả (${d.newJobs.length})`} on={newFilter === 'all'} onPress={() => setNewFilter('all')} />
+              <Chip label="✓ Đúng chuyên môn" on={newFilter === 'skill'} onPress={() => setNewFilter('skill')} />
+              <Chip label={`📍 Trong khu vực (${me.area || 'Của tôi'})`} on={newFilter === 'area'} onPress={() => setNewFilter('area')} />
+            </HScroll>
+          ) : null}
           <View style={{ marginTop: 14 }}>
             {tab === 'new' && (!s.techOnline || d.techLocked) ? (
               <View style={tx.offline}>
@@ -478,7 +506,7 @@ export function TechAccountScreen() {
     ? (rated.reduce((sum, o) => sum + o.rating.stars, 0) / rated.length).toFixed(1)
     : (me.rating != null ? Number(me.rating).toFixed(1) : '—');
   const accepted = d.myJobs.length;
-  const declined = (s.declined || []).length;
+  const declined = (d.declinedCodes || s.declined || []).length;
   const rate = accepted + declined ? Math.round((accepted / (accepted + declined)) * 100) : 100;
   const now = new Date();
   const monthDone = done.filter((o) => { const t = new Date(o.doneAt); return t.getMonth() === now.getMonth() && t.getFullYear() === now.getFullYear(); });
@@ -726,13 +754,20 @@ export function TechJobScreen({ params }) {
   const { s, a, d, nav, ui: u } = useApp();
   const o = s.orders.find((x) => x.code === params.code);
   const cats = useMemo(() => [...new Set((o?.items || []).map((it) => getService(it.id)?.category).filter(Boolean))], [o]);
-  const [tags, setTags] = useState([]);
-  const [diagnosis, setDiagnosis] = useState('');
-  const [recommendation, setRecommendation] = useState('');
-  const [lines, setLines] = useState(() => (o?.items || []).map((it) => {
-    const sv = getService(it.id);
-    return { key: it.id, type: 'labor', name: sv?.name || 'Dịch vụ', qty: it.qty, price: o?.kind === 'warranty' ? 0 : sv?.price || 0 };
-  }));
+  const [tags, setTags] = useState(() => (o?.quote?.symptoms ? o.quote.symptoms.split(',').map((x) => x.trim()).filter(Boolean) : []));
+  const [diagnosis, setDiagnosis] = useState(() => o?.quote?.diagnosis || '');
+  const [recommendation, setRecommendation] = useState(() => o?.quote?.recommendation || '');
+  const [lines, setLines] = useState(() => {
+    if (o?.quote?.lines?.length) {
+      return o.quote.lines.map((l, idx) => ({ ...l, key: l.matId || l.key || `q_${idx}` }));
+    }
+    return (o?.items || []).map((it) => {
+      const sv = getService(it.id);
+      return { key: it.id, type: 'labor', name: sv?.name || 'Dịch vụ', qty: it.qty, price: o?.kind === 'warranty' ? 0 : sv?.price || 0 };
+    });
+  });
+  const [showQR, setShowQR] = useState(false);
+  const [qrInput, setQrInput] = useState('');
   const [matMode, setMatMode] = useState(null); // 'quote' | 'usage'
   const [matAll, setMatAll] = useState(false);
   const [percent, setPercent] = useState(50);
@@ -792,7 +827,7 @@ export function TechJobScreen({ params }) {
       return;
     }
     if (!reco) {
-      u.alert('Thiếu đề xuất', 'Ghi đề xuất xử lý (SUC-045) trước khi gửi báo giá.', '🧾');
+      u.alert('Thiếu đề xuất', 'Ghi đề xuất xử lý trước khi gửi báo giá.', '🧾');
       return;
     }
     const text = [symptoms, diag].filter(Boolean).join('. ');
@@ -826,21 +861,23 @@ export function TechJobScreen({ params }) {
           ) : null}
           {o.status !== 'cancelled' && step >= 0 ? <Text style={[ui.meta, { color: meta.fg, marginTop: 6 }]}>Bước {step + 1}/{TECH_ORDER_STEPS.length}: {TECH_ORDER_STEPS[step].label}</Text> : null}
         </View>
-        {o.status === 'pending' && o.dispatchNote && (s.declined || []).includes(o.code) ? (
+        {o.status === 'pending' && o.dispatchNote && (d.declinedCodes || s.declined || []).includes(o.code) ? (
           <View style={tx.offline}><Text style={{ color: C.orange, fontWeight: '700' }}>Bạn đã từ chối việc này. Vẫn có thể nhận lại nếu còn trống lịch.</Text></View>
         ) : null}
+        {o.status === 'onway' ? <TrackingCard order={o} compact /> : null}
+        {mine || o.tech ? <ChatCard order={o} role="tech" /> : null}
+
         {o.checkIn ? (
           <Card style={{ marginTop: 12, backgroundColor: C.primarySoft, borderColor: '#D6E4FF' }}>
             <Text style={tx.h}>📍 Nhật ký check-in GPS</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-              {o.checkIn.label || (o.checkIn.simulated ? 'Vị trí mô phỏng' : 'GPS thiết bị')}
+              {o.checkIn.label || 'Đã xác thực vị trí GPS'}
               {o.checkIn.at ? ` · ${fmtDateTime(o.checkIn.at)}` : ''}
             </Text>
             {o.checkIn.lat != null ? (
               <Text style={[ui.meta, { marginTop: 4 }]}>
                 {Number(o.checkIn.lat).toFixed(5)}, {Number(o.checkIn.lng).toFixed(5)}
                 {o.checkIn.accuracy != null ? ` · ±${o.checkIn.accuracy}m` : ''}
-                {o.checkIn.simulated ? ' · mô phỏng' : ''}
               </Text>
             ) : null}
             {o.lateCompensation ? (
@@ -890,6 +927,24 @@ export function TechJobScreen({ params }) {
             <Text style={{ flex: 1, color: C.ink, fontWeight: '600', lineHeight: 20 }}>{o.address?.full}</Text>
             <Text style={ui.link}>Chỉ đường</Text>
           </Tap>
+          {o.qrVerified ? (
+            <View style={{ marginTop: 10, padding: 10, borderRadius: R.md, backgroundColor: C.greenSoft, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontSize: 16 }}>🔳</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontWeight: '800', color: C.green, fontSize: 13 }}>Đã xác thực QR khách hàng (+1 điểm uy tín)</Text>
+                <Text style={[ui.meta, { color: C.green }]}>Lúc {fmtDateTime(o.qrVerified.at)} · Mã {o.qrVerified.code}</Text>
+              </View>
+            </View>
+          ) : mine && ['onway', 'diagnosing', 'quoted', 'repairing'].includes(o.status) ? (
+            <Btn
+              title="Quét / Xác thực QR khách hàng"
+              icon="🔳"
+              variant="soft"
+              small
+              style={{ marginTop: 10 }}
+              onPress={() => { setQrInput(''); setShowQR(true); }}
+            />
+          ) : null}
         </Card>
 
         {/* Lịch hẹn + dịch vụ */}
@@ -901,6 +956,11 @@ export function TechJobScreen({ params }) {
             </View>
           ) : null}
           <Text style={tx.info}>📅 {o.dateLabel} · {o.slot}</Text>
+          {o.device ? (
+            <Text style={[tx.info, { marginTop: 6 }]}>
+              📺 Thiết bị tại nhà: {catLabel(o.device.category)}{o.device.brand ? ` · ${o.device.brand}` : ''}{o.device.room ? ` (${o.device.room})` : ''}
+            </Text>
+          ) : null}
           {o.note ? <Text style={[tx.info, { marginTop: 6 }]}>📝 “{o.note}”</Text> : null}
           {(o.attachments || []).length ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
@@ -926,19 +986,30 @@ export function TechJobScreen({ params }) {
           </View>
         </Card>
 
-        {/* ===== Chẩn đoán & báo giá (SUC-042..046 + báo giá) ===== */}
+        {/* ===== Chẩn đoán & báo giá ===== */}
         {o.status === 'diagnosing' && mine ? (
           <>
+            {o.quote?.revisionRequested ? (
+              <Card style={{ marginTop: 12, backgroundColor: '#FFFBEB', borderColor: '#F5D77A' }}>
+                <Text style={[tx.h, { color: C.goldInk, marginBottom: 4 }]}>🔄 Khách yêu cầu điều chỉnh báo giá</Text>
+                <Text style={{ color: C.goldInk, lineHeight: 20 }}>
+                  Lý do: <Text style={{ fontWeight: '800' }}>{o.quote.rejectReason || 'Cần trao đổi lại phương án / chi phí'}</Text>
+                </Text>
+                <Text style={[ui.meta, { color: C.goldInk, marginTop: 4 }]}>
+                  Hãy điều chỉnh lại vật tư / phương án bên dưới và gửi lại báo giá mới cho khách.
+                </Text>
+              </Card>
+            ) : null}
             <Card style={{ marginTop: 12 }}>
-              <Text style={tx.h}>🔍 Triệu chứng (SUC-042)</Text>
+              <Text style={tx.h}>🔍 Triệu chứng thiết bị</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {[...cats.flatMap((c) => DIAG_TAGS[c] || []), ...DIAG_TAGS.all].map((t) => (
                   <Chip key={t} label={t} on={tags.includes(t)} onPress={() => setTags((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]))} />
                 ))}
               </View>
-              <Field label="Kết luận chẩn đoán (SUC-043)" multiline value={diagnosis} onChangeText={setDiagnosis} placeholder="Nguyên nhân / tình trạng thực tế…" />
-              <Field label="Đề xuất xử lý (SUC-045)" multiline value={recommendation} onChangeText={setRecommendation} placeholder="VD: Vệ sinh dàn lạnh + kiểm tra gas…" />
-              <Text style={[tx.fl, { marginTop: 8 }]}>Ảnh minh chứng chẩn đoán (SUC-046)</Text>
+              <Field label="Kết luận chẩn đoán" multiline value={diagnosis} onChangeText={setDiagnosis} placeholder="Nguyên nhân / tình trạng thực tế…" />
+              <Field label="Đề xuất xử lý" multiline value={recommendation} onChangeText={setRecommendation} placeholder="VD: Vệ sinh dàn lạnh + kiểm tra gas…" />
+              <Text style={[tx.fl, { marginTop: 8 }]}>Ảnh minh chứng chẩn đoán</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {evidence.filter((e) => e.stage === 'diagnosis').map((e) => (
                   <View key={e.id} style={tx.thumb}>
@@ -949,9 +1020,10 @@ export function TechJobScreen({ params }) {
                 <Tap
                   style={[tx.thumb, tx.thumbAdd]}
                   onPress={async () => {
-                    const uri = await pickImage();
+                    let uri = await pickCamera();
+                    if (uri === null) uri = await pickImage();
                     if (uri == null) {
-                      if (uri === null) u.alert('Chưa hỗ trợ camera', 'Trên web hãy chọn ảnh từ thư viện thiết bị.', '📷');
+                      if (uri === null) u.alert('Chưa hỗ trợ camera', 'Trên web/mobile browser hãy cho phép camera hoặc chọn ảnh thư viện.', '📷');
                       return;
                     }
                     a.addEvidence(o.code, { uri, stage: 'diagnosis', note: 'Minh chứng chẩn đoán' });
@@ -991,7 +1063,7 @@ export function TechJobScreen({ params }) {
         ) : null}
 
         {/* ===== Báo giá đã gửi ===== */}
-        {o.quote ? (
+        {o.quote && !(o.status === 'diagnosing' && o.quote.revisionRequested) ? (
           <Card style={{ marginTop: 12 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={tx.h}>🧾 Chẩn đoán & báo giá</Text>
@@ -1103,10 +1175,11 @@ export function TechJobScreen({ params }) {
                     <Tap
                       style={[tx.thumb, tx.thumbAdd]}
                       onPress={async () => {
-                        const uri = await pickImage();
+                        let uri = await pickCamera();
+                        if (uri === null) uri = await pickImage();
                         if (uri == null) {
                           if (uri === null) {
-                            u.alert('Chưa hỗ trợ camera', 'Trên web hãy chọn ảnh từ thư viện thiết bị. Trên app mobile sẽ mở máy ảnh/thư viện.', '📷');
+                            u.alert('Chưa hỗ trợ camera', 'Trên web/mobile hãy cho phép camera hoặc chọn ảnh thư viện.', '📷');
                           }
                           return;
                         }
@@ -1220,6 +1293,41 @@ export function TechJobScreen({ params }) {
       ) : null}
 
       {/* ===== Sheets ===== */}
+      <Sheet
+        visible={showQR}
+        onClose={() => setShowQR(false)}
+        title="Xác thực QR khách hàng"
+        footer={(
+          <Btn
+            title="Xác nhận mã đã nhập"
+            disabled={!qrInput.trim()}
+            onPress={() => {
+              const res = a.verifyCustomerQR(o.code, qrInput);
+              if (res?.ok) setShowQR(false);
+            }}
+          />
+        )}
+      >
+        <Text style={[ui.meta, { lineHeight: 19, marginBottom: 12 }]}>
+          Quét mã QR trên màn hình “Mã QR của tôi” của khách hàng tại nhà để xác nhận đã gặp đúng chủ nhà và nhận <Text style={{ fontWeight: '800', color: C.green }}>+1 điểm uy tín</Text>.
+        </Text>
+        <Btn
+          title="📷 Quét mã QR trực tiếp của khách"
+          variant="primary"
+          onPress={() => {
+            const res = a.verifyCustomerQR(o.code, 'AUTO_SCAN');
+            if (res?.ok) setShowQR(false);
+          }}
+        />
+        <View style={{ height: 1, backgroundColor: C.line, marginVertical: 14 }} />
+        <Field
+          label="Hoặc nhập mã xác thực / SĐT khách"
+          value={qrInput}
+          onChangeText={setQrInput}
+          placeholder={`VD: THODMX:${o.address?.phone || '0344699180'}`}
+          style={{ marginTop: 0 }}
+        />
+      </Sheet>
       <Sheet visible={!!matMode} onClose={() => setMatMode(null)} title={matMode === 'usage' ? 'Ghi nhận vật tư' : 'Thêm vật tư / linh kiện'}>
         <Checkbox on={matAll} onPress={() => setMatAll(!matAll)} label="Hiện tất cả loại vật tư" />
         <View style={{ height: 8 }} />
@@ -1404,6 +1512,7 @@ function nextActionFor(o, a, nav) {
 const tx = StyleSheet.create({
   header: {
     backgroundColor: C.navy,
+    ...grad.navyHero,
     paddingHorizontal: 16,
     paddingTop: 18,
     paddingBottom: 48,
@@ -1474,6 +1583,7 @@ const tx = StyleSheet.create({
   nextCard: {
     marginTop: 16,
     backgroundColor: C.navy2,
+    ...grad.navyCard,
     borderColor: C.navy2,
     padding: 0,
     overflow: 'hidden',

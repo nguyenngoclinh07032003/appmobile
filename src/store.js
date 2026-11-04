@@ -1,15 +1,18 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { BackHandler, Linking, Platform } from 'react-native';
 import {
-  getService, MAINT_MONTHS, TECH_ME, REDEEM_OPTIONS, formatVND, catLabel, HOTLINE, serviceKind,
+  getService, MAINT_MONTHS, TECH_ME, REDEEM_OPTIONS, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech,
 } from './data';
+export { matchJobForTech } from './data';
 import {
-  getSession, clearSession, loginAccount, registerAccount, urlRoleHint, resetPassword, changePassword,
+  getSession, clearSession, loginAccount, registerAccount, urlRoleHint, resetPassword, changePassword, quickLoginRole,
 } from './auth';
 import {
   TECH_POLICY, normalizeTechRep, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
   applyTechPenalty, applyTechBonus, mintWalletVoucher, slotStartTs,
 } from './techPolicy';
+import { buildDemoScenario, DEMO_CODES } from './demoSeed';
+import { advanceTracking } from './geo';
 export {
   TECH_POLICY, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
   reputationTone, normalizeTechRep, slotStartTs,
@@ -154,20 +157,54 @@ const mergeTechProfile = (prev, account) => {
   };
 };
 
-const makeInitial = () => ({
-  user: { name: '', phone: '', email: '' },
+const CUSTOMER_SLICE_KEYS = [
+  'addresses', 'selectedAddressId', 'cart', 'devices', 'favorites',
+  'notifications', 'points', 'lifetimePoints', 'myVouchers', 'searches',
+];
+const makeCustomerSlice = () => ({
   addresses: [],
   selectedAddressId: null,
   cart: [],
   devices: [],
-  orders: [],
   favorites: [],
   notifications: [welcome()],
   points: 0,
   lifetimePoints: 0,
   myVouchers: [],
   searches: [],
+});
+const extractCustomerSlice = (state) => {
+  const out = {};
+  CUSTOMER_SLICE_KEYS.forEach((k) => { out[k] = state[k]; });
+  return out;
+};
+const isOrderOfCustomer = (o, phone) => {
+  if (!phone) return true;
+  const p = String(phone).trim();
+  const op = String(o?.customerPhone || o?.address?.phone || '').trim();
+  return !op || op === p;
+};
+// Khi đổi tài khoản khách hàng: lưu dữ liệu khách cũ vào customerProfiles[oldPhone], nạp dữ liệu khách mới
+const switchCustomerSlice = (prev, nextAccount) => {
+  const profiles = { ...(prev.customerProfiles || {}) };
+  const prevPhone = prev.auth?.role === 'customer' ? prev.auth.phone : (prev.role === 'customer' ? prev.user?.phone : null);
+  if (prevPhone) {
+    profiles[prevPhone] = extractCustomerSlice(prev);
+  }
+  if (nextAccount?.role === 'customer' && nextAccount.phone) {
+    const loaded = profiles[nextAccount.phone] || makeCustomerSlice();
+    profiles[nextAccount.phone] = loaded;
+    return { ...loaded, customerProfiles: profiles };
+  }
+  return { customerProfiles: profiles };
+};
+
+const makeInitial = () => ({
+  user: { name: '', phone: '', email: '' },
+  ...makeCustomerSlice(),
+  orders: [],
   userReviews: {},
+  customerProfiles: {},
   // Phía thợ
   role: 'customer', // 'customer' | 'tech'
   techNotifs: [],
@@ -206,9 +243,17 @@ export function AppProvider({ children }) {
     const user = session
       ? { name: session.name || '', phone: session.phone || '', email: session.email || '' }
       : (saved.user || { name: '', phone: '', email: '' });
-    return {
+    // Tự động loại bỏ dữ liệu demo cũ nếu từng được nạp trên trình duyệt
+    const cleanOrders = (saved.orders || []).filter((o) => !o?.demo && !String(o?.code || '').startsWith('DMXDEMO'));
+    const cleanDevices = (saved.devices || []).filter((d) => !d?.demo && d?.id !== 'demo-dev-ml');
+    const cleanAddresses = (saved.addresses || []).filter((a) => a?.id !== 'demo-addr-hn');
+    const baseState = {
       ...makeInitial(),
       ...saved,
+      orders: cleanOrders,
+      devices: cleanDevices,
+      addresses: cleanAddresses,
+      selectedAddressId: saved.selectedAddressId === 'demo-addr-hn' ? (cleanAddresses[0]?.id || null) : saved.selectedAddressId,
       role,
       user,
       auth: session,
@@ -216,8 +261,33 @@ export function AppProvider({ children }) {
         ? mergeTechProfile(saved.techProfile, session)
         : (saved.techProfile || null),
     };
+    if (session?.role === 'customer' && session.phone) {
+      const profiles = { ...(baseState.customerProfiles || {}) };
+      if (profiles[session.phone]) {
+        return { ...baseState, ...profiles[session.phone], customerProfiles: profiles };
+      }
+      // Nếu tài khoản đang mở trùng với user đã lưu thì gán slice hiện tại cho tài khoản đó, ngược lại tạo mới
+      const savedPhone = saved.user?.phone || cleanAddresses[0]?.phone;
+      const slice = (!savedPhone || savedPhone === session.phone)
+        ? extractCustomerSlice(baseState)
+        : makeCustomerSlice();
+      profiles[session.phone] = slice;
+      return { ...baseState, ...slice, customerProfiles: profiles };
+    }
+    return baseState;
   });
-  const up = (fn) => setS((prev) => ({ ...prev, ...fn(prev) }));
+  const up = (fn) => setS((prev) => {
+    const patch = fn(prev) || {};
+    const next = { ...prev, ...patch };
+    const activeCustPhone = next.auth?.role === 'customer' ? next.auth.phone : null;
+    if (activeCustPhone && !patch.customerProfiles) {
+      next.customerProfiles = {
+        ...(next.customerProfiles || {}),
+        [activeCustPhone]: extractCustomerSlice(next),
+      };
+    }
+    return next;
+  });
   // Chống vòng lặp sync 2 tab: merge từ storage ≠ payload đã ghi → save lại → tab kia merge lại…
   const lastWritten = useRef('');
   const skipSaveOnce = useRef(false);
@@ -268,19 +338,33 @@ export function AppProvider({ children }) {
         const incoming = JSON.parse(e.newValue);
         skipSaveOnce.current = true;
         lastWritten.current = e.newValue;
-        setS((prev) => ({
-          ...prev,
-          ...incoming,
-          orders: mergeOrders(prev.orders, incoming.orders),
-          notifications: mergeNotifs(prev.notifications, incoming.notifications),
-          techNotifs: mergeNotifs(prev.techNotifs, incoming.techNotifs),
-          auth: prev.auth,
-          role: prev.auth?.role || incoming.role || prev.role,
-          user: prev.auth
-            ? { name: prev.auth.name || '', phone: prev.auth.phone || '', email: prev.auth.email || '' }
-            : (incoming.user || prev.user),
-          techProfile: prev.auth?.role === 'tech' ? prev.techProfile : (incoming.techProfile || null),
-        }));
+        setS((prev) => {
+          const activeCustPhone = prev.auth?.role === 'customer' ? prev.auth.phone : null;
+          const mergedProfiles = { ...(prev.customerProfiles || {}), ...(incoming.customerProfiles || {}) };
+          const custSlice = (activeCustPhone && mergedProfiles[activeCustPhone])
+            ? {
+              ...mergedProfiles[activeCustPhone],
+              notifications: mergeNotifs(prev.notifications, mergedProfiles[activeCustPhone].notifications),
+            }
+            : {};
+          return {
+            ...prev,
+            ...incoming,
+            ...custSlice,
+            customerProfiles: mergedProfiles,
+            orders: mergeOrders(prev.orders, incoming.orders),
+            notifications: activeCustPhone
+              ? (custSlice.notifications || mergeNotifs(prev.notifications, incoming.notifications))
+              : mergeNotifs(prev.notifications, incoming.notifications),
+            techNotifs: mergeNotifs(prev.techNotifs, incoming.techNotifs),
+            auth: prev.auth,
+            role: prev.auth?.role || incoming.role || prev.role,
+            user: prev.auth
+              ? { name: prev.auth.name || '', phone: prev.auth.phone || '', email: prev.auth.email || '' }
+              : (incoming.user || prev.user),
+            techProfile: prev.auth?.role === 'tech' ? prev.techProfile : (incoming.techProfile || null),
+          };
+        });
       } catch (err) { /* bỏ qua */ }
     };
     window.addEventListener('storage', onStorage);
@@ -294,6 +378,8 @@ export function AppProvider({ children }) {
   const [svc, setSvc] = useState({ tab: 'bao-duong', category: 'may-lanh', kindCat: 'all', sort: 'popular' });
   // Mã voucher được chọn ở "Quyền lợi" → tự áp dụng khi mở màn Xác nhận đặt lịch
   const [pendingVoucher, setPendingVoucher] = useState(null);
+  // Thiết bị được chọn từ màn "Thiết bị của tôi" → tự gắn vào đơn khi đặt lịch
+  const [pendingDeviceId, setPendingDeviceId] = useState(null);
   const [actFilter, setActFilter] = useState('active');
   const [warrantyQuery, setWarrantyQuery] = useState('');
   const [warrantyNonce, setWarrantyNonce] = useState(0);
@@ -311,7 +397,8 @@ export function AppProvider({ children }) {
     }),
     reset: () => setStack([]),
     go: (t) => { setStack([]); setTab(t); },
-    services: (serviceTab, category) => {
+    services: (serviceTab, category, deviceId = null) => {
+      if (deviceId) setPendingDeviceId(deviceId);
       setSvc((p) => {
         const t = serviceTab || p.tab;
         if (t === 'bao-duong') return { ...p, tab: t, category: category || p.category };
@@ -381,16 +468,38 @@ export function AppProvider({ children }) {
   const pushNotif = (prev, n) => [{ id: uid(), at: Date.now(), read: false, ...n }, ...prev.notifications].slice(0, 50);
   const pushTech = (prev, n) => [{ id: uid(), at: Date.now(), read: false, ...n }, ...(prev.techNotifs || [])].slice(0, 50);
   const withStatus = (o, status, now, extra = {}) => ({ ...o, ...extra, status, history: [...o.history, { status, at: now }] });
-  // Cập nhật 1 đơn + đẩy thông báo cho khách và/hoặc thợ
+  // Cập nhật 1 đơn + đẩy thông báo cho khách (đúng tài khoản đặt đơn) và/hoặc thợ
   const updateOrder = (code, fn) => up((p) => {
     const o = p.orders.find((x) => x.code === code);
     if (!o) return {};
     const r = fn(o, p) || {};
+    const ownerPhone = o.customerPhone || o.address?.phone || null;
+    const activeCustPhone = p.auth?.role === 'customer' ? p.auth.phone : null;
+    const isActiveOwner = !ownerPhone || ownerPhone === activeCustPhone;
+    const custNotif = r.customer ? { id: uid(), at: Date.now(), read: false, link: { name: 'order', params: { code } }, ...r.customer } : null;
+
+    let nextProfiles = p.customerProfiles || {};
+    if (ownerPhone && nextProfiles[ownerPhone]) {
+      const curProf = nextProfiles[ownerPhone];
+      const profPatch = {};
+      if (custNotif) {
+        profPatch.notifications = [custNotif, ...(curProf.notifications || [])].slice(0, 50);
+      }
+      if (r.customerProfilePatch) {
+        Object.assign(profPatch, r.customerProfilePatch(curProf));
+      }
+      if (Object.keys(profPatch).length) {
+        nextProfiles = { ...nextProfiles, [ownerPhone]: { ...curProf, ...profPatch } };
+      }
+    }
+
     return {
       orders: p.orders.map((x) => (x.code === code ? r.order || x : x)),
-      ...(r.customer ? { notifications: pushNotif(p, { link: { name: 'order', params: { code } }, ...r.customer }) } : {}),
+      ...(custNotif && isActiveOwner ? { notifications: [custNotif, ...p.notifications].slice(0, 50) } : {}),
       ...(r.tech ? { techNotifs: pushTech(p, { link: { name: 'tech-job', params: { code } }, ...r.tech }) } : {}),
-      ...(r.extra || {}),
+      ...(isActiveOwner && r.extra ? r.extra : {}),
+      ...(!isActiveOwner && r.extra?.techProfile ? { techProfile: r.extra.techProfile } : {}),
+      customerProfiles: nextProfiles,
     };
   });
   const address = s.addresses.find((a) => a.id === s.selectedAddressId) || s.addresses.find((a) => a.isDefault) || s.addresses[0] || null;
@@ -461,10 +570,14 @@ export function AppProvider({ children }) {
     placeOrder: (payload) => {
       const code = `DMX${String(Date.now()).slice(-6)}`;
       const now = Date.now();
+      const customerPhone = s.auth?.phone || s.user?.phone || address?.phone || '';
       const order = {
         ...payload,
         code,
         kind: payload.kind || 'normal',
+        customerPhone,
+        customerAccountId: s.auth?.id || null,
+        device: payload.device || null,
         address,
         status: 'pending',
         history: [{ status: 'pending', at: now }],
@@ -473,6 +586,7 @@ export function AppProvider({ children }) {
         rating: null,
       };
       const svc0 = getService(payload.items[0]?.id);
+      const devNote = payload.device ? ` · ${catLabel(payload.device.category)}${payload.device.brand ? ` ${payload.device.brand}` : ''}` : '';
       up((p) => ({
         orders: [order, ...p.orders],
         cart: payload.fromCart ? p.cart.filter((c) => !payload.items.some((it) => it.id === c.id)) : p.cart,
@@ -480,12 +594,12 @@ export function AppProvider({ children }) {
         user: { ...p.user, name: p.user.name || address?.name || '', phone: p.user.phone || address?.phone || '' },
         notifications: pushNotif(p, {
           icon: '📅', title: `Đặt lịch thành công · ${code}`,
-          body: `${payload.dateLabel} · ${payload.slot}. Tổng ${formatVND(payload.total)}.`,
+          body: `${payload.dateLabel} · ${payload.slot}${devNote}. Tổng ${formatVND(payload.total)}.`,
           link: { name: 'order', params: { code } },
         }),
         techNotifs: pushTech(p, {
           icon: '🆕', title: `Việc mới ${code} · ${svc0?.name || 'Dịch vụ'}`,
-          body: `${payload.dateLabel} · ${payload.slot} · ${address?.area || ''}`,
+          body: `${payload.dateLabel} · ${payload.slot}${devNote} · ${address?.area || ''}`,
           link: { name: 'tech-job', params: { code } },
         }),
       }));
@@ -676,14 +790,103 @@ export function AppProvider({ children }) {
         if (start != null && now > start + TECH_POLICY.lateGraceMin * 60000) {
           lateHint = `Bạn đã quá giờ hẹn ~${Math.floor((now - start) / 60000)} phút. Check-in muộn sẽ bị trừ uy tín.`;
         }
+        const destLat = o.address?.lat ?? 21.036778;
+        const destLng = o.address?.lng ?? 105.782374;
+        const tracking = {
+          progress: 0.08,
+          lat: destLat + 0.018,
+          lng: destLng - 0.012,
+          etaMin: 22,
+          updatedAt: now,
+          label: 'Thợ vừa xuất phát',
+        };
         return {
-          order: withStatus(o, 'onway', now, { travelStartedAt: now }),
-          customer: { icon: '🛵', title: `Thợ đang đến · ${code}`, body: `Thợ ${o.tech?.name || ''} đang di chuyển tới địa chỉ của bạn.` },
+          order: withStatus(o, 'onway', now, { travelStartedAt: now, tracking }),
+          customer: { icon: '🛵', title: `Thợ đang đến · ${code}`, body: `Thợ ${o.tech?.name || ''} đang di chuyển tới địa chỉ của bạn. Mở đơn để theo dõi.` },
         };
       });
       if (!ok) { ui.alert('Không cập nhật được', 'Chỉ bấm “Đang đến” khi đã nhận việc.', 'ℹ️'); return; }
       if (lateHint) ui.alert('Cảnh báo giờ hẹn', lateHint, '⏰');
       else ui.toast('Đã báo khách: đang di chuyển', '🛵');
+    },
+    tickTracking: (code) => {
+      up((p) => {
+        const o = p.orders.find((x) => x.code === code);
+        if (!o || o.status !== 'onway') return {};
+        const tracking = advanceTracking(o);
+        if (!tracking) return {};
+        const prev = o.tracking?.progress || 0;
+        if (Math.abs((tracking.progress || 0) - prev) < 0.001) return {};
+        return { orders: p.orders.map((x) => (x.code === code ? { ...x, tracking } : x)) };
+      });
+    },
+    sendOrderChat: (code, text, from) => {
+      const msg = String(text || '').trim();
+      if (!msg) return;
+      const now = Date.now();
+      const row = { id: uid(), from: from === 'tech' ? 'tech' : 'customer', text: msg.slice(0, 400), at: now };
+      let ok = false;
+      up((p) => {
+        const o = p.orders.find((x) => x.code === code);
+        if (!o || o.status === 'cancelled') return {};
+        if (!o.tech && o.status === 'pending') return {};
+        ok = true;
+        const chat = [...(o.chat || []), row];
+        const patch = { orders: p.orders.map((x) => (x.code === code ? { ...x, chat } : x)) };
+        if (from === 'tech') {
+          return {
+            ...patch,
+            notifications: pushNotif(p, {
+              icon: '💬', title: `Thợ nhắn tin · ${code}`, body: msg.slice(0, 80),
+              link: { name: 'order', params: { code } },
+            }),
+          };
+        }
+        return {
+          ...patch,
+          techNotifs: pushTech(p, {
+            icon: '💬', title: `Khách nhắn tin · ${code}`, body: msg.slice(0, 80),
+            link: { name: 'tech-job', params: { code } },
+          }),
+        };
+      });
+      if (!ok) ui.alert('Chưa gửi được', 'Chat khả dụng sau khi thợ nhận đơn.', '💬');
+    },
+    loadDemoScenario: () => {
+      let summary = null;
+      up((p) => {
+        const built = buildDemoScenario(p);
+        summary = built.summary;
+        const { summary: _s, ...patch } = built;
+        return {
+          ...patch,
+          notifications: pushNotif(p, {
+            icon: '🎬',
+            title: 'Đã nạp kịch bản demo',
+            body: `Theo dõi ${DEMO_CODES.onway} · Duyệt báo giá ${DEMO_CODES.quoted} · Thanh toán ${DEMO_CODES.done}`,
+            link: { name: 'order', params: { code: DEMO_CODES.onway } },
+          }),
+          techNotifs: pushTech(p, {
+            icon: '🎬',
+            title: 'Demo: việc mới + đang đến',
+            body: `Nhận ${DEMO_CODES.pending} · Check-in ${DEMO_CODES.onway}`,
+            link: { name: 'tech-job', params: { code: DEMO_CODES.pending } },
+          }),
+        };
+      });
+      ui.alert(
+        'Kịch bản demo sẵn sàng',
+        [
+          `${DEMO_CODES.pending}: việc mới (thợ nhận)`,
+          `${DEMO_CODES.onway}: đang đến + theo dõi GPS`,
+          `${DEMO_CODES.quoted}: chờ khách duyệt báo giá`,
+          `${DEMO_CODES.done}: hoàn thành + thanh toán QR`,
+          '',
+          'Mở 2 tab Khách + Thợ để demo đồng bộ.',
+        ].join('\n'),
+        '🎬',
+      );
+      return summary;
     },
     arrive: (code, checkIn = null) => {
       let lateInfo = null;
@@ -747,7 +950,12 @@ export function AppProvider({ children }) {
           techProfile,
           myVouchers,
           orders: p.orders.map((x) => (x.code === code
-            ? withStatus(o, 'diagnosing', now, { arrivedAt: now, lateCompensation, checkIn: checkInPayload })
+            ? withStatus(o, 'diagnosing', now, {
+              arrivedAt: now,
+              lateCompensation,
+              checkIn: checkInPayload,
+              tracking: { ...(o.tracking || {}), progress: 1, etaMin: 0, updatedAt: now, label: 'Đã check-in tại nhà khách', lat: checkInPayload.lat, lng: checkInPayload.lng },
+            })
             : x)),
           notifications: pushNotif(p, {
             icon: late.tier === 'ok' ? '🔍' : '⏰',
@@ -826,24 +1034,101 @@ export function AppProvider({ children }) {
       if (!ok) { ui.alert('Không gửi được', 'Chỉ gửi báo giá khi đang ở bước kiểm tra thiết bị.', 'ℹ️'); return; }
       ui.toast(qTotal > 0 ? 'Đã gửi chẩn đoán & báo giá' : 'Đã gửi chẩn đoán', '🧾');
     },
-    // Khách duyệt / từ chối báo giá
-    respondQuote: (code, accept, reason) => {
+    // Khách duyệt / yêu cầu sửa báo giá / từ chối & huỷ đơn
+    respondQuote: (code, decision, reason) => {
       const now = Date.now();
       updateOrder(code, (o, p) => {
         if (o.status !== 'quoted' || !o.quote) return {};
-        if (accept) {
+        if (decision === true || decision === 'approve') {
           return {
-            order: withStatus(o, 'repairing', now, { quote: { ...o.quote, approved: true, respondedAt: now }, finalTotal: Math.max(0, o.quote.total - (o.voucherDiscount || 0)) }),
+            order: withStatus(o, 'repairing', now, {
+              quote: { ...o.quote, approved: true, revisionRequested: false, respondedAt: now },
+              finalTotal: Math.max(0, o.quote.total - (o.voucherDiscount || 0)),
+            }),
             tech: { icon: '✅', title: `Khách đã duyệt báo giá · ${code}`, body: `Tổng ${formatVND(o.quote.total)}. Bắt đầu thực hiện.` },
           };
         }
+        if (decision === 'revise') {
+          return {
+            order: withStatus(o, 'diagnosing', now, {
+              quote: {
+                ...o.quote,
+                approved: false,
+                revisionRequested: true,
+                rejectReason: reason || 'Khách yêu cầu điều chỉnh hạng mục / chi phí',
+                respondedAt: now,
+              },
+            }),
+            tech: {
+              icon: '🔄',
+              title: `Khách yêu cầu báo giá lại · ${code}`,
+              body: reason || 'Vui lòng trao đổi với khách và gửi lại báo giá.',
+            },
+          };
+        }
         return {
-          order: withStatus(o, 'cancelled', now, { quote: { ...o.quote, approved: false, rejectReason: reason, respondedAt: now }, cancelReason: `Khách từ chối báo giá${reason ? `: ${reason}` : ''}` }),
+          order: withStatus(o, 'cancelled', now, {
+            quote: { ...o.quote, approved: false, revisionRequested: false, rejectReason: reason, respondedAt: now },
+            cancelReason: `Khách từ chối báo giá${reason ? `: ${reason}` : ''}`,
+          }),
           tech: { icon: '❌', title: `Khách từ chối báo giá · ${code}`, body: reason || 'Đơn đã kết thúc, không thu phí.' },
           extra: { myVouchers: o.voucher?.wallet ? [o.voucher, ...p.myVouchers] : p.myVouchers },
+          customerProfilePatch: (prof) => ({
+            myVouchers: o.voucher?.wallet ? [o.voucher, ...(prof.myVouchers || [])] : (prof.myVouchers || []),
+          }),
         };
       });
-      ui.toast(accept ? 'Đã duyệt báo giá' : 'Đã từ chối báo giá', accept ? '✅' : '✖️');
+      if (decision === true || decision === 'approve') ui.toast('Đã duyệt báo giá', '✅');
+      else if (decision === 'revise') ui.toast('Đã gửi yêu cầu báo giá lại cho thợ', '🔄');
+      else ui.toast('Đã từ chối báo giá & huỷ đơn', '✖️');
+    },
+    // Thợ quét / xác thực mã QR của khách hàng tại nhà
+    verifyCustomerQR: (code, scannedInput = 'AUTO_SCAN') => {
+      const now = Date.now();
+      let resStatus = 'missing';
+      updateOrder(code, (o, p) => {
+        const custPhone = String(o.address?.phone || o.customerPhone || '').replace(/\D/g, '');
+        const raw = String(scannedInput || '').trim();
+        const isAuto = raw === 'AUTO_SCAN';
+        const cleanDigits = raw.replace(/\D/g, '');
+        const valid = isAuto
+          || raw.toUpperCase().includes(`THODMX:${custPhone}`)
+          || (custPhone && cleanDigits === custPhone)
+          || (custPhone && cleanDigits.length >= 4 && custPhone.endsWith(cleanDigits));
+        if (!valid) {
+          resStatus = 'invalid';
+          return {};
+        }
+        resStatus = 'ok';
+        const myTechCode = (p.techProfile || TECH_ME).code;
+        const boosted = o.qrVerified ? (p.techProfile || TECH_ME) : applyTechBonus(p.techProfile || TECH_ME, 1);
+        return {
+          order: {
+            ...o,
+            qrVerified: {
+              at: now,
+              by: myTechCode,
+              phone: custPhone,
+              qrCode: `THODMX:${custPhone || o.address?.name || code}`,
+            },
+          },
+          customer: {
+            icon: '🔳',
+            title: `Đã xác thực QR khách hàng · ${code}`,
+            body: `Thợ ${o.tech?.name || myTechCode} đã quét mã QR xác nhận phục vụ tại nhà bạn.`,
+          },
+          extra: { techProfile: boosted },
+        };
+      });
+      if (resStatus === 'invalid') {
+        ui.alert('Mã QR không khớp', 'Mã QR hoặc số điện thoại không khớp với khách hàng của đơn này.', '🔳');
+        return false;
+      }
+      if (resStatus === 'ok') {
+        ui.toast('Đã xác thực QR khách hàng · +1 uy tín', '🔳');
+        return true;
+      }
+      return false;
     },
     addProgress: (code, { note, percent }) => {
       updateOrder(code, (o) => ({
@@ -981,7 +1266,7 @@ export function AppProvider({ children }) {
       if (res.ok) ui.toast('Đã đặt lại mật khẩu. Hãy đăng nhập lại.', '🔐');
       return res;
     },
-    // Biên bản hoàn thành → đơn hoàn tất, cộng điểm cho khách, cập nhật lịch bảo dưỡng thiết bị
+    // Biên bản hoàn thành → đơn hoàn tất, cộng điểm cho khách, cập nhật lịch bảo dưỡng đúng thiết bị
     completeJob: (code, { summary, paid }) => {
       const now = Date.now();
       const o0 = s.orders.find((x) => x.code === code);
@@ -992,6 +1277,11 @@ export function AppProvider({ children }) {
       const total = orderTotal(o0);
       const earned = o0.kind !== 'warranty' ? Math.max(1, Math.floor(total / 10000)) : 0;
       const cats = new Set(o0.items.map((it) => getService(it.id)?.category));
+      const targetDeviceId = o0.device?.id || null;
+      const updateDevList = (devs = []) => devs.map((dv) => {
+        if (targetDeviceId) return dv.id === targetDeviceId ? { ...dv, lastService: now } : dv;
+        return cats.has(dv.category) ? { ...dv, lastService: now } : dv;
+      });
       const onTimeBonus = !o0.lateCompensation || o0.lateCompensation.tier === 'soft' ? 2 : 1;
       updateOrder(code, (o, p) => {
         const boosted = applyTechBonus(p.techProfile || TECH_ME, onTimeBonus);
@@ -1008,7 +1298,7 @@ export function AppProvider({ children }) {
           }),
           customer: { icon: '✅', title: `Đơn ${code} đã hoàn thành`, body: earned ? `Bạn nhận được +${earned} điểm. Đánh giá để nhận thêm 20 điểm!` : 'Cảm ơn bạn đã sử dụng dịch vụ.' },
           extra: {
-            devices: p.devices.map((dv) => (cats.has(dv.category) ? { ...dv, lastService: now } : dv)),
+            devices: updateDevList(p.devices),
             points: p.points + earned,
             lifetimePoints: p.lifetimePoints + earned,
             techProfile: {
@@ -1016,6 +1306,11 @@ export function AppProvider({ children }) {
               jobs: (boosted.jobs || 0) + 1,
             },
           },
+          customerProfilePatch: (prof) => ({
+            devices: updateDevList(prof.devices || []),
+            points: (prof.points || 0) + earned,
+            lifetimePoints: (prof.lifetimePoints || 0) + earned,
+          }),
         };
       });
       ui.toast(`Đã hoàn thành · +${onTimeBonus} uy tín`, '🎉');
@@ -1030,17 +1325,18 @@ export function AppProvider({ children }) {
     },
     readTechNotif: (id) => up((p) => ({ techNotifs: p.techNotifs.map((n) => (n.id === id ? { ...n, read: true } : n)) })),
     readAllTech: () => up((p) => ({ techNotifs: p.techNotifs.map((n) => ({ ...n, read: true })) })),
-    // Đăng nhập / Đăng ký — phân quyền theo tài khoản
+    // Đăng nhập / Đăng ký — phân quyền & tách biệt dữ liệu theo tài khoản
     applyAuth: (account, link) => {
       up((p) => ({
+        ...switchCustomerSlice(p, account),
         auth: account,
         role: account.role,
         user: {
-          name: account.name || p.user.name || '',
-          phone: account.phone || p.user.phone || '',
-          email: account.email || p.user.email || '',
+          name: account.name || '',
+          phone: account.phone || '',
+          email: account.email || '',
         },
-        techProfile: account.role === 'tech' ? mergeTechProfile(p.techProfile, account) : null,
+        techProfile: account.role === 'tech' ? mergeTechProfile(p.techProfile, account) : p.techProfile,
       }));
       setStack(link ? [{ name: link.name, params: link.params || {}, key: uid() }] : []);
       setTab(account.role === 'tech' ? 'tech-jobs' : 'home');
@@ -1049,14 +1345,15 @@ export function AppProvider({ children }) {
       const res = loginAccount(payload);
       if (!res.ok) return res;
       up((p) => ({
+        ...switchCustomerSlice(p, res.account),
         auth: res.account,
         role: res.account.role,
         user: {
-          name: res.account.name || p.user.name || '',
-          phone: res.account.phone || p.user.phone || '',
-          email: res.account.email || p.user.email || '',
+          name: res.account.name || '',
+          phone: res.account.phone || '',
+          email: res.account.email || '',
         },
-        techProfile: res.account.role === 'tech' ? mergeTechProfile(p.techProfile, res.account) : null,
+        techProfile: res.account.role === 'tech' ? mergeTechProfile(p.techProfile, res.account) : p.techProfile,
       }));
       setStack([]);
       setTab(res.account.role === 'tech' ? 'tech-jobs' : 'home');
@@ -1067,6 +1364,7 @@ export function AppProvider({ children }) {
       const res = registerAccount(payload);
       if (!res.ok) return res;
       up((p) => ({
+        ...switchCustomerSlice(p, res.account),
         auth: res.account,
         role: res.account.role,
         user: {
@@ -1074,11 +1372,32 @@ export function AppProvider({ children }) {
           phone: res.account.phone || '',
           email: res.account.email || '',
         },
-        techProfile: res.account.role === 'tech' ? mergeTechProfile(p.techProfile, res.account) : null,
+        techProfile: res.account.role === 'tech' ? mergeTechProfile(p.techProfile, res.account) : p.techProfile,
       }));
       setStack([]);
       setTab(res.account.role === 'tech' ? 'tech-jobs' : 'home');
       ui.toast(res.account.role === 'tech' ? 'Tạo tài khoản Thợ thành công' : 'Tạo tài khoản thành công', '🎉');
+      return res;
+    },
+    // Đăng nhập nhanh 1 chạm theo vai trò (Khách hàng / Kỹ thuật viên)
+    quickLogin: (role, link) => {
+      const res = quickLoginRole(role);
+      if (!res?.ok) return res;
+      const acc = res.account;
+      up((p) => ({
+        ...switchCustomerSlice(p, acc),
+        auth: acc,
+        role: acc.role,
+        user: {
+          name: acc.name || '',
+          phone: acc.phone || '',
+          email: acc.email || '',
+        },
+        techProfile: acc.role === 'tech' ? mergeTechProfile(p.techProfile, acc) : p.techProfile,
+      }));
+      setStack(link ? [{ name: link.name, params: link.params || {}, key: uid() }] : []);
+      setTab(acc.role === 'tech' ? 'tech-jobs' : 'home');
+      ui.toast(acc.role === 'tech' ? `Đã vào chế độ Thợ (${acc.name})` : `Đã vào chế độ Khách (${acc.name})`, acc.role === 'tech' ? '👷' : '🏠');
       return res;
     },
     // Giữ API cũ cho link demo: chỉ hoạt động nếu đã đăng nhập đúng vai trò
@@ -1160,9 +1479,30 @@ export function AppProvider({ children }) {
       const now = Date.now();
       const items = o.items.filter((it) => ['clean', 'gas'].includes(serviceKind(getService(it.id))));
       const order = {
-        code: newCode, kind: 'warranty', warrantyOf: code, items, goods: 0, productDiscount: 0, voucher: null, voucherDiscount: 0, total: 0,
-        dateLabel: 'Thợ sẽ gọi hẹn giờ', slot: 'Trong 24h', payment: 'Miễn phí (bảo hành)', note: note || 'Yêu cầu bảo hành', workerCode: '',
-        address: o.address, status: 'pending', history: [{ status: 'pending', at: now }], createdAt: now, tech: null, rating: null, dateKey: todayKey(),
+        code: newCode,
+        kind: 'warranty',
+        warrantyOf: code,
+        customerPhone: o.customerPhone || o.address?.phone || s.auth?.phone || '',
+        customerAccountId: o.customerAccountId || s.auth?.id || null,
+        device: o.device || null,
+        items,
+        goods: 0,
+        productDiscount: 0,
+        voucher: null,
+        voucherDiscount: 0,
+        total: 0,
+        dateLabel: 'Thợ sẽ gọi hẹn giờ',
+        slot: 'Trong 24h',
+        payment: 'Miễn phí (bảo hành)',
+        note: note || 'Yêu cầu bảo hành',
+        workerCode: '',
+        address: o.address,
+        status: 'pending',
+        history: [{ status: 'pending', at: now }],
+        createdAt: now,
+        tech: null,
+        rating: null,
+        dateKey: todayKey(),
       };
       up((p) => ({
         orders: [order, ...p.orders],
@@ -1198,7 +1538,7 @@ export function AppProvider({ children }) {
 
     logout: () => {
       clearSession();
-      up(() => ({ auth: null, role: 'customer', techProfile: null }));
+      up((p) => ({ ...switchCustomerSlice(p, null), auth: null, role: 'customer', techProfile: null }));
       setStack([]);
       setTab('home');
       ui.toast('Đã đăng xuất');
@@ -1216,11 +1556,18 @@ export function AppProvider({ children }) {
   const myCode = s.techProfile?.code || TECH_ME.code;
   const techRep = normalizeTechRep(s.techProfile || {});
   const techLocked = isTechLocked(s.techProfile);
+  const custPhone = s.auth?.role === 'customer' ? s.auth.phone : null;
+  const visibleCustomerOrders = custPhone
+    ? s.orders.filter((o) => isOrderOfCustomer(o, custPhone))
+    : s.orders;
+  const viewS = s.auth?.role === 'customer' ? { ...s, orders: visibleCustomerOrders } : s;
+  const meTech = s.techProfile || TECH_ME;
+
   const derived = {
     address,
     cartCount: s.cart.reduce((sum, it) => sum + it.qty, 0),
     unread: s.notifications.filter((n) => !n.read).length,
-    activeOrders: s.orders.filter(isActiveOrder),
+    activeOrders: visibleCustomerOrders.filter(isActiveOrder),
     dueDevices: s.devices.filter((d) => deviceStatus(d).level !== 'ok'),
     // Phía thợ
     techUnread: (s.techNotifs || []).filter((n) => !n.read).length,
@@ -1233,12 +1580,14 @@ export function AppProvider({ children }) {
         return true;
       })
       .sort((a, b) => {
-        const aw = String(a.workerCode || '').trim().toUpperCase() === String(myCode).toUpperCase() ? 0 : 1;
-        const bw = String(b.workerCode || '').trim().toUpperCase() === String(myCode).toUpperCase() ? 0 : 1;
-        return aw - bw || (b.createdAt || 0) - (a.createdAt || 0);
+        const ma = matchJobForTech(a, meTech);
+        const mb = matchJobForTech(b, meTech);
+        if (mb.matchScore !== ma.matchScore) return mb.matchScore - ma.matchScore;
+        return (b.createdAt || 0) - (a.createdAt || 0);
       }),
     myJobs: s.orders.filter((o) => o.tech?.code === myCode),
     workingJobs: s.orders.filter((o) => o.tech?.code === myCode && isActiveOrder(o)),
+    declinedCodes: declinedFor(s, myCode),
     roleHint: urlRoleHint(),
     techReputation: techRep.reputation,
     techLocked,
@@ -1247,9 +1596,9 @@ export function AppProvider({ children }) {
   };
 
   const value = {
-    s, a, nav, ui, d: derived,
+    s: viewS, a, nav, ui, d: derived,
     svc, setSvc, actFilter, setActFilter, warrantyQuery, setWarrantyQuery, warrantyNonce,
-    pendingVoucher, setPendingVoucher,
+    pendingVoucher, setPendingVoucher, pendingDeviceId, setPendingDeviceId,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

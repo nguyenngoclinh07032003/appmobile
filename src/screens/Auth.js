@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { C, R, shadow } from '../theme';
+import { C, R, shadow, grad } from '../theme';
 import { useApp } from '../store';
 import { Btn, Tap } from '../ui';
+
 const ROLES = {
   customer: {
     id: 'customer',
@@ -14,6 +15,8 @@ const ROLES = {
     body: 'Vệ sinh, sửa chữa, lắp đặt tận nhà. Theo dõi đơn và bảo hành 60 ngày.',
     accent: C.primary,
     soft: C.primarySoft,
+    demoPhone: '0901234567',
+    demoName: 'Nguyễn Minh Anh',
     cta: 'Tiếp tục với Khách hàng',
   },
   tech: {
@@ -24,9 +27,13 @@ const ROLES = {
     body: 'Nhận việc được giao, báo giá, cập nhật tiến độ và hoàn thành đơn.',
     accent: C.navy,
     soft: '#E8EEF8',
+    demoPhone: '0987654321',
+    demoName: 'Nguyễn Văn Hùng',
     cta: 'Tiếp tục với Thợ',
   },
 };
+
+const webNoOutline = Platform.select({ web: { outlineStyle: 'none' }, default: {} });
 
 function Field({
   label, value, onChangeText, placeholder, secure, keyboardType, autoCapitalize, right,
@@ -36,7 +43,7 @@ function Field({
       <Text style={st.label}>{label}</Text>
       <View style={st.inputWrap}>
         <TextInput
-          style={st.input}
+          style={[st.input, webNoOutline]}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
@@ -166,7 +173,7 @@ export default function AuthScreen() {
                   <Text style={[st.rolePillText, { color: meta.accent }]}>{meta.title}</Text>
                 </View>
                 <Tap onPress={() => { setStep('pick'); setFormErr(''); }} hitSlop={8}>
-                  <Text style={st.changeRole}>Đổi vai trò</Text>
+                  <Text style={st.changeRole}>‹ Đổi vai trò</Text>
                 </Tap>
               </View>
 
@@ -253,7 +260,8 @@ export default function AuthScreen() {
 
               <Btn
                 title={mode === 'login' ? 'Đăng nhập' : mode === 'forgot' ? 'Đặt lại mật khẩu' : 'Tạo tài khoản'}
-                style={{ marginTop: 18, backgroundColor: meta.accent }}
+                variant={role === 'tech' ? 'dark' : 'primary'}
+                style={{ marginTop: 18 }}
                 disabled={busy}
                 onPress={submit}
               />
@@ -286,6 +294,7 @@ const st = StyleSheet.create({
   scroll: { flexGrow: 1, paddingBottom: 28 },
   hero: {
     backgroundColor: C.navy,
+    ...grad.navyHero,
     paddingHorizontal: 22,
     paddingTop: 24,
     paddingBottom: 40,
@@ -316,10 +325,11 @@ const st = StyleSheet.create({
     backgroundColor: C.gold,
     alignItems: 'center',
     justifyContent: 'center',
+    ...shadow.gold,
   },
   brand: { fontSize: 28, fontWeight: '900', color: '#fff', letterSpacing: -0.5 },
   heroTitle: { marginTop: 18, fontSize: 26, fontWeight: '900', color: '#fff', lineHeight: 32, letterSpacing: -0.4 },
-  heroSub: { marginTop: 8, fontSize: 14, color: 'rgba(255,255,255,0.78)', lineHeight: 21, maxWidth: 320, fontWeight: '500' },
+  heroSub: { marginTop: 8, fontSize: 14, color: 'rgba(255,255,255,0.8)', lineHeight: 21, maxWidth: 320, fontWeight: '500' },
   sheet: {
     marginTop: -20,
     backgroundColor: C.bg,
@@ -357,6 +367,45 @@ const st = StyleSheet.create({
     justifyContent: 'center',
   },
   doorArrow: { fontSize: 24, fontWeight: '300', marginTop: -2 },
+  quickBox: {
+    marginTop: 6,
+    marginBottom: 10,
+    backgroundColor: '#fff',
+    borderRadius: R.lg,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: C.line,
+    ...shadow.sm,
+  },
+  quickTitle: { fontSize: 13, fontWeight: '800', color: C.ink },
+  quickPass: { fontSize: 11, fontWeight: '700', color: C.muted, backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  quickSub: { fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 17 },
+  quickBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  quickBtnRole: { fontSize: 12.5, fontWeight: '800' },
+  quickBtnPhone: { fontSize: 11, color: C.muted, fontWeight: '600', marginTop: 1 },
+  demoHintBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginTop: 8,
+  },
+  demoHintText: { flex: 1, fontSize: 12.5, color: C.ink2 },
+  demoHintAction: { fontSize: 12, fontWeight: '800', color: C.primary },
   helper: {
     marginTop: 8,
     fontSize: 12,
@@ -380,7 +429,7 @@ const st = StyleSheet.create({
     paddingVertical: 8,
   },
   rolePillText: { fontWeight: '800', fontSize: 13 },
-  changeRole: { color: C.muted, fontWeight: '700', fontSize: 13 },
+  changeRole: { color: C.primary, fontWeight: '700', fontSize: 13 },
   seg: {
     flexDirection: 'row',
     backgroundColor: '#E4EAF3',

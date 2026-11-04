@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { C, R, shadow, toneOf, STATUS_META } from '../theme';
+import { C, R, shadow, toneOf, STATUS_META, grad } from '../theme';
 import {
   CATEGORIES, SERVICES, INSTALL_SERVICES, REPAIR_SERVICES, LIFETIME_SERVICES, SERVICE_TYPES, CAT_SHORT,
   formatVND, getService, catLabel, catIcon, tierOf, HOTLINE,
@@ -231,7 +231,7 @@ export function DevicesScreen() {
                 </Text>
               </View>
               {d.dueDevices.length ? (
-                <Btn title="Đặt lịch" variant="gold" small onPress={() => nav.services('bao-duong', d.dueDevices[0].category)} />
+                <Btn title="Đặt lịch" variant="gold" small onPress={() => nav.services('bao-duong', d.dueDevices[0].category, d.dueDevices[0].id)} />
               ) : <Text style={{ fontSize: 42 }}>🏠</Text>}
             </View>
             {s.devices.map((dev) => {
@@ -255,8 +255,8 @@ export function DevicesScreen() {
                     <Text style={ui.meta}>{dev.lastService ? `Lần cuối ${fmtDate(dev.lastService)}` : `Chu kỳ ${stt.months} tháng`}</Text>
                   </View>
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                    <Btn title="Đặt bảo dưỡng" small variant="soft" style={{ flex: 1 }} onPress={() => nav.services('bao-duong', dev.category)} />
-                    <Btn title="Báo hỏng" small variant="outline" style={{ flex: 1 }} onPress={() => nav.services('sua-chua', dev.category)} />
+                    <Btn title="Đặt bảo dưỡng" small variant="soft" style={{ flex: 1 }} onPress={() => nav.services('bao-duong', dev.category, dev.id)} />
+                    <Btn title="Báo hỏng" small variant="outline" style={{ flex: 1 }} onPress={() => nav.services('sua-chua', dev.category, dev.id)} />
                   </View>
                 </Card>
               );
@@ -444,16 +444,16 @@ const sx = StyleSheet.create({
   sort: { paddingHorizontal: 10, height: 30, borderRadius: 9, justifyContent: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: C.line },
   sortOn: { borderColor: C.primary, backgroundColor: C.primarySoft },
   sortText: { fontSize: 12, fontWeight: '700', color: C.ink2 },
-  wHero: { backgroundColor: C.navy, borderRadius: 20, padding: 18, flexDirection: 'row', alignItems: 'center' },
+  wHero: { backgroundColor: C.navy, ...grad.navyHero, borderRadius: 20, padding: 18, flexDirection: 'row', alignItems: 'center', ...shadow.md },
   wInfo: { borderRadius: 10, padding: 10, marginTop: 12 },
   groupTitle: { fontSize: 15, fontWeight: '800', color: C.ink, marginTop: 20 },
-  devHero: { backgroundColor: C.navy, borderRadius: 20, padding: 18, flexDirection: 'row', alignItems: 'center' },
+  devHero: { backgroundColor: C.navy, ...grad.navyHero, borderRadius: 20, padding: 18, flexDirection: 'row', alignItems: 'center', ...shadow.md },
   oHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 9 },
   oCode: { fontWeight: '800', fontSize: 13 },
   oStatus: { fontWeight: '800', fontSize: 12 },
   oName: { fontSize: 15, fontWeight: '800', color: C.ink, lineHeight: 20 },
   oFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F0F3F8' },
-  profile: { backgroundColor: C.navy, padding: 16, paddingTop: 20, paddingBottom: 48, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: 'hidden' },
+  profile: { backgroundColor: C.navy, ...grad.navyHero, padding: 16, paddingTop: 20, paddingBottom: 48, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: 'hidden' },
   blob: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.06)' },
   avatar: { width: 64, height: 64, borderRadius: 22, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 28, fontWeight: '900', color: C.navy },

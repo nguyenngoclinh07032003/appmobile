@@ -1,24 +1,63 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, ScrollView, Platform,
+  View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, ScrollView, Platform, Animated, Easing,
 } from 'react-native';
-import { C, R, shadow, toneOf, STATUS_META } from './theme';
+import { C, R, shadow, toneOf, STATUS_META, grad } from './theme';
 import { formatVND, discountOf, isEstimate, isClean, durationText } from './data';
 import { useApp } from './store';
 
-export const Tap = ({ style, children, ...rest }) => (
-  <TouchableOpacity activeOpacity={0.8} style={style} {...rest}>{children}</TouchableOpacity>
-);
+const webTapStyle = Platform.select({
+  web: {
+    cursor: 'pointer',
+    userSelect: 'none',
+    transitionProperty: 'transform, opacity, background-color, border-color, box-shadow',
+    transitionDuration: '150ms',
+    transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
+  },
+  default: {},
+});
+
+export function Tap({ style, children, disabled, onPressIn, onPressOut, scaleTo = 0.97, ...rest }) {
+  const [pressed, setPressed] = React.useState(false);
+  return (
+    <TouchableOpacity
+      activeOpacity={0.82}
+      disabled={disabled}
+      onPressIn={(e) => { setPressed(true); onPressIn?.(e); }}
+      onPressOut={(e) => { setPressed(false); onPressOut?.(e); }}
+      style={[
+        webTapStyle,
+        style,
+        pressed && { transform: [{ scale: scaleTo }] },
+        disabled && Platform.OS === 'web' ? { cursor: 'not-allowed' } : null,
+      ]}
+      {...rest}
+    >
+      {children}
+    </TouchableOpacity>
+  );
+}
 
 // ------------------------------------------------------------------ Buttons
 export function Btn({ title, onPress, variant = 'primary', small, style, disabled, icon, textStyle }) {
   const v = BTN[variant] || BTN.primary;
+  const [pressed, setPressed] = React.useState(false);
   return (
     <TouchableOpacity
-      activeOpacity={0.85}
+      activeOpacity={0.86}
       onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
       disabled={disabled}
-      style={[ui.btn, small && ui.btnSm, v.box, disabled && { opacity: 0.45 }, style]}
+      style={[
+        ui.btn,
+        small && ui.btnSm,
+        v.box,
+        webTapStyle,
+        style,
+        pressed && !disabled && { transform: [{ scale: 0.97 }] },
+        disabled && { opacity: 0.45 },
+      ]}
     >
       {icon ? <Text style={[ui.btnIcon, small && { fontSize: 13 }, v.text]}>{icon}</Text> : null}
       <Text style={[ui.btnText, small && ui.btnTextSm, v.text, textStyle]} numberOfLines={1}>{title}</Text>
@@ -26,14 +65,14 @@ export function Btn({ title, onPress, variant = 'primary', small, style, disable
   );
 }
 const BTN = {
-  primary: { box: { backgroundColor: C.primary, ...shadow.primary }, text: { color: '#fff' } },
-  dark: { box: { backgroundColor: C.navy, ...shadow.md }, text: { color: '#fff' } },
-  gold: { box: { backgroundColor: C.gold, ...shadow.gold }, text: { color: C.navy } },
-  soft: { box: { backgroundColor: C.primarySoft }, text: { color: C.primary } },
-  ghost: { box: { backgroundColor: '#F1F4F9' }, text: { color: C.ink2 } },
+  primary: { box: { backgroundColor: C.primary, ...grad.primaryBtn, ...shadow.primary }, text: { color: '#fff' } },
+  dark: { box: { backgroundColor: C.navy, ...grad.navyCard, ...shadow.md }, text: { color: '#fff' } },
+  gold: { box: { backgroundColor: C.gold, ...grad.goldBtn, ...shadow.gold }, text: { color: C.navy } },
+  soft: { box: { backgroundColor: C.primarySoft, borderWidth: 1, borderColor: '#D6E4FF' }, text: { color: C.primary } },
+  ghost: { box: { backgroundColor: '#F1F5F9' }, text: { color: C.ink2 } },
   outline: { box: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: C.line }, text: { color: C.ink } },
-  danger: { box: { backgroundColor: C.red }, text: { color: '#fff' } },
-  dangerSoft: { box: { backgroundColor: C.redSoft }, text: { color: C.red } },
+  danger: { box: { backgroundColor: C.red, ...grad.dangerBtn }, text: { color: '#fff' } },
+  dangerSoft: { box: { backgroundColor: C.redSoft, borderWidth: 1, borderColor: '#FAD4D0' }, text: { color: C.red } },
 };
 
 export function IconBtn({ icon, onPress, badge, dark, style, size = 40, label }) {
@@ -42,7 +81,20 @@ export function IconBtn({ icon, onPress, badge, dark, style, size = 40, label })
       onPress={onPress}
       activeOpacity={0.75}
       accessibilityLabel={label}
-      style={[{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: dark ? 'rgba(255,255,255,0.14)' : '#F1F4F9' }, style]}
+      style={[
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: dark ? 'rgba(255,255,255,0.14)' : '#F1F5F9',
+          borderWidth: dark ? 1 : 0,
+          borderColor: dark ? 'rgba(255,255,255,0.16)' : 'transparent',
+        },
+        webTapStyle,
+        style,
+      ]}
     >
       <Text style={{ fontSize: size * 0.42, color: dark ? '#fff' : C.ink }}>{icon}</Text>
       {badge ? (
@@ -54,13 +106,13 @@ export function IconBtn({ icon, onPress, badge, dark, style, size = 40, label })
 
 // ------------------------------------------------------------------ Layout
 export function Card({ children, style, onPress }) {
-  if (onPress) return <Tap onPress={onPress} style={[ui.card, style]}>{children}</Tap>;
+  if (onPress) return <Tap onPress={onPress} scaleTo={0.985} style={[ui.card, style]}>{children}</Tap>;
   return <View style={[ui.card, style]}>{children}</View>;
 }
 
 export function IconBox({ icon, size = 44, bg = C.primarySoft, radius, style }) {
   return (
-    <View style={[{ width: size, height: size, borderRadius: radius ?? size * 0.32, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }, style]}>
+    <View style={[{ width: size, height: size, borderRadius: radius ?? size * 0.34, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }, style]}>
       <Text style={{ fontSize: size * 0.46 }}>{icon}</Text>
     </View>
   );
@@ -70,7 +122,7 @@ export function TopBar({ title, sub, onBack, right }) {
   const { nav } = useApp();
   return (
     <View style={ui.topBar}>
-      <IconBtn icon="‹" onPress={onBack || nav.back} size={38} label="Quay lại" style={{ backgroundColor: '#F1F4F9' }} />
+      <IconBtn icon="‹" onPress={onBack || nav.back} size={38} label="Quay lại" style={{ backgroundColor: '#F1F5F9' }} />
       <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: 8 }}>
         <Text style={ui.topBarTitle} numberOfLines={1}>{title}</Text>
         {sub ? <Text style={ui.topBarSub} numberOfLines={1}>{sub}</Text> : null}
@@ -106,7 +158,7 @@ export function Divider({ style }) { return <View style={[{ height: 1, backgroun
 // ------------------------------------------------------------------ Bits
 export function Chip({ label, icon, on, onPress, style }) {
   return (
-    <Tap onPress={onPress} style={[ui.chip, on && ui.chipOn, style]}>
+    <Tap onPress={onPress} scaleTo={0.95} style={[ui.chip, on && ui.chipOn, style]}>
       {icon ? <Text style={{ fontSize: 14, marginRight: 6 }}>{icon}</Text> : null}
       <Text style={[ui.chipText, on && ui.chipTextOn]}>{label}</Text>
     </Tap>
@@ -116,7 +168,6 @@ export function Chip({ label, icon, on, onPress, style }) {
 export function Pills({ items, value, onChange, style, contentStyle }) {
   const ref = React.useRef(null);
   const pos = React.useRef({});
-  // Tự cuộn tới mục đang chọn (vd. khi mở tab "Bảo hành" từ màn khác)
   React.useEffect(() => {
     const x = pos.current[value];
     if (x != null) ref.current?.scrollTo({ x: Math.max(0, x - 16), animated: true });
@@ -133,7 +184,6 @@ export function Pills({ items, value, onChange, style, contentStyle }) {
 }
 
 // ScrollView ngang. Trên web: kéo bằng chuột + lăn chuột để cuộn ngang
-// (RN Web mặc định chỉ cuộn ngang bằng cảm ứng / Shift + lăn chuột).
 export const HScroll = React.forwardRef(({ children, style, contentContainerStyle, ...rest }, outerRef) => {
   const ref = React.useRef(null);
   React.useImperativeHandle(outerRef, () => ref.current);
@@ -156,14 +206,13 @@ export const HScroll = React.forwardRef(({ children, style, contentContainerStyl
       if (dragged) { node.scrollLeft = startLeft - dx; e.preventDefault(); }
     };
     const onUp = () => { down = false; node.style.cursor = ''; };
-    // Vừa kéo xong thì không tính là bấm (onPress của RN Web chạy theo sự kiện click)
     const onClick = (e) => { if (dragged) { e.stopPropagation(); e.preventDefault(); dragged = false; } };
     const onWheel = (e) => {
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // touchpad đã cuộn ngang
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
       const max = node.scrollWidth - node.clientWidth;
       if (max <= 0) return;
       const next = node.scrollLeft + e.deltaY;
-      if ((e.deltaY < 0 && node.scrollLeft <= 0) || (e.deltaY > 0 && node.scrollLeft >= max)) return; // tới mép thì để trang cuộn dọc
+      if ((e.deltaY < 0 && node.scrollLeft <= 0) || (e.deltaY > 0 && node.scrollLeft >= max)) return;
       node.scrollLeft = Math.min(max, Math.max(0, next));
       e.preventDefault();
     };
@@ -200,7 +249,7 @@ export function Segmented({ items, value, onChange, style }) {
       {items.map((it) => {
         const on = value === it.id;
         return (
-          <Tap key={it.id} onPress={() => onChange(it.id)} style={[ui.segmentItem, on && ui.segmentOn]}>
+          <Tap key={it.id} onPress={() => onChange(it.id)} scaleTo={0.97} style={[ui.segmentItem, on && ui.segmentOn]}>
             <Text style={[ui.segmentText, on && ui.segmentTextOn]} numberOfLines={1}>{it.label}{it.count ? ` (${it.count})` : ''}</Text>
           </Tap>
         );
@@ -222,16 +271,22 @@ export function Stars({ value = 5, size = 12, onChange }) {
   return (
     <View style={{ flexDirection: 'row', gap: onChange ? 8 : 1 }}>
       {[1, 2, 3, 4, 5].map((i) => (
-        <Text key={i} onPress={onChange ? () => onChange(i) : undefined} style={{ fontSize: size, color: i <= value ? '#F5A623' : '#D9DEE7' }}>★</Text>
+        <Text key={i} onPress={onChange ? () => onChange(i) : undefined} style={[{ fontSize: size, color: i <= value ? '#F5A623' : '#D9DEE7' }, onChange && webTapStyle]}>★</Text>
       ))}
     </View>
   );
 }
 
 export function Progress({ value, color = C.primary, style }) {
+  const pct = `${Math.round(Math.min(1, Math.max(0, value)) * 100)}%`;
   return (
-    <View style={[{ height: 6, borderRadius: 3, backgroundColor: '#EDF1F7', overflow: 'hidden' }, style]}>
-      <View style={{ width: `${Math.round(Math.min(1, Math.max(0, value)) * 100)}%`, height: '100%', backgroundColor: color, borderRadius: 3 }} />
+    <View style={[{ height: 7, borderRadius: 4, backgroundColor: '#E8EEF6', overflow: 'hidden' }, style]}>
+      <View
+        style={[
+          { width: pct, height: '100%', backgroundColor: color, borderRadius: 4 },
+          Platform.OS === 'web' ? { transition: 'width 320ms cubic-bezier(0.22, 1, 0.36, 1)' } : null,
+        ]}
+      />
     </View>
   );
 }
@@ -242,7 +297,7 @@ export function Radio({ on }) {
 
 export function Checkbox({ on, label, onPress }) {
   return (
-    <Tap onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 }}>
+    <Tap onPress={onPress} scaleTo={0.98} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 }}>
       <View style={[ui.checkbox, on && ui.checkboxOn]}>{on ? <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>✓</Text> : null}</View>
       <Text style={{ fontSize: 14, color: C.ink, fontWeight: '500' }}>{label}</Text>
     </Tap>
@@ -252,9 +307,9 @@ export function Checkbox({ on, label, onPress }) {
 export function Stepper({ value, onChange, min = 1 }) {
   return (
     <View style={ui.stepper}>
-      <Tap style={ui.stepBtn} onPress={() => onChange(Math.max(min, value - 1))} hitSlop={6}><Text style={ui.stepMark}>−</Text></Tap>
+      <Tap style={ui.stepBtn} scaleTo={0.9} onPress={() => onChange(Math.max(min, value - 1))} hitSlop={6}><Text style={ui.stepMark}>−</Text></Tap>
       <Text style={ui.stepVal}>{value}</Text>
-      <Tap style={[ui.stepBtn, { backgroundColor: C.primarySoft }]} onPress={() => onChange(value + 1)} hitSlop={6}><Text style={[ui.stepMark, { color: C.primary }]}>+</Text></Tap>
+      <Tap style={[ui.stepBtn, { backgroundColor: C.primarySoft }]} scaleTo={0.9} onPress={() => onChange(value + 1)} hitSlop={6}><Text style={[ui.stepMark, { color: C.primary }]}>+</Text></Tap>
     </View>
   );
 }
@@ -273,7 +328,7 @@ export function SelectRow({ label, value, placeholder, onPress, icon }) {
   return (
     <View>
       {label ? <Text style={ui.fieldLabel}>{label}</Text> : null}
-      <Tap onPress={onPress} style={ui.selectRow}>
+      <Tap onPress={onPress} scaleTo={0.985} style={ui.selectRow}>
         {icon ? <Text style={{ fontSize: 16, marginRight: 10 }}>{icon}</Text> : null}
         <Text style={[{ flex: 1, fontSize: 15, color: value ? C.ink : C.faint }]} numberOfLines={1}>{value || placeholder}</Text>
         <Text style={ui.chevron}>›</Text>
@@ -284,8 +339,8 @@ export function SelectRow({ label, value, placeholder, onPress, icon }) {
 
 export function ListRow({ icon, iconBg, label, sub, value, onPress, danger, last, right }) {
   return (
-    <Tap onPress={onPress} style={[ui.listRow, !last && ui.listDivider]}>
-      {icon ? <IconBox icon={icon} size={36} bg={iconBg || '#F1F4F9'} radius={11} /> : null}
+    <Tap onPress={onPress} scaleTo={0.99} style={[ui.listRow, !last && ui.listDivider]}>
+      {icon ? <IconBox icon={icon} size={38} bg={iconBg || '#F1F5F9'} radius={12} /> : null}
       <View style={{ flex: 1 }}>
         <Text style={[ui.listLabel, danger && { color: C.red }]}>{label}</Text>
         {sub ? <Text style={ui.meta} numberOfLines={1}>{sub}</Text> : null}
@@ -299,7 +354,7 @@ export function ListRow({ icon, iconBg, label, sub, value, onPress, danger, last
 export function EmptyState({ icon, title, body, action, onAction, style }) {
   return (
     <View style={[ui.empty, style]}>
-      <View style={ui.emptyIcon}><Text style={{ fontSize: 36 }}>{icon}</Text></View>
+      <View style={ui.emptyIcon}><Text style={{ fontSize: 38 }}>{icon}</Text></View>
       <Text style={ui.emptyTitle}>{title}</Text>
       {body ? <Text style={ui.emptyBody}>{body}</Text> : null}
       {action ? <Btn title={action} onPress={onAction} style={{ alignSelf: 'stretch', marginTop: 20 }} /> : null}
@@ -319,12 +374,40 @@ export function Price({ value, old, size = 15, row }) {
 // ------------------------------------------------------------------ Service visuals
 export function Media({ item, height, width, radius = 0, iconSize }) {
   const tone = toneOf(item?.category);
-  const fs = iconSize || (height >= 180 ? 76 : height >= 100 ? 44 : 28);
+  const fs = iconSize || (height >= 180 ? 74 : height >= 100 ? 44 : 26);
+  const emblemSize = height >= 180 ? 116 : height >= 100 ? 68 : 42;
   return (
-    <View style={{ height, width: width || '100%', borderRadius: radius, backgroundColor: tone.bg, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-      <View style={{ position: 'absolute', width: height * 1.1, height: height * 1.1, borderRadius: height, backgroundColor: 'rgba(255,255,255,0.45)', top: -height * 0.45, right: -height * 0.35 }} />
-      <View style={{ position: 'absolute', width: height * 0.6, height: height * 0.6, borderRadius: height, backgroundColor: 'rgba(255,255,255,0.35)', bottom: -height * 0.25, left: -height * 0.15 }} />
-      <Text style={{ fontSize: fs }}>{item?.icon || '🔧'}</Text>
+    <View
+      style={[
+        {
+          height,
+          width: width || '100%',
+          borderRadius: radius,
+          backgroundColor: tone.bg,
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+        },
+        Platform.OS === 'web' && tone.grad ? { backgroundImage: tone.grad } : null,
+      ]}
+    >
+      <View style={{ position: 'absolute', width: height * 1.15, height: height * 1.15, borderRadius: height, backgroundColor: 'rgba(255,255,255,0.52)', top: -height * 0.45, right: -height * 0.32 }} />
+      <View style={{ position: 'absolute', width: height * 0.65, height: height * 0.65, borderRadius: height, backgroundColor: 'rgba(255,255,255,0.38)', bottom: -height * 0.25, left: -height * 0.15 }} />
+      <View
+        style={{
+          width: emblemSize,
+          height: emblemSize,
+          borderRadius: emblemSize * 0.36,
+          backgroundColor: 'rgba(255,255,255,0.68)',
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.9)',
+          alignItems: 'center',
+          justifyContent: 'center',
+          ...shadow.sm,
+        }}
+      >
+        <Text style={{ fontSize: fs }}>{item?.icon || '🔧'}</Text>
+      </View>
     </View>
   );
 }
@@ -334,16 +417,16 @@ export function ServiceCard({ item, style }) {
   const discount = discountOf(item);
   const fav = s.favorites.includes(item.id);
   return (
-    <Tap style={[ui.sCard, style]} onPress={() => nav.push('detail', { id: item.id })}>
+    <Tap scaleTo={0.975} style={[ui.sCard, style]} onPress={() => nav.push('detail', { id: item.id })}>
       <View>
-        <Media item={item} height={108} />
+        <Media item={item} height={110} />
         {discount > 0 ? <View style={ui.offTag}><Text style={ui.offTagText}>-{discount}%</Text></View> : null}
-        <Tap style={ui.favBtn} onPress={() => a.toggleFav(item.id)} hitSlop={6}>
+        <Tap style={ui.favBtn} scaleTo={0.88} onPress={() => a.toggleFav(item.id)} hitSlop={6}>
           <Text style={{ fontSize: 14, color: fav ? C.red : C.muted }}>{fav ? '♥' : '♡'}</Text>
         </Tap>
         <View style={ui.warrantyTag}><Text style={ui.warrantyTagText}>🛡 BH 60 ngày</Text></View>
       </View>
-      <View style={{ padding: 10, flex: 1 }}>
+      <View style={{ padding: 11, flex: 1 }}>
         <Text numberOfLines={2} style={ui.sCardName}>{item.name}</Text>
         <Text numberOfLines={1} style={ui.meta}>
           {item.rating ? `★ ${item.rating}` : '✦ Mới'}{item.sold ? ` · ${item.sold.replace('Đã bán ', '')} đã đặt` : ''}
@@ -354,7 +437,7 @@ export function ServiceCard({ item, style }) {
             <Text style={ui.price}>{formatVND(item.price)}</Text>
             {item.oldPrice ? <Text style={ui.oldPrice}>{formatVND(item.oldPrice)}</Text> : <Text style={[ui.oldPrice, { textDecorationLine: 'none' }]}> </Text>}
           </View>
-          <Tap style={ui.addBtn} onPress={() => a.addToCart(item.id)} accessibilityLabel="Thêm vào giỏ" hitSlop={6}>
+          <Tap style={ui.addBtn} scaleTo={0.9} onPress={() => a.addToCart(item.id)} accessibilityLabel="Thêm vào giỏ" hitSlop={6}>
             <Text style={ui.addBtnText}>+</Text>
           </Tap>
         </View>
@@ -374,8 +457,8 @@ export function ServiceGrid({ data, style }) {
 export function ServiceRow({ item, right, onPress }) {
   const { nav } = useApp();
   return (
-    <Tap style={ui.sRow} onPress={onPress || (() => nav.push('detail', { id: item.id }))}>
-      <Media item={item} height={64} width={64} radius={14} />
+    <Tap scaleTo={0.985} style={ui.sRow} onPress={onPress || (() => nav.push('detail', { id: item.id }))}>
+      <Media item={item} height={64} width={64} radius={16} />
       <View style={{ flex: 1 }}>
         <Text numberOfLines={2} style={ui.sRowName}>{item.name}</Text>
         <Price value={item.price} old={item.oldPrice} size={14} row />
@@ -386,19 +469,31 @@ export function ServiceRow({ item, right, onPress }) {
 }
 
 // ------------------------------------------------------------------ Overlays
-// Trên web desktop, App hiển thị trong khung "điện thoại"; FrameCtx cho biết vị trí khung
-// để sheet/dialog nằm gọn trong đó thay vì phủ toàn màn hình trình duyệt.
 export const FrameCtx = React.createContext(null);
-const frameBox = (rect) => (rect ? { position: 'absolute', left: rect.left, top: rect.top, width: rect.width, height: rect.height, borderRadius: 28, overflow: 'hidden' } : { flex: 1 });
+const frameBox = (rect) => (rect ? { position: 'absolute', left: rect.left, top: rect.top, width: rect.width, height: rect.height, borderRadius: 30, overflow: 'hidden' } : { flex: 1 });
 
 export function Sheet({ visible, onClose, title, children, footer }) {
   const rect = React.useContext(FrameCtx);
+  const slide = useRef(new Animated.Value(60)).current;
+  const fade = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (visible) {
+      slide.setValue(48);
+      fade.setValue(0);
+      Animated.parallel([
+        Animated.timing(fade, { toValue: 1, duration: 180, useNativeDriver: false }),
+        Animated.spring(slide, { toValue: 0, speed: 24, bounciness: 4, useNativeDriver: false }),
+      ]).start();
+    }
+  }, [visible, slide, fade]);
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="none" transparent onRequestClose={onClose}>
       <View style={frameBox(rect)}>
         <View style={ui.modalWrap}>
-          <TouchableOpacity style={ui.backdrop} activeOpacity={1} onPress={onClose} />
-          <View style={ui.sheet}>
+          <Animated.View style={[ui.backdrop, { opacity: fade }]}>
+            <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
+          </Animated.View>
+          <Animated.View style={[ui.sheet, { transform: [{ translateY: slide }] }]}>
             <View style={ui.handle} />
             <View style={ui.sheetHead}>
               <Text style={ui.sheetTitle}>{title}</Text>
@@ -408,7 +503,7 @@ export function Sheet({ visible, onClose, title, children, footer }) {
               {children}
             </ScrollView>
             {footer ? <View style={{ paddingTop: 8, paddingBottom: 20 }}>{footer}</View> : null}
-          </View>
+          </Animated.View>
         </View>
       </View>
     </Modal>
@@ -418,31 +513,45 @@ export function Sheet({ visible, onClose, title, children, footer }) {
 export function DialogHost() {
   const { ui: u } = useApp();
   const rect = React.useContext(FrameCtx);
+  const scale = useRef(new Animated.Value(0.92)).current;
+  const fade = useRef(new Animated.Value(0)).current;
   const cfg = u.dialogCfg;
+  useEffect(() => {
+    if (cfg) {
+      scale.setValue(0.92);
+      fade.setValue(0);
+      Animated.parallel([
+        Animated.timing(fade, { toValue: 1, duration: 160, useNativeDriver: false }),
+        Animated.spring(scale, { toValue: 1, speed: 28, bounciness: 6, useNativeDriver: false }),
+      ]).start();
+    }
+  }, [cfg, scale, fade]);
   if (!cfg) return null;
   const actions = cfg.actions || [{ label: 'Đóng', variant: 'primary' }];
   return (
-    <Modal visible transparent animationType="fade" onRequestClose={u.closeDialog}>
+    <Modal visible transparent animationType="none" onRequestClose={u.closeDialog}>
       <View style={frameBox(rect)}>
         <View style={ui.dialogWrap}>
-          <TouchableOpacity style={ui.backdrop} activeOpacity={1} onPress={u.closeDialog} />
-          <View style={ui.dialog}>
-            {cfg.icon ? <IconBox icon={cfg.icon} size={56} bg={C.primarySoft} radius={18} style={{ alignSelf: 'center', marginBottom: 12 }} /> : null}
+          <Animated.View style={[ui.backdrop, { opacity: fade }]}>
+            <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={u.closeDialog} />
+          </Animated.View>
+          <Animated.View style={[ui.dialog, { opacity: fade, transform: [{ scale }] }]}>
+            {cfg.icon ? <IconBox icon={cfg.icon} size={58} bg={C.primarySoft} radius={20} style={{ alignSelf: 'center', marginBottom: 14 }} /> : null}
             <Text style={ui.dialogTitle}>{cfg.title}</Text>
             {cfg.message ? <Text style={ui.dialogBody}>{cfg.message}</Text> : null}
             {cfg.content || null}
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 22 }}>
               {actions.map((ac) => (
                 <Btn
                   key={ac.label}
                   title={ac.label}
                   variant={ac.variant || 'primary'}
-                  style={{ flex: 1, minHeight: 46, paddingHorizontal: 8 }}
+                  style={{ flex: 1, minHeight: 46 }}
                   onPress={() => { u.closeDialog(); ac.onPress?.(); }}
                 />
               ))}
             </View>
-          </View>
+          </Animated.View>
         </View>
       </View>
     </Modal>
@@ -451,12 +560,26 @@ export function DialogHost() {
 
 export function ToastHost() {
   const { ui: u } = useApp();
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!u.toastMsg) return;
+    anim.setValue(0);
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: 200,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [u.toastMsg?.id]);
   if (!u.toastMsg) return null;
+  const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] });
   return (
-    <View style={ui.toast} pointerEvents="none">
-      <Text style={{ fontSize: 15, marginRight: 8, color: '#fff' }}>{u.toastMsg.icon}</Text>
+    <Animated.View style={[ui.toast, { opacity: anim, transform: [{ translateY }] }]} pointerEvents="none">
+      <View style={ui.toastIconWrap}>
+        <Text style={{ fontSize: 13, color: C.navy, fontWeight: '900' }}>{u.toastMsg.icon}</Text>
+      </View>
       <Text style={ui.toastText}>{u.toastMsg.text}</Text>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -488,7 +611,7 @@ export function PseudoQR({ value, size = 200 }) {
     }
     rows.push(<View key={r} style={{ flexDirection: 'row' }}>{cols}</View>);
   }
-  return <View style={{ padding: 12, backgroundColor: '#fff', borderRadius: 16 }}>{rows}</View>;
+  return <View style={{ padding: 12, backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: C.line }}>{rows}</View>;
 }
 
 // ------------------------------------------------------------------ Styles
@@ -497,20 +620,20 @@ const webNoOutline = Platform.select({ web: { outlineStyle: 'none' }, default: {
 export const ui = StyleSheet.create({
   btn: { minHeight: 52, borderRadius: R.md, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, flexDirection: 'row' },
   btnSm: { minHeight: 38, borderRadius: 12, paddingHorizontal: 13 },
-  btnText: { fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
+  btnText: { fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
   btnTextSm: { fontSize: 13, letterSpacing: 0 },
   btnIcon: { fontSize: 15, marginRight: 6 },
   badge: { position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, backgroundColor: C.red, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
-  card: { backgroundColor: C.card, borderRadius: R.lg, padding: 16, ...shadow.sm, borderWidth: 1, borderColor: 'rgba(228,234,243,0.9)' },
-  topBar: { height: 58, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line },
+  card: { backgroundColor: C.card, borderRadius: R.lg, padding: 16, ...shadow.sm, borderWidth: 1, borderColor: 'rgba(226,232,240,0.95)' },
+  topBar: { height: 58, backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line, ...shadow.sm },
   topBarTitle: { fontSize: 17, fontWeight: '800', color: C.ink, letterSpacing: -0.2 },
   topBarSub: { fontSize: 12, color: C.muted, marginTop: 1, fontWeight: '600' },
   pageHead: { backgroundColor: '#fff', paddingHorizontal: 18, paddingTop: 18, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line },
   pageHeadTitle: { fontSize: 26, fontWeight: '900', color: C.ink, letterSpacing: -0.5 },
   pageHeadSub: { color: C.muted, marginTop: 3, fontSize: 13, fontWeight: '500' },
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 24, marginBottom: 12 },
-  section: { fontSize: 18, fontWeight: '800', color: C.ink, letterSpacing: -0.2 },
+  section: { fontSize: 18, fontWeight: '800', color: C.ink, letterSpacing: -0.3 },
   link: { color: C.primary, fontWeight: '700', fontSize: 13 },
   meta: { color: C.muted, fontSize: 12, marginTop: 3, fontWeight: '500' },
   price: { color: C.red, fontWeight: '800', fontSize: 15, fontVariant: ['tabular-nums'] },
@@ -518,10 +641,10 @@ export const ui = StyleSheet.create({
   cleanLine: { color: C.green, fontSize: 11, fontWeight: '700', marginTop: 4 },
   estimate: { color: C.orange, fontSize: 11, fontWeight: '700', marginTop: 4 },
   chip: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 14, height: 36 },
-  chipOn: { backgroundColor: C.navy, borderColor: C.navy },
+  chipOn: { backgroundColor: C.navy, borderColor: C.navy, ...shadow.sm },
   chipText: { color: C.ink2, fontSize: 13, fontWeight: '600' },
   chipTextOn: { color: '#fff', fontWeight: '700' },
-  segment: { flexDirection: 'row', backgroundColor: '#E4EAF3', borderRadius: 14, padding: 4 },
+  segment: { flexDirection: 'row', backgroundColor: '#E3E9F2', borderRadius: 14, padding: 4 },
   segmentItem: { flex: 1, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   segmentOn: { backgroundColor: '#fff', ...shadow.sm },
   segmentText: { color: C.muted, fontWeight: '600', fontSize: 13 },
@@ -533,8 +656,8 @@ export const ui = StyleSheet.create({
   radioDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: C.primary },
   checkbox: { width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: '#CBD3DF', alignItems: 'center', justifyContent: 'center' },
   checkboxOn: { backgroundColor: C.primary, borderColor: C.primary },
-  stepper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F4F6FA', borderRadius: 999, padding: 3 },
-  stepBtn: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
+  stepper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F5F9', borderRadius: 999, padding: 3 },
+  stepBtn: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', ...shadow.sm },
   stepMark: { fontSize: 17, color: C.ink, fontWeight: '700', lineHeight: 20 },
   stepVal: { minWidth: 28, textAlign: 'center', fontWeight: '800', color: C.ink, fontSize: 14 },
   fieldLabel: { fontSize: 13, fontWeight: '700', color: C.ink2, marginTop: 16, marginBottom: 8 },
@@ -551,22 +674,22 @@ export const ui = StyleSheet.create({
   emptyIcon: { width: 88, height: 88, borderRadius: 28, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', ...shadow.md, borderWidth: 1, borderColor: '#EEF2F7' },
   emptyTitle: { fontSize: 18, fontWeight: '800', color: C.ink, marginTop: 18, textAlign: 'center', letterSpacing: -0.2 },
   emptyBody: { color: C.muted, textAlign: 'center', marginTop: 8, lineHeight: 21, fontSize: 14 },
-  sCard: { backgroundColor: '#fff', borderRadius: R.lg, overflow: 'hidden', ...shadow.sm, borderWidth: 1, borderColor: 'rgba(228,234,243,0.9)' },
+  sCard: { backgroundColor: '#fff', borderRadius: R.lg, overflow: 'hidden', ...shadow.sm, borderWidth: 1, borderColor: 'rgba(226,232,240,0.95)' },
   sCardName: { fontSize: 13, fontWeight: '700', color: C.ink, lineHeight: 18, minHeight: 36 },
-  offTag: { position: 'absolute', left: 8, top: 8, backgroundColor: C.red, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
+  offTag: { position: 'absolute', left: 8, top: 8, backgroundColor: C.red, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, ...shadow.sm },
   offTagText: { color: '#fff', fontSize: 11, fontWeight: '800' },
-  favBtn: { position: 'absolute', right: 8, top: 8, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.95)', alignItems: 'center', justifyContent: 'center' },
-  warrantyTag: { position: 'absolute', left: 8, bottom: 8, backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 999, paddingHorizontal: 7, paddingVertical: 3 },
+  favBtn: { position: 'absolute', right: 8, top: 8, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.95)', alignItems: 'center', justifyContent: 'center', ...shadow.sm },
+  warrantyTag: { position: 'absolute', left: 8, bottom: 8, backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, ...shadow.sm },
   warrantyTagText: { color: C.green, fontSize: 10, fontWeight: '800' },
-  addBtn: { width: 32, height: 32, borderRadius: 11, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center', ...shadow.primary },
+  addBtn: { width: 32, height: 32, borderRadius: 11, backgroundColor: C.primary, ...grad.primaryBtn, alignItems: 'center', justifyContent: 'center', ...shadow.primary },
   addBtnText: { color: '#fff', fontSize: 20, fontWeight: '700', lineHeight: 22 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12 },
   gridItem: { width: '48.4%' },
-  sRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: R.lg, padding: 10, marginBottom: 10, ...shadow.sm, borderWidth: 1, borderColor: 'rgba(228,234,243,0.9)' },
+  sRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: R.lg, padding: 10, marginBottom: 10, ...shadow.sm, borderWidth: 1, borderColor: 'rgba(226,232,240,0.95)' },
   sRowName: { fontSize: 14, fontWeight: '700', color: C.ink, lineHeight: 19, marginBottom: 4 },
   modalWrap: { flex: 1, justifyContent: 'flex-end', alignItems: 'center' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(7,26,58,0.55)' },
-  sheet: { width: '100%', maxWidth: 430, backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 10, maxHeight: '88%' },
+  sheet: { width: '100%', maxWidth: 430, backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 10, maxHeight: '88%', ...shadow.lg },
   handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: '#D8DEE8', alignSelf: 'center', marginBottom: 12 },
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   sheetTitle: { fontSize: 18, fontWeight: '800', color: C.ink, flex: 1, letterSpacing: -0.2 },
@@ -574,8 +697,9 @@ export const ui = StyleSheet.create({
   dialog: { width: '100%', maxWidth: 360, backgroundColor: '#fff', borderRadius: 24, padding: 22, ...shadow.lg },
   dialogTitle: { fontSize: 18, fontWeight: '800', color: C.ink, textAlign: 'center' },
   dialogBody: { fontSize: 14, color: C.ink2, textAlign: 'center', marginTop: 8, lineHeight: 21 },
-  toast: { position: 'absolute', alignSelf: 'center', bottom: 96, backgroundColor: 'rgba(7,26,58,0.96)', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 999, flexDirection: 'row', alignItems: 'center', zIndex: 100, ...shadow.lg },
-  toastText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  toast: { position: 'absolute', alignSelf: 'center', bottom: 94, backgroundColor: 'rgba(7,26,58,0.96)', paddingLeft: 10, paddingRight: 18, paddingVertical: 9, borderRadius: 999, flexDirection: 'row', alignItems: 'center', zIndex: 100, ...shadow.lg, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  toastIconWrap: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  toastText: { color: '#fff', fontWeight: '700', fontSize: 13.5 },
 });
 
 export const isWeb = Platform.OS === 'web';

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TextInput, Platform, Image, Linking } from 'react-native';
-import { C, R, shadow, toneOf, STATUS_META } from '../theme';
+import { C, R, shadow, toneOf, STATUS_META, grad } from '../theme';
 import {
   ALL_SERVICES, CATEGORIES, POPULAR_SEARCHES, FAQ, REDEEM_OPTIONS, VOUCHERS, ORDER_STEPS, HOTLINE, STATUS_DESC, stepIndexOf,
   getService, formatVND, normalize, catLabel, tierOf, TIERS, TIME_SLOTS,
@@ -11,6 +11,7 @@ import {
   EmptyState, ServiceGrid, ServiceRow, Progress, Media, ListRow, PseudoQR, HScroll, ui,
 } from '../ui';
 import { pickImage } from '../media';
+import { TrackingCard, ChatCard } from '../orderLive';
 
 const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const nextDays = (n) => Array.from({ length: n }, (_, i) => {
@@ -131,6 +132,7 @@ export function OrderScreen({ params }) {
   const [showCancel, setShowCancel] = useState(false);
   const [reason, setReason] = useState(CANCEL_REASONS[0]);
   const [showReject, setShowReject] = useState(false);
+  const [rejectMode, setRejectMode] = useState('revise');
   const [rejectReason, setRejectReason] = useState(REJECT_REASONS[0]);
   const [showEdit, setShowEdit] = useState(false);
   const [editNote, setEditNote] = useState('');
@@ -191,11 +193,14 @@ export function OrderScreen({ params }) {
             {o.status === 'cancelled' ? (o.cancelReason || 'Đơn đã được huỷ') : (o.status === 'pending' && o.dispatchNote) || STATUS_DESC[o.status]}
           </Text>
         </View>
+        <TrackingCard order={o} />
+        <ChatCard order={o} role="customer" />
+
         {o.checkIn ? (
           <Card style={{ marginTop: 12, backgroundColor: C.primarySoft, borderColor: '#D6E4FF' }}>
             <Text style={mx.tlTitle}>📍 Check-in tại nhà bạn</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-              {o.checkIn.label || (o.checkIn.simulated ? 'Vị trí mô phỏng' : 'GPS thiết bị')}
+              {o.checkIn.label || 'Đã xác thực vị trí GPS'}
               {o.checkIn.at ? ` · ${fmtDateTime(o.checkIn.at)}` : ''}
               {o.checkIn.lat != null ? ` · ${Number(o.checkIn.lat).toFixed(5)}, ${Number(o.checkIn.lng).toFixed(5)}` : ''}
             </Text>
@@ -260,8 +265,8 @@ export function OrderScreen({ params }) {
               <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(Math.max(0, o.quote.total - (o.voucherDiscount || 0)))}</Text>
             </View>
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
-              <Btn title="Từ chối" variant="dangerSoft" style={{ flex: 1 }} onPress={() => setShowReject(true)} />
-              <Btn title="Đồng ý báo giá" style={{ flex: 2 }} onPress={() => a.respondQuote(o.code, true)} />
+              <Btn title="Báo giá lại / Huỷ" variant="dangerSoft" style={{ flex: 1.1 }} onPress={() => { setRejectMode('revise'); setShowReject(true); }} />
+              <Btn title="Đồng ý báo giá" style={{ flex: 1.9 }} onPress={() => a.respondQuote(o.code, true)} />
             </View>
           </Card>
         ) : null}
@@ -334,6 +339,16 @@ export function OrderScreen({ params }) {
           <InfoLine icon="📅" label="Lịch hẹn" value={`${o.dateLabel} · ${o.slot}`} />
           <InfoLine icon="📍" label={`${o.address?.gender === 'Nữ' ? 'Chị' : 'Anh'} ${o.address?.name || ''} · ${o.address?.phone || ''}`} value={o.address?.full} />
           <InfoLine icon="💳" label="Thanh toán" value={o.payment} />
+          {o.device ? (
+            <InfoLine
+              icon="📺"
+              label="Thiết bị tại nhà"
+              value={`${catLabel(o.device.category)}${o.device.brand ? ` · ${o.device.brand}` : ''}${o.device.room ? ` (${o.device.room})` : ''}`}
+            />
+          ) : null}
+          {o.qrVerified ? (
+            <InfoLine icon="🔳" label="Xác thực QR tại nhà" value={`Đã xác thực lúc ${fmtDateTime(o.qrVerified.at)}`} />
+          ) : null}
           {o.note ? <InfoLine icon="📝" label="Ghi chú" value={o.note} /> : null}
           {(o.attachments || []).length ? (
             <View style={{ marginTop: 4, marginBottom: 4 }}>
@@ -369,7 +384,13 @@ export function OrderScreen({ params }) {
             {o.quote.lines.filter((l) => l.type === 'part').map((l, i) => (
               <Text key={`${l.name}-${i}`} style={[ui.meta, { fontSize: 13 }]}>🔩 {l.name} x{l.qty} · {formatVND(l.price * l.qty)}</Text>
             ))}
-            {o.quote.rejectReason ? <Text style={[ui.meta, { color: C.red }]}>Bạn đã từ chối báo giá: {o.quote.rejectReason}</Text> : null}
+            {o.quote.rejectReason ? (
+              <Text style={[ui.meta, { color: o.quote.revisionRequested && o.status === 'diagnosing' ? C.orange : C.red, fontWeight: '700', marginTop: 4 }]}>
+                {o.quote.revisionRequested && o.status === 'diagnosing'
+                  ? `🔄 Bạn đã yêu cầu thợ điều chỉnh báo giá: ${o.quote.rejectReason}`
+                  : `Bạn đã từ chối báo giá: ${o.quote.rejectReason}`}
+              </Text>
+            ) : null}
           </Card>
         ) : null}
         {(o.progress || []).length ? (
@@ -465,6 +486,15 @@ export function OrderScreen({ params }) {
               <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>Tổng thanh toán</Text>
               <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(o.status === 'cancelled' ? o.total : orderTotal(o))}</Text>
             </View>
+            {o.status === 'done' && !o.report?.paid && /vnpay|qr|chuyển khoản|atm|google pay|apple pay/i.test(o.payment || '') ? (
+              <View style={{ marginTop: 14, alignItems: 'center', padding: 12, borderRadius: 14, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line }}>
+                <Text style={{ fontWeight: '800', color: C.ink, marginBottom: 8 }}>Mã QR thanh toán</Text>
+                <PseudoQR value={`THODMX|${o.code}|${orderTotal(o)}`} size={160} />
+                <Text style={[ui.meta, { marginTop: 8, textAlign: 'center', lineHeight: 18 }]}>
+                  Quét mã bằng ứng dụng Ngân hàng / Ví điện tử · Nội dung: {o.code} · {formatVND(orderTotal(o))}
+                </Text>
+              </View>
+            ) : null}
             {o.status === 'done' && !o.report?.paid ? (
               <Btn
                 title="Xác nhận đã thanh toán"
@@ -485,6 +515,9 @@ export function OrderScreen({ params }) {
                   Mã đơn {o.code} · {formatVND(orderTotal(o))} · {o.payment || 'Tại nhà'}
                   {o.report.paidAt ? `\nXác nhận lúc ${fmtDateTime(o.report.paidAt)}` : ''}
                 </Text>
+                <View style={{ alignItems: 'center', marginTop: 10 }}>
+                  <PseudoQR value={`RECEIPT|${o.code}|PAID|${orderTotal(o)}`} size={120} />
+                </View>
               </View>
             ) : null}
           </Card>
@@ -554,10 +587,45 @@ export function OrderScreen({ params }) {
       <Sheet
         visible={showReject}
         onClose={() => setShowReject(false)}
-        title="Từ chối báo giá"
-        footer={<Btn title="Xác nhận từ chối" variant="danger" onPress={() => { setShowReject(false); a.respondQuote(o.code, false, rejectReason); }} />}
+        title="Phản hồi báo giá"
+        footer={(
+          <Btn
+            title={rejectMode === 'revise' ? 'Gửi yêu cầu báo giá lại' : 'Xác nhận từ chối & huỷ đơn'}
+            variant={rejectMode === 'revise' ? 'primary' : 'danger'}
+            onPress={() => {
+              setShowReject(false);
+              a.respondQuote(o.code, rejectMode === 'revise' ? 'revise' : false, rejectReason);
+            }}
+          />
+        )}
       >
-        <Text style={[ui.meta, { fontSize: 13, marginBottom: 6 }]}>Đơn sẽ kết thúc và bạn không phải trả phí.</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+          <Tap
+            onPress={() => setRejectMode('revise')}
+            style={[
+              mx.option,
+              { flex: 1, borderWidth: 1.5, borderRadius: R.md, paddingHorizontal: 10, borderColor: rejectMode === 'revise' ? C.primary : C.line, backgroundColor: rejectMode === 'revise' ? C.primarySoft : '#fff' },
+            ]}
+          >
+            <Radio on={rejectMode === 'revise'} />
+            <Text style={{ fontSize: 13, fontWeight: '800', color: rejectMode === 'revise' ? C.primary : C.ink, flex: 1 }}>🔄 Yêu cầu báo giá lại</Text>
+          </Tap>
+          <Tap
+            onPress={() => setRejectMode('cancel')}
+            style={[
+              mx.option,
+              { flex: 1, borderWidth: 1.5, borderRadius: R.md, paddingHorizontal: 10, borderColor: rejectMode === 'cancel' ? C.red : C.line, backgroundColor: rejectMode === 'cancel' ? C.redSoft : '#fff' },
+            ]}
+          >
+            <Radio on={rejectMode === 'cancel'} />
+            <Text style={{ fontSize: 13, fontWeight: '800', color: rejectMode === 'cancel' ? C.red : C.ink, flex: 1 }}>✖️ Từ chối & Huỷ đơn</Text>
+          </Tap>
+        </View>
+        <Text style={[ui.meta, { fontSize: 13, marginBottom: 8 }]}>
+          {rejectMode === 'revise'
+            ? 'Thợ sẽ nhận được yêu cầu và điều chỉnh lại phương án / chi phí cho bạn.'
+            : 'Đơn sẽ kết thúc ngay và bạn không phải trả bất kỳ chi phí nào.'}
+        </Text>
         {REJECT_REASONS.map((r) => (
           <Tap key={r} style={mx.option} onPress={() => setRejectReason(r)}>
             <Radio on={rejectReason === r} />
@@ -823,26 +891,6 @@ export function ProfileScreen() {
 }
 
 // =========================================================== TRỢ GIÚP
-const UC_CUSTOMER = [
-  ['Đăng ký / Đăng nhập / Quên·đổi mật khẩu', 'SUC-001…006'],
-  ['Hồ sơ & sổ địa chỉ', 'SUC-010…014'],
-  ['Đặt yêu cầu + đính kèm ảnh', 'SUC-018…021'],
-  ['Sửa / huỷ đơn khi chờ thợ', 'SUC-019'],
-  ['Theo dõi trạng thái & lịch sử', 'SUC-022'],
-  ['Duyệt / từ chối báo giá', 'SUC-023'],
-  ['Thanh toán · đánh giá · bảo hành', 'SUC-024…028'],
-];
-const UC_TECH = [
-  ['Trực tuyến · nhận / từ chối việc', 'SUC-040…041'],
-  ['Lịch làm việc & thông tin khách', 'SUC-042'],
-  ['Chẩn đoán + ảnh minh chứng', 'SUC-043…045'],
-  ['Báo giá · vật tư · tiến độ', 'SUC-046…048'],
-  ['Sửa chữa · nhật ký · ảnh trước/sau', 'SUC-049…051'],
-  ['Biên bản hoàn thành · tái khám', 'SUC-052…053'],
-  ['Hồ sơ thợ · đổi mật khẩu', 'SUC-054'],
-  ['Uy tín · phạt hủy sau nhận / đến muộn', 'KPI-TECH'],
-];
-
 export function HelpScreen() {
   const { nav, ui: u } = useApp();
   const [open, setOpen] = useState(0);
@@ -862,24 +910,6 @@ export function HelpScreen() {
             </Card>
           ))}
         </View>
-        <SectionTitle title="Luồng khách hàng (UC)" />
-        <Card style={{ marginBottom: 8 }}>
-          {UC_CUSTOMER.map(([t, id], i) => (
-            <View key={id} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8, paddingVertical: 8, borderTopWidth: i ? 1 : 0, borderTopColor: '#F0F3F8' }}>
-              <Text style={{ flex: 1, color: C.ink2, fontSize: 13, lineHeight: 18 }}>{t}</Text>
-              <Text style={{ color: C.primary, fontWeight: '700', fontSize: 11 }}>{id}</Text>
-            </View>
-          ))}
-        </Card>
-        <SectionTitle title="Luồng kỹ thuật viên (UC)" />
-        <Card style={{ marginBottom: 8 }}>
-          {UC_TECH.map(([t, id], i) => (
-            <View key={id} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8, paddingVertical: 8, borderTopWidth: i ? 1 : 0, borderTopColor: '#F0F3F8' }}>
-              <Text style={{ flex: 1, color: C.ink2, fontSize: 13, lineHeight: 18 }}>{t}</Text>
-              <Text style={{ color: C.primary, fontWeight: '700', fontSize: 11 }}>{id}</Text>
-            </View>
-          ))}
-        </Card>
         <SectionTitle title="Câu hỏi thường gặp" />
         {FAQ.map((f, i) => (
           <Card key={f.q} style={{ marginBottom: 10 }} onPress={() => setOpen(open === i ? -1 : i)}>
@@ -932,7 +962,10 @@ export function QRScreen() {
           <Text style={{ fontSize: 18, fontWeight: '900', color: C.ink }}>{name}</Text>
           <Text style={[ui.meta, { marginBottom: 16 }]}>{phone || 'Chưa có số điện thoại'}</Text>
           <PseudoQR value={`THODMX:${phone || name}`} size={210} />
-          <Text style={[ui.meta, { textAlign: 'center', marginTop: 16, lineHeight: 18 }]}>Đưa mã này cho thợ quét khi đến nhà để xác nhận đơn và tích điểm.</Text>
+          <View style={{ marginTop: 12, paddingHorizontal: 12, paddingVertical: 6, borderRadius: R.pill, backgroundColor: C.primarySoft }}>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: C.primary }}>Mã xác thực: THODMX:{phone || name}</Text>
+          </View>
+          <Text style={[ui.meta, { textAlign: 'center', marginTop: 12, lineHeight: 18 }]}>Đưa mã này cho thợ quét khi đến nhà để xác nhận đơn và tích điểm.</Text>
         </View>
       </ScrollView>
     </View>
@@ -1008,7 +1041,7 @@ const mx = StyleSheet.create({
   dock: { flexDirection: 'row', gap: 10, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
   option: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F3F8' },
   bonus: { backgroundColor: C.goldSoft, borderRadius: R.md, padding: 14, marginTop: 16 },
-  pointsHero: { backgroundColor: C.navy, borderRadius: 22, padding: 20, overflow: 'hidden' },
+  pointsHero: { backgroundColor: C.navy, ...grad.navyHero, borderRadius: 22, padding: 20, overflow: 'hidden', ...shadow.md },
   blob: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.07)' },
   tiers: { flexDirection: 'row', gap: 8, marginTop: 12 },
   tierItem: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#F8FAFD' },

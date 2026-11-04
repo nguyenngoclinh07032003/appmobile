@@ -52,6 +52,16 @@ Trạng thái đơn: `pending` (chờ thợ nhận) → `confirmed` → `onway` 
 
 > Chưa có backend: dữ liệu lưu trong `localStorage` của trình duyệt. Ảnh minh chứng chưa tải lên Cloudinary, email chưa gửi thật.
 
+## Demo bảo vệ (Khách + Thợ)
+1. Mở 2 tab: `?role=customer` và `?role=tech`, đăng nhập tài khoản demo ở bảng trên.
+2. **Cá nhân** (khách) hoặc **Tài khoản** (thợ) → **Nạp kịch bản demo bảo vệ** (hoặc nút trên Trang chủ lần đầu).
+3. Có 4 đơn mẫu:
+   - `DMXDEMO1` — việc mới (thợ nhận)
+   - `DMXDEMO2` — đang đến + **theo dõi GPS mô phỏng** + chat
+   - `DMXDEMO3` — chờ khách **duyệt báo giá**
+   - `DMXDEMO4` — hoàn thành + **QR thanh toán demo** / biên lai
+4. Chat và vị trí thợ đồng bộ qua `localStorage` giữa hai tab.
+
 ## Các chức năng liên kết với nhau
 - **Thiết bị ↔ Dịch vụ ↔ Đơn hàng**: thêm thiết bị kèm lần bảo dưỡng gần nhất → app tính hạn bảo dưỡng, nhắc ở Trang chủ và hiện badge ở tab Thiết bị. "Đặt bảo dưỡng" mở đúng danh mục. Khi đơn cùng loại **hoàn thành**, lịch bảo dưỡng của thiết bị tự cập nhật.
 - **Đặt lịch**: Chi tiết / Giỏ hàng → Xác nhận (chưa có địa chỉ thì thêm ngay, lưu xong quay lại đúng màn thanh toán) → Đặt thành công → Theo dõi đơn.

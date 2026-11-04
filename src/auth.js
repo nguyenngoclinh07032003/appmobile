@@ -187,3 +187,18 @@ export function urlRoleHint() {
     return r === 'tech' || r === 'customer' ? r : null;
   } catch (e) { return null; }
 }
+
+// Đăng nhập nhanh tài khoản mẫu theo vai trò (hỗ trợ demo / kiểm thử nhanh)
+export function quickLoginRole(role) {
+  const r = role === 'tech' ? 'tech' : 'customer';
+  const accounts = loadAccounts();
+  let acc = accounts.find((a) => a.role === r);
+  if (!acc) {
+    acc = STARTER_ACCOUNTS.find((a) => a.role === r) || STARTER_ACCOUNTS[0];
+    saveAccounts([...accounts, acc]);
+  }
+  setSession(acc.id);
+  const { password: _pw, ...safe } = acc;
+  return { ok: true, account: safe };
+}
+
