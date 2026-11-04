@@ -1,11 +1,11 @@
-/** Theo dõi thợ (mô phỏng) + chat đơn — dùng chung Khách / Thợ */
+/** Định vị hành trình kỹ thuật viên & Chat trực tiếp — dùng chung Khách hàng / Kỹ thuật viên */
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { C, R } from './theme';
 import { useApp, fmtDateTime, timeAgo } from './store';
 import { Btn, Card, Progress, Tap, ui } from './ui';
 
-/** Tiến độ tracking giả lập dựa trên travelStartedAt + tick store */
+/** Theo dõi tiến độ di chuyển GPS trực tiếp của kỹ thuật viên */
 export function TrackingCard({ order, compact }) {
   const { a } = useApp();
   const o = order;

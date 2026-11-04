@@ -31,7 +31,12 @@ export default function HomeScreen() {
         <View style={st.headRow}>
           <View style={{ flex: 1 }}>
             <Text style={st.hello}>{firstName ? `Xin chào, ${firstName} 👋` : 'Xin chào 👋'}</Text>
-            <Text style={st.brand}><Text style={{ color: C.gold }}>Thợ</Text> ĐMX</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
+              <Text style={st.brand}><Text style={{ color: C.gold }}>Thợ</Text> Điện máy XANH</Text>
+              <View style={{ backgroundColor: C.gold, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}>
+                <Text style={{ color: C.navy, fontSize: 10, fontWeight: '900' }}>CHÍNH HÃNG</Text>
+              </View>
+            </View>
           </View>
           <IconBtn icon="🔔" dark badge={d.unread} onPress={() => nav.push('notifications')} label="Thông báo" />
           <IconBtn icon="🛒" dark badge={d.cartCount} onPress={() => nav.push('cart')} style={{ marginLeft: 10 }} label="Giỏ hàng" />
@@ -127,8 +132,11 @@ export default function HomeScreen() {
           </View>
           {s.devices.length === 0 ? (
             <View>
-              <Text style={st.body}>Thêm máy lạnh, máy giặt, tủ lạnh… Thợ ĐMX sẽ tự tính kỳ bảo dưỡng tiếp theo và nhắc bạn.</Text>
-              <Btn title="Thêm thiết bị" icon="＋" variant="soft" small style={{ marginTop: 12, alignSelf: 'flex-start' }} onPress={() => nav.push('device-form')} />
+              <Text style={st.body}>Đồng bộ thiết bị đã mua tại Điện máy XANH theo SĐT hoặc thêm thiết bị trong nhà để được tự động nhắc lịch bảo dưỡng định kỳ.</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                <Btn title="🔄 Đồng bộ thiết bị ĐMX" small onPress={a.syncDmxDevices} />
+                <Btn title="Thêm thủ công" icon="＋" variant="soft" small onPress={() => nav.push('device-form')} />
+              </View>
             </View>
           ) : d.dueDevices.length === 0 ? (
             <Text style={[st.body, { color: C.green, fontWeight: '600' }]}>✓ Tất cả thiết bị đều đang trong chu kỳ bảo dưỡng tốt.</Text>

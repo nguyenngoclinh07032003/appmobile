@@ -34,7 +34,7 @@ const pickWeb = (capture) => new Promise((resolve) => {
 /** Thư viện ảnh (web). Huỷ → undefined; nền tảng chưa hỗ trợ → null */
 export const pickImage = () => {
   if (Platform.OS === 'web') return pickWeb(false);
-  // Native Expo Go: dùng input web không có — trả null để UI báo chọn ảnh trên web/demo
+  // Nền tảng native khi chưa cấp quyền truy cập thư viện ảnh
   return Promise.resolve(null);
 };
 

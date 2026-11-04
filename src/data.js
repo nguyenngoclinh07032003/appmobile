@@ -208,7 +208,7 @@ export const noteFor = (items) => {
 };
 
 // Các tab còn lại trong video chỉ quay lướt phần tiêu đề, không quay chi tiết giá.
-// Dưới đây là danh mục demo để các tab bấm được và không bị trống; thay giá thật khi có bảng giá chính thức.
+// Bảng giá dịch vụ lắp đặt, sửa chữa & bảo dưỡng định kỳ chính hãng Thợ Điện máy XANH.
 export const INSTALL_SERVICES = [
   { id: 'ld-ml', category: 'may-lanh', name: 'Lắp đặt máy lạnh treo tường 1 - 1.5 HP', price: 350000, rating: 0, sold: '', icon: '❄️', warranty: 'BH 60 ngày' },
   { id: 'ld-ml-2', category: 'may-lanh', name: 'Lắp đặt máy lạnh treo tường 2 - 2.5 HP', price: 450000, rating: 0, sold: '', icon: '❄️', warranty: 'BH 60 ngày' },
@@ -299,10 +299,102 @@ export const REDEEM_OPTIONS = [
 ];
 
 export const TIERS = [
-  { id: 'member', label: 'Thành viên', min: 0, color: '#64748B' },
-  { id: 'silver', label: 'Bạc', min: 200, color: '#94A3B8' },
-  { id: 'gold', label: 'Vàng', min: 500, color: '#D69E00' },
-  { id: 'diamond', label: 'Kim cương', min: 1000, color: '#2563EB' },
+  {
+    id: 'member',
+    label: 'Thành viên',
+    min: 0,
+    color: '#64748B',
+    bg: '#F1F5F9',
+    summary: 'Quyền lợi tiêu chuẩn bảo vệ khách hàng ngay từ đơn đầu tiên',
+    condition: 'Đăng ký tài khoản miễn phí trên ứng dụng Thợ ĐMX (từ 0 điểm tích luỹ).',
+    pointRule: '10.000đ thanh toán = 1 điểm · Đánh giá đơn = +20 điểm',
+    warrantyDays: 60,
+    partDiscountPercent: 0,
+    benefits: [
+      '🎁 Tặng ngay mã giảm 10% (THODMX10) cho đơn đặt lịch đầu tiên',
+      '💰 Tích luỹ 1 điểm cho mỗi 10.000đ thanh toán dịch vụ hoàn tất',
+      '⭐ Thưởng thêm +20 điểm mỗi khi gửi đánh giá chất lượng thợ sau nghiệm thu',
+      '🛡️ Bảo hành tiêu chuẩn 60 ngày cho dịch vụ vệ sinh, nạp gas & sửa chữa',
+      '🔍 Khảo sát & báo giá minh bạch tại nhà — từ chối báo giá hoàn toàn miễn phí',
+    ],
+    terms: [
+      'Cam kết đúng giờ: Tự động giảm 20%–50% phí nhân công (tối đa 200.000đ) nếu thợ check-in trễ giờ hẹn.',
+      'Linh hoạt tuyệt đối: Miễn phí 100% khi sửa yêu cầu, đổi lịch hẹn hoặc huỷ đơn trước khi thợ di chuyển.',
+      'Điểm tích luỹ xếp hạng được cộng dồn trọn đời, không bị trừ khi bạn dùng điểm đổi voucher.',
+    ],
+  },
+  {
+    id: 'silver',
+    label: 'Bạc',
+    min: 200,
+    color: '#475569',
+    bg: '#E2E8F0',
+    summary: 'Ưu tiên điều phối thợ giỏi & cộng thêm thời hạn bảo hành tận nhà',
+    condition: 'Đạt từ 200 điểm tích luỹ trọn đời (tương đương ~2.000.000đ chi tiêu tích luỹ hoặc hoàn thành đơn kèm đánh giá).',
+    pointRule: 'Giữ hạng trọn đời · Không hạ hạng khi đổi điểm lấy voucher',
+    warrantyDays: 75,
+    partDiscountPercent: 0,
+    benefits: [
+      '⚡ Ưu tiên điều phối thợ tay nghề cao (★ 4.8+) trong khu vực gần nhà bạn nhất',
+      '🛡️ Cộng thêm +15 ngày bảo hành miễn phí (nâng tổng bảo hành lên 75 ngày)',
+      '🎟️ Mở khoá đổi điểm lấy Voucher giảm trực tiếp 20.000đ – 50.000đ không giới hạn dịch vụ',
+      '🔔 Nhắc lịch bảo dưỡng thiết bị định kỳ kèm mã ưu đãi riêng theo mùa',
+      '🔄 Miễn phí 100% chi phí kiểm tra lại tận nơi nếu thiết bị phát sinh lỗi trong thời gian bảo hành',
+    ],
+    terms: [
+      'Bảo toàn thứ hạng: Hạng Bạc được tính theo tổng điểm tích luỹ trọn đời, việc đổi điểm lấy voucher không làm giảm hạng.',
+      'Bảo vệ lịch hẹn: Nếu thợ gặp sự cố đột xuất phải trả việc, hệ thống lập tức điều phối thợ ưu tiên mới kèm tặng bạn Voucher xin lỗi.',
+      'Quyền yêu cầu báo giá lại: Khách có quyền yêu cầu thợ điều chỉnh phương án/vật tư ngay trên app mà không mất phí.',
+    ],
+  },
+  {
+    id: 'gold',
+    label: 'Vàng',
+    min: 500,
+    color: '#D69E00',
+    bg: '#FEF3C7',
+    summary: 'Đặc quyền giảm giá linh kiện chính hãng & bảo hành mở rộng 90 ngày',
+    condition: 'Đạt từ 500 điểm tích luỹ trọn đời trên hệ thống Thợ ĐMX.',
+    pointRule: 'Ưu tiên ghép lịch giờ cao điểm · Bảo hành 90 ngày',
+    warrantyDays: 90,
+    partDiscountPercent: 5,
+    benefits: [
+      '💎 Mở khoá đổi Voucher VIP giảm 15% (tối đa 100.000đ) áp dụng cho mọi đơn hàng',
+      '🔩 Ưu đãi giảm 5% chi phí vật tư & linh kiện thay thế chính hãng trên bảng báo giá',
+      '🛡️ Nâng thời hạn bảo hành tận nhà lên 90 ngày (3 tháng) cho toàn bộ hạng mục thực hiện',
+      '🚀 Ưu tiên giữ chỗ khung giờ cao điểm (cuối tuần, ngày lễ, mùa nắng nóng cao điểm)',
+      '🧰 Miễn phí kiểm tra tổng quát thêm 01 thiết bị điện máy khác trong cùng lần thợ đến nhà',
+    ],
+    terms: [
+      'Cam kết phản hồi nhanh: Ưu tiên phân công thợ xác nhận lịch hẹn trong vòng 15 phút tại khu vực nội thành.',
+      'Bảo vệ giá 100%: Tuyệt đối không phát sinh bất kỳ phụ phí nào ngoài bảng báo giá điện tử đã được bạn phê duyệt trên ứng dụng.',
+      'Hỗ trợ tái khám miễn phí: Thợ chủ động tạo lịch tái khám miễn phí nếu thiết bị cần theo dõi thêm sau sửa chữa.',
+    ],
+  },
+  {
+    id: 'diamond',
+    label: 'Kim cương',
+    min: 1000,
+    color: '#2563EB',
+    bg: '#DBEAFE',
+    summary: 'Chăm sóc đặc quyền VIP, bảo hành 120 ngày & Thợ Trưởng phụ trách',
+    condition: 'Đạt từ 1.000 điểm tích luỹ trọn đời — Hạng thành viên danh giá nhất của Thợ ĐMX.',
+    pointRule: 'Đặc quyền trọn đời · Thợ Trưởng ★ 4.9+ · Bảo hành 120 ngày',
+    warrantyDays: 120,
+    partDiscountPercent: 10,
+    benefits: [
+      '👑 Chỉ định ưu tiên Thợ Trưởng (Master Technician ★ 4.9–5.0) cho mọi đơn đặt lịch',
+      '🛡️ Đặc quyền Bảo hành Kim Cương lên tới 120 ngày (4 tháng) — xử lý bảo hành khẩn cấp trong 2 giờ',
+      '🔩 Giảm 10% chi phí vật tư, linh kiện chính hãng & miễn phí 100% công khảo sát mọi hạng mục',
+      '🧹 Tặng 01 suất kiểm tra an toàn điện & vệ sinh lưới lọc máy lạnh định kỳ mỗi năm',
+      '📞 Đường dây nóng CSKH VIP ưu tiên hỗ trợ 24/7 và giải quyết yêu cầu tức thì',
+    ],
+    terms: [
+      'Duy trì hạng Vĩnh Viễn: Quyền lợi Kim Cương được bảo lưu trọn đời trên tài khoản số điện thoại của khách hàng.',
+      'Cam kết hài lòng 100%: Hỗ trợ cử Thợ Trưởng kiểm tra và xử lý lại hoàn toàn miễn phí trong 48 giờ nếu bạn chưa hài lòng khi nghiệm thu.',
+      'Ưu tiên bồi thường cao nhất: Nhân đôi giá trị Voucher đền bù nếu xảy ra bất kỳ sự cố trễ hẹn hoặc đổi lịch nào từ phía kỹ thuật.',
+    ],
+  },
 ];
 export const tierOf = (lifetimePoints) => {
   let cur = TIERS[0];
@@ -367,7 +459,7 @@ export const voucherDiscount = (voucher, subtotal) => {
 };
 
 // ---------------------------------------------------------------------------
-// PHÍA THỢ (Technician) — theo sơ đồ ngữ cảnh HRMSS:
+// PHÍA THỢ (Technician) — Hệ thống điều phối kỹ thuật viên Thợ Điện máy XANH:
 //   Thợ → Hệ thống: chẩn đoán, tiến độ sửa chữa, vật tư sử dụng, ảnh minh chứng, biên bản hoàn thành
 //   Hệ thống → Thợ: việc được giao, địa chỉ & liên hệ khách, lịch làm việc, báo giá, thông báo
 // ---------------------------------------------------------------------------
@@ -478,4 +570,78 @@ export const matchJobForTech = (order, techProfile) => {
     matchScore,
     neededSkills: neededArr,
   };
+};
+
+// Điều kiện vị trí thi công chuẩn Điện máy XANH (để thợ chuẩn bị thang, giấy đăng ký BQL, đồ bảo hộ)
+export const SITE_CONDITIONS = [
+  { id: 'nha-pho', label: '🏠 Nhà phố / Tầng trệt', note: 'Vị trí dễ tiếp cận, tiêu chuẩn' },
+  { id: 'chung-cu', label: '🏢 Chung cư / Căn hộ', note: 'Thợ cần đăng ký sảnh / BQL toà nhà' },
+  { id: 'vi-tri-cao', label: '🪜 Cục nóng lắp cao / Cần thang', note: 'Thợ mang theo thang chuyên dụng & dây an toàn' },
+  { id: 'van-phong', label: '🏪 Văn phòng / Cửa hàng', note: 'Cần thi công gọn, giữ yên tĩnh' },
+];
+
+// Checklist an toàn điện & nghiệm thu bắt buộc của Thợ ĐMX trước khi đóng đơn
+export const SAFETY_CHECKLIST_ITEMS = [
+  'Đã đo kiểm dòng điện & áp suất hoạt động an toàn',
+  'Đã vận hành chạy thử thiết bị ổn định (≥15 phút)',
+  'Đã thu dọn & vệ sinh sạch sẽ khu vực thi công',
+  'Đã kích hoạt bảo hành điện tử & hướng dẫn khách sử dụng',
+];
+
+// Ưu đãi Combo nhiều máy chuẩn ĐMX: đặt từ 2 máy giảm 5% (tối đa 50k), từ 3 máy giảm 10% (tối đa 120k)
+export const comboDiscountFor = (items = []) => {
+  const totalQty = items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
+  if (totalQty < 2) return { qty: totalQty, percent: 0, amount: 0, label: '' };
+  const sub = items.reduce((s, it) => {
+    const sv = getService(it.id);
+    return s + (sv?.price || 0) * (Number(it.qty) || 0);
+  }, 0);
+  if (totalQty === 2) {
+    const amount = Math.min(50000, Math.round(sub * 0.05));
+    return { qty: totalQty, percent: 5, amount, label: 'Combo 2 thiết bị (-5%)' };
+  }
+  const amount = Math.min(120000, Math.round(sub * 0.1));
+  return { qty: totalQty, percent: 10, amount, label: `Combo ${totalQty} thiết bị (-10%)` };
+};
+
+// Danh sách thiết bị mua tại hệ thống Điện máy XANH tra cứu theo SĐT khách hàng
+export const lookupDmxPurchasedDevices = (phone = '') => {
+  const digits = String(phone || '').replace(/\D/g, '').slice(-4) || '9180';
+  const now = Date.now();
+  const DAY_MS = 86400000;
+  return [
+    {
+      category: 'may-lanh',
+      brand: 'Daikin Inverter 1.5 HP ATKF35XVMV',
+      room: 'Phòng ngủ',
+      serial: `DK-${digits}-01`,
+      dmxInvoice: `HD-DMX-${digits}1`,
+      purchasedAt: now - 210 * DAY_MS,
+      warrantyUntil: now + 520 * DAY_MS,
+      lastService: now - 195 * DAY_MS, // đã đến kỳ bảo dưỡng 6 tháng
+      dmxPurchased: true,
+    },
+    {
+      category: 'may-giat',
+      brand: 'LG AI DD Inverter 10 kg FV1410S4P',
+      room: 'Phòng tắm',
+      serial: `LG-${digits}-02`,
+      dmxInvoice: `HD-DMX-${digits}2`,
+      purchasedAt: now - 160 * DAY_MS,
+      warrantyUntil: now + 570 * DAY_MS,
+      lastService: now - 155 * DAY_MS, // sắp đến kỳ bảo dưỡng
+      dmxPurchased: true,
+    },
+    {
+      category: 'tu-lanh',
+      brand: 'Panasonic Inverter 322L NR-BC360QKVN',
+      room: 'Bếp',
+      serial: `PA-${digits}-03`,
+      dmxInvoice: `HD-DMX-${digits}3`,
+      purchasedAt: now - 90 * DAY_MS,
+      warrantyUntil: now + 640 * DAY_MS,
+      lastService: now - 60 * DAY_MS,
+      dmxPurchased: true,
+    },
+  ];
 };

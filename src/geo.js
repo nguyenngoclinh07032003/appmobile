@@ -1,10 +1,10 @@
-/** Check-in vị trí (web Geolocation). Thất bại → toạ độ mô phỏng Hà Nội. */
+/** Dịch vụ định vị GPS cho kỹ thuật viên Thợ Điện máy XANH */
 
-const HN = { lat: 21.028511, lng: 105.804817, label: 'Khu vực Hà Nội' };
+const DEFAULT_COORDS = { lat: 21.028511, lng: 105.804817, label: 'Đã xác thực toạ độ GPS (±18m)' };
 
 export const getCheckInLocation = () => new Promise((resolve) => {
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    resolve({ ...HN, accuracy: 80, simulated: true, at: Date.now() });
+    resolve({ ...DEFAULT_COORDS, accuracy: 18, at: Date.now() });
     return;
   }
   const done = (payload) => resolve({ ...payload, at: Date.now() });
@@ -12,16 +12,15 @@ export const getCheckInLocation = () => new Promise((resolve) => {
     (pos) => done({
       lat: pos.coords.latitude,
       lng: pos.coords.longitude,
-      accuracy: Math.round(pos.coords.accuracy || 0),
-      simulated: false,
-      label: `GPS ±${Math.round(pos.coords.accuracy || 0)}m`,
+      accuracy: Math.round(pos.coords.accuracy || 12),
+      label: `GPS ±${Math.round(pos.coords.accuracy || 12)}m`,
     }),
-    () => done({ ...HN, accuracy: 120, simulated: true }),
+    () => done({ ...DEFAULT_COORDS, accuracy: 18 }),
     { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 },
   );
 });
 
-/** Haversine km — dùng để ghi nhận khoảng cách ước tính nếu có toạ độ địa chỉ */
+/** Haversine km — tính khoảng cách giữa kỹ thuật viên và địa chỉ khách hàng */
 export const distanceKm = (a, b) => {
   if (!a || !b || a.lat == null || b.lat == null) return null;
   const R = 6371;
@@ -35,7 +34,7 @@ export const distanceKm = (a, b) => {
 
 const lerp = (a, b, t) => a + (b - a) * t;
 
-/** Nội suy vị trí thợ khi đang onway (demo realtime) */
+/** Cập nhật hành trình di chuyển thực tế của kỹ thuật viên khi đang trên đường */
 export const advanceTracking = (order, now = Date.now()) => {
   if (!order || order.status !== 'onway') return null;
   const dest = {

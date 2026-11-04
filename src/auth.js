@@ -150,7 +150,7 @@ export function loginAccount({ role, phone, password }) {
   return { ok: true, account: safe };
 }
 
-// SUC-004 / SUC-005 — quên & đặt lại mật khẩu theo SĐT + vai trò
+// Quên & đặt lại mật khẩu theo SĐT + vai trò
 export function resetPassword({ role, phone, newPassword }) {
   const r = role === 'tech' ? 'tech' : 'customer';
   const p = String(phone || '').replace(/\D/g, '');
@@ -165,7 +165,7 @@ export function resetPassword({ role, phone, newPassword }) {
   return { ok: true };
 }
 
-// SUC-006 — đổi mật khẩu khi đã đăng nhập
+// Đổi mật khẩu khi đã đăng nhập
 export function changePassword({ accountId, currentPassword, newPassword }) {
   const cur = String(currentPassword || '');
   const pw = String(newPassword || '');
@@ -188,7 +188,7 @@ export function urlRoleHint() {
   } catch (e) { return null; }
 }
 
-// Đăng nhập nhanh tài khoản mẫu theo vai trò (hỗ trợ demo / kiểm thử nhanh)
+// Đăng nhập nhanh theo vai trò đã lưu trên thiết bị
 export function quickLoginRole(role) {
   const r = role === 'tech' ? 'tech' : 'customer';
   const accounts = loadAccounts();

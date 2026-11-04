@@ -4,12 +4,12 @@ import { C, R, shadow } from '../theme';
 import {
   getService, formatVND, discountOf, isEstimate, isClean, durationText, featureFor, stepsFor, videoFor,
   REVIEWS_BY_ID, COMMITMENTS, ALL_SERVICES, TIME_SLOTS, VOUCHERS, PAYMENTS, AREAS, noteFor, voucherDiscount,
-  catLabel, catIcon,
+  catLabel, catIcon, MATERIALS, SITE_CONDITIONS, tierOf, comboDiscountFor,
 } from '../data';
 import { useApp, cartTotal } from '../store';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Media, Badge, Stars, Stepper, Sheet, Radio, Field,
-  SelectRow, Segmented, Checkbox, EmptyState, ServiceCard, Price, ui, HScroll,
+  SelectRow, Segmented, Checkbox, EmptyState, ServiceCard, Price, Chip, ui, HScroll,
 } from '../ui';
 import { pickImage } from '../media';
 
@@ -31,7 +31,10 @@ export function DetailScreen({ params }) {
   const service = getService(params.id);
   const [more, setMore] = useState(false);
   const [showVideo, setShowVideo] = useState(false);
+  const [showMatPrice, setShowMatPrice] = useState(false);
   if (!service) return <View style={{ flex: 1 }}><TopBar title="Không tìm thấy" /></View>;
+  const curTier = tierOf(s.lifetimePoints || 0).cur;
+  const catMaterials = MATERIALS.filter((m) => m.category === service.category || m.category === 'all');
   const discount = discountOf(service);
   const fav = s.favorites.includes(service.id);
   const reviews = [...(s.userReviews[service.id] || []), ...(REVIEWS_BY_ID[service.id] || []).map((r) => ({ ...r, stars: 5 }))];
@@ -75,7 +78,7 @@ export function DetailScreen({ params }) {
 
           <View style={bx.trust}>
             {[
-              { i: '🛡️', t: 'Bảo hành', v: '60 ngày' },
+              { i: '🛡️', t: 'Bảo hành', v: `${curTier.warrantyDays || 60} ngày` },
               { i: '⏱️', t: 'Thời gian', v: isClean(service) ? durationText(service.id) : 'Theo khảo sát' },
               { i: '🛵', t: 'Phí đi lại', v: 'Miễn phí' },
             ].map((x) => (
@@ -86,9 +89,31 @@ export function DetailScreen({ params }) {
               </View>
             ))}
           </View>
+          {/* Ưu đãi Combo nhiều thiết bị */}
+          <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#F5D77A', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Text style={{ fontSize: 20 }}>🔥</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: '800', color: C.goldInk, fontSize: 13 }}>Ưu đãi Combo nhiều máy chuẩn ĐMX</Text>
+              <Text style={{ color: C.ink2, fontSize: 12, marginTop: 2 }}>Đặt 2 máy giảm thêm 5% (tối đa 50K) · Đặt từ 3 máy giảm thêm 10% (tối đa 120K)</Text>
+            </View>
+            <Btn title="Đặt 2 máy" small variant="gold" onPress={() => nav.push('checkout', { items: [{ id: service.id, qty: 2 }] })} />
+          </View>
         </View>
 
         <View style={{ paddingHorizontal: 16 }}>
+          <Card style={{ marginTop: 12 }} onPress={() => setShowMatPrice(true)}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <IconBox icon="🔩" size={42} bg={C.primarySoft} radius={13} />
+              <View style={{ flex: 1 }}>
+                <Text style={bx.h}>Bảng giá vật tư & linh kiện niêm yết ĐMX</Text>
+                <Text style={ui.meta}>
+                  Công khai {catMaterials.length} hạng mục chính hãng · Chỉ thực hiện khi bạn duyệt
+                  {curTier.partDiscountPercent ? ` · Hạng ${curTier.label} giảm thêm ${curTier.partDiscountPercent}%` : ''}
+                </Text>
+              </View>
+              <Text style={ui.link}>Tra cứu ›</Text>
+            </View>
+          </Card>
           <Card style={{ marginTop: 12 }}>
             <Text style={bx.h}>Mô tả dịch vụ</Text>
             <Text style={bx.p} numberOfLines={more ? undefined : 4}>{featureFor(service)}</Text>
@@ -217,6 +242,45 @@ export function DetailScreen({ params }) {
           </View>
         ))}
       </Sheet>
+
+      <Sheet
+        visible={showMatPrice}
+        onClose={() => setShowMatPrice(false)}
+        title={`Bảng giá vật tư · ${catLabel(service.category)}`}
+        footer={<Btn title="Đã hiểu" onPress={() => setShowMatPrice(false)} />}
+      >
+        <View style={{ padding: 12, borderRadius: R.md, backgroundColor: C.primarySoft, marginBottom: 12 }}>
+          <Text style={{ fontWeight: '800', color: C.primary, fontSize: 13 }}>🛡️ Cam kết minh bạch từ Thợ Điện máy XANH</Text>
+          <Text style={{ color: C.ink2, fontSize: 12.5, marginTop: 4, lineHeight: 18 }}>
+            • Giá dịch vụ bạn đặt đã bao gồm 100% công thợ và phí đi lại.{'\n'}
+            • Vật tư/linh kiện dưới đây chỉ phát sinh khi thiết bị thực sự cần thay thế và phải được bạn bấm “Đồng ý báo giá” trên ứng dụng.
+          </Text>
+          {curTier.partDiscountPercent ? (
+            <Badge
+              text={`👑 Đặc quyền hạng ${curTier.label}: Tự động giảm ${curTier.partDiscountPercent}% vật tư`}
+              fg={curTier.color}
+              bg="#fff"
+              style={{ marginTop: 8, alignSelf: 'flex-start' }}
+            />
+          ) : null}
+        </View>
+        {catMaterials.map((m) => (
+          <View key={m.id} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.line }}>
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <Text style={{ fontWeight: '700', color: C.ink }}>{m.name}</Text>
+              <Text style={ui.meta}>Đơn vị tính: {m.unit} · Bảo hành chính hãng</Text>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={{ fontWeight: '800', color: C.primary, fontSize: 14 }}>
+                {formatVND(curTier.partDiscountPercent ? Math.round(m.price * (1 - curTier.partDiscountPercent / 100)) : m.price)}/{m.unit}
+              </Text>
+              {curTier.partDiscountPercent ? (
+                <Text style={{ fontSize: 11, color: C.faint, textDecorationLine: 'line-through' }}>{formatVND(m.price)}</Text>
+              ) : null}
+            </View>
+          </View>
+        ))}
+      </Sheet>
     </View>
   );
 }
@@ -311,6 +375,9 @@ export function CheckoutScreen({ params }) {
     params.deviceId || pendingDeviceId || matchingDevices[0]?.id || null
   ));
   const selectedDevice = s.devices.find((dv) => dv.id === selectedDeviceId) || null;
+  const [siteConditionId, setSiteConditionId] = useState(SITE_CONDITIONS[0].id);
+  const selectedSite = SITE_CONDITIONS.find((sc) => sc.id === siteConditionId) || SITE_CONDITIONS[0];
+  const curTier = tierOf(s.lifetimePoints || 0).cur;
 
   React.useEffect(() => {
     if (pendingDeviceId) {
@@ -329,7 +396,8 @@ export function CheckoutScreen({ params }) {
 
   const goods = lines.reduce((sum, x) => sum + (x.svc.oldPrice || x.svc.price) * x.qty, 0);
   const productDiscount = lines.reduce((sum, x) => sum + ((x.svc.oldPrice || x.svc.price) - x.svc.price) * x.qty, 0);
-  const subtotal = goods - productDiscount;
+  const combo = comboDiscountFor(lines);
+  const subtotal = Math.max(0, goods - productDiscount - combo.amount);
   const vDiscount = voucherDiscount(voucher, subtotal);
   const total = Math.max(0, subtotal - vDiscount);
   const allVouchers = [...s.myVouchers, ...VOUCHERS];
@@ -373,7 +441,11 @@ export function CheckoutScreen({ params }) {
         category: selectedDevice.category,
         brand: selectedDevice.brand || '',
         room: selectedDevice.room || '',
+        serial: selectedDevice.serial || '',
       } : null,
+      siteCondition: selectedSite,
+      comboDiscount: combo.amount,
+      comboLabel: combo.label,
       goods, productDiscount, voucher: voucher ? { ...voucher } : null, voucherDiscount: vDiscount, total,
       dateLabel: `${days[dayIdx].label} (${days[dayIdx].ddmm})`, dateKey: days[dayIdx].key, slot, payment, note, workerCode: workerCode.trim(),
       attachments, fromCart: !!params.fromCart,
@@ -458,6 +530,20 @@ export function CheckoutScreen({ params }) {
 
         <Field label="Mô tả tình trạng thiết bị" multiline value={note} onChangeText={setNote} placeholder="VD: Máy lạnh chảy nước, kém lạnh…" />
 
+        {/* Điều kiện vị trí thi công chuẩn ĐMX */}
+        <Text style={[bx.sec, { marginTop: 16, marginBottom: 8 }]}>🏢  Điều kiện vị trí thi công</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {SITE_CONDITIONS.map((sc) => (
+            <Chip
+              key={sc.id}
+              label={sc.label}
+              on={siteConditionId === sc.id}
+              onPress={() => setSiteConditionId(sc.id)}
+            />
+          ))}
+        </View>
+        <Text style={[ui.meta, { marginTop: 6 }]}>💡 {selectedSite.note}</Text>
+
         {/* Thiết bị áp dụng (liên kết với Thiết bị của tôi) */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 18, marginBottom: 8 }}>
           <Text style={[bx.sec, { marginTop: 0, marginBottom: 0 }]}>📺  Thiết bị tại nhà bạn</Text>
@@ -541,10 +627,18 @@ export function CheckoutScreen({ params }) {
           <Row l="Tổng tiền dịch vụ" v={formatVND(goods)} />
           <Row l="Phí đi lại" v="Miễn phí" green />
           {productDiscount ? <Row l="Giảm giá dịch vụ" v={`-${formatVND(productDiscount)}`} green /> : null}
+          {combo.amount ? <Row l={`🔥 Ưu đãi ${combo.label}`} v={`-${formatVND(combo.amount)}`} green /> : null}
           {vDiscount ? <Row l={`Voucher ${voucher.code}`} v={`-${formatVND(vDiscount)}`} green /> : null}
           <View style={bx.totalRow}>
             <Text style={{ fontWeight: '800', color: C.ink, fontSize: 15 }}>Tổng thanh toán</Text>
             <Text style={[bx.price, { fontSize: 20 }]}>{formatVND(total)}</Text>
+          </View>
+          <View style={{ marginTop: 10, padding: 10, borderRadius: R.md, backgroundColor: curTier.bg || C.primarySoft, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={{ fontSize: 16 }}>👑</Text>
+            <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: curTier.color, lineHeight: 17 }}>
+              Đặc quyền hạng {curTier.label}: Bảo hành {curTier.warrantyDays || 60} ngày
+              {curTier.partDiscountPercent ? ` · Giảm tự động ${curTier.partDiscountPercent}% vật tư phát sinh` : ''}
+            </Text>
           </View>
           <Text style={[ui.meta, { color: C.goldInk, marginTop: 8 }]}>⭐ Nhận +{Math.max(1, Math.floor(total / 10000))} điểm khi đơn hoàn thành</Text>
         </Card>

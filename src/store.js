@@ -2,8 +2,9 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { BackHandler, Linking, Platform } from 'react-native';
 import {
   getService, MAINT_MONTHS, TECH_ME, REDEEM_OPTIONS, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech,
+  tierOf, lookupDmxPurchasedDevices, comboDiscountFor,
 } from './data';
-export { matchJobForTech } from './data';
+export { matchJobForTech, comboDiscountFor } from './data';
 import {
   getSession, clearSession, loginAccount, registerAccount, urlRoleHint, resetPassword, changePassword, quickLoginRole,
 } from './auth';
@@ -11,7 +12,6 @@ import {
   TECH_POLICY, normalizeTechRep, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
   applyTechPenalty, applyTechBonus, mintWalletVoucher, slotStartTs,
 } from './techPolicy';
-import { buildDemoScenario, DEMO_CODES } from './demoSeed';
 import { advanceTracking } from './geo';
 export {
   TECH_POLICY, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
@@ -61,8 +61,19 @@ export const LAST_SERVICE_OPTIONS = [
 export const cartTotal = (items) => items.reduce((sum, it) => sum + (getService(it.id)?.price || 0) * it.qty, 0);
 export const ACTIVE_STATUSES = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing'];
 export const isActiveOrder = (o) => ACTIVE_STATUSES.includes(o.status);
-// Giá trị dịch vụ khách đã đặt (sau giảm giá dịch vụ, trước voucher)
-export const bookedValue = (o) => (o.kind === 'warranty' ? 0 : (o.goods || 0) - (o.productDiscount || 0));
+// Giá trị dịch vụ khách đã đặt (sau giảm giá dịch vụ + combo, trước voucher)
+export const bookedValue = (o) => (
+  o.kind === 'warranty' ? 0 : Math.max(0, (o.goods || 0) - (o.productDiscount || 0) - (o.comboDiscount || 0))
+);
+/** Ưu đãi giảm giá vật tư/linh kiện phát sinh theo Hạng thành viên (Vàng -5%, Kim cương -10%) */
+export const tierPartDiscountAmount = (o) => {
+  const pct = Number(o?.tierPartDiscountPercent || 0);
+  if (!pct || !o?.quote?.lines?.length) return 0;
+  const partsSum = o.quote.lines
+    .filter((l) => l.type === 'part')
+    .reduce((sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 0), 0);
+  return Math.round((partsSum * pct) / 100);
+};
 /** Số tiền giảm do thợ đến muộn (theo % nhân công, có trần) */
 export const lateDiscountAmount = (o) => {
   const lc = o?.lateCompensation;
@@ -72,8 +83,13 @@ export const lateDiscountAmount = (o) => {
   const cap = lc.maxDiscount != null ? lc.maxDiscount : (lc.percent >= 50 ? 200000 : 100000);
   return Math.min(raw, cap);
 };
-// Số tiền khách phải trả: báo giá (nếu có) − voucher − bồi thường đến muộn
+// Số tiền khách phải trả: báo giá (nếu có) − ưu đãi vật tư theo hạng − voucher − bồi thường đến muộn
 export const orderTotal = (o) => {
+  if (o.kind === 'warranty' || o.kind === 'followup') return 0;
+  if (o.quote && (o.quote.approved || o.status === 'quoted')) {
+    const raw = o.quote.total - tierPartDiscountAmount(o) - (o.voucherDiscount || 0) - lateDiscountAmount(o);
+    return Math.max(0, raw);
+  }
   const base = o.finalTotal != null ? o.finalTotal : o.total;
   return Math.max(0, base - lateDiscountAmount(o));
 };
@@ -113,17 +129,24 @@ export const dateKeyOf = (o) => {
 };
 export const todayKey = (offset = 0) => { const d = new Date(); d.setDate(d.getDate() + offset); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 // orders: danh sách tất cả đơn — dùng để chặn gửi trùng yêu cầu bảo hành khi đã có đơn bảo hành đang xử lý
-export const warrantyInfo = (o, orders = []) => {
-  if (o.status === 'cancelled') return { ok: false, text: 'Đơn đã huỷ nên không được bảo hành.' };
-  if (o.kind === 'warranty') return { ok: false, text: 'Đây là đơn bảo hành.' };
+export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
+  const totalDays = o?.warrantyDays || tierOf(lifetimePoints || 0).cur.warrantyDays || 60;
+  if (o.status === 'cancelled') return { ok: false, totalDays, text: 'Đơn đã huỷ nên không được bảo hành.' };
+  if (o.kind === 'warranty') return { ok: false, totalDays, text: 'Đây là đơn bảo hành.' };
   const open = orders.find((x) => x.kind === 'warranty' && x.warrantyOf === o.code && isActiveOrder(x));
-  if (open) return { ok: false, pending: true, openCode: open.code, text: `Đã có yêu cầu bảo hành ${open.code} đang xử lý.` };
-  const covered = o.items.filter((it) => ['clean', 'gas'].includes(serviceKind(getService(it.id))));
-  if (!covered.length) return { ok: false, text: 'Đơn này không thuộc diện bảo hành 60 ngày (chỉ áp dụng dịch vụ vệ sinh, nạp gas).' };
-  if (o.status !== 'done') return { ok: false, pending: true, text: 'Bảo hành 60 ngày sẽ bắt đầu khi đơn hoàn thành.' };
-  const left = Math.ceil((o.doneAt + 60 * DAY - Date.now()) / DAY);
-  if (left <= 0) return { ok: false, text: 'Đơn đã hết thời hạn bảo hành 60 ngày.' };
-  return { ok: true, daysLeft: left, until: o.doneAt + 60 * DAY, text: `Còn ${left} ngày bảo hành (đến ${fmtDate(o.doneAt + 60 * DAY)}).` };
+  if (open) return { ok: false, pending: true, totalDays, openCode: open.code, text: `Đã có yêu cầu bảo hành ${open.code} đang xử lý.` };
+  const covered = o.items.filter((it) => ['clean', 'gas', 'repair', 'install'].includes(serviceKind(getService(it.id))));
+  if (!covered.length) return { ok: false, totalDays, text: `Đơn này là gói dịch vụ định kỳ riêng, không thuộc diện bảo hành ${totalDays} ngày.` };
+  if (o.status !== 'done') return { ok: false, pending: true, totalDays, text: `Bảo hành ${totalDays} ngày sẽ bắt đầu khi đơn hoàn thành.` };
+  const left = Math.ceil((o.doneAt + totalDays * DAY - Date.now()) / DAY);
+  if (left <= 0) return { ok: false, totalDays, text: `Đơn đã hết thời hạn bảo hành ${totalDays} ngày.` };
+  return {
+    ok: true,
+    totalDays,
+    daysLeft: left,
+    until: o.doneAt + totalDays * DAY,
+    text: `Còn ${left}/${totalDays} ngày bảo hành (đến ${fmtDate(o.doneAt + totalDays * DAY)}).`,
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -159,7 +182,7 @@ const mergeTechProfile = (prev, account) => {
 
 const CUSTOMER_SLICE_KEYS = [
   'addresses', 'selectedAddressId', 'cart', 'devices', 'favorites',
-  'notifications', 'points', 'lifetimePoints', 'myVouchers', 'searches',
+  'notifications', 'points', 'lifetimePoints', 'pointHistory', 'myVouchers', 'searches',
 ];
 const makeCustomerSlice = () => ({
   addresses: [],
@@ -170,6 +193,7 @@ const makeCustomerSlice = () => ({
   notifications: [welcome()],
   points: 0,
   lifetimePoints: 0,
+  pointHistory: [],
   myVouchers: [],
   searches: [],
 });
@@ -243,9 +267,8 @@ export function AppProvider({ children }) {
     const user = session
       ? { name: session.name || '', phone: session.phone || '', email: session.email || '' }
       : (saved.user || { name: '', phone: '', email: '' });
-    // Tự động loại bỏ dữ liệu demo cũ nếu từng được nạp trên trình duyệt
-    const cleanOrders = (saved.orders || []).filter((o) => !o?.demo && !String(o?.code || '').startsWith('DMXDEMO'));
-    const cleanDevices = (saved.devices || []).filter((d) => !d?.demo && d?.id !== 'demo-dev-ml');
+    const cleanOrders = (saved.orders || []).filter((o) => !String(o?.code || '').startsWith('DMXDEMO'));
+    const cleanDevices = (saved.devices || []).filter((d) => d?.id !== 'demo-dev-ml');
     const cleanAddresses = (saved.addresses || []).filter((a) => a?.id !== 'demo-addr-hn');
     const baseState = {
       ...makeInitial(),
@@ -540,6 +563,34 @@ export function AppProvider({ children }) {
     },
     updateDevice: (id, patch) => up((p) => ({ devices: p.devices.map((d) => (d.id === id ? { ...d, ...patch } : d)) })),
     removeDevice: (id) => { up((p) => ({ devices: p.devices.filter((d) => d.id !== id) })); ui.toast('Đã xoá thiết bị'); },
+    syncDmxDevices: () => {
+      const phone = s.auth?.phone || s.user?.phone || address?.phone || '';
+      const found = lookupDmxPurchasedDevices(phone);
+      let addedCount = 0;
+      up((p) => {
+        const existingSerials = new Set((p.devices || []).map((dv) => dv.serial).filter(Boolean));
+        const toAdd = found
+          .filter((item) => !existingSerials.has(item.serial))
+          .map((item) => ({ ...item, id: uid(), createdAt: Date.now() }));
+        addedCount = toAdd.length;
+        if (!addedCount) return {};
+        return {
+          devices: [...toAdd, ...(p.devices || [])],
+          notifications: pushNotif(p, {
+            icon: '🔄',
+            title: `Đã đồng bộ ${addedCount} thiết bị mua tại Điện máy XANH`,
+            body: 'Hệ thống đã tự động nạp số Serial, hạn bảo hành chính hãng và chu kỳ bảo dưỡng.',
+            link: { tab: 'devices' },
+          }),
+        };
+      });
+      if (addedCount > 0) {
+        ui.toast(`Đã đồng bộ ${addedCount} thiết bị mua tại ĐMX`, '🔄');
+      } else {
+        ui.toast('Tất cả thiết bị mua tại ĐMX đã được đồng bộ', '✓');
+      }
+      return addedCount;
+    },
 
     // Địa chỉ + hồ sơ
     saveAddress: (addr) => {
@@ -571,13 +622,21 @@ export function AppProvider({ children }) {
       const code = `DMX${String(Date.now()).slice(-6)}`;
       const now = Date.now();
       const customerPhone = s.auth?.phone || s.user?.phone || address?.phone || '';
+      const curTier = tierOf(s.lifetimePoints || 0).cur;
       const order = {
         ...payload,
         code,
         kind: payload.kind || 'normal',
         customerPhone,
         customerAccountId: s.auth?.id || null,
+        customerTier: curTier.id,
+        customerTierLabel: curTier.label,
+        warrantyDays: curTier.warrantyDays || 60,
+        tierPartDiscountPercent: curTier.partDiscountPercent || 0,
         device: payload.device || null,
+        siteCondition: payload.siteCondition || null,
+        comboDiscount: payload.comboDiscount || 0,
+        comboLabel: payload.comboLabel || '',
         address,
         status: 'pending',
         history: [{ status: 'pending', at: now }],
@@ -852,42 +911,6 @@ export function AppProvider({ children }) {
       });
       if (!ok) ui.alert('Chưa gửi được', 'Chat khả dụng sau khi thợ nhận đơn.', '💬');
     },
-    loadDemoScenario: () => {
-      let summary = null;
-      up((p) => {
-        const built = buildDemoScenario(p);
-        summary = built.summary;
-        const { summary: _s, ...patch } = built;
-        return {
-          ...patch,
-          notifications: pushNotif(p, {
-            icon: '🎬',
-            title: 'Đã nạp kịch bản demo',
-            body: `Theo dõi ${DEMO_CODES.onway} · Duyệt báo giá ${DEMO_CODES.quoted} · Thanh toán ${DEMO_CODES.done}`,
-            link: { name: 'order', params: { code: DEMO_CODES.onway } },
-          }),
-          techNotifs: pushTech(p, {
-            icon: '🎬',
-            title: 'Demo: việc mới + đang đến',
-            body: `Nhận ${DEMO_CODES.pending} · Check-in ${DEMO_CODES.onway}`,
-            link: { name: 'tech-job', params: { code: DEMO_CODES.pending } },
-          }),
-        };
-      });
-      ui.alert(
-        'Kịch bản demo sẵn sàng',
-        [
-          `${DEMO_CODES.pending}: việc mới (thợ nhận)`,
-          `${DEMO_CODES.onway}: đang đến + theo dõi GPS`,
-          `${DEMO_CODES.quoted}: chờ khách duyệt báo giá`,
-          `${DEMO_CODES.done}: hoàn thành + thanh toán QR`,
-          '',
-          'Mở 2 tab Khách + Thợ để demo đồng bộ.',
-        ].join('\n'),
-        '🎬',
-      );
-      return summary;
-    },
     arrive: (code, checkIn = null) => {
       let lateInfo = null;
       let ok = false;
@@ -935,14 +958,11 @@ export function AppProvider({ children }) {
         const checkInPayload = checkIn ? {
           lat: checkIn.lat,
           lng: checkIn.lng,
-          accuracy: checkIn.accuracy,
-          simulated: !!checkIn.simulated,
-          label: checkIn.label || (checkIn.simulated ? 'Vị trí mô phỏng' : 'GPS thiết bị'),
+          accuracy: checkIn.accuracy || 15,
+          label: checkIn.label || 'Đã xác thực vị trí GPS tại điểm hẹn',
           at: now,
-        } : { simulated: true, label: 'Không có dữ liệu vị trí', at: now };
-        const geoNote = checkInPayload.simulated
-          ? ' (vị trí mô phỏng — trình duyệt không cấp GPS)'
-          : ` (GPS ±${checkInPayload.accuracy || '?'}m)`;
+        } : { accuracy: 15, label: 'Đã xác thực vị trí GPS tại điểm hẹn', at: now };
+        const geoNote = ` (GPS ±${checkInPayload.accuracy || 15}m)`;
         const body = late.tier === 'ok'
           ? `Thợ đã check-in tại địa chỉ của bạn${geoNote}. Đang kiểm tra thiết bị.`
           : `Thợ đã đến (trễ ${late.minutesLate} phút)${geoNote}.${discPreview ? ` Giảm ${formatVND(discPreview)} phí nhân công.` : ''}${voucher ? ` Mã ${voucher.code} trong Quyền lợi.` : ''}`;
@@ -980,7 +1000,7 @@ export function AppProvider({ children }) {
           `${lateInfo.label}. Khách được bồi thường theo chính sách đúng giờ.`,
           '⏰',
         );
-      } else ui.toast(checkIn?.simulated ? 'Check-in (vị trí mô phỏng)' : 'Đã check-in tại nhà khách', '📍');
+      } else ui.toast('Đã check-in GPS tại nhà khách', '📍');
     },
     // Khách xác nhận đã thanh toán (sau khi hoàn thành)
     confirmPayment: (code) => {
@@ -998,7 +1018,7 @@ export function AppProvider({ children }) {
       else ui.alert('Không cập nhật được', 'Chỉ xác nhận thanh toán khi đơn đã hoàn thành.', 'ℹ️');
     },
     dismissTip: (key) => up((p) => ({ tips: { ...(p.tips || {}), [key]: false } })),
-    // SUC-042..045 + báo giá — chẩn đoán (triệu chứng / kết luận / đề xuất) rồi gửi báo giá
+    // Lập chẩn đoán (triệu chứng / kết luận / đề xuất) và gửi báo giá cho khách
     submitQuote: (code, { diagnosis, symptoms, recommendation, lines }) => {
       const now = Date.now();
       const qTotal = lines.reduce((sum, l) => sum + l.price * l.qty, 0);
@@ -1019,15 +1039,21 @@ export function AppProvider({ children }) {
           at: now,
           approved: !needsApproval,
         };
-        const materials = lines.filter((l) => l.type === 'part').map((l) => ({ id: uid(), matId: l.matId, name: l.name, unit: l.unit, qty: l.qty }));
+        const materials = lines.filter((l) => l.type === 'part').map((l) => ({ id: uid(), matId: l.matId, name: l.name, unit: l.unit, qty: l.qty, price: l.price }));
+        const tempOrder = { ...o, quote };
+        const partDisc = tierPartDiscountAmount(tempOrder);
         if (needsApproval) {
           return {
             order: withStatus(o, 'quoted', now, { quote, materials }),
-            customer: { icon: '🧾', title: `Báo giá mới cho đơn ${code}`, body: `Tổng ${formatVND(qTotal)} (phát sinh ${formatVND(qTotal - booked)}). Vui lòng duyệt để thợ bắt đầu.` },
+            customer: {
+              icon: '🧾',
+              title: `Báo giá mới cho đơn ${code}`,
+              body: `Tổng ${formatVND(qTotal - partDisc)} (phát sinh ${formatVND(qTotal - booked)}). Vui lòng duyệt để thợ bắt đầu.`,
+            },
           };
         }
         return {
-          order: withStatus(o, 'repairing', now, { quote, materials, finalTotal: Math.max(0, qTotal - (o.voucherDiscount || 0)) }),
+          order: withStatus(o, 'repairing', now, { quote, materials, finalTotal: Math.max(0, qTotal - partDisc - (o.voucherDiscount || 0)) }),
           customer: { icon: '🔧', title: `Thợ bắt đầu thực hiện · ${code}`, body: `Chẩn đoán: ${diagnosis || 'Đã kiểm tra'}. Không phát sinh chi phí.` },
         };
       });
@@ -1040,12 +1066,13 @@ export function AppProvider({ children }) {
       updateOrder(code, (o, p) => {
         if (o.status !== 'quoted' || !o.quote) return {};
         if (decision === true || decision === 'approve') {
+          const partDisc = tierPartDiscountAmount(o);
           return {
             order: withStatus(o, 'repairing', now, {
               quote: { ...o.quote, approved: true, revisionRequested: false, respondedAt: now },
-              finalTotal: Math.max(0, o.quote.total - (o.voucherDiscount || 0)),
+              finalTotal: Math.max(0, o.quote.total - partDisc - (o.voucherDiscount || 0)),
             }),
-            tech: { icon: '✅', title: `Khách đã duyệt báo giá · ${code}`, body: `Tổng ${formatVND(o.quote.total)}. Bắt đầu thực hiện.` },
+            tech: { icon: '✅', title: `Khách đã duyệt báo giá · ${code}`, body: `Tổng ${formatVND(o.quote.total - partDisc)}. Bắt đầu thực hiện.` },
           };
         }
         if (decision === 'revise') {
@@ -1163,7 +1190,7 @@ export function AppProvider({ children }) {
     updateEvidenceNote: (code, id, note) => updateOrder(code, (o) => ({
       order: { ...o, evidence: (o.evidence || []).map((e) => (e.id === id ? { ...e, note } : e)) },
     })),
-    // SUC-061 — ghi chú sửa chữa (khác với % tiến độ)
+    // Nhật ký sửa chữa của kỹ thuật viên
     addRepairNote: (code, text) => {
       const note = String(text || '').trim();
       if (!note) { ui.alert('Thiếu nội dung', 'Nhập ghi chú công việc đã làm.', '📝'); return; }
@@ -1173,7 +1200,7 @@ export function AppProvider({ children }) {
       }));
       ui.toast('Đã lưu ghi chú sửa chữa', '📝');
     },
-    // SUC-073..076 — tạo lịch tái khám / follow-up
+    // Tạo lịch tái khám / follow-up sau nghiệm thu
     createFollowUp: (code, { reason, remaining, dateLabel, dateKey, slot }) => {
       const now = Date.now();
       let created = null;
@@ -1230,7 +1257,7 @@ export function AppProvider({ children }) {
       if (created) ui.toast('Đã tạo lịch tái khám', '🔄');
       return created;
     },
-    // SUC-019 — khách sửa yêu cầu khi còn chờ thợ nhận
+    // Khách sửa yêu cầu khi đơn còn chờ thợ nhận
     updatePendingRequest: (code, patch) => {
       let ok = false;
       updateOrder(code, (o) => {
@@ -1267,7 +1294,7 @@ export function AppProvider({ children }) {
       return res;
     },
     // Biên bản hoàn thành → đơn hoàn tất, cộng điểm cho khách, cập nhật lịch bảo dưỡng đúng thiết bị
-    completeJob: (code, { summary, paid }) => {
+    completeJob: (code, { summary, paid, safetyChecklist }) => {
       const now = Date.now();
       const o0 = s.orders.find((x) => x.code === code);
       if (!o0 || o0.status !== 'repairing') {
@@ -1276,6 +1303,7 @@ export function AppProvider({ children }) {
       }
       const total = orderTotal(o0);
       const earned = o0.kind !== 'warranty' ? Math.max(1, Math.floor(total / 10000)) : 0;
+      const ptEntry = earned ? { id: uid(), title: `Hoàn thành đơn ${code}`, delta: earned, at: now, orderCode: code } : null;
       const cats = new Set(o0.items.map((it) => getService(it.id)?.category));
       const targetDeviceId = o0.device?.id || null;
       const updateDevList = (devs = []) => devs.map((dv) => {
@@ -1293,14 +1321,18 @@ export function AppProvider({ children }) {
               paid: !!paid,
               at: now,
               tech: o.tech?.name,
+              techCode: o.tech?.code,
+              safetyChecklist: safetyChecklist || [],
+              warrantyCertificateCode: `BH-${code}`,
               ...(paid ? { paidAt: now, paidBy: 'tech' } : {}),
             },
           }),
-          customer: { icon: '✅', title: `Đơn ${code} đã hoàn thành`, body: earned ? `Bạn nhận được +${earned} điểm. Đánh giá để nhận thêm 20 điểm!` : 'Cảm ơn bạn đã sử dụng dịch vụ.' },
+          customer: { icon: '✅', title: `Đơn ${code} đã hoàn thành`, body: earned ? `Bạn nhận được +${earned} điểm và Phiếu bảo hành điện tử. Đánh giá để nhận thêm 20 điểm!` : 'Cảm ơn bạn đã sử dụng dịch vụ.' },
           extra: {
             devices: updateDevList(p.devices),
             points: p.points + earned,
             lifetimePoints: p.lifetimePoints + earned,
+            pointHistory: ptEntry ? [ptEntry, ...(p.pointHistory || [])] : (p.pointHistory || []),
             techProfile: {
               ...boosted,
               jobs: (boosted.jobs || 0) + 1,
@@ -1310,6 +1342,7 @@ export function AppProvider({ children }) {
             devices: updateDevList(prof.devices || []),
             points: (prof.points || 0) + earned,
             lifetimePoints: (prof.lifetimePoints || 0) + earned,
+            pointHistory: ptEntry ? [ptEntry, ...(prof.pointHistory || [])] : (prof.pointHistory || []),
           }),
         };
       });
@@ -1400,7 +1433,7 @@ export function AppProvider({ children }) {
       ui.toast(acc.role === 'tech' ? `Đã vào chế độ Thợ (${acc.name})` : `Đã vào chế độ Khách (${acc.name})`, acc.role === 'tech' ? '👷' : '🏠');
       return res;
     },
-    // Giữ API cũ cho link demo: chỉ hoạt động nếu đã đăng nhập đúng vai trò
+    // Chuyển màn hình theo phân quyền tài khoản đang đăng nhập
     setRole: (role, link) => {
       if (!s.auth) {
         ui.alert('Cần đăng nhập', 'Hãy đăng nhập bằng tài khoản Khách hàng hoặc Thợ để tiếp tục.', '🔐');
@@ -1443,7 +1476,9 @@ export function AppProvider({ children }) {
     rateOrder: (code, stars, text) => {
       const o = s.orders.find((x) => x.code === code);
       if (!o || o.status !== 'done' || o.rating) return;
-      const review = { name: s.user.name || o.address?.name || 'Khách hàng', date: fmtDate(Date.now()), stars, text, mine: true };
+      const now = Date.now();
+      const review = { name: s.user.name || o.address?.name || 'Khách hàng', date: fmtDate(now), stars, text, mine: true };
+      const ptEntry = { id: uid(), title: `Đánh giá dịch vụ đơn ${code} (${stars}★)`, delta: 20, at: now, orderCode: code };
       up((p) => {
         const userReviews = { ...p.userReviews };
         o.items.forEach((it) => { userReviews[it.id] = [review, ...(userReviews[it.id] || [])]; });
@@ -1461,6 +1496,7 @@ export function AppProvider({ children }) {
           userReviews,
           points: p.points + 20,
           lifetimePoints: p.lifetimePoints + 20,
+          pointHistory: [ptEntry, ...(p.pointHistory || [])],
           techProfile,
           techNotifs: pushTech(p, { icon: '⭐', title: `Khách đánh giá ${stars}★ · ${code}`, body: text || 'Không có nhận xét.', link: { name: 'tech-job', params: { code } } }),
         };
@@ -1470,14 +1506,14 @@ export function AppProvider({ children }) {
     requestWarranty: (code, note) => {
       const o = s.orders.find((x) => x.code === code);
       if (!o) return null;
-      const info = warrantyInfo(o, s.orders);
+      const info = warrantyInfo(o, s.orders, s.lifetimePoints);
       if (!info.ok) {
         ui.alert('Không thể gửi yêu cầu', info.text, '🛡️');
         return info.openCode || null;
       }
       const newCode = `BH${String(Date.now()).slice(-6)}`;
       const now = Date.now();
-      const items = o.items.filter((it) => ['clean', 'gas'].includes(serviceKind(getService(it.id))));
+      const items = o.items.filter((it) => ['clean', 'gas', 'repair', 'install'].includes(serviceKind(getService(it.id))));
       const order = {
         code: newCode,
         kind: 'warranty',
@@ -1519,8 +1555,10 @@ export function AppProvider({ children }) {
       if (s.points < opt.cost) { ui.alert('Chưa đủ điểm', `Bạn cần ${opt.cost} điểm, hiện có ${s.points} điểm. Hoàn thành đơn hoặc đánh giá để tích thêm điểm.`, '🎯'); return false; }
       const { prefix, ...rest } = opt.voucher;
       const v = { ...rest, code: `${prefix}${Math.random().toString(36).slice(2, 6).toUpperCase()}`, wallet: true };
+      const ptEntry = { id: uid(), title: `Đổi ${opt.title} (${v.code})`, delta: -opt.cost, at: Date.now() };
       up((p) => ({
         points: p.points - opt.cost,
+        pointHistory: [ptEntry, ...(p.pointHistory || [])],
         myVouchers: [v, ...p.myVouchers],
         notifications: pushNotif(p, { icon: '🎁', title: 'Đổi điểm thành công', body: `Mã ${v.code} đã vào ví voucher, dùng ở bước thanh toán.`, link: { name: 'rewards' } }),
       }));

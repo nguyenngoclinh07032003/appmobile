@@ -1,5 +1,5 @@
 // ===========================================================================
-// APP THỢ (Technician) — theo sơ đồ ngữ cảnh HRMSS
+// APP THỢ (Technician) — Hệ thống kỹ thuật viên Thợ Điện máy XANH
 //   Nhận từ hệ thống: việc được giao, địa chỉ & liên hệ khách, lịch làm việc, báo giá, thông báo
 //   Gửi lên hệ thống: chẩn đoán, tiến độ, vật tư sử dụng, ảnh minh chứng, biên bản hoàn thành
 // Dùng chung dữ liệu đơn hàng với app Khách hàng (src/store.js) nên hai bên cập nhật cho nhau.
@@ -9,6 +9,7 @@ import { View, Text, ScrollView, StyleSheet, Image, Linking } from 'react-native
 import { C, R, shadow, STATUS_META, toneOf, grad } from '../theme';
 import {
   getService, formatVND, catIcon, catLabel, TECH_ME, MATERIALS, DIAG_TAGS, TIME_SLOTS, TECH_STATUS_DESC, TECH_ORDER_STEPS, techStepIndexOf, HOTLINE,
+  SAFETY_CHECKLIST_ITEMS,
 } from '../data';
 import {
   useApp, orderTotal, bookedValue, isActiveOrder, dateKeyOf, todayKey, fmtDateTime, timeAgo,
@@ -34,7 +35,29 @@ const sameDay = (ts, key) => {
 const slotHour = (slot) => parseInt(slot, 10) || 0;
 const callPhone = (phone) => Linking.openURL(`tel:${(phone || '').replace(/\s/g, '')}`).catch(() => {});
 const openMap = (addr) => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr || '')}`).catch(() => {});
-const income = (o) => Math.round(orderTotal(o) * 0.7); // ước tính thợ nhận 70% giá trị đơn
+// Tách bạch thu nhập của Thợ chuẩn ĐMX: 70% phí nhân công + 15% hoa hồng linh kiện/vật tư (85% vật tư nộp hoàn kho)
+const techIncomeBreakdown = (o) => {
+  if (!o || o.kind === 'warranty' || o.kind === 'followup') {
+    return { laborGross: 0, partsGross: 0, laborShare: 0, partCommission: 0, warehouseReturn: 0, total: 0 };
+  }
+  const partsGross = (o.quote?.lines || [])
+    .filter((l) => l.type === 'part')
+    .reduce((sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 0), 0);
+  const gross = o.quote?.approved ? o.quote.total : bookedValue(o);
+  const laborGross = Math.max(0, gross - partsGross);
+  const laborShare = Math.round(laborGross * 0.7);
+  const partCommission = Math.round(partsGross * 0.15);
+  const warehouseReturn = Math.max(0, partsGross - partCommission);
+  return {
+    laborGross,
+    partsGross,
+    laborShare,
+    partCommission,
+    warehouseReturn,
+    total: laborShare + partCommission,
+  };
+};
+const income = (o) => techIncomeBreakdown(o).total;
 
 // Hành động chính tiếp theo cho từng trạng thái
 function useNextAction() {
@@ -707,23 +730,35 @@ export function TechAccountScreen() {
         <Text style={[ui.meta, { marginTop: 12 }]}>Mã thợ: {me.code}</Text>
       </Sheet>
 
-      <Sheet visible={showIncome} onClose={() => setShowIncome(false)} title="Chi tiết thu nhập">
+      <Sheet visible={showIncome} onClose={() => setShowIncome(false)} title="Chi tiết thu nhập & chiết khấu ĐMX">
         <View style={tx.incomeHead}>
-          <Text style={ui.meta}>Tháng này</Text>
+          <Text style={ui.meta}>Thực nhận tháng này (70% công + 15% vật tư)</Text>
           <Text style={[ui.price, { fontSize: 22 }]}>{formatVND(monthIncome)}</Text>
+        </View>
+        <View style={{ padding: 10, borderRadius: R.md, backgroundColor: C.primarySoft, marginTop: 10 }}>
+          <Text style={{ fontSize: 12, color: C.primary, fontWeight: '700', lineHeight: 18 }}>
+            💡 Chính sách ĐMX: Thợ hưởng 70% phí dịch vụ nhân công + 15% phụ cấp vật tư/linh kiện chính hãng (85% giá trị vật tư đối soát hoàn kho).
+          </Text>
         </View>
         {monthDone.length === 0 ? (
           <Text style={[ui.meta, { marginTop: 12 }]}>Chưa hoàn thành việc nào trong tháng.</Text>
-        ) : monthDone.map((o) => (
-          <Tap key={o.code} style={tx.incomeRow} onPress={() => { setShowIncome(false); nav.push('tech-job', { code: o.code }); }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: '700', color: C.ink }} numberOfLines={1}>{getService(o.items[0]?.id)?.name}</Text>
-              <Text style={ui.meta}>{o.code} · {fmtDateTime(o.doneAt)}</Text>
-            </View>
-            <Text style={{ fontWeight: '800', color: C.green }}>+{formatVND(income(o))}</Text>
-          </Tap>
-        ))}
-        <Text style={[ui.meta, { marginTop: 14 }]}>Tổng mọi thời điểm: {formatVND(totalIncome)}</Text>
+        ) : monthDone.map((o) => {
+          const br = techIncomeBreakdown(o);
+          return (
+            <Tap key={o.code} style={tx.incomeRow} onPress={() => { setShowIncome(false); nav.push('tech-job', { code: o.code }); }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontWeight: '700', color: C.ink }} numberOfLines={1}>{getService(o.items[0]?.id)?.name}</Text>
+                <Text style={ui.meta}>{o.code} · {fmtDateTime(o.doneAt)}</Text>
+                <Text style={{ fontSize: 11, color: C.ink2, marginTop: 2 }}>
+                  Công (70%): +{formatVND(br.laborShare)}
+                  {br.partsGross > 0 ? ` · Hoa hồng VT (15%): +${formatVND(br.partCommission)} (Hoàn kho: ${formatVND(br.warehouseReturn)})` : ''}
+                </Text>
+              </View>
+              <Text style={{ fontWeight: '800', color: C.green }}>+{formatVND(br.total)}</Text>
+            </Tap>
+          );
+        })}
+        <Text style={[ui.meta, { marginTop: 14 }]}>Tổng thực nhận mọi thời điểm: {formatVND(totalIncome)}</Text>
       </Sheet>
       <Sheet
         visible={showPw}
@@ -783,6 +818,7 @@ export function TechJobScreen({ params }) {
   const [summary, setSummary] = useState('');
   const [paid, setPaid] = useState(true);
   const [forceDone, setForceDone] = useState(false);
+  const [safetyChecks, setSafetyChecks] = useState(() => [...SAFETY_CHECKLIST_ITEMS]);
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [fuReason, setFuReason] = useState('Cần kiểm tra lại sau khi chạy thử');
   const [fuRemain, setFuRemain] = useState('');
@@ -950,15 +986,21 @@ export function TechJobScreen({ params }) {
         {/* Lịch hẹn + dịch vụ */}
         <Card style={{ marginTop: 12 }}>
           <Text style={tx.h}>Lịch hẹn & yêu cầu</Text>
-          {o.workerCode ? (
-            <View style={{ marginBottom: 8 }}>
-              <Badge text={`Chỉ định Thợ Now · ${o.workerCode}`} fg={C.navy} bg={C.goldSoft} />
+          {(o.workerCode || o.customerTierLabel) ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+              {o.workerCode ? <Badge text={`Chỉ định Thợ Now · ${o.workerCode}`} fg={C.navy} bg={C.goldSoft} /> : null}
+              {o.customerTierLabel ? <Badge text={`👑 Khách hạng ${o.customerTierLabel} · BH ${o.warrantyDays || 60} ngày`} fg={C.primary} bg={C.primarySoft} /> : null}
             </View>
           ) : null}
           <Text style={tx.info}>📅 {o.dateLabel} · {o.slot}</Text>
           {o.device ? (
             <Text style={[tx.info, { marginTop: 6 }]}>
-              📺 Thiết bị tại nhà: {catLabel(o.device.category)}{o.device.brand ? ` · ${o.device.brand}` : ''}{o.device.room ? ` (${o.device.room})` : ''}
+              📺 Thiết bị tại nhà: {catLabel(o.device.category)}{o.device.brand ? ` · ${o.device.brand}` : ''}{o.device.room ? ` (${o.device.room})` : ''}{o.device.serial ? ` · SN: ${o.device.serial}` : ''}
+            </Text>
+          ) : null}
+          {o.siteCondition ? (
+            <Text style={[tx.info, { marginTop: 6 }]}>
+              🏢 Vị trí thi công: {o.siteCondition.label} ({o.siteCondition.note})
             </Text>
           ) : null}
           {o.note ? <Text style={[tx.info, { marginTop: 6 }]}>📝 “{o.note}”</Text> : null}
@@ -1116,7 +1158,7 @@ export function TechJobScreen({ params }) {
           </Card>
         ) : null}
 
-        {/* SUC-061 — ghi chú sửa chữa */}
+        {/* Nhật ký ghi chú sửa chữa */}
         {(o.status === 'repairing' && mine) || (o.repairNotes || []).length ? (
           <Card style={{ marginTop: 12 }}>
             <Text style={tx.h}>📝 Ghi chú sửa chữa</Text>
@@ -1220,7 +1262,7 @@ export function TechJobScreen({ params }) {
           </Card>
         ) : null}
 
-        {/* SUC-073 — tái khám sau khi hoàn thành */}
+        {/* Đặt lịch tái khám sau khi hoàn thành */}
         {o.status === 'done' && mine && o.kind !== 'followup' ? (
           <Card style={{ marginTop: 12 }}>
             <Text style={tx.h}>🔄 Tái khám / Follow-up</Text>
@@ -1419,13 +1461,17 @@ export function TechJobScreen({ params }) {
       <Sheet
         visible={showDone}
         onClose={() => { setShowDone(false); setForceDone(false); }}
-        title="Biên bản hoàn thành"
+        title="Biên bản nghiệm thu & hoàn thành"
         footer={(
           <Btn
             title="Gửi biên bản & hoàn thành"
             onPress={() => {
               if (!summary.trim()) {
                 u.alert('Thiếu nội dung', 'Ghi ngắn công việc đã làm trước khi gửi biên bản.', '📝');
+                return;
+              }
+              if (safetyChecks.length < SAFETY_CHECKLIST_ITEMS.length) {
+                u.alert('Chưa đủ checklist an toàn', 'Vui lòng kiểm tra và xác nhận đủ 4 tiêu chuẩn an toàn kỹ thuật ĐMX trước khi bàn giao.', '⚡');
                 return;
               }
               const hasAfter = evidence.some((e) => e.stage === 'after');
@@ -1435,12 +1481,30 @@ export function TechJobScreen({ params }) {
               }
               setShowDone(false);
               setForceDone(false);
-              a.completeJob(o.code, { summary: summary.trim(), paid: orderTotal(o) > 0 ? paid : true });
+              a.completeJob(o.code, {
+                summary: summary.trim(),
+                paid: orderTotal(o) > 0 ? paid : true,
+                safetyChecklist: safetyChecks,
+              });
             }}
           />
         )}
       >
         <Field label="Nội dung công việc đã làm" multiline value={summary} onChangeText={setSummary} style={{ marginTop: -8 }} />
+        <Text style={[ui.fieldLabel, { marginTop: 10, marginBottom: 6 }]}>⚡ Checklist an toàn kỹ thuật & nghiệm thu chuẩn ĐMX</Text>
+        <View style={{ padding: 10, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, marginBottom: 10, gap: 6 }}>
+          {SAFETY_CHECKLIST_ITEMS.map((item) => {
+            const checked = safetyChecks.includes(item);
+            return (
+              <Checkbox
+                key={item}
+                on={checked}
+                onPress={() => setSafetyChecks((prev) => (checked ? prev.filter((x) => x !== item) : [...prev, item]))}
+                label={item}
+              />
+            );
+          })}
+        </View>
         {orderTotal(o) > 0 ? <Checkbox on={paid} onPress={() => setPaid(!paid)} label={`Đã thu ${formatVND(orderTotal(o))} (${o.payment})`} /> : null}
         {!evidence.some((e) => e.stage === 'after') ? (
           <View style={[tx.note, { backgroundColor: C.orangeSoft, marginTop: 14 }]}>

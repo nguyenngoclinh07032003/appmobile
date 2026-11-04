@@ -118,7 +118,7 @@ function WarrantyView() {
   );
 
   const OrderLine = ({ o }) => {
-    const info = warrantyInfo(o, s.orders);
+    const info = warrantyInfo(o, s.orders, s.lifetimePoints);
     const svc0 = getService(o.items[0]?.id);
     return (
       <Card style={{ marginTop: 10 }}>
@@ -141,13 +141,16 @@ function WarrantyView() {
     );
   };
 
+  const curTier = tierOf(s.lifetimePoints || 0).cur;
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }} keyboardShouldPersistTaps="handled">
       <View style={sx.wHero}>
         <View style={{ flex: 1 }}>
-          <Text style={{ color: C.gold, fontWeight: '800', fontSize: 12 }}>BẢO HÀNH 60 NGÀY</Text>
-          <Text style={{ color: '#fff', fontWeight: '800', fontSize: 19, marginTop: 4 }}>Tra cứu & yêu cầu bảo hành</Text>
-          <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, marginTop: 6, lineHeight: 18 }}>Áp dụng cho dịch vụ vệ sinh, nạp gas đặt trên app, tính từ ngày hoàn thành.</Text>
+          <Text style={{ color: C.gold, fontWeight: '800', fontSize: 12 }}>BẢO HÀNH {curTier.warrantyDays || 60} NGÀY · HẠNG {curTier.label.toUpperCase()}</Text>
+          <Text style={{ color: '#fff', fontWeight: '800', fontSize: 19, marginTop: 4 }}>Tra cứu & yêu cầu bảo hành điện tử</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, marginTop: 6, lineHeight: 18 }}>
+            Áp dụng cho dịch vụ vệ sinh, nạp gas, sửa chữa & lắp đặt đặt trên app, tính từ ngày nghiệm thu hoàn thành.
+          </Text>
         </View>
         <Text style={{ fontSize: 46, marginLeft: 8 }}>🛡️</Text>
       </View>
@@ -208,23 +211,42 @@ export function DevicesScreen() {
     <View style={{ flex: 1 }}>
       <PageHead
         title="Thiết bị của tôi"
-        sub="Nhắc lịch bảo dưỡng tự động"
-        right={<Btn title="Thêm" icon="＋" small onPress={() => nav.push('device-form')} />}
+        sub="Nhắc lịch bảo dưỡng & đồng bộ ĐMX"
+        right={(
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            <Btn title="Đồng bộ ĐMX" icon="🔄" small variant="soft" onPress={a.syncDmxDevices} />
+            <Btn title="Thêm" icon="＋" small onPress={() => nav.push('device-form')} />
+          </View>
+        )}
       />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
         {s.devices.length === 0 ? (
-          <EmptyState
-            icon="📺"
-            title="Chưa có thiết bị nào"
-            body="Thêm thiết bị trong nhà để được nhắc lịch bảo dưỡng và đặt đúng dịch vụ chỉ với 1 chạm."
-            action="Thêm thiết bị đầu tiên"
-            onAction={() => nav.push('device-form')}
-          />
+          <View>
+            <Card style={{ backgroundColor: C.primarySoft, borderColor: '#BFDBFE', marginBottom: 14 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Text style={{ fontSize: 28 }}>🏪</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: '800', color: C.navy, fontSize: 14 }}>Đã mua máy tại Điện máy XANH?</Text>
+                  <Text style={{ color: C.ink2, fontSize: 12.5, marginTop: 2, lineHeight: 18 }}>
+                    Đồng bộ tự động danh sách Máy lạnh, Máy giặt, Tủ lạnh theo số điện thoại {s.user.phone || d.address?.phone || 'của bạn'} kèm số Serial & hạn bảo hành hãng.
+                  </Text>
+                </View>
+              </View>
+              <Btn title="🔄 Đồng bộ thiết bị đã mua tại ĐMX" small style={{ marginTop: 12 }} onPress={a.syncDmxDevices} />
+            </Card>
+            <EmptyState
+              icon="📺"
+              title="Chưa có thiết bị nào"
+              body="Đồng bộ thiết bị mua tại Điện máy XANH hoặc tự thêm thiết bị trong nhà để được nhắc lịch bảo dưỡng định kỳ."
+              action="Thêm thiết bị thủ công"
+              onAction={() => nav.push('device-form')}
+            />
+          </View>
         ) : (
           <View>
             <View style={sx.devHero}>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600' }}>Tổng quan</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600' }}>Tổng quan thiết bị gia đình</Text>
                 <Text style={{ color: '#fff', fontSize: 22, fontWeight: '900', marginTop: 4 }}>{s.devices.length} thiết bị</Text>
                 <Text style={{ color: d.dueDevices.length ? C.gold : '#9BE7C4', fontSize: 13, fontWeight: '700', marginTop: 4 }}>
                   {d.dueDevices.length ? `⚠ ${d.dueDevices.length} thiết bị cần bảo dưỡng` : '✓ Tất cả đều ổn'}
@@ -249,6 +271,13 @@ export function DevicesScreen() {
                     <Badge text={stt.short} fg={lv.fg} bg={lv.bg} />
                     <IconBtn icon="⋯" size={32} onPress={() => more(dev)} label="Tuỳ chọn" />
                   </View>
+                  {dev.dmxPurchased ? (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                      <Badge text={`✓ Mua tại ĐMX · ${dev.dmxInvoice || 'Chính hãng'}`} fg={C.primary} bg={C.primarySoft} />
+                      {dev.serial ? <Badge text={`SN: ${dev.serial}`} fg={C.ink2} bg="#F1F5F9" /> : null}
+                      {dev.warrantyUntil ? <Badge text={`BH hãng đến ${fmtDate(dev.warrantyUntil)}`} fg={C.green} bg={C.greenSoft} /> : null}
+                    </View>
+                  ) : null}
                   <Progress value={stt.progress} color={lv.fg} style={{ marginTop: 14 }} />
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
                     <Text style={[ui.meta, { color: lv.fg, fontWeight: '700' }]}>{stt.label}</Text>
@@ -370,7 +399,9 @@ export function PersonalScreen() {
           <View style={{ flex: 1 }}>
             <Text style={sx.pName} numberOfLines={1}>{name}</Text>
             <Text style={sx.pPhone}>{phone}</Text>
-            <View style={[sx.tier, { backgroundColor: cur.color }]}><Text style={sx.tierText}>👑 {cur.label}</Text></View>
+            <Tap style={[sx.tier, { backgroundColor: cur.color }]} onPress={() => nav.push('rewards', { tierId: cur.id })}>
+              <Text style={sx.tierText}>👑 {cur.label} ›</Text>
+            </Tap>
           </View>
           <IconBtn icon="✏️" dark onPress={() => nav.push('profile')} label="Sửa thông tin" />
         </View>

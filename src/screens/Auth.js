@@ -12,11 +12,9 @@ const ROLES = {
     icon: '🏠',
     title: 'Khách hàng',
     short: 'Đặt lịch & theo dõi thợ',
-    body: 'Vệ sinh, sửa chữa, lắp đặt tận nhà. Theo dõi đơn và bảo hành 60 ngày.',
+    body: 'Vệ sinh, sửa chữa, lắp đặt tận nhà. Theo dõi đơn và bảo hành điện tử đến 120 ngày.',
     accent: C.primary,
     soft: C.primarySoft,
-    demoPhone: '0901234567',
-    demoName: 'Nguyễn Minh Anh',
     cta: 'Tiếp tục với Khách hàng',
   },
   tech: {
@@ -24,11 +22,9 @@ const ROLES = {
     icon: '👷',
     title: 'Kỹ thuật viên',
     short: 'Nhận việc & báo giá',
-    body: 'Nhận việc được giao, báo giá, cập nhật tiến độ và hoàn thành đơn.',
+    body: 'Nhận việc được giao, báo giá minh bạch, cập nhật tiến độ và nghiệm thu đơn.',
     accent: C.navy,
     soft: '#E8EEF8',
-    demoPhone: '0987654321',
-    demoName: 'Nguyễn Văn Hùng',
     cta: 'Tiếp tục với Thợ',
   },
 };
@@ -119,7 +115,10 @@ export default function AuthScreen() {
           <View style={[st.heroBlob, st.heroBlob2]} />
           <View style={st.brandRow}>
             <View style={st.brandMark}><Text style={{ fontSize: 18 }}>⚡</Text></View>
-            <Text style={st.brand}><Text style={{ color: C.gold }}>Thợ</Text> ĐMX</Text>
+            <View>
+              <Text style={st.brand}><Text style={{ color: C.gold }}>Thợ</Text> Điện máy XANH</Text>
+              <Text style={{ color: C.gold, fontSize: 10.5, fontWeight: '800', letterSpacing: 0.6 }}>DỊCH VỤ KỸ THUẬT TẬN NHÀ CHÍNH HÃNG MWG</Text>
+            </View>
           </View>
           <Text style={st.heroTitle}>
             {step === 'pick'
@@ -392,20 +391,6 @@ const st = StyleSheet.create({
   },
   quickBtnRole: { fontSize: 12.5, fontWeight: '800' },
   quickBtnPhone: { fontSize: 11, color: C.muted, fontWeight: '600', marginTop: 1 },
-  demoHintBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FFFBEB',
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    marginTop: 8,
-  },
-  demoHintText: { flex: 1, fontSize: 12.5, color: C.ink2 },
-  demoHintAction: { fontSize: 12, fontWeight: '800', color: C.primary },
   helper: {
     marginTop: 8,
     fontSize: 12,

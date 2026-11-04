@@ -3,9 +3,11 @@ import { View, Text, ScrollView, StyleSheet, TextInput, Platform, Image, Linking
 import { C, R, shadow, toneOf, STATUS_META, grad } from '../theme';
 import {
   ALL_SERVICES, CATEGORIES, POPULAR_SEARCHES, FAQ, REDEEM_OPTIONS, VOUCHERS, ORDER_STEPS, HOTLINE, STATUS_DESC, stepIndexOf,
-  getService, formatVND, normalize, catLabel, tierOf, TIERS, TIME_SLOTS,
+  getService, formatVND, normalize, catLabel, tierOf, TIERS, TIME_SLOTS, MATERIALS, SAFETY_CHECKLIST_ITEMS,
 } from '../data';
-import { useApp, fmtDateTime, timeAgo, warrantyInfo, LAST_SERVICE_OPTIONS, isActiveOrder, orderTotal, lateDiscountAmount, normalizeTechRep } from '../store';
+import {
+  useApp, fmtDate, fmtDateTime, timeAgo, warrantyInfo, LAST_SERVICE_OPTIONS, isActiveOrder, orderTotal, lateDiscountAmount, tierPartDiscountAmount, normalizeTechRep,
+} from '../store';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Chip, Badge, Stars, Field, Sheet, Radio,
   EmptyState, ServiceGrid, ServiceRow, Progress, Media, ListRow, PseudoQR, HScroll, ui,
@@ -134,6 +136,8 @@ export function OrderScreen({ params }) {
   const [showReject, setShowReject] = useState(false);
   const [rejectMode, setRejectMode] = useState('revise');
   const [rejectReason, setRejectReason] = useState(REJECT_REASONS[0]);
+  const [showMatPrice, setShowMatPrice] = useState(false);
+  const [showCertificate, setShowCertificate] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [editNote, setEditNote] = useState('');
   const [editDayIdx, setEditDayIdx] = useState(1);
@@ -144,7 +148,10 @@ export function OrderScreen({ params }) {
   const meta = STATUS_META[o.status];
   const curIdx = o.status === 'cancelled' ? -1 : stepIndexOf(o.status);
   const at = (k) => [...o.history].reverse().find((h) => h.status === k)?.at;
-  const winfo = warrantyInfo(o, s.orders);
+  const winfo = warrantyInfo(o, s.orders, s.lifetimePoints);
+  const partDisc = tierPartDiscountAmount(o);
+  const orderCats = [...new Set(o.items.map((it) => getService(it.id)?.category).filter(Boolean))];
+  const refMaterials = MATERIALS.filter((m) => orderCats.includes(m.category) || m.category === 'all');
   const canCancel = ['pending', 'confirmed'].includes(o.status);
   const canEdit = o.status === 'pending';
   const active = isActiveOrder(o);
@@ -259,11 +266,15 @@ export function OrderScreen({ params }) {
             </View>
             <Bill l="Giá bạn đã đặt" v={formatVND(o.quote.booked)} />
             <Bill l="Phát sinh" v={`+${formatVND(o.quote.total - o.quote.booked)}`} />
+            {partDisc ? <Bill l={`💎 Đặc quyền hạng ${o.customerTierLabel || ''} (−${o.tierPartDiscountPercent}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
             {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
             <View style={mx.totalRow}>
               <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>Tổng sau báo giá</Text>
-              <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(Math.max(0, o.quote.total - (o.voucherDiscount || 0)))}</Text>
+              <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(orderTotal(o))}</Text>
             </View>
+            <Tap onPress={() => setShowMatPrice(true)} style={{ marginTop: 10 }}>
+              <Text style={ui.link}>📋 Đối chiếu bảng giá vật tư niêm yết Điện máy XANH ›</Text>
+            </Tap>
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
               <Btn title="Báo giá lại / Huỷ" variant="dangerSoft" style={{ flex: 1.1 }} onPress={() => { setRejectMode('revise'); setShowReject(true); }} />
               <Btn title="Đồng ý báo giá" style={{ flex: 1.9 }} onPress={() => a.respondQuote(o.code, true)} />
@@ -343,8 +354,11 @@ export function OrderScreen({ params }) {
             <InfoLine
               icon="📺"
               label="Thiết bị tại nhà"
-              value={`${catLabel(o.device.category)}${o.device.brand ? ` · ${o.device.brand}` : ''}${o.device.room ? ` (${o.device.room})` : ''}`}
+              value={`${catLabel(o.device.category)}${o.device.brand ? ` · ${o.device.brand}` : ''}${o.device.room ? ` (${o.device.room})` : ''}${o.device.serial ? ` · SN: ${o.device.serial}` : ''}`}
             />
+          ) : null}
+          {o.siteCondition ? (
+            <InfoLine icon="🏢" label="Vị trí thi công" value={o.siteCondition.label} />
           ) : null}
           {o.qrVerified ? (
             <InfoLine icon="🔳" label="Xác thực QR tại nhà" value={`Đã xác thực lúc ${fmtDateTime(o.qrVerified.at)}`} />
@@ -455,8 +469,22 @@ export function OrderScreen({ params }) {
           <Card style={{ marginTop: 12, backgroundColor: '#F3FBF7', borderColor: '#CDEFDD' }}>
             <Text style={mx.tlTitle}>✅ Biên bản hoàn thành</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>{o.report.summary}</Text>
+            {(o.report.safetyChecklist || []).length ? (
+              <View style={{ marginTop: 8, gap: 3 }}>
+                {o.report.safetyChecklist.map((chk, i) => (
+                  <Text key={i} style={{ fontSize: 12, color: C.green, fontWeight: '700' }}>✓ {chk}</Text>
+                ))}
+              </View>
+            ) : null}
             {(o.materials || []).length ? <Text style={[ui.meta, { marginTop: 6 }]}>Vật tư: {o.materials.map((m) => `${m.name} (${m.qty} ${m.unit})`).join(', ')}</Text> : null}
             <Text style={[ui.meta, { marginTop: 6 }]}>{fmtDateTime(o.report.at)} · Thợ {o.report.tech}</Text>
+            <Btn
+              title="📜 Xem Phiếu Nghiệm Thu & Bảo Hành Điện Tử"
+              variant="soft"
+              small
+              style={{ marginTop: 12 }}
+              onPress={() => setShowCertificate(true)}
+            />
             {o.followUpCreated ? (
               <Tap onPress={() => nav.push('order', { code: o.followUpCreated })}>
                 <Text style={[ui.link, { marginTop: 8 }]}>Xem lịch tái khám {o.followUpCreated} ›</Text>
@@ -470,7 +498,9 @@ export function OrderScreen({ params }) {
             <Text style={[mx.tlTitle, { marginBottom: 6 }]}>💳 Chi phí & thanh toán</Text>
             <Bill l="Tổng tiền dịch vụ" v={formatVND(o.goods)} />
             {o.productDiscount ? <Bill l="Giảm giá dịch vụ" v={`-${formatVND(o.productDiscount)}`} green /> : null}
+            {o.comboDiscount ? <Bill l={`🔥 Ưu đãi ${o.comboLabel || 'Combo nhiều máy'}`} v={`-${formatVND(o.comboDiscount)}`} green /> : null}
             {o.quote?.approved && o.quote.total !== o.quote.booked ? <Bill l="Phát sinh theo báo giá" v={`${o.quote.total > o.quote.booked ? '+' : ''}${formatVND(o.quote.total - o.quote.booked)}`} /> : null}
+            {partDisc ? <Bill l={`💎 Đặc quyền hạng ${o.customerTierLabel || ''} (−${o.tierPartDiscountPercent}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
             {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
             {lateDiscountAmount(o) ? (
               <Bill l={`Bồi thường đến muộn (−${o.lateCompensation.percent}% NC)`} v={`−${formatVND(lateDiscountAmount(o))}`} green />
@@ -528,18 +558,29 @@ export function OrderScreen({ params }) {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Text style={{ fontSize: 24 }}>🛡️</Text>
               <View style={{ flex: 1 }}>
-                <Text style={mx.tlTitle}>Bảo hành 60 ngày</Text>
+                <Text style={mx.tlTitle}>
+                  Bảo hành {winfo.totalDays || 60} ngày{o.customerTierLabel ? ` · Hạng ${o.customerTierLabel}` : ''}
+                </Text>
                 <Text style={[ui.meta, winfo.ok && { color: C.green, fontWeight: '700' }]}>{winfo.text}</Text>
               </View>
             </View>
             {winfo.ok ? (
-              <Btn
-                title="Yêu cầu bảo hành"
-                variant="soft"
-                small
-                style={{ marginTop: 12 }}
-                onPress={() => u.confirm('Gửi yêu cầu bảo hành?', 'Thợ sẽ quay lại kiểm tra miễn phí.', () => { const c = a.requestWarranty(o.code); if (c) nav.push('order', { code: c }); }, 'Gửi')}
-              />
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                <Btn
+                  title="Phiếu bảo hành điện tử"
+                  variant="outline"
+                  small
+                  style={{ flex: 1 }}
+                  onPress={() => setShowCertificate(true)}
+                />
+                <Btn
+                  title="Yêu cầu bảo hành"
+                  variant="soft"
+                  small
+                  style={{ flex: 1 }}
+                  onPress={() => u.confirm('Gửi yêu cầu bảo hành?', 'Thợ sẽ quay lại kiểm tra miễn phí.', () => { const c = a.requestWarranty(o.code); if (c) nav.push('order', { code: c }); }, 'Gửi')}
+                />
+              </View>
             ) : null}
             {winfo.openCode ? (
               <Btn title={`Xem đơn bảo hành ${winfo.openCode}`} variant="outline" small style={{ marginTop: 12 }} onPress={() => nav.push('order', { code: winfo.openCode })} />
@@ -571,6 +612,78 @@ export function OrderScreen({ params }) {
         </View>
       ) : null}
 
+      <Sheet
+        visible={showMatPrice}
+        onClose={() => setShowMatPrice(false)}
+        title="Bảng giá vật tư niêm yết ĐMX"
+        footer={<Btn title="Đã hiểu" onPress={() => setShowMatPrice(false)} />}
+      >
+        <Text style={[ui.meta, { marginBottom: 10, lineHeight: 18 }]}>
+          Đối chiếu đơn giá vật tư chính hãng của Điện máy XANH. Thợ không được thu cao hơn bảng giá niêm yết.
+        </Text>
+        {refMaterials.map((m) => (
+          <View key={m.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.line }}>
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <Text style={{ fontWeight: '700', color: C.ink }}>{m.name}</Text>
+              <Text style={ui.meta}>Đơn vị: {m.unit}</Text>
+            </View>
+            <Text style={{ fontWeight: '800', color: C.primary }}>{formatVND(m.price)}/{m.unit}</Text>
+          </View>
+        ))}
+      </Sheet>
+      <Sheet
+        visible={showCertificate}
+        onClose={() => setShowCertificate(false)}
+        title="Phiếu Nghiệm Thu & Bảo Hành Điện Tử"
+        footer={winfo.ok ? (
+          <Btn
+            title="🛠️ Yêu cầu bảo hành miễn phí"
+            onPress={() => {
+              setShowCertificate(false);
+              u.confirm('Gửi yêu cầu bảo hành?', 'Thợ sẽ quay lại kiểm tra miễn phí.', () => { const c = a.requestWarranty(o.code); if (c) nav.push('order', { code: c }); }, 'Gửi');
+            }}
+          />
+        ) : <Btn title="Đóng phiếu" onPress={() => setShowCertificate(false)} />}
+      >
+        <View style={{ backgroundColor: C.navy, borderRadius: R.lg, padding: 16, alignItems: 'center', marginBottom: 14 }}>
+          <Text style={{ color: C.gold, fontWeight: '900', fontSize: 12, letterSpacing: 0.8 }}>THỢ ĐIỆN MÁY XANH · CHỨNG NHẬN ĐIỆN TỬ</Text>
+          <Text style={{ color: '#fff', fontWeight: '900', fontSize: 18, marginTop: 4 }}>
+            Mã chứng nhận: {o.report?.warrantyCertificateCode || `BH-${o.code}`}
+          </Text>
+          <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2 }}>
+            Đơn gốc: {o.code} · Hoàn thành: {fmtDateTime(o.doneAt || o.createdAt)}
+          </Text>
+          <View style={{ backgroundColor: '#fff', padding: 10, borderRadius: 16, marginTop: 12 }}>
+            <PseudoQR value={`DMX-WARRANTY|${o.code}|${o.address?.phone || ''}|${winfo.totalDays || 60}D`} size={130} />
+          </View>
+          <Badge
+            text={winfo.ok ? `🛡️ Còn ${winfo.daysLeft}/${winfo.totalDays} ngày bảo hành (đến ${fmtDate(winfo.until)})` : winfo.text}
+            fg={winfo.ok ? C.green : C.orange}
+            bg="#fff"
+            style={{ marginTop: 10 }}
+          />
+        </View>
+
+        <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, gap: 6 }}>
+          <Text style={{ fontWeight: '800', color: C.ink }}>1. Thông tin khách hàng & Thiết bị</Text>
+          <Text style={ui.meta}>• Khách hàng: {o.address?.name} · {o.address?.phone}</Text>
+          <Text style={ui.meta}>• Địa chỉ: {o.address?.full}</Text>
+          {o.device ? (
+            <Text style={ui.meta}>
+              • Thiết bị: {catLabel(o.device.category)} {o.device.brand || ''} {o.device.room ? `(${o.device.room})` : ''}{o.device.serial ? ` · SN: ${o.device.serial}` : ''}
+            </Text>
+          ) : null}
+          <Text style={ui.meta}>• Kỹ thuật viên: {o.tech?.name || o.report?.tech || 'Thợ ĐMX'} ({o.tech?.code || o.report?.techCode || 'TDMX'})</Text>
+        </View>
+
+        <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, gap: 6, marginTop: 10 }}>
+          <Text style={{ fontWeight: '800', color: C.ink }}>2. Hạng mục nghiệm thu & An toàn kỹ thuật</Text>
+          <Text style={{ color: C.ink2, fontSize: 13, lineHeight: 19 }}>{o.report?.summary || 'Đã hoàn thành đúng quy trình kỹ thuật.'}</Text>
+          {((o.report?.safetyChecklist?.length ? o.report.safetyChecklist : SAFETY_CHECKLIST_ITEMS)).map((chk, idx) => (
+            <Text key={idx} style={{ fontSize: 12.5, color: C.green, fontWeight: '700' }}>✓ {chk}</Text>
+          ))}
+        </View>
+      </Sheet>
       <Sheet
         visible={showCancel}
         onClose={() => setShowCancel(false)}
@@ -739,10 +852,14 @@ export function RateScreen({ params }) {
 }
 
 // =========================================================== QUYỀN LỢI
-export function RewardsScreen() {
+export function RewardsScreen({ params }) {
   const { s, a, nav, ui: u, setPendingVoucher } = useApp();
   const { cur, next } = tierOf(s.lifetimePoints);
   const progress = next ? (s.lifetimePoints - cur.min) / (next.min - cur.min) : 1;
+  const [selectedTierId, setSelectedTierId] = useState(params?.tierId || null);
+  const activeTier = TIERS.find((t) => t.id === selectedTierId) || null;
+  const previewTier = activeTier || cur;
+
   // Ghi nhớ mã → màn Xác nhận đặt lịch sẽ tự áp dụng
   const pickWalletVoucher = (v) => {
     setPendingVoucher(v.code);
@@ -762,28 +879,137 @@ export function RewardsScreen() {
           <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '600' }}>Điểm hiện có</Text>
           <Text style={{ color: C.gold, fontSize: 40, fontWeight: '900', marginTop: 2 }}>{s.points}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
-            <Badge text={`👑 ${cur.label}`} fg="#fff" bg={cur.color} />
+            <Tap onPress={() => setSelectedTierId(cur.id)}>
+              <Badge text={`👑 ${cur.label} · Xem quyền lợi ›`} fg="#fff" bg={cur.color} />
+            </Tap>
             <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12 }}>Tích luỹ: {s.lifetimePoints} điểm</Text>
           </View>
           <Progress value={progress} color={C.gold} style={{ marginTop: 14, backgroundColor: 'rgba(255,255,255,0.18)' }} />
           <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 6 }}>{next ? `Còn ${next.min - s.lifetimePoints} điểm để lên hạng ${next.label}` : 'Bạn đã đạt hạng cao nhất 🎉'}</Text>
         </View>
 
-        <View style={mx.tiers}>
-          {TIERS.map((t) => (
-            <View key={t.id} style={[mx.tierItem, cur.id === t.id && { borderColor: t.color, backgroundColor: '#fff' }]}>
-              <Text style={{ fontSize: 18 }}>👑</Text>
-              <Text style={{ fontSize: 11, fontWeight: '800', color: cur.id === t.id ? t.color : C.muted }}>{t.label}</Text>
-              <Text style={{ fontSize: 10, color: C.faint }}>{t.min}+</Text>
-            </View>
-          ))}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, marginBottom: 2 }}>
+          <Text style={{ fontSize: 13, fontWeight: '800', color: C.ink }}>Các hạng thành viên</Text>
+          <Text style={{ fontSize: 11, fontWeight: '600', color: C.primary }}>Chạm vào hạng để xem quyền lợi ›</Text>
         </View>
+
+        <View style={mx.tiers}>
+          {TIERS.map((t) => {
+            const isCurrent = cur.id === t.id;
+            const unlocked = s.lifetimePoints >= t.min;
+            const isSelected = previewTier.id === t.id;
+            return (
+              <Tap
+                key={t.id}
+                onPress={() => setSelectedTierId(t.id)}
+                style={[
+                  mx.tierItem,
+                  isCurrent && { borderColor: t.color, backgroundColor: '#fff' },
+                  isSelected && { borderColor: t.color, borderWidth: 2, backgroundColor: '#fff', ...shadow.sm },
+                ]}
+              >
+                <Text style={{ fontSize: 18 }}>{unlocked ? '👑' : '🔒'}</Text>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: isCurrent || isSelected ? t.color : C.muted, marginTop: 2 }}>{t.label}</Text>
+                <Text style={{ fontSize: 10, color: C.faint }}>{t.min}+</Text>
+                {isCurrent ? (
+                  <View style={{ marginTop: 4, paddingHorizontal: 6, paddingVertical: 1, borderRadius: R.pill, backgroundColor: t.bg || C.primarySoft }}>
+                    <Text style={{ fontSize: 9, fontWeight: '800', color: t.color }}>Hiện tại</Text>
+                  </View>
+                ) : null}
+              </Tap>
+            );
+          })}
+        </View>
+
+        {/* Tóm tắt nhanh hạng đang chọn ngay dưới thanh hạng */}
+        <Card
+          style={{ marginTop: 12, borderColor: previewTier.color, borderWidth: 1.2, backgroundColor: '#fff' }}
+          onPress={() => setSelectedTierId(previewTier.id)}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+              <Badge text={`👑 Hạng ${previewTier.label}`} fg={previewTier.color} bg={previewTier.bg || C.primarySoft} />
+              {cur.id === previewTier.id ? (
+                <Badge text="Hạng của bạn" fg={C.green} bg={C.greenSoft} />
+              ) : s.lifetimePoints >= previewTier.min ? (
+                <Badge text="✓ Đã mở khoá" fg={C.green} bg={C.greenSoft} />
+              ) : (
+                <Badge text={`Cần thêm ${previewTier.min - s.lifetimePoints} điểm`} fg={C.orange} bg={C.orangeSoft} />
+              )}
+            </View>
+            <Text style={{ fontSize: 12, fontWeight: '800', color: C.primary }}>Chi tiết ›</Text>
+          </View>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: C.ink, marginTop: 8 }}>{previewTier.summary}</Text>
+          <View style={{ marginTop: 8, gap: 4 }}>
+            {(previewTier.benefits || []).slice(0, 3).map((b, i) => (
+              <Text key={i} style={{ fontSize: 12, color: C.ink2, lineHeight: 18 }} numberOfLines={1}>{b}</Text>
+            ))}
+          </View>
+          <Text style={{ fontSize: 12, fontWeight: '700', color: C.primary, marginTop: 8 }}>
+            Xem đầy đủ điều kiện & điều khoản bảo vệ khách hàng ({previewTier.benefits?.length || 0} đặc quyền) ›
+          </Text>
+        </Card>
 
         <SectionTitle title="Cách tích điểm" />
         <Card style={{ padding: 0, overflow: 'hidden' }}>
           <ListRow icon="🧾" iconBg={C.primarySoft} label="Hoàn thành đơn hàng" sub="10.000đ = 1 điểm" onPress={() => nav.services()} />
           <ListRow icon="⭐" iconBg={C.goldSoft} label="Đánh giá sau khi dùng dịch vụ" sub="+20 điểm mỗi đơn" onPress={() => nav.activity('done')} last />
         </Card>
+
+        {(() => {
+          const fallbackEntries = s.orders
+            .filter((o) => o.status === 'done' && o.kind !== 'warranty')
+            .flatMap((o) => {
+              const earned = Math.max(1, Math.floor(orderTotal(o) / 10000));
+              const arr = [{ id: `ord_${o.code}`, title: `Hoàn thành đơn ${o.code}`, delta: earned, at: o.doneAt || o.createdAt, orderCode: o.code }];
+              if (o.rating) {
+                arr.unshift({ id: `rate_${o.code}`, title: `Đánh giá dịch vụ đơn ${o.code}`, delta: 20, at: (o.doneAt || o.createdAt) + 60000, orderCode: o.code });
+              }
+              return arr;
+            });
+          const historyList = (s.pointHistory && s.pointHistory.length) ? s.pointHistory : fallbackEntries;
+          return (
+            <>
+              <SectionTitle title={`Lịch sử điểm thưởng (${historyList.length})`} />
+              {historyList.length === 0 ? (
+                <Card style={{ backgroundColor: '#F8FAFC' }}>
+                  <Text style={ui.meta}>Chưa có giao dịch điểm nào. Hoàn thành đơn hoặc gửi đánh giá để tích điểm thưởng đầu tiên!</Text>
+                </Card>
+              ) : (
+                <Card style={{ padding: 0, overflow: 'hidden' }}>
+                  {historyList.slice(0, 10).map((h, i, arr) => (
+                    <Tap
+                      key={h.id || i}
+                      onPress={() => (h.orderCode ? nav.push('order', { code: h.orderCode }) : null)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 12,
+                        padding: 13,
+                        borderBottomWidth: i < arr.length - 1 ? 1 : 0,
+                        borderBottomColor: C.line,
+                      }}
+                    >
+                      <IconBox
+                        icon={h.delta > 0 ? '⬆️' : '🎁'}
+                        size={38}
+                        bg={h.delta > 0 ? C.greenSoft : C.goldSoft}
+                        radius={12}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontWeight: '700', color: C.ink, fontSize: 13.5 }}>{h.title}</Text>
+                        <Text style={ui.meta}>{fmtDateTime(h.at)}</Text>
+                      </View>
+                      <Text style={{ fontWeight: '900', fontSize: 14, color: h.delta > 0 ? C.green : C.orange }}>
+                        {h.delta > 0 ? `+${h.delta}` : h.delta} điểm
+                      </Text>
+                    </Tap>
+                  ))}
+                </Card>
+              )}
+            </>
+          );
+        })()}
 
         <SectionTitle title="Đổi điểm lấy voucher" />
         {REDEEM_OPTIONS.map((r) => {
@@ -815,6 +1041,111 @@ export function RewardsScreen() {
         ))}
         <Text style={[ui.meta, { textAlign: 'center', marginTop: 6 }]}>Chọn mã ở bước Xác nhận đặt lịch để được giảm giá.</Text>
       </ScrollView>
+
+      <Sheet
+        visible={!!activeTier}
+        onClose={() => setSelectedTierId(null)}
+        title={activeTier ? `Hạng ${activeTier.label} (${activeTier.min}+ điểm)` : 'Quyền lợi hạng'}
+        footer={activeTier ? (
+          <Btn
+            title={s.lifetimePoints >= activeTier.min ? 'Đặt dịch vụ với đặc quyền của bạn' : `Đặt dịch vụ tích thêm ${activeTier.min - s.lifetimePoints} điểm`}
+            onPress={() => {
+              setSelectedTierId(null);
+              nav.services();
+            }}
+          />
+        ) : null}
+      >
+        {activeTier ? (
+          <View>
+            {/* Thanh chuyển nhanh giữa các hạng ngay trong Sheet */}
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 14 }}>
+              {TIERS.map((t) => {
+                const on = t.id === activeTier.id;
+                return (
+                  <Tap
+                    key={t.id}
+                    onPress={() => setSelectedTierId(t.id)}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 8,
+                      borderRadius: R.md,
+                      alignItems: 'center',
+                      borderWidth: 1.5,
+                      borderColor: on ? t.color : C.line,
+                      backgroundColor: on ? (t.bg || C.primarySoft) : '#F8FAFD',
+                    }}
+                  >
+                    <Text style={{ fontSize: 11, fontWeight: '800', color: on ? t.color : C.muted }}>{t.label}</Text>
+                    <Text style={{ fontSize: 10, color: C.faint }}>{t.min}+</Text>
+                  </Tap>
+                );
+              })}
+            </View>
+
+            {/* Banner trạng thái của khách với hạng này */}
+            <View style={{ padding: 14, borderRadius: R.lg, backgroundColor: activeTier.bg || C.primarySoft, borderWidth: 1, borderColor: activeTier.color }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 16, fontWeight: '900', color: activeTier.color }}>👑 Hạng {activeTier.label}</Text>
+                <Badge
+                  text={
+                    cur.id === activeTier.id
+                      ? '🎯 Hạng hiện tại của bạn'
+                      : s.lifetimePoints >= activeTier.min
+                        ? '✓ Đã đạt hạng này'
+                        : `🔒 Còn thiếu ${activeTier.min - s.lifetimePoints} điểm`
+                  }
+                  fg={s.lifetimePoints >= activeTier.min ? C.green : C.orange}
+                  bg="#fff"
+                />
+              </View>
+              <Text style={{ color: C.ink, fontWeight: '700', marginTop: 6, lineHeight: 19 }}>{activeTier.summary}</Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                <Badge text={`🛡️ Bảo hành ${activeTier.warrantyDays || 60} ngày`} fg={C.navy} bg="#fff" />
+                <Badge text={`📊 Tích luỹ của bạn: ${s.lifetimePoints}/${activeTier.min || 0} điểm`} fg={C.ink2} bg="#fff" />
+              </View>
+              {activeTier.min > 0 ? (
+                <Progress
+                  value={Math.min(1, s.lifetimePoints / activeTier.min)}
+                  color={activeTier.color}
+                  style={{ marginTop: 10, backgroundColor: 'rgba(255,255,255,0.65)' }}
+                />
+              ) : null}
+            </View>
+
+            {/* 1. Điều kiện xét hạng */}
+            <Text style={{ fontWeight: '800', color: C.ink, marginTop: 16, marginBottom: 6 }}>📋 Điều kiện đạt & duy trì hạng</Text>
+            <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFD', borderWidth: 1, borderColor: C.line }}>
+              <Text style={{ color: C.ink, fontWeight: '600', lineHeight: 20 }}>{activeTier.condition}</Text>
+              {activeTier.pointRule ? (
+                <Text style={[ui.meta, { color: C.primary, fontWeight: '700', marginTop: 6 }]}>• {activeTier.pointRule}</Text>
+              ) : null}
+            </View>
+
+            {/* 2. Đặc quyền & Quyền lợi dành cho khách hàng */}
+            <Text style={{ fontWeight: '800', color: C.ink, marginTop: 16, marginBottom: 8 }}>🎁 Đặc quyền & Quyền lợi khách hàng</Text>
+            {(activeTier.benefits || []).map((b, idx) => (
+              <View key={idx} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 6 }}>
+                <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: C.greenSoft, alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '900', color: C.green }}>✓</Text>
+                </View>
+                <Text style={{ flex: 1, color: C.ink, lineHeight: 20, fontWeight: '600' }}>{b}</Text>
+              </View>
+            ))}
+
+            {/* 3. Điều khoản bảo vệ có lợi cho khách hàng */}
+            <Text style={{ fontWeight: '800', color: C.ink, marginTop: 14, marginBottom: 8 }}>🛡️ Điều khoản bảo vệ & Cam kết có lợi cho khách hàng</Text>
+            <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#F5D77A', gap: 8 }}>
+              {(activeTier.terms || []).map((term, idx) => (
+                <View key={idx} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+                  <Text style={{ color: C.goldInk, fontWeight: '900', marginTop: 1 }}>★</Text>
+                  <Text style={{ flex: 1, color: C.ink2, lineHeight: 19, fontSize: 13 }}>{term}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+      </Sheet>
     </View>
   );
 }
