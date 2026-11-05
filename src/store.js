@@ -6,8 +6,9 @@ import {
 } from './data';
 export { matchJobForTech, comboDiscountFor } from './data';
 import {
-  getSession, clearSession, loginAccount, registerAccount, urlRoleHint, resetPassword, changePassword, quickLoginRole,
+  getSession, clearSession, loginAccount, registerAccount, urlRoleHint, resetPassword, changePassword, quickLoginRole, setSession,
 } from './auth';
+import { hrmssApi } from './api';
 import {
   TECH_POLICY, normalizeTechRep, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
   applyTechPenalty, applyTechBonus, mintWalletVoucher, slotStartTs,
@@ -1374,8 +1375,34 @@ export function AppProvider({ children }) {
       setStack(link ? [{ name: link.name, params: link.params || {}, key: uid() }] : []);
       setTab(account.role === 'tech' ? 'tech-jobs' : 'home');
     },
-    login: (payload) => {
-      const res = loginAccount(payload);
+    login: async (payload) => {
+      let backendAccount = null;
+      try {
+        const beRes = await hrmssApi.login({
+          identifier: payload.identifier || payload.phone,
+          password: payload.password,
+        });
+        if (beRes.ok && beRes.data) {
+          const roleCode = String(beRes.data.role || beRes.data.account?.role?.role_code || 'CUSTOMER').toUpperCase();
+          const isTech = roleCode === 'TECHNICIAN' || roleCode === 'TECH';
+          backendAccount = {
+            id: `be-${beRes.data.user_id || beRes.data.account?.user_id}`,
+            role: isTech ? 'tech' : 'customer',
+            name: beRes.data.account?.username || (isTech ? 'Kỹ thuật viên HRMSS' : 'Khách hàng HRMSS'),
+            phone: payload.identifier?.replace(/\D/g, '') || '',
+            email: beRes.data.account?.email || '',
+            backendToken: beRes.data.access_token,
+            permissions: beRes.data.permissions || [],
+          };
+          setSession(backendAccount.id);
+        } else if (beRes.status === 400 || beRes.status === 401) {
+          return { ok: false, error: beRes.message || 'Tài khoản hoặc mật khẩu không chính xác.' };
+        }
+      } catch (e) {
+        // Tiếp tục fallback nếu offline hoặc mạng lỗi
+      }
+
+      const res = backendAccount ? { ok: true, account: backendAccount } : loginAccount(payload);
       if (!res.ok) return res;
       up((p) => ({
         ...switchCustomerSlice(p, res.account),
@@ -1393,9 +1420,29 @@ export function AppProvider({ children }) {
       ui.toast(res.account.role === 'tech' ? 'Đăng nhập app Thợ thành công' : 'Đăng nhập thành công', '👋');
       return res;
     },
-    register: (payload) => {
+    register: async (payload) => {
+      let backendError = null;
+      try {
+        const beRes = await hrmssApi.register({
+          username: payload.email ? payload.email.split('@')[0] : `user_${payload.phone}`,
+          email: payload.email || `${payload.phone}@hrmss.vn`,
+          password: payload.password,
+          confirm_password: payload.password,
+          full_name: payload.name,
+          address: 'Việt Nam',
+          phone: payload.phone,
+        });
+        if (!beRes.ok && beRes.message) {
+          backendError = beRes.message;
+        }
+      } catch (e) {
+        // Fallback
+      }
+
       const res = registerAccount(payload);
-      if (!res.ok) return res;
+      if (!res.ok) {
+        return { ok: false, error: backendError || res.error };
+      }
       up((p) => ({
         ...switchCustomerSlice(p, res.account),
         auth: res.account,

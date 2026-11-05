@@ -26,7 +26,7 @@ import { TrackingCard, ChatCard } from '../orderLive';
 const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const DECLINE_REASONS = ['Bận lịch khác', 'Ngoài khu vực phục vụ', 'Không đúng chuyên môn', 'Lý do khác'];
 const RELEASE_REASONS = ['Khẩn cấp gia đình', 'Xe / phương tiện hỏng', 'Ốm đột xuất', 'Lịch trùng không xử lý kịp', 'Lý do khác'];
-const SKILL_OPTIONS = ['Máy lạnh', 'Máy giặt', 'Tủ lạnh', 'Nóng lạnh', 'Hút mùi', 'Nạp gas', 'Lắp đặt'];
+const SKILL_OPTIONS = ['Máy lạnh', 'Máy giặt', 'Tủ lạnh', 'Nóng lạnh', 'Hút mùi', 'Nạp gas', 'Sửa chữa'];
 const sameDay = (ts, key) => {
   if (!ts) return false;
   const d = new Date(ts);

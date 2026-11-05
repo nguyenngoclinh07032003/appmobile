@@ -14,7 +14,7 @@ import {
 // =========================================================== DỊCH VỤ
 export function ServicesScreen() {
   const { s, d, nav, svc, setSvc } = useApp();
-  const kindAll = svc.tab === 'lap-dat' ? INSTALL_SERVICES : svc.tab === 'sua-chua' ? REPAIR_SERVICES : svc.tab === 'tron-doi' ? LIFETIME_SERVICES : null;
+  const kindAll = svc.tab === 'sua-chua' ? REPAIR_SERVICES : svc.tab === 'tron-doi' ? LIFETIME_SERVICES : null;
   const kindCats = kindAll ? CATEGORIES.filter((c) => kindAll.some((x) => x.category === c.id)) : [];
   const list = useMemo(() => {
     let l = SERVICES.filter((x) => x.category === svc.category);
@@ -149,7 +149,7 @@ function WarrantyView() {
           <Text style={{ color: C.gold, fontWeight: '800', fontSize: 12 }}>BẢO HÀNH {curTier.warrantyDays || 60} NGÀY · HẠNG {curTier.label.toUpperCase()}</Text>
           <Text style={{ color: '#fff', fontWeight: '800', fontSize: 19, marginTop: 4 }}>Tra cứu & yêu cầu bảo hành điện tử</Text>
           <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, marginTop: 6, lineHeight: 18 }}>
-            Áp dụng cho dịch vụ vệ sinh, nạp gas, sửa chữa & lắp đặt đặt trên app, tính từ ngày nghiệm thu hoàn thành.
+            Áp dụng cho dịch vụ vệ sinh, nạp gas & sửa chữa đặt trên app, tính từ ngày nghiệm thu hoàn thành.
           </Text>
         </View>
         <Text style={{ fontSize: 46, marginLeft: 8 }}>🛡️</Text>

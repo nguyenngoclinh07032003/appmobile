@@ -1,4 +1,4 @@
-# Thợ ĐMX — App đặt thợ tại nhà (React Native / Expo)
+# App đặt thợ tại nhà (React Native / Expo)
 
 Bản thiết kế lại: giao diện mới, các chức năng liên kết với nhau, dữ liệu được lưu lại khi tải lại trang (web).
 

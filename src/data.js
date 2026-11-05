@@ -200,20 +200,14 @@ export const noteFor = (items) => {
   const kinds = [...new Set((items || []).map((it) => serviceKind(it.service)))];
   if (kinds.length !== 1) return '';
   if (kinds[0] === 'clean') return 'Tôi muốn vệ sinh';
-  if (kinds[0] === 'install') return 'Tôi cần lắp đặt';
-  if (kinds[0] === 'repair') return 'Máy đang gặp sự cố, cần thợ kiểm tra';
+  if (kinds[0] === 'repair') return 'Máy đang gặp sự cố, cần thợ kiểm tra sửa chữa';
   if (kinds[0] === 'gas') return 'Máy lạnh yếu lạnh, cần kiểm tra gas';
   if (kinds[0] === 'lifetime') return 'Tôi muốn đăng ký bảo dưỡng định kỳ';
   return '';
 };
 
-// Bảng giá dịch vụ lắp đặt, sửa chữa & bảo dưỡng định kỳ chính hãng Thợ HRMSS.
-export const INSTALL_SERVICES = [
-  { id: 'ld-ml', category: 'may-lanh', name: 'Lắp đặt máy lạnh treo tường 1 - 1.5 HP', price: 350000, rating: 0, sold: '', icon: '❄️', warranty: 'BH 60 ngày' },
-  { id: 'ld-ml-2', category: 'may-lanh', name: 'Lắp đặt máy lạnh treo tường 2 - 2.5 HP', price: 450000, rating: 0, sold: '', icon: '❄️', warranty: 'BH 60 ngày' },
-  { id: 'ld-mg', category: 'may-giat', name: 'Lắp đặt máy giặt cửa trên / cửa trước', price: 250000, rating: 0, sold: '', icon: '🧺', warranty: 'BH 60 ngày' },
-  { id: 'ld-tl', category: 'tu-lanh', name: 'Lắp đặt tủ lạnh', price: 300000, rating: 0, sold: '', icon: '🧊', warranty: 'BH 60 ngày' },
-];
+// Bảng giá dịch vụ sửa chữa & bảo dưỡng định kỳ chính hãng Thợ HRMSS (Hệ thống không cung cấp lắp đặt mới).
+export const INSTALL_SERVICES = [];
 export const REPAIR_SERVICES = [
   { id: 'sc-ml', category: 'may-lanh', name: 'Kiểm tra / sửa máy lạnh không lạnh', price: 200000, rating: 0, sold: '', icon: '❄️', warranty: 'BH 60 ngày' },
   { id: 'sc-mg', category: 'may-giat', name: 'Kiểm tra / sửa máy giặt không vắt', price: 200000, rating: 0, sold: '', icon: '🧺', warranty: 'BH 60 ngày' },
@@ -238,7 +232,7 @@ export const imgFor = (id) => `https://picsum.photos/seed/${id}/400/300`;
 // ---------------------------------------------------------------------------
 // Dữ liệu dùng chung cho bản giao diện mới (liên kết giữa các chức năng)
 // ---------------------------------------------------------------------------
-export const ALL_SERVICES = [...SERVICES, ...INSTALL_SERVICES, ...REPAIR_SERVICES, ...LIFETIME_SERVICES];
+export const ALL_SERVICES = [...SERVICES, ...REPAIR_SERVICES, ...LIFETIME_SERVICES];
 const SERVICE_MAP = Object.fromEntries(ALL_SERVICES.map((s) => [s.id, s]));
 export const getService = (id) => SERVICE_MAP[id];
 
@@ -261,7 +255,6 @@ export const MAINT_MONTHS = {
 
 export const SERVICE_TYPES = [
   { id: 'bao-duong', label: 'Bảo dưỡng', icon: '🧼', desc: 'Vệ sinh định kỳ' },
-  { id: 'lap-dat', label: 'Lắp đặt', icon: '🛠️', desc: 'Khảo sát tận nhà' },
   { id: 'sua-chua', label: 'Sửa chữa', icon: '🔧', desc: 'Báo giá trước' },
   { id: 'bao-hanh', label: 'Bảo hành', icon: '🛡️', desc: 'Tra cứu 60 ngày' },
   { id: 'tron-doi', label: 'Trọn đời', icon: '♾️', desc: 'Gói định kỳ' },
@@ -435,7 +428,7 @@ export const TECHS = [
 export const PAYMENTS = ['Thanh toán khi nhận hàng', 'Chuyển khoản ngân hàng', 'Qua thẻ ATM (có Internet Banking)', 'VNPay QR', 'Qua thẻ quốc tế', 'Google Pay', 'Apple Pay'];
 export const PARTNERS = ['Panasonic', 'SONY', 'LG', 'Samsung', 'Coway', 'SKYWORTH', 'Nagakawa', 'Sumico', 'Electrolux'];
 export const HOTLINE = '1900 232 461';
-export const POPULAR_SEARCHES = ['Vệ sinh máy lạnh', 'Sạc gas', 'Máy giặt', 'Tủ lạnh', 'Lắp đặt', 'Bình nước nóng'];
+export const POPULAR_SEARCHES = ['Vệ sinh máy lạnh', 'Sạc gas', 'Máy giặt', 'Tủ lạnh', 'Sửa chữa', 'Bình nước nóng'];
 
 // Bỏ dấu tiếng Việt để tìm kiếm không phân biệt dấu
 export const normalize = (s) => (s || '')
@@ -550,7 +543,7 @@ export const matchJobForTech = (order, techProfile) => {
     if (catSkill) neededSkills.add(catSkill);
     const k = serviceKind(sv);
     if (k === 'gas') neededSkills.add('Nạp gas');
-    if (k === 'install') neededSkills.add('Lắp đặt');
+    if (k === 'repair' || k === 'install') neededSkills.add('Sửa chữa');
   });
   const neededArr = [...neededSkills];
   const skillMatch = neededArr.length === 0 || neededArr.some((sk) => skills.includes(normalize(sk)));

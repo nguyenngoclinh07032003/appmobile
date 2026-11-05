@@ -64,33 +64,38 @@ export default function AuthScreen() {
     setPassword2('');
   };
 
-  const submit = () => {
-    if ((mode === 'register' || mode === 'forgot') && password !== password2) {
+  const submit = async () => {
+    if ((mode === 'register' || mode === 'tech_partner' || mode === 'forgot') && password !== password2) {
       setFormErr('Mật khẩu nhập lại không khớp.');
       return;
     }
     setBusy(true);
     let res;
-    if (mode === 'login') {
-      // Đăng nhập thông minh: hệ thống tự động kiểm tra tài khoản là Khách hay Thợ để điều hướng
-      res = a.login({ identifier: identifier.trim(), password });
-    } else if (mode === 'forgot') {
-      res = a.resetPassword({ identifier: identifier.trim(), newPassword: password });
-      if (res.ok) {
-        setMode('login');
-        setPassword('');
-        setPassword2('');
-        setFormErr('');
+    try {
+      if (mode === 'login') {
+        // Đăng nhập thông minh: hệ thống tự động kiểm tra tài khoản là Khách hay Thợ để điều hướng
+        res = await a.login({ identifier: identifier.trim(), password });
+      } else if (mode === 'forgot') {
+        res = await a.resetPassword({ identifier: identifier.trim(), newPassword: password });
+        if (res.ok) {
+          setMode('login');
+          setPassword('');
+          setPassword2('');
+          setFormErr('');
+        }
+      } else if (mode === 'register') {
+        // Khách hàng đăng ký tài khoản tự do
+        res = await a.register({ role: 'customer', name, phone, email, password });
+      } else if (mode === 'tech_partner') {
+        // Đăng ký hồ sơ Kỹ thuật viên đối tác
+        res = await a.register({ role: 'tech', name, phone, email, password });
       }
-    } else if (mode === 'register') {
-      // Khách hàng đăng ký tài khoản tự do
-      res = a.register({ role: 'customer', name, phone, email, password });
-    } else if (mode === 'tech_partner') {
-      // Đăng ký hồ sơ Kỹ thuật viên đối tác
-      res = a.register({ role: 'tech', name, phone, email, password });
+    } catch (err) {
+      res = { ok: false, error: err?.message || 'Không thể kết nối đến máy chủ. Vui lòng thử lại.' };
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
-    if (res && !res.ok) setFormErr(res.error);
+    if (res && !res.ok) setFormErr(res.error || res.message);
   };
 
   return (
