@@ -618,11 +618,32 @@ export function PseudoQR({ value, size = 200 }) {
 const webNoOutline = Platform.select({ web: { outlineStyle: 'none' }, default: {} });
 
 export const ui = StyleSheet.create({
-  btn: { minHeight: 52, borderRadius: R.md, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, flexDirection: 'row' },
-  btnSm: { minHeight: 38, borderRadius: 12, paddingHorizontal: 13 },
-  btnText: { fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
-  btnTextSm: { fontSize: 13, letterSpacing: 0 },
-  btnIcon: { fontSize: 15, marginRight: 6 },
+  btn: {
+    minHeight: 48,
+    borderRadius: R.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+  },
+  btnSm: {
+    minHeight: 36,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+  },
+  btnText: {
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+  },
+  btnTextSm: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    letterSpacing: -0.1,
+    textAlign: 'center',
+  },
+  btnIcon: { fontSize: 14, marginRight: 5 },
   badge: { position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, backgroundColor: C.red, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   card: { backgroundColor: C.card, borderRadius: R.lg, padding: 16, ...shadow.sm, borderWidth: 1, borderColor: 'rgba(226,232,240,0.95)' },

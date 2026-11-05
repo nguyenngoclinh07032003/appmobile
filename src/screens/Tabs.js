@@ -214,7 +214,7 @@ export function DevicesScreen() {
         sub="Nhắc lịch bảo dưỡng & đồng bộ HRMSS"
         right={(
           <View style={{ flexDirection: 'row', gap: 6 }}>
-            <Btn title="Đồng bộ HRMSS" icon="🔄" small variant="soft" onPress={a.syncHrmssDevices} />
+            <Btn title="Đồng bộ" icon="🔄" small variant="soft" onPress={a.syncHrmssDevices} />
             <Btn title="Thêm" icon="＋" small onPress={() => nav.push('device-form')} />
           </View>
         )}
@@ -350,13 +350,13 @@ export function ActivityScreen() {
                   </View>
                 </View>
                 <View style={sx.oFoot}>
-                  <View>
+                  <View style={{ marginBottom: 6 }}>
                     <Text style={ui.meta}>Tổng thanh toán</Text>
                     <Text style={[ui.price, { fontSize: 16 }]}>{o.kind === 'warranty' ? 'Miễn phí' : formatVND(o.status === 'cancelled' ? o.total : orderTotal(o))}</Text>
                     {o.status === 'done' && o.report?.paid ? <Text style={[ui.meta, { color: C.green, fontWeight: '700' }]}>Đã thanh toán</Text> : null}
                     {o.status === 'done' && !o.report?.paid && o.kind !== 'warranty' ? <Text style={[ui.meta, { color: C.orange, fontWeight: '700' }]}>Chờ xác nhận TT</Text> : null}
                   </View>
-                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', flex: 1 }}>
                     {o.status === 'quoted' ? <Btn title="Duyệt báo giá" icon="🧾" small variant="gold" onPress={() => nav.push('order', { code: o.code })} /> : null}
                     {o.status === 'done' && !o.report?.paid && o.kind !== 'warranty' && o.kind !== 'followup' ? (
                       <Btn title="Thanh toán" icon="💳" small variant="soft" onPress={() => nav.push('order', { code: o.code })} />

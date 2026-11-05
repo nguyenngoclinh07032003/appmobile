@@ -134,8 +134,8 @@ export default function HomeScreen() {
             <View>
               <Text style={st.body}>Đồng bộ thiết bị từ hệ thống HRMSS theo SĐT hoặc thêm thiết bị trong nhà để được tự động nhắc lịch bảo dưỡng định kỳ.</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                <Btn title="🔄 Đồng bộ thiết bị HRMSS" small onPress={a.syncHrmssDevices} />
-                <Btn title="Thêm thủ công" icon="＋" variant="soft" small onPress={() => nav.push('device-form')} />
+                <Btn title="🔄 Đồng bộ thiết bị HRMSS" small style={{ flex: 1.3 }} onPress={a.syncHrmssDevices} />
+                <Btn title="Thêm thủ công" icon="＋" variant="soft" small style={{ flex: 1 }} onPress={() => nav.push('device-form')} />
               </View>
             </View>
           ) : d.dueDevices.length === 0 ? (

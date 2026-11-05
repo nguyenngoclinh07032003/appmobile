@@ -6,48 +6,36 @@ import { C, R, shadow, grad } from '../theme';
 import { useApp } from '../store';
 import { Btn, Tap } from '../ui';
 
-const ROLES = {
-  customer: {
-    id: 'customer',
-    icon: '🏠',
-    title: 'Khách hàng',
-    short: 'Đặt lịch & theo dõi thợ',
-    body: 'Vệ sinh, sửa chữa, lắp đặt tận nhà. Theo dõi đơn và bảo hành điện tử đến 120 ngày.',
-    accent: C.primary,
-    soft: C.primarySoft,
-    cta: 'Tiếp tục với Khách hàng',
-  },
-  tech: {
-    id: 'tech',
-    icon: '👷',
-    title: 'Kỹ thuật viên',
-    short: 'Nhận việc & báo giá',
-    body: 'Nhận việc được giao, báo giá minh bạch, cập nhật tiến độ và nghiệm thu đơn.',
-    accent: C.navy,
-    soft: '#E8EEF8',
-    cta: 'Tiếp tục với Thợ',
-  },
-};
-
 const webNoOutline = Platform.select({ web: { outlineStyle: 'none' }, default: {} });
 
-function Field({
-  label, value, onChangeText, placeholder, secure, keyboardType, autoCapitalize, right,
+function ModernField({
+  label, icon, value, onChangeText, placeholder, secure, keyboardType, autoCapitalize, right, error,
 }) {
+  const [focused, setFocused] = useState(false);
+
   return (
     <View style={st.field}>
       <Text style={st.label}>{label}</Text>
-      <View style={st.inputWrap}>
+      <View
+        style={[
+          st.inputWrap,
+          focused && st.inputWrapFocused,
+          error ? st.inputWrapError : null,
+        ]}
+      >
+        {icon ? <Text style={st.inputIcon}>{icon}</Text> : null}
         <TextInput
           style={[st.input, webNoOutline]}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
-          placeholderTextColor={C.faint}
+          placeholderTextColor="#94A3B8"
           secureTextEntry={secure}
           keyboardType={keyboardType || 'default'}
           autoCapitalize={autoCapitalize || 'none'}
           autoCorrect={false}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
         />
         {right || null}
       </View>
@@ -56,26 +44,21 @@ function Field({
 }
 
 export default function AuthScreen() {
-  const { a, d } = useApp();
-  const hint = d.roleHint;
-  const [step, setStep] = useState('pick'); // pick | form
-  const [role, setRole] = useState(hint === 'tech' ? 'tech' : 'customer');
-  const [mode, setMode] = useState('login'); // login | register | forgot
+  const { a } = useApp();
+
+  const [mode, setMode] = useState('login'); // login | register | forgot | tech_partner
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState(''); // Nhập SĐT hoặc Email (Đăng nhập / Quên mật khẩu)
+  const [phone, setPhone] = useState(''); // Cho đăng ký
+  const [email, setEmail] = useState(''); // Cho đăng ký
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [formErr, setFormErr] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const meta = ROLES[role] || ROLES.customer;
-
-  const openForm = (nextRole, nextMode = 'login') => {
-    setRole(nextRole);
+  const handleModeChange = (nextMode) => {
     setMode(nextMode);
-    setStep('form');
     setFormErr('');
     setPassword('');
     setPassword2('');
@@ -88,16 +71,24 @@ export default function AuthScreen() {
     }
     setBusy(true);
     let res;
-    if (mode === 'login') res = a.login({ role, phone, password });
-    else if (mode === 'forgot') {
-      res = a.resetPassword({ role, phone, newPassword: password });
+    if (mode === 'login') {
+      // Đăng nhập thông minh: hệ thống tự động kiểm tra tài khoản là Khách hay Thợ để điều hướng
+      res = a.login({ identifier: identifier.trim(), password });
+    } else if (mode === 'forgot') {
+      res = a.resetPassword({ identifier: identifier.trim(), newPassword: password });
       if (res.ok) {
         setMode('login');
         setPassword('');
         setPassword2('');
         setFormErr('');
       }
-    } else res = a.register({ role, name, phone, email, password });
+    } else if (mode === 'register') {
+      // Khách hàng đăng ký tài khoản tự do
+      res = a.register({ role: 'customer', name, phone, email, password });
+    } else if (mode === 'tech_partner') {
+      // Đăng ký hồ sơ Kỹ thuật viên đối tác
+      res = a.register({ role: 'tech', name, phone, email, password });
+    }
     setBusy(false);
     if (res && !res.ok) setFormErr(res.error);
   };
@@ -110,178 +101,207 @@ export default function AuthScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
+        {/* Banner Hero sang trọng & hiện đại */}
         <View style={st.hero}>
           <View style={st.heroBlob} />
           <View style={[st.heroBlob, st.heroBlob2]} />
+          
           <View style={st.brandRow}>
-            <View style={st.brandMark}><Text style={{ fontSize: 18 }}>⚡</Text></View>
-            <View>
-              <Text style={st.brand}><Text style={{ color: C.gold }}>Thợ</Text> HRMSS</Text>
-              <Text style={{ color: C.gold, fontSize: 10.5, fontWeight: '800', letterSpacing: 0.6 }}>HỆ THỐNG DỊCH VỤ SỬA CHỮA & BẢO TRÌ TẠI NHÀ HRMSS</Text>
+            <View style={st.brandMark}>
+              <Text style={{ fontSize: 22 }}>⚡</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={st.brand}>
+                <Text style={{ color: C.gold }}>Thợ</Text> HRMSS
+              </Text>
+              <Text style={st.brandSlogan}>HỆ THỐNG DỊCH VỤ SỬA CHỮA & BẢO TRÌ TẬN NHÀ</Text>
             </View>
           </View>
-          <Text style={st.heroTitle}>
-            {step === 'pick'
-              ? 'Chọn cách bạn dùng app'
-              : mode === 'login'
-                ? `Đăng nhập ${meta.title}`
-                : mode === 'forgot'
-                  ? 'Đặt lại mật khẩu'
-                  : `Tạo tài khoản ${meta.title}`}
-          </Text>
-          <Text style={st.heroSub}>
-            {step === 'pick'
-              ? 'Mỗi tài khoản chỉ mở đúng một quyền. Khách đặt dịch vụ, Thợ nhận việc.'
-              : mode === 'forgot'
-                ? 'Nhập SĐT đã đăng ký và mật khẩu mới để tiếp tục sử dụng.'
-                : meta.short}
-          </Text>
+
+          <View style={st.welcomeBox}>
+            <Text style={st.heroTitle}>
+              {mode === 'login'
+                ? 'Đăng nhập tài khoản'
+                : mode === 'register'
+                  ? 'Tạo tài khoản mới'
+                  : mode === 'tech_partner'
+                    ? 'Đăng ký Kỹ thuật viên'
+                    : 'Đặt lại mật khẩu'}
+            </Text>
+            <Text style={st.heroSub}>
+              {mode === 'login'
+                ? 'Nhập số điện thoại hoặc email để truy cập đơn dịch vụ và hồ sơ của bạn.'
+                : mode === 'register'
+                  ? 'Đăng ký tài khoản để đặt lịch sửa chữa, bảo dưỡng tận nhà và nhận bảo hành đến 120 ngày.'
+                  : mode === 'tech_partner'
+                    ? 'Gia nhập mạng lưới kỹ thuật viên chuyên nghiệp HRMSS để nhận việc và gia tăng thu nhập.'
+                    : 'Nhập số điện thoại hoặc email đã đăng ký để tạo mật khẩu bảo vệ mới.'}
+            </Text>
+          </View>
         </View>
 
+        {/* Khối Card tương tác chính */}
         <View style={st.sheet}>
-          {step === 'pick' ? (
-            <View>
-              {Object.values(ROLES).map((r) => (
-                <Tap
-                  key={r.id}
-                  style={[st.door, { borderColor: r.id === 'tech' ? '#E8C76A' : '#D6E4FF' }]}
-                  onPress={() => openForm(r.id, 'login')}
-                >
-                  <View style={[st.doorIcon, { backgroundColor: r.id === 'tech' ? C.gold : C.primarySoft }]}>
-                    <Text style={{ fontSize: 26 }}>{r.icon}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[st.doorTitle, { color: r.accent }]}>{r.title}</Text>
-                    <Text style={st.doorBody}>{r.body}</Text>
-                  </View>
-                  <View style={[st.doorGo, { backgroundColor: r.soft }]}>
-                    <Text style={[st.doorArrow, { color: r.accent }]}>›</Text>
-                  </View>
-                </Tap>
-              ))}
-
-              <Text style={st.helper}>
-                Mỗi tài khoản gắn một vai trò. Đăng nhập đúng quyền để đặt lịch hoặc nhận việc.
-              </Text>
+          {/* Tab chuyển Đăng nhập / Đăng ký (chỉ hiện khi không ở chế độ quên mật khẩu hay đăng ký thợ) */}
+          {mode === 'login' || mode === 'register' ? (
+            <View style={st.tabBar}>
+              {[
+                { id: 'login', label: 'Đăng nhập' },
+                { id: 'register', label: 'Đăng ký tài khoản' },
+              ].map((m) => {
+                const on = mode === m.id;
+                return (
+                  <Tap
+                    key={m.id}
+                    style={[st.tabItem, on && st.tabItemOn]}
+                    onPress={() => handleModeChange(m.id)}
+                  >
+                    <Text style={[st.tabText, on && st.tabTextOn]}>{m.label}</Text>
+                  </Tap>
+                );
+              })}
             </View>
           ) : (
-            <View>
-              <View style={st.roleBar}>
-                <View style={[st.rolePill, { backgroundColor: meta.soft }]}>
-                  <Text style={{ fontSize: 16 }}>{meta.icon}</Text>
-                  <Text style={[st.rolePillText, { color: meta.accent }]}>{meta.title}</Text>
-                </View>
-                <Tap onPress={() => { setStep('pick'); setFormErr(''); }} hitSlop={8}>
-                  <Text style={st.changeRole}>‹ Đổi vai trò</Text>
-                </Tap>
-              </View>
-
-              {mode !== 'forgot' ? (
-                <View style={st.seg}>
-                  {[
-                    { id: 'login', label: 'Đăng nhập' },
-                    { id: 'register', label: 'Đăng ký' },
-                  ].map((m) => {
-                    const on = mode === m.id;
-                    return (
-                      <Tap
-                        key={m.id}
-                        style={[st.segItem, on && st.segOn]}
-                        onPress={() => { setMode(m.id); setFormErr(''); setPassword(''); setPassword2(''); }}
-                      >
-                        <Text style={[st.segText, on && st.segTextOn]}>{m.label}</Text>
-                      </Tap>
-                    );
-                  })}
-                </View>
-              ) : (
-                <Tap onPress={() => { setMode('login'); setFormErr(''); }} style={{ marginBottom: 10 }}>
-                  <Text style={st.changeRole}>‹ Quay lại đăng nhập</Text>
-                </Tap>
-              )}
-
-              {mode === 'register' ? (
-                <Field
-                  label="Họ và tên"
-                  value={name}
-                  onChangeText={setName}
-                  placeholder="Nguyễn Văn A"
-                  autoCapitalize="words"
-                />
-              ) : null}
-
-              <Field
-                label="Số điện thoại"
-                value={phone}
-                onChangeText={setPhone}
-                placeholder="10 chữ số"
-                keyboardType="phone-pad"
-              />
-
-              {mode === 'register' ? (
-                <Field
-                  label="Email"
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="Không bắt buộc"
-                  keyboardType="email-address"
-                />
-              ) : null}
-
-              <Field
-                label={mode === 'forgot' ? 'Mật khẩu mới' : 'Mật khẩu'}
-                value={password}
-                onChangeText={setPassword}
-                placeholder={mode === 'login' ? 'Nhập mật khẩu' : 'Ít nhất 6 ký tự'}
-                secure={!showPw}
-                right={(
-                  <Tap onPress={() => setShowPw((v) => !v)} style={st.eyeBtn} hitSlop={6}>
-                    <Text style={st.eyeText}>{showPw ? 'Ẩn' : 'Hiện'}</Text>
-                  </Tap>
-                )}
-              />
-
-              {mode === 'register' || mode === 'forgot' ? (
-                <Field
-                  label="Nhập lại mật khẩu"
-                  value={password2}
-                  onChangeText={setPassword2}
-                  placeholder="Nhập lại mật khẩu"
-                  secure={!showPw}
-                />
-              ) : null}
-
-              {formErr ? (
-                <View style={st.errBox}>
-                  <Text style={st.errText}>{formErr}</Text>
-                </View>
-              ) : null}
-
-              <Btn
-                title={mode === 'login' ? 'Đăng nhập' : mode === 'forgot' ? 'Đặt lại mật khẩu' : 'Tạo tài khoản'}
-                variant={role === 'tech' ? 'dark' : 'primary'}
-                style={{ marginTop: 18 }}
-                disabled={busy}
-                onPress={submit}
-              />
-              {mode === 'login' ? (
-                <View style={{ marginTop: 14, alignItems: 'center', gap: 8 }}>
-                  <Tap onPress={() => { setMode('forgot'); setFormErr(''); setPassword(''); setPassword2(''); }}>
-                    <Text style={st.changeRole}>Quên mật khẩu?</Text>
-                  </Tap>
-                  <Text style={st.helper}>Chưa có tài khoản? Chọn Đăng ký phía trên.</Text>
-                </View>
-              ) : mode === 'forgot' ? (
-                <Text style={[st.helper, { marginTop: 14, textAlign: 'center' }]}>
-                  Sau khi đặt lại, dùng mật khẩu mới để đăng nhập.
-                </Text>
-              ) : (
-                <Text style={[st.helper, { marginTop: 14, textAlign: 'center' }]}>
-                  Sau khi tạo tài khoản bạn có thể đăng nhập ngay trên thiết bị này.
-                </Text>
-              )}
+            <View style={st.forgotHeader}>
+              <Tap onPress={() => handleModeChange('login')} style={st.backLink}>
+                <Text style={st.backLinkText}>← Quay lại đăng nhập</Text>
+              </Tap>
+              <Text style={st.forgotNote}>
+                {mode === 'tech_partner'
+                  ? 'Điền thông tin để đăng ký hồ sơ kỹ thuật viên đối tác'
+                  : 'Nhập thông tin xác nhận để tạo mật khẩu mới'}
+              </Text>
             </View>
           )}
+
+          {/* Form Fields */}
+          <View style={st.formBody}>
+            {(mode === 'register' || mode === 'tech_partner') && (
+              <ModernField
+                label="Họ và tên"
+                icon="👤"
+                value={name}
+                onChangeText={setName}
+                placeholder={mode === 'tech_partner' ? 'Nguyễn Văn Hùng (Kỹ thuật viên)' : 'Nguyễn Văn An'}
+                autoCapitalize="words"
+              />
+            )}
+
+            {mode === 'login' || mode === 'forgot' ? (
+              <ModernField
+                label="Số điện thoại hoặc Email"
+                icon="📱"
+                value={identifier}
+                onChangeText={setIdentifier}
+                placeholder="VD: 0901234567 hoặc user@gmail.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            ) : (
+              <>
+                <ModernField
+                  label="Số điện thoại liên hệ"
+                  icon="📱"
+                  value={phone}
+                  onChangeText={setPhone}
+                  placeholder="Nhập 10 chữ số (VD: 0901234567)"
+                  keyboardType="phone-pad"
+                />
+
+                <ModernField
+                  label="Địa chỉ Email"
+                  icon="✉️"
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="example@gmail.com (dùng đăng nhập hoặc nhận biên lai)"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </>
+            )}
+
+            <ModernField
+              label={mode === 'forgot' ? 'Mật khẩu mới' : 'Mật khẩu'}
+              icon="🔒"
+              value={password}
+              onChangeText={setPassword}
+              placeholder={mode === 'login' ? 'Nhập mật khẩu của bạn' : 'Tối thiểu 6 ký tự'}
+              secure={!showPw}
+              right={(
+                <Tap onPress={() => setShowPw(!showPw)} style={st.eyeToggle} hitSlop={10}>
+                  <Text style={st.eyeIcon}>{showPw ? '👁️' : '👁️‍🗨️'}</Text>
+                </Tap>
+              )}
+            />
+
+            {(mode === 'register' || mode === 'forgot' || mode === 'tech_partner') && (
+              <ModernField
+                label="Xác nhận mật khẩu"
+                icon="🛡️"
+                value={password2}
+                onChangeText={setPassword2}
+                placeholder="Nhập lại mật khẩu"
+                secure={!showPw}
+              />
+            )}
+
+            {formErr ? (
+              <View style={st.errorBox}>
+                <Text style={{ fontSize: 16 }}>⚠️</Text>
+                <Text style={st.errorText}>{formErr}</Text>
+              </View>
+            ) : null}
+
+            {mode === 'login' && (
+              <View style={st.forgotRow}>
+                <Tap onPress={() => handleModeChange('forgot')} hitSlop={8}>
+                  <Text style={st.forgotLink}>Quên mật khẩu?</Text>
+                </Tap>
+              </View>
+            )}
+
+            <Btn
+              title={
+                busy
+                  ? 'Đang xử lý...'
+                  : mode === 'login'
+                    ? 'Đăng nhập'
+                    : mode === 'forgot'
+                      ? 'Lưu mật khẩu mới'
+                      : mode === 'tech_partner'
+                        ? 'Đăng ký Kỹ thuật viên'
+                        : 'Tạo tài khoản'
+              }
+              variant={mode === 'tech_partner' ? 'dark' : 'primary'}
+              style={st.submitButton}
+              disabled={busy}
+              onPress={submit}
+            />
+
+            {/* Thông tin phụ */}
+            <View style={st.footerGuide}>
+              {mode === 'login' ? (
+                <Text style={st.guideText}>
+                  Chưa có tài khoản?{' '}
+                  <Text style={st.guideLink} onPress={() => handleModeChange('register')}>
+                    Đăng ký ngay
+                  </Text>
+                </Text>
+              ) : mode === 'register' ? (
+                <Text style={st.guideText}>
+                  Đã có tài khoản?{' '}
+                  <Text style={st.guideLink} onPress={() => handleModeChange('login')}>
+                    Đăng nhập tại đây
+                  </Text>
+                </Text>
+              ) : null}
+
+              <View style={st.securityBadge}>
+                <Text style={st.securityIcon}>🔒</Text>
+                <Text style={st.securityText}>Bảo mật thông tin người dùng theo tiêu chuẩn an toàn HRMSS</Text>
+              </View>
+            </View>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -289,170 +309,193 @@ export default function AuthScreen() {
 }
 
 const st = StyleSheet.create({
-  fill: { flex: 1, backgroundColor: C.bg },
-  scroll: { flexGrow: 1, paddingBottom: 28 },
+  fill: { flex: 1, backgroundColor: '#F8FAFC' },
+  scroll: { flexGrow: 1, paddingBottom: 32 },
+
+  // Hero Section
   hero: {
     backgroundColor: C.navy,
     ...grad.navyHero,
     paddingHorizontal: 22,
-    paddingTop: 24,
-    paddingBottom: 40,
+    paddingTop: 26,
+    paddingBottom: 42,
     overflow: 'hidden',
+    position: 'relative',
   },
   heroBlob: {
     position: 'absolute',
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    top: -80,
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    top: -70,
     right: -60,
   },
   heroBlob2: {
-    width: 160,
-    height: 160,
-    top: 40,
-    left: -70,
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    top: 50,
+    left: -60,
     right: undefined,
-    backgroundColor: 'rgba(255,200,61,0.12)',
+    backgroundColor: 'rgba(255, 200, 61, 0.1)',
   },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   brandMark: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     backgroundColor: C.gold,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadow.gold,
   },
-  brand: { fontSize: 28, fontWeight: '900', color: '#fff', letterSpacing: -0.5 },
-  heroTitle: { marginTop: 18, fontSize: 26, fontWeight: '900', color: '#fff', lineHeight: 32, letterSpacing: -0.4 },
-  heroSub: { marginTop: 8, fontSize: 14, color: 'rgba(255,255,255,0.8)', lineHeight: 21, maxWidth: 320, fontWeight: '500' },
+  brand: { fontSize: 26, fontWeight: '900', color: '#FFFFFF', letterSpacing: -0.5 },
+  brandSlogan: { color: C.gold, fontSize: 10, fontWeight: '800', letterSpacing: 0.6, marginTop: 2 },
+  
+  welcomeBox: { marginTop: 20 },
+  heroTitle: { fontSize: 24, fontWeight: '900', color: '#FFFFFF', letterSpacing: -0.4 },
+  heroSub: { marginTop: 6, fontSize: 13.5, color: '#CBD5E1', lineHeight: 20, maxWidth: 330 },
+
+  // Card Content Sheet
   sheet: {
-    marginTop: -20,
-    backgroundColor: C.bg,
+    marginTop: -22,
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    paddingHorizontal: 18,
-    paddingTop: 20,
-    flex: 1,
-  },
-  door: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    backgroundColor: '#fff',
-    borderRadius: R.lg,
-    borderWidth: 1.5,
-    padding: 16,
-    marginBottom: 12,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 20,
     ...shadow.md,
-  },
-  doorIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  doorTitle: { fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
-  doorBody: { marginTop: 4, fontSize: 13, color: C.muted, lineHeight: 18 },
-  doorGo: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  doorArrow: { fontSize: 24, fontWeight: '300', marginTop: -2 },
-  quickBox: {
-    marginTop: 6,
-    marginBottom: 10,
-    backgroundColor: '#fff',
-    borderRadius: R.lg,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: C.line,
-    ...shadow.sm,
-  },
-  quickTitle: { fontSize: 13, fontWeight: '800', color: C.ink },
-  quickPass: { fontSize: 11, fontWeight: '700', color: C.muted, backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  quickSub: { fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 17 },
-  quickBtn: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    borderRadius: 14,
-    borderWidth: 1,
   },
-  quickBtnRole: { fontSize: 12.5, fontWeight: '800' },
-  quickBtnPhone: { fontSize: 11, color: C.muted, fontWeight: '600', marginTop: 1 },
-  helper: {
-    marginTop: 8,
-    fontSize: 12,
-    color: C.muted,
-    lineHeight: 18,
-    textAlign: 'center',
-    paddingHorizontal: 8,
-  },
-  roleBar: {
+
+  // Tabs
+  tabBar: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  rolePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  rolePillText: { fontWeight: '800', fontSize: 13 },
-  changeRole: { color: C.primary, fontWeight: '700', fontSize: 13 },
-  seg: {
-    flexDirection: 'row',
-    backgroundColor: '#E4EAF3',
+    backgroundColor: '#F1F5F9',
     borderRadius: 14,
     padding: 4,
-    marginBottom: 6,
+    marginBottom: 20,
   },
-  segItem: {
+  tabItem: {
     flex: 1,
-    height: 42,
+    height: 44,
     borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  segOn: { backgroundColor: '#fff', ...shadow.sm },
-  segText: { color: C.muted, fontWeight: '700', fontSize: 14 },
-  segTextOn: { color: C.ink },
-  field: { marginTop: 12 },
-  label: { fontSize: 13, fontWeight: '700', color: C.ink2, marginBottom: 6 },
+  tabItemOn: {
+    backgroundColor: '#FFFFFF',
+    ...shadow.sm,
+  },
+  tabText: {
+    fontSize: 14.5,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  tabTextOn: {
+    color: C.navy,
+  },
+
+  // Forgot Password / Tech Partner Header
+  forgotHeader: { marginBottom: 16 },
+  backLink: { alignSelf: 'flex-start', paddingVertical: 4 },
+  backLinkText: { fontSize: 13.5, fontWeight: '700', color: C.primary },
+  forgotNote: { fontSize: 13, color: '#64748B', marginTop: 4 },
+
+  // Fields
+  formBody: {},
+  field: { marginBottom: 14 },
+  label: { fontSize: 13, fontWeight: '700', color: '#334155', marginBottom: 6 },
   inputWrap: {
-    minHeight: 52,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: C.line,
-    backgroundColor: '#fff',
-    paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 14,
   },
-  input: { flex: 1, fontSize: 15, color: C.ink, paddingVertical: 12 },
-  eyeBtn: { paddingLeft: 10, paddingVertical: 6 },
-  eyeText: { color: C.primary, fontWeight: '700', fontSize: 13 },
-  errBox: {
-    marginTop: 14,
-    backgroundColor: C.redSoft,
+  inputWrapFocused: {
+    borderColor: C.primary,
+    backgroundColor: '#FAF5FF',
+    ...shadow.sm,
+  },
+  inputWrapError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+  },
+  inputIcon: { fontSize: 16, marginRight: 10 },
+  input: {
+    flex: 1,
+    fontSize: 14.5,
+    color: '#0F172A',
+    fontWeight: '500',
+  },
+  eyeToggle: { padding: 6 },
+  eyeIcon: { fontSize: 16 },
+
+  // Error Banner
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    marginBottom: 12,
   },
-  errText: { color: C.red, fontSize: 13, fontWeight: '600', lineHeight: 18 },
+  errorText: { fontSize: 12.5, color: '#DC2626', fontWeight: '600', flex: 1, lineHeight: 18 },
+
+  // Action links & Submit
+  forgotRow: {
+    alignItems: 'flex-end',
+    marginBottom: 14,
+    marginTop: -4,
+  },
+  forgotLink: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.primary,
+  },
+  submitButton: {
+    height: 52,
+    borderRadius: 14,
+    marginTop: 4,
+  },
+
+  // Footer & Partner link
+  footerGuide: {
+    marginTop: 18,
+    alignItems: 'center',
+  },
+  guideText: {
+    fontSize: 13.5,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  guideLink: {
+    color: C.primary,
+    fontWeight: '800',
+  },
+
+  securityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  securityIcon: { fontSize: 12 },
+  securityText: { fontSize: 11, color: '#94A3B8', fontWeight: '600' },
 });
