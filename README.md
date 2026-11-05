@@ -13,8 +13,8 @@ App yêu cầu đăng nhập. Vai trò gắn với tài khoản, không chuyển
 
 | Vai trò | Tài khoản demo | Mật khẩu | Link gợi ý |
 |---|---|---|---|
-| Khách hàng | `0901234567` | `123456` | `http://localhost:8081/?role=customer` |
-| Thợ | `0987654321` | `123456` | `http://localhost:8081/?role=tech` |
+| Khách hàng | `khachhang` | `123456` | `http://localhost:8081/?role=customer` |
+| Thợ | `thohrmss` | `123456` | `http://localhost:8081/?role=tech` |
 
 Mở **2 tab** để chạy song song Khách + Thợ. Phiên đăng nhập lưu theo tab (`sessionStorage`), đơn hàng dùng chung (`localStorage`) nên cập nhật hai bên.
 

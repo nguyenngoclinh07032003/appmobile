@@ -1410,8 +1410,9 @@ export function AppProvider({ children }) {
         role: res.account.role,
         user: {
           name: res.account.name || '',
-          phone: res.account.phone || '',
+          username: res.account.username || '',
           email: res.account.email || '',
+          phone: res.account.phone || '',
         },
         techProfile: res.account.role === 'tech' ? mergeTechProfile(p.techProfile, res.account) : p.techProfile,
       }));
@@ -1424,13 +1425,13 @@ export function AppProvider({ children }) {
       let backendError = null;
       try {
         const beRes = await hrmssApi.register({
-          username: payload.email ? payload.email.split('@')[0] : `user_${payload.phone}`,
-          email: payload.email || `${payload.phone}@hrmss.vn`,
+          username: payload.username || (payload.email ? payload.email.split('@')[0] : `user_${Date.now().toString(36)}`),
+          email: payload.email,
           password: payload.password,
           confirm_password: payload.password,
           full_name: payload.name,
           address: 'Việt Nam',
-          phone: payload.phone,
+          phone: payload.phone || ('09' + String(Math.floor(10000000 + Math.random() * 90000000))),
         });
         if (!beRes.ok && beRes.message) {
           backendError = beRes.message;
@@ -1449,8 +1450,9 @@ export function AppProvider({ children }) {
         role: res.account.role,
         user: {
           name: res.account.name || '',
-          phone: res.account.phone || '',
+          username: res.account.username || '',
           email: res.account.email || '',
+          phone: res.account.phone || '',
         },
         techProfile: res.account.role === 'tech' ? mergeTechProfile(p.techProfile, res.account) : p.techProfile,
       }));

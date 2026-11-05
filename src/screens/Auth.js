@@ -48,8 +48,8 @@ export default function AuthScreen() {
 
   const [mode, setMode] = useState('login'); // login | register | forgot | tech_partner
   const [name, setName] = useState('');
-  const [identifier, setIdentifier] = useState(''); // Nhập SĐT hoặc Email (Đăng nhập / Quên mật khẩu)
-  const [phone, setPhone] = useState(''); // Cho đăng ký
+  const [username, setUsername] = useState(''); // Tên đăng nhập cho đăng ký
+  const [identifier, setIdentifier] = useState(''); // Nhập Email hoặc Username (Đăng nhập / Quên mật khẩu)
   const [email, setEmail] = useState(''); // Cho đăng ký
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
@@ -73,7 +73,7 @@ export default function AuthScreen() {
     let res;
     try {
       if (mode === 'login') {
-        // Đăng nhập thông minh: hệ thống tự động kiểm tra tài khoản là Khách hay Thợ để điều hướng
+        // Đăng nhập bằng Email hoặc Username (áp dụng đồng bộ cho cả Thợ và Khách)
         res = await a.login({ identifier: identifier.trim(), password });
       } else if (mode === 'forgot') {
         res = await a.resetPassword({ identifier: identifier.trim(), newPassword: password });
@@ -84,11 +84,23 @@ export default function AuthScreen() {
           setFormErr('');
         }
       } else if (mode === 'register') {
-        // Khách hàng đăng ký tài khoản tự do
-        res = await a.register({ role: 'customer', name, phone, email, password });
+        // Khách hàng đăng ký bằng Email & Username (không cần SĐT)
+        res = await a.register({
+          role: 'customer',
+          name: name.trim(),
+          username: username.trim(),
+          email: email.trim(),
+          password,
+        });
       } else if (mode === 'tech_partner') {
-        // Đăng ký hồ sơ Kỹ thuật viên đối tác
-        res = await a.register({ role: 'tech', name, phone, email, password });
+        // Đăng ký hồ sơ Kỹ thuật viên đối tác bằng Email & Username (không cần SĐT)
+        res = await a.register({
+          role: 'tech',
+          name: name.trim(),
+          username: username.trim(),
+          email: email.trim(),
+          password,
+        });
       }
     } catch (err) {
       res = { ok: false, error: err?.message || 'Không thể kết nối đến máy chủ. Vui lòng thử lại.' };
@@ -135,19 +147,19 @@ export default function AuthScreen() {
             </Text>
             <Text style={st.heroSub}>
               {mode === 'login'
-                ? 'Nhập số điện thoại hoặc email để truy cập đơn dịch vụ và hồ sơ của bạn.'
+                ? 'Nhập Email hoặc Tên đăng nhập để truy cập đơn dịch vụ và hồ sơ của bạn.'
                 : mode === 'register'
                   ? 'Đăng ký tài khoản để đặt lịch sửa chữa, bảo dưỡng tận nhà và nhận bảo hành đến 120 ngày.'
                   : mode === 'tech_partner'
                     ? 'Gia nhập mạng lưới kỹ thuật viên chuyên nghiệp HRMSS để nhận việc và gia tăng thu nhập.'
-                    : 'Nhập số điện thoại hoặc email đã đăng ký để tạo mật khẩu bảo vệ mới.'}
+                    : 'Nhập Email hoặc Tên đăng nhập đã đăng ký để tạo mật khẩu bảo vệ mới.'}
             </Text>
           </View>
         </View>
 
         {/* Khối Card tương tác chính */}
         <View style={st.sheet}>
-          {/* Tab chuyển Đăng nhập / Đăng ký (chỉ hiện khi không ở chế độ quên mật khẩu hay đăng ký thợ) */}
+          {/* Tab chuyển Đăng nhập / Đăng ký */}
           {mode === 'login' || mode === 'register' ? (
             <View style={st.tabBar}>
               {[
@@ -182,35 +194,23 @@ export default function AuthScreen() {
           {/* Form Fields */}
           <View style={st.formBody}>
             {(mode === 'register' || mode === 'tech_partner') && (
-              <ModernField
-                label="Họ và tên"
-                icon="👤"
-                value={name}
-                onChangeText={setName}
-                placeholder={mode === 'tech_partner' ? 'Nguyễn Văn Hùng (Kỹ thuật viên)' : 'Nguyễn Văn An'}
-                autoCapitalize="words"
-              />
-            )}
-
-            {mode === 'login' || mode === 'forgot' ? (
-              <ModernField
-                label="Số điện thoại hoặc Email"
-                icon="📱"
-                value={identifier}
-                onChangeText={setIdentifier}
-                placeholder="VD: 0901234567 hoặc user@gmail.com"
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            ) : (
               <>
                 <ModernField
-                  label="Số điện thoại liên hệ"
-                  icon="📱"
-                  value={phone}
-                  onChangeText={setPhone}
-                  placeholder="Nhập 10 chữ số (VD: 0901234567)"
-                  keyboardType="phone-pad"
+                  label="Họ và tên"
+                  icon="👤"
+                  value={name}
+                  onChangeText={setName}
+                  placeholder={mode === 'tech_partner' ? 'Nguyễn Văn Hùng (Kỹ thuật viên)' : 'Nguyễn Văn An'}
+                  autoCapitalize="words"
+                />
+
+                <ModernField
+                  label="Tên đăng nhập (Username)"
+                  icon="🆔"
+                  value={username}
+                  onChangeText={setUsername}
+                  placeholder="VD: hung_tech hoặc nguyenan99"
+                  autoCapitalize="none"
                 />
 
                 <ModernField
@@ -218,11 +218,23 @@ export default function AuthScreen() {
                   icon="✉️"
                   value={email}
                   onChangeText={setEmail}
-                  placeholder="example@gmail.com (dùng đăng nhập hoặc nhận biên lai)"
+                  placeholder="example@gmail.com (dùng đăng nhập & nhận hóa đơn)"
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
               </>
+            )}
+
+            {(mode === 'login' || mode === 'forgot') && (
+              <ModernField
+                label="Email hoặc Tên đăng nhập"
+                icon="👤"
+                value={identifier}
+                onChangeText={setIdentifier}
+                placeholder="Nhập email hoặc username của bạn"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
             )}
 
             <ModernField
