@@ -2,13 +2,22 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { BackHandler, Linking, Platform } from 'react-native';
 import {
   getService, MAINT_MONTHS, TECH_ME, REDEEM_OPTIONS, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech,
-  tierOf, lookupHrmssPurchasedDevices, comboDiscountFor,
+  tierOf, lookupHrmssPurchasedDevices, comboDiscountFor, syncCatalogFromBackend,
 } from './data';
 export { matchJobForTech, comboDiscountFor } from './data';
 import {
-  getSession, clearSession, loginAccount, registerAccount, urlRoleHint, resetPassword, changePassword, quickLoginRole, setSession,
+  getSession, clearSession, loginAccount, registerAccount, urlRoleHint, resetPassword, changePassword, quickLoginRole, setSession, upsertBackendAccount,
 } from './auth';
-import { hrmssApi } from './api';
+import { hrmssApi, authTokens } from './api';
+import {
+  mapBackendAddressToApp,
+  mapBackendCustomerRequestToOrder,
+  mapBackendTechJobToOrder,
+  mapBackendOpenRequestToOrder,
+  mergeBackendOrdersWithLocal,
+  buildPreferredTimeIso,
+  resolveDbMaterialId,
+} from './backendSync';
 import {
   TECH_POLICY, normalizeTechRep, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
   applyTechPenalty, applyTechBonus, mintWalletVoucher, slotStartTs,
@@ -84,9 +93,10 @@ export const lateDiscountAmount = (o) => {
   const cap = lc.maxDiscount != null ? lc.maxDiscount : (lc.percent >= 50 ? 200000 : 100000);
   return Math.min(raw, cap);
 };
-// Số tiền khách phải trả: báo giá (nếu có) − ưu đãi vật tư theo hạng − voucher − bồi thường đến muộn
+// Số tiền khách phải trả: đơn huỷ có phí kiểm tra -> phí kiểm tra; báo giá (nếu có) − ưu đãi vật tư theo hạng − voucher − bồi thường đến muộn
 export const orderTotal = (o) => {
   if (o.kind === 'warranty' || o.kind === 'followup') return 0;
+  if (o.status === 'cancelled') return o.inspectionFee || 0;
   if (o.quote && (o.quote.approved || o.status === 'quoted')) {
     const raw = o.quote.total - tierPartDiscountAmount(o) - (o.voucherDiscount || 0) - lateDiscountAmount(o);
     return Math.max(0, raw);
@@ -203,22 +213,30 @@ const extractCustomerSlice = (state) => {
   CUSTOMER_SLICE_KEYS.forEach((k) => { out[k] = state[k]; });
   return out;
 };
-const isOrderOfCustomer = (o, phone) => {
-  if (!phone) return true;
+const customerProfileKey = (acc) => {
+  if (!acc || acc.role !== 'customer') return null;
+  return acc.id || acc.username || acc.email || acc.phone || null;
+};
+const isOrderOfCustomer = (o, phone, accountId = null) => {
+  if (accountId && o?.customerAccountId) {
+    return o.customerAccountId === accountId;
+  }
+  if (!phone) return Boolean(accountId && o?.customerAccountId === accountId);
   const p = String(phone).trim();
   const op = String(o?.customerPhone || o?.address?.phone || '').trim();
   return !op || op === p;
 };
-// Khi đổi tài khoản khách hàng: lưu dữ liệu khách cũ vào customerProfiles[oldPhone], nạp dữ liệu khách mới
+// Khi đổi tài khoản khách hàng: lưu dữ liệu khách cũ vào customerProfiles[oldKey], nạp dữ liệu khách mới
 const switchCustomerSlice = (prev, nextAccount) => {
   const profiles = { ...(prev.customerProfiles || {}) };
-  const prevPhone = prev.auth?.role === 'customer' ? prev.auth.phone : (prev.role === 'customer' ? prev.user?.phone : null);
-  if (prevPhone) {
-    profiles[prevPhone] = extractCustomerSlice(prev);
+  const prevKey = customerProfileKey(prev.auth) || (prev.role === 'customer' ? prev.user?.phone : null);
+  if (prevKey) {
+    profiles[prevKey] = extractCustomerSlice(prev);
   }
-  if (nextAccount?.role === 'customer' && nextAccount.phone) {
-    const loaded = profiles[nextAccount.phone] || makeCustomerSlice();
-    profiles[nextAccount.phone] = loaded;
+  const nextKey = customerProfileKey(nextAccount);
+  if (nextKey) {
+    const loaded = profiles[nextKey] || (nextAccount.phone ? profiles[nextAccount.phone] : null) || makeCustomerSlice();
+    profiles[nextKey] = loaded;
     return { ...loaded, customerProfiles: profiles };
   }
   return { customerProfiles: profiles };
@@ -285,17 +303,19 @@ export function AppProvider({ children }) {
         ? mergeTechProfile(saved.techProfile, session)
         : (saved.techProfile || null),
     };
-    if (session?.role === 'customer' && session.phone) {
+    const sessKey = customerProfileKey(session);
+    if (sessKey) {
       const profiles = { ...(baseState.customerProfiles || {}) };
-      if (profiles[session.phone]) {
-        return { ...baseState, ...profiles[session.phone], customerProfiles: profiles };
+      if (profiles[sessKey] || (session.phone && profiles[session.phone])) {
+        const existingSlice = profiles[sessKey] || profiles[session.phone];
+        profiles[sessKey] = existingSlice;
+        return { ...baseState, ...existingSlice, customerProfiles: profiles };
       }
-      // Nếu tài khoản đang mở trùng với user đã lưu thì gán slice hiện tại cho tài khoản đó, ngược lại tạo mới
       const savedPhone = saved.user?.phone || cleanAddresses[0]?.phone;
-      const slice = (!savedPhone || savedPhone === session.phone)
+      const slice = (session.phone && (!savedPhone || savedPhone === session.phone))
         ? extractCustomerSlice(baseState)
         : makeCustomerSlice();
-      profiles[session.phone] = slice;
+      profiles[sessKey] = slice;
       return { ...baseState, ...slice, customerProfiles: profiles };
     }
     return baseState;
@@ -303,11 +323,11 @@ export function AppProvider({ children }) {
   const up = (fn) => setS((prev) => {
     const patch = fn(prev) || {};
     const next = { ...prev, ...patch };
-    const activeCustPhone = next.auth?.role === 'customer' ? next.auth.phone : null;
-    if (activeCustPhone && !patch.customerProfiles) {
+    const activeCustKey = customerProfileKey(next.auth);
+    if (activeCustKey && !patch.customerProfiles) {
       next.customerProfiles = {
         ...(next.customerProfiles || {}),
-        [activeCustPhone]: extractCustomerSlice(next),
+        [activeCustKey]: extractCustomerSlice(next),
       };
     }
     return next;
@@ -528,7 +548,102 @@ export function AppProvider({ children }) {
   });
   const address = s.addresses.find((a) => a.id === s.selectedAddressId) || s.addresses.find((a) => a.isDefault) || s.addresses[0] || null;
 
+  // Đồng bộ trực tiếp Sổ địa chỉ, Đơn hàng, Công việc Thợ và Danh mục Vật tư từ PostgreSQL trên VPS
+  const syncFromBackend = async (overrideAccount = null) => {
+    try {
+      const svcRes = await hrmssApi.getServices();
+      if (svcRes.ok && Array.isArray(svcRes.items)) {
+        syncCatalogFromBackend({ services: svcRes.items });
+      }
+    } catch (e) { /* bỏ qua nếu mất mạng */ }
+
+    const acc = overrideAccount || s.auth;
+    if (!acc || !authTokens.get()) return;
+
+    if (acc.role === 'customer') {
+      try {
+        const [addrRes, reqRes, verRes] = await Promise.all([
+          hrmssApi.getCustomerAddresses(),
+          hrmssApi.getCustomerRequests('ALL'),
+          hrmssApi.getEmailVerificationStatus(),
+        ]);
+        const remoteAddrs = (addrRes.ok && Array.isArray(addrRes.data?.items))
+          ? addrRes.data.items.map(mapBackendAddressToApp).filter(Boolean)
+          : null;
+        const remoteOrders = (reqRes.ok && Array.isArray(reqRes.data?.items))
+          ? reqRes.data.items.map((r) => mapBackendCustomerRequestToOrder(r, acc.phone)).filter(Boolean)
+          : null;
+        const remoteEmailVerified = verRes.ok && verRes.data
+          ? Boolean(verRes.data.email_verified)
+          : null;
+
+        up((p) => {
+          const nextAddresses = remoteAddrs !== null ? remoteAddrs : p.addresses;
+          const defaultAddr = nextAddresses.find((x) => x.isDefault) || nextAddresses[0] || null;
+          const nextSelectedId = nextAddresses.some((x) => x.id === p.selectedAddressId)
+            ? p.selectedAddressId
+            : (defaultAddr?.id || null);
+          const remoteWithAcc = remoteOrders
+            ? remoteOrders.map((o) => ({ ...o, customerAccountId: acc.id || o.customerAccountId || null }))
+            : null;
+          const nextOrders = remoteWithAcc ? mergeBackendOrdersWithLocal(p.orders, remoteWithAcc) : p.orders;
+          const doneCount = nextOrders.filter((o) => o.status === 'done' && isOrderOfCustomer(o, acc.phone, acc.id)).length;
+          const minPts = doneCount * 45;
+          const nextAuth = (remoteEmailVerified !== null && p.auth)
+            ? upsertBackendAccount({ ...p.auth, emailVerified: remoteEmailVerified })
+            : p.auth;
+          return {
+            ...(nextAuth ? { auth: nextAuth } : {}),
+            addresses: nextAddresses,
+            selectedAddressId: nextSelectedId,
+            orders: nextOrders,
+            points: Math.max(p.points || 0, minPts),
+            lifetimePoints: Math.max(p.lifetimePoints || 0, minPts),
+          };
+        });
+      } catch (e) { /* bỏ qua */ }
+    } else if (acc.role === 'tech') {
+      try {
+        const [jobsRes, openRes, matRes] = await Promise.all([
+          hrmssApi.getTechnicianJobs('ALL'),
+          hrmssApi.getTechnicianOpenRequests(),
+          hrmssApi.getTechnicianMaterials(),
+        ]);
+        if (matRes.ok && Array.isArray(matRes.data?.items)) {
+          syncCatalogFromBackend({ materials: matRes.data.items });
+        }
+        up((p) => {
+          const techProf = p.techProfile || mergeTechProfile(null, acc);
+          const assignedOrders = (jobsRes.ok && Array.isArray(jobsRes.data?.items))
+            ? jobsRes.data.items.map((j) => mapBackendTechJobToOrder(j, techProf)).filter(Boolean)
+            : [];
+          const assignedCodes = new Set(assignedOrders.map((o) => o.code));
+          const openOrders = (openRes.ok && Array.isArray(openRes.data?.items))
+            ? openRes.data.items
+                .map(mapBackendOpenRequestToOrder)
+                .filter((o) => o && !assignedCodes.has(o.code))
+            : [];
+          const remoteOrders = [...assignedOrders, ...openOrders];
+          const nextOrders = mergeBackendOrdersWithLocal(p.orders, remoteOrders);
+          const completedJobsCount = assignedOrders.filter((o) => o.status === 'done').length;
+          return {
+            orders: nextOrders,
+            techProfile: {
+              ...techProf,
+              jobs: Math.max(techProf.jobs || 0, completedJobsCount),
+            },
+          };
+        });
+      } catch (e) { /* bỏ qua */ }
+    }
+  };
+
+  useEffect(() => {
+    syncFromBackend(s.auth);
+  }, []);
+
   const a = {
+    syncFromBackend,
     // Giỏ hàng
     addToCart: (id, qty = 1, silent = false) => {
       up((p) => {
@@ -593,7 +708,7 @@ export function AppProvider({ children }) {
       return addedCount;
     },
 
-    // Địa chỉ + hồ sơ
+    // Địa chỉ + hồ sơ (Ghi trực tiếp vào bảng hrmss.service_address trên PostgreSQL)
     saveAddress: (addr) => {
       const id = addr.id || uid();
       up((p) => {
@@ -607,6 +722,25 @@ export function AppProvider({ children }) {
         };
         return { addresses: list, selectedAddressId: makeDefault || !p.selectedAddressId ? id : p.selectedAddressId, user };
       });
+      if (authTokens.get() && !addr.dbAddressId) {
+        const fullText = [addr.full, addr.area].filter(Boolean).join(', ');
+        const cleanPhone = String(addr.phone || s.user?.phone || '').replace(/\D/g, '');
+        if (fullText.length >= 5 && /^(0|\+84)[3|5|7|8|9][0-9]{8}$/.test(cleanPhone)) {
+          hrmssApi.createCustomerAddress({
+            address_text: fullText,
+            contact_name: addr.name || s.user?.name || '',
+            contact_phone: cleanPhone,
+            is_default: Boolean(addr.isDefault),
+          }).then((res) => {
+            if (res.ok && res.data?.address) {
+              const dbAddr = mapBackendAddressToApp(res.data.address);
+              up((p) => ({
+                addresses: p.addresses.map((x) => (x.id === id ? { ...x, dbAddressId: dbAddr.dbAddressId } : x)),
+              }));
+            }
+          }).catch(() => {});
+        }
+      }
       ui.toast('Đã lưu địa chỉ', '📍');
       return id;
     },
@@ -616,10 +750,38 @@ export function AppProvider({ children }) {
       return { addresses: list, selectedAddressId: p.selectedAddressId === id ? (list[0]?.id || null) : p.selectedAddressId };
     }),
     selectAddress: (id) => up(() => ({ selectedAddressId: id })),
-    updateUser: (u) => { up((p) => ({ user: { ...p.user, ...u } })); ui.toast('Đã cập nhật thông tin'); },
+    updateUser: (u) => {
+      up((p) => {
+        const nextUser = { ...p.user, ...u };
+        const nextAuth = p.auth
+          ? upsertBackendAccount({
+              ...p.auth,
+              name: nextUser.name ?? p.auth.name,
+              phone: nextUser.phone ?? p.auth.phone,
+              email: nextUser.email ?? p.auth.email,
+            })
+          : null;
+        return { user: nextUser, ...(nextAuth ? { auth: nextAuth } : {}) };
+      });
+      if (authTokens.get()) {
+        hrmssApi.updateProfile({
+          ...(u.name ? { full_name: u.name } : {}),
+          ...(u.phone !== undefined ? { phone: u.phone ? u.phone : null } : {}),
+        }).catch(() => {});
+      }
+      ui.toast('Đã cập nhật thông tin');
+    },
 
-    // Đơn hàng
+    // Đơn hàng (Ghi trực tiếp vào bảng hrmss.service_request, service_request_service, repair_visit)
     placeOrder: (payload) => {
+      if (s.auth?.role === 'customer' && !s.auth.emailVerified) {
+        ui.alert(
+          'Chưa xác thực Email',
+          `Vui lòng xác thực địa chỉ Email (${s.user?.email || s.auth?.email || ''}) bằng mã OTP 6 chữ số trước khi đặt lịch dịch vụ.`,
+          '📧',
+        );
+        return null;
+      }
       const code = `HRMSS${String(Date.now()).slice(-6)}`;
       const now = Date.now();
       const customerPhone = s.auth?.phone || s.user?.phone || address?.phone || '';
@@ -663,13 +825,56 @@ export function AppProvider({ children }) {
           link: { name: 'tech-job', params: { code } },
         }),
       }));
+
+      if (authTokens.get()) {
+        const cleanPhone = String(address?.phone || customerPhone || '').replace(/\D/g, '');
+        const fullAddrText = [address?.full, address?.area].filter(Boolean).join(', ');
+        const apiItems = [];
+        (payload.items || []).forEach((it) => {
+          const count = Math.max(1, Number(it.qty) || 1);
+          for (let i = 0; i < count && apiItems.length < 10; i += 1) {
+            apiItems.push({
+              service_id: String(it.id),
+              notes: payload.note ? String(payload.note).slice(0, 450) : null,
+            });
+          }
+        });
+        const reqBody = {
+          ...(address?.dbAddressId
+            ? { service_address_id: String(address.dbAddressId) }
+            : {
+                new_address: {
+                  address_text: fullAddrText,
+                  contact_name: address?.name || s.user?.name || '',
+                  contact_phone: cleanPhone,
+                  is_default: true,
+                },
+              }),
+          preferred_time: buildPreferredTimeIso(payload.dateKey, payload.slot),
+          problem_description: payload.note || `${svc0?.name || 'Đặt lịch dịch vụ'}${devNote}`,
+          items: apiItems,
+        };
+        if (apiItems.length > 0 && (address?.dbAddressId || (fullAddrText.length >= 5 && cleanPhone))) {
+          hrmssApi.createCustomerRequest(reqBody).then((res) => {
+            if (res.ok && res.data?.request) {
+              const dbReq = res.data.request;
+              up((p) => ({
+                orders: p.orders.map((x) => (x.code === code
+                  ? { ...x, dbRequestId: dbReq.request_id, backendCode: dbReq.request_code }
+                  : x)),
+              }));
+            }
+          }).catch(() => {});
+        }
+      }
       return code;
     },
 
     // ------------------------- PHÍA THỢ -------------------------
-    // Nhận việc được giao (chỉ khi đang trực tuyến + không bị khóa uy tín)
+    // Nhận việc được giao (ghi trực tiếp vào bảng hrmss.technician_assignment & hrmss.service_request)
     acceptJob: (code) => {
       let result = 'missing';
+      let targetOrder = null;
       up((p) => {
         if (!p.techOnline) { result = 'offline'; return {}; }
         const tech0 = p.techProfile || TECH_ME;
@@ -684,6 +889,7 @@ export function AppProvider({ children }) {
         const tech = { ...normalizeTechRep(tech0), ...tech0 };
         const now = Date.now();
         result = 'ok';
+        targetOrder = o;
         return {
           orders: p.orders.map((x) => (x.code === code
             ? withStatus(o, 'confirmed', now, { tech: { ...tech }, dispatchNote: null, acceptedAt: now })
@@ -713,8 +919,22 @@ export function AppProvider({ children }) {
         ui.alert('Việc đã chỉ định thợ khác', 'Khách đã chọn mã Thợ Now khác. Bạn không thể nhận việc này.', '🧑‍🔧');
         return;
       }
-      if (result === 'ok') ui.toast('Đã nhận việc', '👍');
-      else ui.alert('Không nhận được', 'Việc không còn ở trạng thái chờ nhận.', 'ℹ️');
+      if (result === 'ok') {
+        if (authTokens.get() && targetOrder?.dbRequestId && !targetOrder?.dbAssignmentId) {
+          hrmssApi.acceptTechnicianOpenRequest(targetOrder.dbRequestId).then((res) => {
+            if (res.ok && res.data?.job) {
+              up((p) => ({
+                orders: p.orders.map((x) => (x.code === code
+                  ? { ...x, dbAssignmentId: res.data.job.assignment_id }
+                  : x)),
+              }));
+            }
+          }).catch(() => {});
+        }
+        ui.toast('Đã nhận việc', '👍');
+      } else {
+        ui.alert('Không nhận được', 'Việc không còn ở trạng thái chờ nhận.', 'ℹ️');
+      }
     },
     // Từ chối việc chưa nhận → không phạt uy tín (chỉ ẩn với đúng thợ này)
     declineJob: (code, reason) => {
@@ -843,8 +1063,14 @@ export function AppProvider({ children }) {
       const now = Date.now();
       let lateHint = '';
       let ok = false;
+      let blockedReason = null;
+      let travelCoords = null;
       updateOrder(code, (o) => {
         if (o.status !== 'confirmed') return {};
+        if (o.quote && !o.quote.approved) {
+          blockedReason = 'Khách hàng chưa đồng ý báo giá trên ứng dụng. Thợ chỉ xuất phát sau khi khách đồng ý.';
+          return {};
+        }
         ok = true;
         const start = slotStartTs(o);
         if (start != null && now > start + TECH_POLICY.lateGraceMin * 60000) {
@@ -860,12 +1086,17 @@ export function AppProvider({ children }) {
           updatedAt: now,
           label: 'Thợ vừa xuất phát',
         };
+        travelCoords = { latitude: tracking.lat, longitude: tracking.lng, location_accuracy: 15, location_sharing_enabled: true };
         return {
           order: withStatus(o, 'onway', now, { travelStartedAt: now, tracking }),
           customer: { icon: '🛵', title: `Thợ đang đến · ${code}`, body: `Thợ ${o.tech?.name || ''} đang di chuyển tới địa chỉ của bạn. Mở đơn để theo dõi.` },
         };
       });
+      if (blockedReason) { ui.alert('Chờ khách đồng ý', blockedReason, '⏳'); return; }
       if (!ok) { ui.alert('Không cập nhật được', 'Chỉ bấm “Đang đến” khi đã nhận việc.', 'ℹ️'); return; }
+      if (authTokens.get() && travelCoords) {
+        hrmssApi.updateTechnicianLocation(travelCoords).catch(() => {});
+      }
       if (lateHint) ui.alert('Cảnh báo giờ hẹn', lateHint, '⏰');
       else ui.toast('Đã báo khách: đang di chuyển', '🛵');
     },
@@ -915,10 +1146,13 @@ export function AppProvider({ children }) {
     arrive: (code, checkIn = null) => {
       let lateInfo = null;
       let ok = false;
+      let targetOrder = null;
+      let checkInCoords = null;
       up((p) => {
         const o = p.orders.find((x) => x.code === code);
         if (!o || o.status !== 'onway') return {};
         ok = true;
+        targetOrder = o;
         const now = Date.now();
         const late = assessLateness(o, now);
         lateInfo = late;
@@ -962,7 +1196,13 @@ export function AppProvider({ children }) {
           accuracy: checkIn.accuracy || 15,
           label: checkIn.label || 'Đã xác thực vị trí GPS tại điểm hẹn',
           at: now,
-        } : { accuracy: 15, label: 'Đã xác thực vị trí GPS tại điểm hẹn', at: now };
+        } : { lat: 21.036778, lng: 105.782374, accuracy: 15, label: 'Đã xác thực vị trí GPS tại điểm hẹn', at: now };
+        checkInCoords = {
+          latitude: checkInPayload.lat || 21.036778,
+          longitude: checkInPayload.lng || 105.782374,
+          location_accuracy: checkInPayload.accuracy || 15,
+          location_sharing_enabled: true,
+        };
         const geoNote = ` (GPS ±${checkInPayload.accuracy || 15}m)`;
         const body = late.tier === 'ok'
           ? `Thợ đã check-in tại địa chỉ của bạn${geoNote}. Đang kiểm tra thiết bị.`
@@ -995,6 +1235,20 @@ export function AppProvider({ children }) {
         };
       });
       if (!ok) { ui.alert('Không check-in được', 'Chỉ check-in khi đang ở trạng thái “Đang đến”.', 'ℹ️'); return; }
+      if (authTokens.get()) {
+        if (checkInCoords) hrmssApi.updateTechnicianLocation(checkInCoords).catch(() => {});
+        if (targetOrder?.dbAssignmentId) {
+          hrmssApi.startTechnicianJob(targetOrder.dbAssignmentId).catch(() => {});
+        } else if (targetOrder?.dbRequestId) {
+          hrmssApi.acceptTechnicianOpenRequest(targetOrder.dbRequestId).then((res) => {
+            if (res.ok && res.data?.job?.assignment_id) {
+              const aid = res.data.job.assignment_id;
+              up((p) => ({ orders: p.orders.map((x) => (x.code === code ? { ...x, dbAssignmentId: aid } : x)) }));
+              hrmssApi.startTechnicianJob(aid).catch(() => {});
+            }
+          }).catch(() => {});
+        }
+      }
       if (lateInfo && lateInfo.tier !== 'ok') {
         ui.alert(
           `Check-in muộn · −${lateInfo.points} uy tín`,
@@ -1019,66 +1273,125 @@ export function AppProvider({ children }) {
       else ui.alert('Không cập nhật được', 'Chỉ xác nhận thanh toán khi đơn đã hoàn thành.', 'ℹ️');
     },
     dismissTip: (key) => up((p) => ({ tips: { ...(p.tips || {}), [key]: false } })),
-    // Lập chẩn đoán (triệu chứng / kết luận / đề xuất) và gửi báo giá cho khách
+    // Lập chẩn đoán / báo giá:
+    //  - Trước khi xuất phát (confirmed): gửi báo giá trên app, khách đồng ý thì thợ mới đi. Khách huỷ -> 0đ.
+    //  - Sau khi kiểm tra tại nhà (diagnosing): gửi báo giá hiện trường. Khách huỷ -> mất phí kiểm tra 100k.
     submitQuote: (code, { diagnosis, symptoms, recommendation, lines }) => {
       const now = Date.now();
       const qTotal = lines.reduce((sum, l) => sum + l.price * l.qty, 0);
       let ok = false;
+      let targetOrder = null;
+      let isPreVisitQuote = false;
       updateOrder(code, (o) => {
-        if (o.status !== 'diagnosing') return {};
+        if (o.status !== 'diagnosing' && o.status !== 'confirmed') return {};
         ok = true;
+        targetOrder = o;
+        const isPre = o.status === 'confirmed';
+        isPreVisitQuote = isPre;
         const booked = bookedValue(o);
-        const needsApproval = qTotal > booked;
         const quote = {
-          diagnosis,
+          diagnosis: diagnosis || (isPre ? 'Báo giá sơ bộ trước khi xuất phát' : 'Đã kiểm tra thiết bị tại nhà'),
           symptoms: symptoms || '',
           recommendation: recommendation || '',
           lines,
           total: qTotal,
           booked,
-          needsApproval,
+          needsApproval: true,
+          isPreVisit: isPre,
           at: now,
-          approved: !needsApproval,
+          approved: false,
         };
         const materials = lines.filter((l) => l.type === 'part').map((l) => ({ id: uid(), matId: l.matId, name: l.name, unit: l.unit, qty: l.qty, price: l.price }));
         const tempOrder = { ...o, quote };
         const partDisc = tierPartDiscountAmount(tempOrder);
-        if (needsApproval) {
-          return {
-            order: withStatus(o, 'quoted', now, { quote, materials }),
-            customer: {
-              icon: '🧾',
-              title: `Báo giá mới cho đơn ${code}`,
-              body: `Tổng ${formatVND(qTotal - partDisc)} (phát sinh ${formatVND(qTotal - booked)}). Vui lòng duyệt để thợ bắt đầu.`,
-            },
-          };
-        }
+
         return {
-          order: withStatus(o, 'repairing', now, { quote, materials, finalTotal: Math.max(0, qTotal - partDisc - (o.voucherDiscount || 0)) }),
-          customer: { icon: '🔧', title: `Thợ bắt đầu thực hiện · ${code}`, body: `Chẩn đoán: ${diagnosis || 'Đã kiểm tra'}. Không phát sinh chi phí.` },
+          order: withStatus(o, 'quoted', now, { quote, materials }),
+          customer: {
+            icon: '🧾',
+            title: isPre ? `Báo giá cho đơn ${code}` : `Báo giá kiểm tra tại nhà cho đơn ${code}`,
+            body: isPre
+              ? `Tổng ${formatVND(qTotal)}. Vui lòng đồng ý để thợ xuất phát đến nhà bạn.`
+              : `Tổng ${formatVND(qTotal - partDisc)}. Vui lòng duyệt để thợ bắt đầu thực hiện.`,
+          },
         };
       });
-      if (!ok) { ui.alert('Không gửi được', 'Chỉ gửi báo giá khi đang ở bước kiểm tra thiết bị.', 'ℹ️'); return; }
-      ui.toast(qTotal > 0 ? 'Đã gửi chẩn đoán & báo giá' : 'Đã gửi chẩn đoán', '🧾');
+      if (!ok) { ui.alert('Không gửi được', 'Chỉ gửi báo giá khi đã nhận việc hoặc đang kiểm tra thiết bị.', 'ℹ️'); return; }
+      if (authTokens.get() && targetOrder?.dbAssignmentId) {
+        const aid = targetOrder.dbAssignmentId;
+        const cleanFindings = (diagnosis && String(diagnosis).trim().length >= 5)
+          ? String(diagnosis).trim()
+          : (isPreVisitQuote ? 'Báo giá sơ bộ trước khi xuất phát' : 'Đã kiểm tra thực tế thiết bị tại nhà khách hàng');
+        (async () => {
+          try {
+            if (!isPreVisitQuote) {
+              await hrmssApi.startTechnicianJob(aid).catch(() => {});
+              await hrmssApi.submitDiagnosis(aid, {
+                symptoms: symptoms || null,
+                findings: cleanFindings,
+                repair_recommendation: recommendation || null,
+                needs_quotation: true,
+              }).catch(() => {});
+            }
+            if (Array.isArray(lines) && lines.length > 0) {
+              const quoteItems = lines.map((l) => {
+                if (l.type === 'part') {
+                  return {
+                    item_type: 'MATERIAL',
+                    material_id: resolveDbMaterialId(l.matId, l.name),
+                    description_snapshot: l.name || 'Linh kiện vật tư',
+                    quantity: Math.max(1, Number(l.qty) || 1),
+                    unit_price: Math.max(0, Number(l.price) || 0),
+                  };
+                }
+                return {
+                  item_type: 'SERVICE',
+                  description_snapshot: l.name || 'Dịch vụ sửa chữa & bảo dưỡng',
+                  quantity: Math.max(1, Number(l.qty) || 1),
+                  unit_price: Math.max(0, Number(l.price) || 0),
+                };
+              });
+              await hrmssApi.submitQuotation(aid, {
+                quotation_type: isPreVisitQuote ? 'INITIAL' : 'SUPPLEMENTAL',
+                items: quoteItems,
+              });
+            }
+          } catch (e) { /* bỏ qua */ }
+        })();
+      }
+      ui.toast('Đã gửi báo giá cho khách', '🧾');
     },
-    // Khách duyệt / yêu cầu sửa báo giá / từ chối & huỷ đơn
+    // Khách duyệt / yêu cầu sửa báo giá / từ chối & huỷ đơn (Ghi vào hrmss.quotation & service_request)
+    // - Nếu thợ chưa đến nhà: huỷ miễn phí 100%. Khách đồng ý thì thợ mới đi.
+    // - Chỉ khi thợ đã đến kiểm tra báo giá tại nhà mà khách huỷ thì mới thu phí kiểm tra (100.000đ).
     respondQuote: (code, decision, reason) => {
       const now = Date.now();
+      let targetOrder = null;
+      let appliedFee = 0;
       updateOrder(code, (o, p) => {
-        if (o.status !== 'quoted' || !o.quote) return {};
+        if (!o.quote) return {};
+        targetOrder = o;
+        const isOnSite = Boolean(o.arrivedAt || o.checkIn || o.history?.some((h) => h.status === 'diagnosing'));
         if (decision === true || decision === 'approve') {
           const partDisc = tierPartDiscountAmount(o);
+          const nextStatus = isOnSite ? 'repairing' : 'confirmed';
           return {
-            order: withStatus(o, 'repairing', now, {
+            order: withStatus(o, nextStatus, now, {
               quote: { ...o.quote, approved: true, revisionRequested: false, respondedAt: now },
               finalTotal: Math.max(0, o.quote.total - partDisc - (o.voucherDiscount || 0)),
             }),
-            tech: { icon: '✅', title: `Khách đã duyệt báo giá · ${code}`, body: `Tổng ${formatVND(o.quote.total - partDisc)}. Bắt đầu thực hiện.` },
+            tech: {
+              icon: '✅',
+              title: `Khách đã duyệt báo giá · ${code}`,
+              body: isOnSite
+                ? `Tổng ${formatVND(o.quote.total - partDisc)}. Bắt đầu thực hiện sửa chữa.`
+                : `Khách đã đồng ý báo giá ${formatVND(o.quote.total)}. Bạn có thể bắt đầu di chuyển đến nhà khách.`,
+            },
           };
         }
         if (decision === 'revise') {
           return {
-            order: withStatus(o, 'diagnosing', now, {
+            order: withStatus(o, isOnSite ? 'diagnosing' : 'confirmed', now, {
               quote: {
                 ...o.quote,
                 approved: false,
@@ -1094,21 +1407,47 @@ export function AppProvider({ children }) {
             },
           };
         }
+        // Khách từ chối báo giá & huỷ đơn:
+        // CHỈ KHI THỢ ĐẾN NHÀ KIỂM TRA MỚI MẤT TIỀN (100.000đ). Nếu thợ chưa đến nhà thì miễn phí!
+        const fee = isOnSite ? 100000 : 0;
+        appliedFee = fee;
         return {
           order: withStatus(o, 'cancelled', now, {
             quote: { ...o.quote, approved: false, revisionRequested: false, rejectReason: reason, respondedAt: now },
-            cancelReason: `Khách từ chối báo giá${reason ? `: ${reason}` : ''}`,
+            cancelReason: `Khách từ chối báo giá${reason ? `: ${reason}` : ''}${fee ? ' (áp dụng phí kiểm tra tại nhà 100.000đ)' : ' (miễn phí)'}`,
+            inspectionFee: fee,
+            total: fee,
           }),
-          tech: { icon: '❌', title: `Khách từ chối báo giá · ${code}`, body: reason || 'Đơn đã kết thúc, không thu phí.' },
+          tech: {
+            icon: '❌',
+            title: `Khách từ chối báo giá · ${code}`,
+            body: fee
+              ? `Khách từ chối sau khi thợ đã đến kiểm tra. Thu phí kiểm tra tại nhà ${formatVND(fee)}.`
+              : 'Khách từ chối báo giá trước khi xuất phát. Đơn đã huỷ, không thu phí.',
+          },
+          customer: {
+            icon: '❌',
+            title: `Đã từ chối báo giá & huỷ đơn · ${code}`,
+            body: fee
+              ? `Thợ đã đến tận nhà kiểm tra thiết bị theo yêu cầu. Phí kiểm tra tại nhà: ${formatVND(fee)}.`
+              : 'Đã huỷ đơn thành công. Thợ chưa xuất phát nên bạn được miễn phí 100%.',
+          },
           extra: { myVouchers: o.voucher?.wallet ? [o.voucher, ...p.myVouchers] : p.myVouchers },
           customerProfilePatch: (prof) => ({
             myVouchers: o.voucher?.wallet ? [o.voucher, ...(prof.myVouchers || [])] : (prof.myVouchers || []),
           }),
         };
       });
+      if (authTokens.get() && targetOrder?.dbRequestId && decision !== 'revise') {
+        const isApprove = decision === true || decision === 'approve';
+        hrmssApi.decideQuotation(targetOrder.dbRequestId, {
+          decision: isApprove ? 'APPROVED' : 'REJECTED',
+          rejection_reason: reason || null,
+        }).catch(() => {});
+      }
       if (decision === true || decision === 'approve') ui.toast('Đã duyệt báo giá', '✅');
       else if (decision === 'revise') ui.toast('Đã gửi yêu cầu báo giá lại cho thợ', '🔄');
-      else ui.toast('Đã từ chối báo giá & huỷ đơn', '✖️');
+      else ui.toast(appliedFee > 0 ? 'Đã từ chối (thu phí kiểm tra 100k)' : 'Đã huỷ đơn (miễn phí)', '✖️');
     },
     // Thợ quét / xác thực mã QR của khách hàng tại nhà
     verifyCustomerQR: (code, scannedInput = 'AUTO_SCAN') => {
@@ -1169,10 +1508,21 @@ export function AppProvider({ children }) {
       order: { ...o, materials: (o.materials || []).map((m) => (m.id === id ? { ...m, qty: Math.max(1, qty) } : m)) },
     })),
     addMaterial: (code, mat) => {
-      updateOrder(code, (o) => ({
-        order: { ...o, materials: [...(o.materials || []), { id: uid(), matId: mat.id, name: mat.name, unit: mat.unit, qty: 1, price: mat.price }] },
-        customer: { icon: '🔩', title: `Thợ ghi nhận vật tư · ${code}`, body: `${mat.name} · xem chi tiết đơn để theo dõi.` },
-      }));
+      let targetOrder = null;
+      updateOrder(code, (o) => {
+        targetOrder = o;
+        return {
+          order: { ...o, materials: [...(o.materials || []), { id: uid(), matId: mat.id, name: mat.name, unit: mat.unit, qty: 1, price: mat.price }] },
+          customer: { icon: '🔩', title: `Thợ ghi nhận vật tư · ${code}`, body: `${mat.name} · xem chi tiết đơn để theo dõi.` },
+        };
+      });
+      if (authTokens.get() && targetOrder?.dbAssignmentId) {
+        hrmssApi.recordMaterialUsage(targetOrder.dbAssignmentId, {
+          material_id: resolveDbMaterialId(mat.dbId || mat.id, mat.name),
+          used_quantity: 1,
+          notes: `${mat.name} (${formatVND(mat.price)})`,
+        }).catch(() => {});
+      }
       ui.toast('Đã thêm vật tư', '🔩');
     },
     removeMaterial: (code, id) => updateOrder(code, (o) => ({ order: { ...o, materials: (o.materials || []).filter((m) => m.id !== id) } })),
@@ -1294,7 +1644,7 @@ export function AppProvider({ children }) {
       if (res.ok) ui.toast('Đã đặt lại mật khẩu. Hãy đăng nhập lại.', '🔐');
       return res;
     },
-    // Biên bản hoàn thành → đơn hoàn tất, cộng điểm cho khách, cập nhật lịch bảo dưỡng đúng thiết bị
+    // Biên bản hoàn thành → đơn hoàn tất, cộng điểm cho khách, cập nhật lịch bảo dưỡng đúng thiết bị (Ghi vào hrmss.repair_visit, technician_assignment, service_request)
     completeJob: (code, { summary, paid, safetyChecklist }) => {
       const now = Date.now();
       const o0 = s.orders.find((x) => x.code === code);
@@ -1347,6 +1697,20 @@ export function AppProvider({ children }) {
           }),
         };
       });
+      if (authTokens.get() && o0.dbAssignmentId) {
+        const cleanSummary = (summary && String(summary).trim().length >= 5)
+          ? String(summary).trim()
+          : 'Đã hoàn thành sửa chữa & bảo dưỡng thiết bị theo quy trình chuẩn HRMSS.';
+        hrmssApi.completeTechnicianJob(o0.dbAssignmentId, {
+          work_performed: cleanSummary,
+          testing_result: Array.isArray(safetyChecklist) && safetyChecklist.length > 0
+            ? safetyChecklist.join('; ')
+            : 'Đã vận hành chạy thử thiết bị ổn định (≥15 phút)',
+          handover_result: paid
+            ? 'Đã thu tiền dịch vụ, bàn giao thiết bị và kích hoạt bảo hành điện tử'
+            : 'Đã bàn giao thiết bị cho khách hàng và kích hoạt bảo hành điện tử',
+        }).catch(() => {});
+      }
       ui.toast(`Đã hoàn thành · +${onTimeBonus} uy tín`, '🎉');
     },
     setTechOnline: (v) => {
@@ -1374,6 +1738,7 @@ export function AppProvider({ children }) {
       }));
       setStack(link ? [{ name: link.name, params: link.params || {}, key: uid() }] : []);
       setTab(account.role === 'tech' ? 'tech-jobs' : 'home');
+      syncFromBackend(account);
     },
     login: async (payload) => {
       let backendAccount = null;
@@ -1388,13 +1753,27 @@ export function AppProvider({ children }) {
           backendAccount = {
             id: `be-${beRes.data.user_id || beRes.data.account?.user_id}`,
             role: isTech ? 'tech' : 'customer',
-            name: beRes.data.account?.username || (isTech ? 'Kỹ thuật viên HRMSS' : 'Khách hàng HRMSS'),
-            phone: payload.identifier?.replace(/\D/g, '') || '',
+            name: beRes.data.account?.username || '',
+            phone: '',
             email: beRes.data.account?.email || '',
-            backendToken: beRes.data.access_token,
-            permissions: beRes.data.permissions || [],
           };
-          setSession(backendAccount.id);
+          try {
+            const [meRes, verRes] = await Promise.all([
+              hrmssApi.getMe(),
+              hrmssApi.getEmailVerificationStatus(),
+            ]);
+            if (meRes.ok && meRes.data) {
+              backendAccount.name = meRes.data.profile?.full_name || meRes.data.account?.username || backendAccount.name;
+              backendAccount.phone = meRes.data.profile?.phone || '';
+              backendAccount.email = meRes.data.account?.email || backendAccount.email;
+            }
+            if (verRes.ok && verRes.data) {
+              backendAccount.emailVerified = Boolean(verRes.data.email_verified);
+            }
+          } catch (meErr) {}
+          backendAccount.username = beRes.data.account?.username || '';
+          if (isTech) backendAccount.techCode = TECH_ME.code;
+          backendAccount = upsertBackendAccount(backendAccount);
         } else if (beRes.status === 400 || beRes.status === 401) {
           return { ok: false, error: beRes.message || 'Tài khoản hoặc mật khẩu không chính xác.' };
         }
@@ -1418,31 +1797,72 @@ export function AppProvider({ children }) {
       }));
       setStack([]);
       setTab(res.account.role === 'tech' ? 'tech-jobs' : 'home');
+      await syncFromBackend(res.account);
       ui.toast(res.account.role === 'tech' ? 'Đăng nhập app Thợ thành công' : 'Đăng nhập thành công', '👋');
       return res;
     },
     register: async (payload) => {
-      let backendError = null;
-      try {
-        const beRes = await hrmssApi.register({
-          username: payload.username || (payload.email ? payload.email.split('@')[0] : `user_${Date.now().toString(36)}`),
-          email: payload.email,
-          password: payload.password,
-          confirm_password: payload.password,
-          full_name: payload.name,
-          address: 'Việt Nam',
-          phone: payload.phone || ('09' + String(Math.floor(10000000 + Math.random() * 90000000))),
-        });
-        if (!beRes.ok && beRes.message) {
-          backendError = beRes.message;
-        }
-      } catch (e) {
-        // Fallback
+      const cleanName = String(payload.name || '').trim();
+      const cleanEmail = String(payload.email || '').trim().toLowerCase();
+      const cleanUsername = String(payload.username || '').trim().toLowerCase().replace(/\s+/g, '');
+      const cleanPhone = String(payload.phone || '').replace(/\D/g, '');
+      const cleanAddress = String(payload.address || '').trim();
+      const pw = String(payload.password || '');
+
+      if (cleanName.length < 2) {
+        return { ok: false, error: 'Vui lòng nhập họ và tên (tối thiểu 2 ký tự).' };
+      }
+      if (!cleanUsername) {
+        return { ok: false, error: 'Vui lòng nhập Tên đăng nhập (Username).' };
+      }
+      if (!cleanEmail || !cleanEmail.includes('@')) {
+        return { ok: false, error: 'Vui lòng nhập địa chỉ Email hợp lệ.' };
+      }
+      if (pw.length < 8) {
+        return { ok: false, error: 'Mật khẩu phải có từ 8 đến 64 ký tự (theo chuẩn bảo mật máy chủ).' };
       }
 
-      const res = registerAccount(payload);
+      let backendAccount = null;
+      try {
+        const beRes = await hrmssApi.register({
+          username: cleanUsername,
+          email: cleanEmail,
+          password: pw,
+          confirm_password: pw,
+          full_name: cleanName,
+          ...(cleanAddress ? { address: cleanAddress } : {}),
+          ...(cleanPhone ? { phone: cleanPhone } : {}),
+        });
+        if (!beRes.ok) {
+          if (beRes.status > 0) {
+            return { ok: false, error: beRes.message || 'Không thể tạo tài khoản trên máy chủ.' };
+          }
+        } else {
+          const createdUser = beRes.data?.account;
+          const loginRes = await hrmssApi.login({ identifier: cleanUsername, password: pw });
+          const userId = loginRes.data?.user_id || createdUser?.user_id || Date.now();
+          const roleCode = String(loginRes.data?.role || createdUser?.role?.role_code || 'CUSTOMER').toUpperCase();
+          const isTech = roleCode === 'TECHNICIAN' || roleCode === 'TECH' || payload.role === 'tech';
+          backendAccount = upsertBackendAccount({
+            id: `be-${userId}`,
+            role: isTech ? 'tech' : 'customer',
+            username: cleanUsername,
+            name: cleanName,
+            phone: cleanPhone,
+            email: cleanEmail,
+            emailVerified: false,
+            ...(isTech ? { techCode: TECH_ME.code } : {}),
+          });
+        }
+      } catch (e) {
+        // Fallback nếu hoàn toàn mất mạng
+      }
+
+      const res = backendAccount
+        ? { ok: true, account: backendAccount }
+        : registerAccount({ ...payload, username: cleanUsername, phone: cleanPhone });
       if (!res.ok) {
-        return { ok: false, error: backendError || res.error };
+        return { ok: false, error: res.error };
       }
       up((p) => ({
         ...switchCustomerSlice(p, res.account),
@@ -1458,14 +1878,46 @@ export function AppProvider({ children }) {
       }));
       setStack([]);
       setTab(res.account.role === 'tech' ? 'tech-jobs' : 'home');
+      await syncFromBackend(res.account);
       ui.toast(res.account.role === 'tech' ? 'Tạo tài khoản Thợ thành công' : 'Tạo tài khoản thành công', '🎉');
       return res;
     },
-    // Đăng nhập nhanh 1 chạm theo vai trò (Khách hàng / Kỹ thuật viên)
-    quickLogin: (role, link) => {
-      const res = quickLoginRole(role);
-      if (!res?.ok) return res;
-      const acc = res.account;
+    quickLogin: async (role, link) => {
+      const demoId = role === 'tech' ? 'tech01' : 'customer01';
+      let acc = null;
+      try {
+        const beRes = await hrmssApi.login({ identifier: demoId, password: 'MatKhauManh@123' });
+        if (beRes.ok && beRes.data) {
+          const isTech = role === 'tech';
+          let name = isTech ? 'Hoàng Văn Thọ' : 'Bùi Trung Hiếu';
+          let phone = isTech ? '0945678901' : '0978901234';
+          let email = beRes.data.account?.email || '';
+          try {
+            const meRes = await hrmssApi.getMe();
+            if (meRes.ok && meRes.data) {
+              name = meRes.data.profile?.full_name || name;
+              phone = meRes.data.profile?.phone || phone;
+              email = meRes.data.account?.email || email;
+            }
+          } catch (meErr) {}
+          acc = upsertBackendAccount({
+            id: `be-${beRes.data.user_id || beRes.data.account?.user_id}`,
+            role: isTech ? 'tech' : 'customer',
+            username: demoId,
+            name,
+            phone,
+            email,
+            emailVerified: true,
+            ...(isTech ? { techCode: TECH_ME.code } : {}),
+          });
+        }
+      } catch (e) {}
+
+      if (!acc) {
+        const res = quickLoginRole(role);
+        if (!res?.ok) return res;
+        acc = res.account;
+      }
       up((p) => ({
         ...switchCustomerSlice(p, acc),
         auth: acc,
@@ -1479,8 +1931,77 @@ export function AppProvider({ children }) {
       }));
       setStack(link ? [{ name: link.name, params: link.params || {}, key: uid() }] : []);
       setTab(acc.role === 'tech' ? 'tech-jobs' : 'home');
+      await syncFromBackend(acc);
       ui.toast(acc.role === 'tech' ? `Đã vào chế độ Thợ (${acc.name})` : `Đã vào chế độ Khách (${acc.name})`, acc.role === 'tech' ? '👷' : '🏠');
-      return res;
+      return { ok: true, account: acc };
+    },
+    sendEmailOtp: async () => {
+      const targetEmail = s.user?.email || s.auth?.email || '';
+      if (!targetEmail) {
+        return { ok: false, error: 'Tài khoản chưa có địa chỉ Email. Vui lòng cập nhật Email trong Thông tin cá nhân.' };
+      }
+      if (authTokens.get()) {
+        const res = await hrmssApi.sendEmailVerificationOtp();
+        if (res.ok && res.data) {
+          if (res.data.email_verified) {
+            up((p) => ({
+              auth: p.auth ? upsertBackendAccount({ ...p.auth, emailVerified: true }) : p.auth,
+            }));
+            ui.toast('Email của bạn đã được xác thực!', '✅');
+            return { ok: true, alreadyVerified: true };
+          }
+          const code = res.data.otp_code;
+          up((p) => ({
+            notifications: pushNotif(p, {
+              icon: '📧',
+              title: `Mã OTP xác thực Email: ${code}`,
+              body: `Mã xác thực cho ${res.data.email || targetEmail} là ${code} (hiệu lực 5 phút).`,
+            }),
+          }));
+          ui.toast(`Đã gửi OTP tới ${res.data.email || targetEmail} (Mã: ${code})`, '📧');
+          return { ok: true, otpCode: code, email: res.data.email || targetEmail };
+        }
+        return { ok: false, error: res.message || 'Không thể gửi mã OTP. Vui lòng thử lại.' };
+      }
+      const localOtp = String(Math.floor(100000 + Math.random() * 900000));
+      up((p) => ({
+        pendingEmailOtp: localOtp,
+        notifications: pushNotif(p, {
+          icon: '📧',
+          title: `Mã OTP xác thực Email: ${localOtp}`,
+          body: `Mã xác thực cho ${targetEmail} là ${localOtp} (hiệu lực 5 phút).`,
+        }),
+      }));
+      ui.toast(`Đã gửi OTP tới ${targetEmail} (Mã: ${localOtp})`, '📧');
+      return { ok: true, otpCode: localOtp, email: targetEmail };
+    },
+    verifyEmailOtp: async (otpInput) => {
+      const cleanOtp = String(otpInput || '').replace(/\D/g, '').trim();
+      if (cleanOtp.length !== 6) {
+        return { ok: false, error: 'Vui lòng nhập đủ 6 chữ số của mã xác thực OTP.' };
+      }
+      if (authTokens.get()) {
+        const res = await hrmssApi.verifyEmailOtp(cleanOtp);
+        if (!res.ok) {
+          return { ok: false, error: res.message || 'Mã xác thực OTP không chính xác.' };
+        }
+      } else if (s.pendingEmailOtp && cleanOtp !== s.pendingEmailOtp) {
+        return { ok: false, error: 'Mã xác thực OTP không chính xác.' };
+      }
+      up((p) => {
+        const nextAuth = p.auth ? upsertBackendAccount({ ...p.auth, emailVerified: true }) : p.auth;
+        return {
+          ...(nextAuth ? { auth: nextAuth } : {}),
+          pendingEmailOtp: null,
+          notifications: pushNotif(p, {
+            icon: '✅',
+            title: 'Đã xác thực Email thành công',
+            body: `Địa chỉ ${p.user?.email || p.auth?.email || ''} đã được xác thực. Bạn có thể đặt lịch dịch vụ ngay!`,
+          }),
+        };
+      });
+      ui.toast('Xác thực Email thành công!', '✅');
+      return { ok: true };
     },
     // Chuyển màn hình theo phân quyền tài khoản đang đăng nhập
     setRole: (role, link) => {
@@ -1520,6 +2041,9 @@ export function AppProvider({ children }) {
           techNotifs: pushTech(p, { icon: '✖️', title: `Khách đã huỷ đơn ${code}`, body: reason || '', link: { name: 'tech-job', params: { code } } }),
         };
       });
+      if (authTokens.get() && cur.dbRequestId) {
+        hrmssApi.cancelCustomerRequest(cur.dbRequestId, reason || 'Khách hàng hủy đơn qua ứng dụng').catch(() => {});
+      }
       ui.toast('Đã huỷ đơn hàng');
     },
     rateOrder: (code, stars, text) => {
@@ -1550,6 +2074,15 @@ export function AppProvider({ children }) {
           techNotifs: pushTech(p, { icon: '⭐', title: `Khách đánh giá ${stars}★ · ${code}`, body: text || 'Không có nhận xét.', link: { name: 'tech-job', params: { code } } }),
         };
       });
+      if (authTokens.get() && o.dbRequestId) {
+        hrmssApi.reviewCustomerRequest(o.dbRequestId, {
+          rating: stars,
+          review_text: text || 'Hài lòng với dịch vụ kỹ thuật viên HRMSS.',
+          punctuality_rating: stars,
+          attitude_rating: stars,
+          expertise_rating: stars,
+        }).catch(() => {});
+      }
       ui.toast('Cảm ơn bạn! +20 điểm', '⭐');
     },
     requestWarranty: (code, note) => {
@@ -1624,6 +2157,7 @@ export function AppProvider({ children }) {
     clearSearches: () => up(() => ({ searches: [] })),
 
     logout: () => {
+      hrmssApi.logout();
       clearSession();
       up((p) => ({ ...switchCustomerSlice(p, null), auth: null, role: 'customer', techProfile: null }));
       setStack([]);
@@ -1631,6 +2165,7 @@ export function AppProvider({ children }) {
       ui.toast('Đã đăng xuất');
     },
     wipeLocalData: () => {
+      hrmssApi.logout();
       clearSession();
       storage.clear();
       setS({ ...makeInitial(), auth: null });
@@ -1644,8 +2179,9 @@ export function AppProvider({ children }) {
   const techRep = normalizeTechRep(s.techProfile || {});
   const techLocked = isTechLocked(s.techProfile);
   const custPhone = s.auth?.role === 'customer' ? s.auth.phone : null;
-  const visibleCustomerOrders = custPhone
-    ? s.orders.filter((o) => isOrderOfCustomer(o, custPhone))
+  const custAccId = s.auth?.role === 'customer' ? s.auth.id : null;
+  const visibleCustomerOrders = s.auth?.role === 'customer'
+    ? s.orders.filter((o) => isOrderOfCustomer(o, custPhone, custAccId))
     : s.orders;
   const viewS = s.auth?.role === 'customer' ? { ...s, orders: visibleCustomerOrders } : s;
   const meTech = s.techProfile || TECH_ME;

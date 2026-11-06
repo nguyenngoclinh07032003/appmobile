@@ -361,6 +361,12 @@ export function CheckoutScreen({ params }) {
   const [showVoucher, setShowVoucher] = useState(false);
   const [voucherInput, setVoucherInput] = useState('');
   const [voucher, setVoucher] = useState(null);
+  const [showEmailOtp, setShowEmailOtp] = useState(false);
+  const [emailOtpInput, setEmailOtpInput] = useState('');
+  const [emailOtpErr, setEmailOtpErr] = useState('');
+  const [sentOtpHint, setSentOtpHint] = useState('');
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
   const [dayIdx, setDayIdx] = useState(1);
   const [slot, setSlot] = useState('14h00 - 16h00');
   const days = nextDays(7);
@@ -425,7 +431,48 @@ export function CheckoutScreen({ params }) {
     u.toast(`Đã áp dụng ${v.code}`, '🎟️');
   };
 
+  const handleSendEmailOtp = async () => {
+    setOtpSending(true);
+    setEmailOtpErr('');
+    try {
+      const res = await a.sendEmailOtp();
+      if (res.ok) {
+        if (res.alreadyVerified) {
+          setShowEmailOtp(false);
+        } else if (res.otpCode) {
+          setSentOtpHint(res.otpCode);
+        }
+      } else {
+        setEmailOtpErr(res.error || 'Không thể gửi mã OTP.');
+      }
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
+  const handleVerifyEmailOtp = async () => {
+    setOtpVerifying(true);
+    setEmailOtpErr('');
+    try {
+      const res = await a.verifyEmailOtp(emailOtpInput);
+      if (res.ok) {
+        setShowEmailOtp(false);
+        setEmailOtpInput('');
+        setSentOtpHint('');
+      } else {
+        setEmailOtpErr(res.error || 'Mã OTP không chính xác.');
+      }
+    } finally {
+      setOtpVerifying(false);
+    }
+  };
+
   const confirm = () => {
+    if (s.auth?.role === 'customer' && !s.auth.emailVerified) {
+      setShowEmailOtp(true);
+      if (!sentOtpHint) handleSendEmailOtp();
+      return;
+    }
     if (!d.address) {
       u.dialog({
         icon: '📍', title: 'Chưa có địa chỉ', message: 'Thêm địa chỉ để thợ biết nơi đến phục vụ bạn.',
@@ -450,7 +497,7 @@ export function CheckoutScreen({ params }) {
       dateLabel: `${days[dayIdx].label} (${days[dayIdx].ddmm})`, dateKey: days[dayIdx].key, slot, payment, note, workerCode: workerCode.trim(),
       attachments, fromCart: !!params.fromCart,
     });
-    nav.replace('success', { code });
+    if (code) nav.replace('success', { code });
   };
 
   if (!lines.length) {
@@ -466,6 +513,43 @@ export function CheckoutScreen({ params }) {
     <View style={{ flex: 1 }}>
       <TopBar title="Xác nhận đặt lịch" />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+        {/* Cảnh báo xác thực Email chống đơn ảo */}
+        {s.auth?.role === 'customer' && !s.auth.emailVerified ? (
+          <Card
+            style={{
+              marginBottom: 14,
+              borderColor: '#F59E0B',
+              borderWidth: 1.5,
+              backgroundColor: '#FFFBEB',
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+            }}
+            onPress={() => {
+              setShowEmailOtp(true);
+              if (!sentOtpHint) handleSendEmailOtp();
+            }}
+          >
+            <IconBox icon="📧" size={42} bg="#FEF3C7" radius={13} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontWeight: '800', color: '#92400E', fontSize: 14 }}>
+                Bắt buộc xác thực Email trước khi đặt lịch
+              </Text>
+              <Text style={{ color: '#B45309', fontSize: 12.5, marginTop: 2, lineHeight: 18 }}>
+                Email <Text style={{ fontWeight: '800' }}>{s.user?.email || s.auth?.email}</Text> chưa xác thực OTP 6 chữ số.
+              </Text>
+            </View>
+            <Badge text="Xác thực ›" fg="#fff" bg="#D97706" />
+          </Card>
+        ) : (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10, paddingHorizontal: 4 }}>
+            <Text style={{ fontSize: 13 }}>✅</Text>
+            <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.green }}>
+              Email đặt lịch đã xác thực ({s.user?.email || s.auth?.email})
+            </Text>
+          </View>
+        )}
+
         {/* Địa chỉ */}
         {d.address ? (
           <Card style={{ flexDirection: 'row', gap: 12 }} onPress={() => nav.push('addresses', { select: true })}>
@@ -649,8 +733,65 @@ export function CheckoutScreen({ params }) {
           <Text style={{ color: C.muted, fontWeight: '600', flex: 1 }} numberOfLines={1}>📅 {days[dayIdx].label} · {slot}</Text>
           <Text style={[bx.price, { fontSize: 20 }]}>{formatVND(total)}</Text>
         </View>
-        <Btn title="Xác nhận đặt lịch" onPress={confirm} />
+        <Btn
+          title={s.auth?.role === 'customer' && !s.auth.emailVerified ? '📧 Xác thực Email để đặt lịch' : 'Xác nhận đặt lịch'}
+          onPress={confirm}
+        />
       </View>
+
+      <Sheet
+        visible={showEmailOtp}
+        onClose={() => setShowEmailOtp(false)}
+        title="📧 Xác thực Email đặt dịch vụ"
+        footer={(
+          <Btn
+            title={otpVerifying ? 'Đang kiểm tra...' : 'Xác nhận mã OTP'}
+            disabled={otpVerifying}
+            onPress={handleVerifyEmailOtp}
+          />
+        )}
+      >
+        <Text style={{ color: C.ink2, lineHeight: 20, marginBottom: 12 }}>
+          Để ngăn chặn đơn hàng ảo và gửi hóa đơn/phiếu bảo hành điện tử chính xác, vui lòng nhập mã OTP 6 chữ số gửi tới địa chỉ Email:{' '}
+          <Text style={{ fontWeight: '800', color: C.ink }}>{s.user?.email || s.auth?.email}</Text>
+        </Text>
+        {sentOtpHint ? (
+          <Tap
+            onPress={() => setEmailOtpInput(sentOtpHint)}
+            style={{
+              padding: 12,
+              borderRadius: R.md,
+              backgroundColor: C.greenSoft,
+              borderWidth: 1,
+              borderColor: '#86EFAC',
+              marginBottom: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 12, color: C.green, fontWeight: '700' }}>Mã OTP xác thực vừa gửi (hiệu lực 5 phút):</Text>
+              <Text style={{ fontSize: 20, fontWeight: '900', color: C.ink, letterSpacing: 3, marginTop: 2 }}>{sentOtpHint}</Text>
+            </View>
+            <Badge text="Chạm để điền" fg="#fff" bg={C.green} />
+          </Tap>
+        ) : null}
+        <Field
+          label="Mã xác thực OTP (6 chữ số)"
+          value={emailOtpInput}
+          onChangeText={(t) => { setEmailOtpInput(t.replace(/\D/g, '').slice(0, 6)); setEmailOtpErr(''); }}
+          keyboardType="number-pad"
+          placeholder="Nhập 6 chữ số (VD: 123456)"
+          error={emailOtpErr}
+        />
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+          <Text style={ui.meta}>Mã có hiệu lực trong 5 phút</Text>
+          <Tap onPress={handleSendEmailOtp} disabled={otpSending}>
+            <Text style={ui.link}>{otpSending ? 'Đang gửi...' : '🔄 Gửi lại mã OTP'}</Text>
+          </Tap>
+        </View>
+      </Sheet>
 
       <Sheet visible={showPay} onClose={() => setShowPay(false)} title="Phương thức thanh toán">
         {PAYMENTS.map((p) => (

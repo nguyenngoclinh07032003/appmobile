@@ -2,11 +2,11 @@
 // Hỗ trợ kết nối đa cổng: 5173, 5174 và Cloud https://server.hrmss.cyou/api/v1
 import { API_BASE_URL, API_ENDPOINTS, APP_CONFIG } from './config';
 
-// Quản lý Token trên môi trường Web / LocalStorage
+// Quản lý Token trong sessionStorage (cô lập theo từng tab & tự động xoá khi đóng trình duyệt, chống rò rỉ localStorage)
 const getStoredToken = () => {
   try {
-    if (typeof localStorage !== 'undefined') {
-      return localStorage.getItem(APP_CONFIG.tokenStorageKey);
+    if (typeof sessionStorage !== 'undefined') {
+      return sessionStorage.getItem(APP_CONFIG.tokenStorageKey);
     }
   } catch (e) {
     // Bỏ qua lỗi storage
@@ -17,10 +17,15 @@ const getStoredToken = () => {
 const setStoredToken = (token) => {
   try {
     if (typeof localStorage !== 'undefined') {
+      // Dọn sạch token cũ nếu từng lưu trong localStorage
+      localStorage.removeItem(APP_CONFIG.tokenStorageKey);
+      localStorage.removeItem(APP_CONFIG.refreshTokenStorageKey);
+    }
+    if (typeof sessionStorage !== 'undefined') {
       if (token) {
-        localStorage.setItem(APP_CONFIG.tokenStorageKey, token);
+        sessionStorage.setItem(APP_CONFIG.tokenStorageKey, token);
       } else {
-        localStorage.removeItem(APP_CONFIG.tokenStorageKey);
+        sessionStorage.removeItem(APP_CONFIG.tokenStorageKey);
       }
     }
   } catch (e) {
@@ -199,9 +204,29 @@ export const hrmssApi = {
         password,
         confirm_password: confirm_password || password,
         full_name,
-        address: address || 'Chưa cập nhật',
-        phone,
+        ...(address ? { address } : {}),
+        ...(phone ? { phone } : {}),
       },
+      targetPort,
+    });
+  },
+
+  // 3b. Xác thực địa chỉ Email bằng mã OTP 6 chữ số (bắt buộc trước khi đặt dịch vụ)
+  async getEmailVerificationStatus(targetPort = null) {
+    return apiRequest('/auth/email-verification/status', { targetPort });
+  },
+
+  async sendEmailVerificationOtp(targetPort = null) {
+    return apiRequest('/auth/email-verification/send', {
+      method: 'POST',
+      targetPort,
+    });
+  },
+
+  async verifyEmailOtp(otp, targetPort = null) {
+    return apiRequest('/auth/email-verification/verify', {
+      method: 'POST',
+      body: { otp: String(otp || '').trim() },
       targetPort,
     });
   },
@@ -218,7 +243,7 @@ export const hrmssApi = {
 
   // 6. Cập nhật hồ sơ user
   async updateProfile(profileData, targetPort = null) {
-    return apiRequest('/users/me', {
+    return apiRequest('/auth/me/profile', {
       method: 'PATCH',
       body: { profile: profileData },
       targetPort,
@@ -227,7 +252,7 @@ export const hrmssApi = {
 
   // 7. Lấy danh mục dịch vụ thực tế từ backend
   async getServices(targetPort = null) {
-    const res = await apiRequest('/services', { targetPort });
+    const res = await apiRequest('/services?limit=100', { targetPort });
     if (res.ok && res.data?.items) {
       return { ok: true, items: res.data.items };
     }
@@ -239,7 +264,133 @@ export const hrmssApi = {
     return apiRequest(`/services/${id}`, { targetPort });
   },
 
-  // 9. Đăng xuất
+  // 9. Nghiệp vụ Khách hàng (Customer Requests & Addresses)
+  async getCustomerAddresses(targetPort = null) {
+    return apiRequest('/customer/addresses', { targetPort });
+  },
+  async createCustomerAddress(payload, targetPort = null) {
+    return apiRequest('/customer/addresses', { method: 'POST', body: payload, targetPort });
+  },
+  async getCustomerRequests(status = 'ALL', targetPort = null) {
+    return apiRequest(`/customer/requests?status=${encodeURIComponent(status)}&limit=50`, { targetPort });
+  },
+  async getCustomerRequestDetail(id, targetPort = null) {
+    return apiRequest(`/customer/requests/${id}`, { targetPort });
+  },
+  async createCustomerRequest(payload, targetPort = null) {
+    return apiRequest('/customer/requests', { method: 'POST', body: payload, targetPort });
+  },
+  async cancelCustomerRequest(id, reason, targetPort = null) {
+    return apiRequest(`/customer/requests/${id}/cancel`, {
+      method: 'PATCH',
+      body: { reason: reason || 'Khách hàng hủy đơn qua ứng dụng' },
+      targetPort,
+    });
+  },
+  async decideQuotation(id, { decision, rejection_reason }, targetPort = null) {
+    return apiRequest(`/customer/requests/${id}/quotation-decision`, {
+      method: 'POST',
+      body: {
+        decision: decision === 'APPROVED' || decision === true || decision === 'approve' ? 'APPROVED' : 'REJECTED',
+        ...(rejection_reason ? { rejection_reason } : {}),
+      },
+      targetPort,
+    });
+  },
+  async reviewCustomerRequest(id, { rating, review_text, punctuality_rating, attitude_rating, expertise_rating }, targetPort = null) {
+    return apiRequest(`/customer/requests/${id}/review`, {
+      method: 'POST',
+      body: {
+        rating: Number(rating) || 5,
+        review_text: review_text || null,
+        punctuality_rating: Number(punctuality_rating || rating) || 5,
+        attitude_rating: Number(attitude_rating || rating) || 5,
+        expertise_rating: Number(expertise_rating || rating) || 5,
+      },
+      targetPort,
+    });
+  },
+
+  // 10. Nghiệp vụ Kỹ thuật viên (Technician Jobs & Field Operations)
+  async getTechnicianJobs(status = 'ALL', targetPort = null) {
+    return apiRequest(`/technician/jobs?status=${encodeURIComponent(status)}&limit=50`, { targetPort });
+  },
+  async getTechnicianOpenRequests(targetPort = null) {
+    return apiRequest('/technician/jobs/open-requests', { targetPort });
+  },
+  async acceptTechnicianOpenRequest(requestId, targetPort = null) {
+    return apiRequest(`/technician/jobs/open-requests/${requestId}/accept`, {
+      method: 'POST',
+      targetPort,
+    });
+  },
+  async getTechnicianJobDetail(id, targetPort = null) {
+    return apiRequest(`/technician/jobs/${id}`, { targetPort });
+  },
+  async getTechnicianMaterials(targetPort = null) {
+    return apiRequest('/technician/jobs/materials', { targetPort });
+  },
+  async updateTechnicianLocation({ latitude, longitude, location_accuracy = 10, location_sharing_enabled = true }, targetPort = null) {
+    return apiRequest('/technician/jobs/location', {
+      method: 'PUT',
+      body: {
+        latitude: Number(latitude),
+        longitude: Number(longitude),
+        location_accuracy: Number(location_accuracy),
+        location_sharing_enabled: Boolean(location_sharing_enabled),
+      },
+      targetPort,
+    });
+  },
+  async startTechnicianJob(id, targetPort = null) {
+    return apiRequest(`/technician/jobs/${id}/start`, { method: 'PATCH', targetPort });
+  },
+  async submitDiagnosis(id, payload, targetPort = null) {
+    return apiRequest(`/technician/jobs/${id}/diagnosis`, {
+      method: 'POST',
+      body: {
+        symptoms: payload.symptoms || null,
+        findings: payload.findings || 'Đã kiểm tra thiết bị tại hiện trường',
+        repair_recommendation: payload.repair_recommendation || null,
+        needs_quotation: Boolean(payload.needs_quotation),
+      },
+      targetPort,
+    });
+  },
+  async submitQuotation(id, payload, targetPort = null) {
+    return apiRequest(`/technician/jobs/${id}/quotation`, {
+      method: 'POST',
+      body: {
+        quotation_type: payload.quotation_type || 'INITIAL',
+        items: payload.items || [],
+      },
+      targetPort,
+    });
+  },
+  async recordMaterialUsage(id, { material_id, used_quantity = 1, notes = null }, targetPort = null) {
+    return apiRequest(`/technician/jobs/${id}/materials`, {
+      method: 'POST',
+      body: {
+        material_id: String(material_id),
+        used_quantity: Number(used_quantity) || 1,
+        notes,
+      },
+      targetPort,
+    });
+  },
+  async completeTechnicianJob(id, payload, targetPort = null) {
+    return apiRequest(`/technician/jobs/${id}/complete`, {
+      method: 'PATCH',
+      body: {
+        work_performed: payload.work_performed || 'Đã hoàn thành sửa chữa & bảo dưỡng thiết bị',
+        testing_result: payload.testing_result || 'Thiết bị vận hành ổn định sau sửa chữa',
+        handover_result: payload.handover_result || 'Đã bàn giao cho khách hàng và kích hoạt bảo hành điện tử',
+      },
+      targetPort,
+    });
+  },
+
+  // 11. Đăng xuất
   logout() {
     authTokens.clear();
   },

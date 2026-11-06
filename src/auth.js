@@ -1,12 +1,11 @@
 // Tài khoản + phiên đăng nhập (lưu trên trình duyệt)
 // - accounts: localStorage (dùng chung mọi tab / thiết bị trình duyệt)
 // - session: sessionStorage (mỗi tab một phiên — Khách và Thợ có thể mở song song)
-// Xác thực thông qua Email hoặc Tên đăng nhập (Username)
 
 import { TECH_ME } from './data';
 
-const ACCOUNTS_KEY = 'tho-hrmss-accounts-v2';
-const SESSION_KEY = 'tho-hrmss-session-v2';
+const ACCOUNTS_KEY = 'tho-hrmss-accounts-v1';
+const SESSION_KEY = 'tho-hrmss-session-v1';
 
 const encode = (pw) => {
   try { return btoa(unescape(encodeURIComponent(`hrmss:${pw}`))); } catch (e) { return `hrmss:${pw}`; }
@@ -30,68 +29,120 @@ const removeKey = (store, key) => {
 const ls = () => (typeof localStorage !== 'undefined' ? localStorage : null);
 const ss = () => (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
 
-// Tài khoản khởi tạo mặc định (Email / Username)
+// Tài khoản khởi tạo demo offline (tuyệt đối không lưu mật khẩu thật của CSDL vào mã nguồn Client)
 const STARTER_ACCOUNTS = [
   {
     id: 'acc-cus-1',
     role: 'customer',
-    username: 'khachhang',
+    username: 'khach01',
     name: 'Nguyễn Minh Anh',
+    phone: '0901234567',
     email: 'khach@hrmss.vn',
+    emailVerified: true,
     password: encode('123456'),
     createdAt: Date.now() - 86400000 * 30,
   },
   {
     id: 'acc-tech-1',
     role: 'tech',
-    username: 'thohrmss',
+    username: 'tho01',
     name: TECH_ME.name,
+    phone: TECH_ME.phone,
     email: 'tho@hrmss.vn',
+    emailVerified: true,
     password: encode('123456'),
     techCode: TECH_ME.code,
     createdAt: Date.now() - 86400000 * 90,
   },
 ];
 
+// Chỉ cho phép lưu các trường hiển thị công khai vào localStorage, loại bỏ hoàn toàn token/password/permissions
+const sanitizeStoredAccount = (acc) => {
+  if (!acc) return null;
+  return {
+    id: String(acc.id || ''),
+    role: acc.role === 'tech' ? 'tech' : 'customer',
+    username: String(acc.username || ''),
+    name: String(acc.name || ''),
+    phone: String(acc.phone || ''),
+    email: String(acc.email || ''),
+    emailVerified: Boolean(acc.emailVerified),
+    ...(acc.techCode ? { techCode: String(acc.techCode) } : {}),
+    ...(acc.password ? { password: acc.password } : {}),
+    createdAt: acc.createdAt || Date.now(),
+  };
+};
+
 function loadAccounts() {
   const data = readJson(ls(), ACCOUNTS_KEY);
-  if (data?.accounts?.length) return data.accounts;
+  if (data?.accounts?.length) {
+    // Tự động làm sạch các trường nhạy cảm (backendToken, permissions) nếu phiên cũ lỡ lưu
+    return data.accounts.map(sanitizeStoredAccount).filter(Boolean);
+  }
   writeJson(ls(), ACCOUNTS_KEY, { accounts: STARTER_ACCOUNTS });
   return STARTER_ACCOUNTS.map((a) => ({ ...a }));
 }
 
 function saveAccounts(accounts) {
-  writeJson(ls(), ACCOUNTS_KEY, { accounts });
+  writeJson(ls(), ACCOUNTS_KEY, { accounts: accounts.map(sanitizeStoredAccount).filter(Boolean) });
+}
+
+export function upsertBackendAccount(account) {
+  if (!account?.id) return account;
+  const accounts = loadAccounts();
+  const idx = accounts.findIndex(
+    (a) => a.id === account.id
+      || (account.username && a.username?.toLowerCase() === account.username.toLowerCase())
+      || (account.email && a.email?.toLowerCase() === account.email.toLowerCase()),
+  );
+  // Tuyệt đối không lưu password, backendToken hay permissions của Backend vào localStorage
+  const safeRecord = sanitizeStoredAccount({
+    id: account.id,
+    role: account.role,
+    username: account.username,
+    name: account.name,
+    phone: account.phone,
+    email: account.email,
+    emailVerified: account.emailVerified !== undefined
+      ? Boolean(account.emailVerified)
+      : (idx >= 0 ? Boolean(accounts[idx].emailVerified) : false),
+    techCode: account.techCode,
+    createdAt: idx >= 0 ? accounts[idx].createdAt : Date.now(),
+  });
+  const next = idx >= 0
+    ? accounts.map((a, i) => (i === idx ? safeRecord : a))
+    : [safeRecord, ...accounts];
+  saveAccounts(next);
+  setSession(safeRecord.id);
+  const { password: _pw, ...publicDto } = safeRecord;
+  return publicDto;
 }
 
 export function listAccounts() {
   return loadAccounts().map(({ password, ...rest }) => rest);
 }
 
-export function findAccountByUsername(username, role) {
-  const u = String(username || '').trim().toLowerCase();
-  return loadAccounts().find((a) => a.username && a.username.toLowerCase() === u && (!role || a.role === role)) || null;
-}
-
-export function findAccountByEmail(email, role) {
-  const e = String(email || '').trim().toLowerCase();
-  return loadAccounts().find((a) => a.email && a.email.toLowerCase() === e && (!role || a.role === role)) || null;
+export function findAccountByPhone(phone, role) {
+  const p = String(phone || '').replace(/\D/g, '');
+  return loadAccounts().find((a) => a.phone === p && (!role || a.role === role)) || null;
 }
 
 export function findAccountByIdentifier(identifier, role) {
-  const raw = String(identifier || '').trim().toLowerCase();
-  if (!raw) return null;
+  const raw = String(identifier || '').trim();
   const isEmail = raw.includes('@');
   const accounts = loadAccounts();
 
   if (isEmail) {
-    return accounts.find((a) => a.email && a.email.toLowerCase() === raw && (!role || a.role === role))
-      || accounts.find((a) => a.email && a.email.toLowerCase() === raw)
-      || null;
+    const e = raw.toLowerCase();
+    return accounts.find((a) => a.email && a.email.toLowerCase() === e && (!role || a.role === role)) || null;
   }
-  return accounts.find((a) => a.username && a.username.toLowerCase() === raw && (!role || a.role === role))
-    || accounts.find((a) => a.username && a.username.toLowerCase() === raw)
-    || null;
+  const byUsername = accounts.find(
+    (a) => a.username && a.username.toLowerCase() === raw.toLowerCase() && (!role || a.role === role),
+  );
+  if (byUsername) return byUsername;
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return null;
+  return accounts.find((a) => a.phone === digits && (!role || a.role === role)) || null;
 }
 
 export function getSession() {
@@ -114,43 +165,40 @@ export function setSession(accountId) {
   writeJson(ss(), SESSION_KEY, { accountId, loggedAt: Date.now() });
 }
 
-// Đăng ký tài khoản mới bằng Email và Username (Không cần SĐT)
-export function registerAccount({ role, name, username, email, password }) {
+export function registerAccount({ role, name, username, phone, email, password }) {
   const r = role === 'tech' ? 'tech' : 'customer';
+  const rawPhone = String(phone || '').replace(/\D/g, '');
+  const p = rawPhone.length === 10 ? rawPhone : '';
   const n = String(name || '').trim();
-  const rawUser = String(username || (email ? email.split('@')[0] : '')).trim().toLowerCase();
-  const u = rawUser.replace(/[^a-z0-9_.-]/g, '');
-  const e = String(email || '').trim().toLowerCase();
+  const u = String(username || '').trim();
+  const e = String(email || '').trim();
   const pw = String(password || '');
 
   if (!['customer', 'tech'].includes(r)) return { ok: false, error: 'Vai trò không hợp lệ.' };
-  if (n.length < 2) return { ok: false, error: 'Vui lòng nhập họ và tên (ít nhất 2 ký tự).' };
-  if (!u || u.length < 3) return { ok: false, error: 'Tên đăng nhập phải có ít nhất 3 ký tự (chữ, số hoặc dấu gạch).' };
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(e)) {
-    return { ok: false, error: 'Địa chỉ Email không đúng định dạng.' };
+  if (n.length < 2) return { ok: false, error: 'Vui lòng nhập họ tên (ít nhất 2 ký tự).' };
+  if (!e && !u && rawPhone.length !== 10) {
+    return { ok: false, error: 'Vui lòng nhập Email hoặc Tên đăng nhập.' };
   }
-
   if (pw.length < 6) return { ok: false, error: 'Mật khẩu phải có ít nhất 6 ký tự.' };
 
   const accounts = loadAccounts();
-  if (accounts.some((a) => a.username && a.username.toLowerCase() === u)) {
-    return { ok: false, error: `Tên đăng nhập "${u}" đã có người sử dụng. Vui lòng chọn tên khác.` };
+  if (u && accounts.some((a) => a.username && a.username.toLowerCase() === u.toLowerCase())) {
+    return { ok: false, error: 'Tên đăng nhập (Username) này đã được sử dụng.' };
   }
-  if (accounts.some((a) => a.email && a.email.toLowerCase() === e)) {
-    return { ok: false, error: `Email "${e}" này đã được đăng ký tài khoản.` };
+  if (e && accounts.some((a) => a.email && a.email.toLowerCase() === e.toLowerCase() && a.role === r)) {
+    return { ok: false, error: `Email này đã được sử dụng cho tài khoản ${r === 'tech' ? 'Thợ' : 'Khách hàng'}.` };
   }
 
   const account = {
     id: `acc-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
     role: r,
-    name: n,
     username: u,
+    name: n,
+    phone: p,
     email: e,
+    emailVerified: false,
     password: encode(pw),
     createdAt: Date.now(),
-    ...(r === 'tech' ? { techCode: `HRMSS${String(Math.floor(1000 + Math.random() * 9000))}` } : {}),
   };
   saveAccounts([...accounts, account]);
   setSession(account.id);
@@ -158,20 +206,27 @@ export function registerAccount({ role, name, username, email, password }) {
   return { ok: true, account: safe };
 }
 
-// Đăng nhập bằng Email hoặc Tên đăng nhập (Username)
-export function loginAccount({ role, identifier, password }) {
-  const rawInput = String(identifier || '').trim();
+export function loginAccount({ role, identifier, phone, password }) {
+  const rawInput = String(identifier || phone || '').trim();
   const pw = String(password || '');
 
   if (!rawInput) {
-    return { ok: false, error: 'Vui lòng nhập Email hoặc Tên đăng nhập.' };
+    return { ok: false, error: 'Vui lòng nhập Email, Tên đăng nhập hoặc Số điện thoại.' };
   }
 
   const isEmail = rawInput.includes('@');
+  const isAllDigits = /^\d+$/.test(rawInput.replace(/\s+/g, ''));
+  let cleanPhone = '';
+
   if (isEmail) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(rawInput)) {
       return { ok: false, error: 'Địa chỉ Email không đúng định dạng.' };
+    }
+  } else if (isAllDigits) {
+    cleanPhone = rawInput.replace(/\D/g, '');
+    if (cleanPhone.length !== 10) {
+      return { ok: false, error: 'Số điện thoại phải có đúng 10 chữ số.' };
     }
   }
 
@@ -179,16 +234,22 @@ export function loginAccount({ role, identifier, password }) {
 
   const accounts = loadAccounts();
   const lower = rawInput.toLowerCase();
-  const account = isEmail
-    ? accounts.find((a) => a.email && a.email.toLowerCase() === lower && (!role || a.role === role))
-      || accounts.find((a) => a.email && a.email.toLowerCase() === lower)
-    : accounts.find((a) => a.username && a.username.toLowerCase() === lower && (!role || a.role === role))
-      || accounts.find((a) => a.username && a.username.toLowerCase() === lower);
+  const matchFn = (a, checkRole = true) => {
+    if (checkRole && role && a.role !== role) return false;
+    if (isEmail) return Boolean(a.email && a.email.toLowerCase() === lower);
+    if (isAllDigits) return a.phone === cleanPhone;
+    return Boolean(
+      (a.username && a.username.toLowerCase() === lower)
+      || (a.email && a.email.toLowerCase() === lower)
+      || a.phone === rawInput,
+    );
+  };
+  const account = accounts.find((a) => matchFn(a, true)) || accounts.find((a) => matchFn(a, false));
 
   if (!account) {
     return {
       ok: false,
-      error: `Tài khoản với ${isEmail ? 'Email' : 'Tên đăng nhập'} này không tồn tại. Hãy đăng ký tài khoản mới.`,
+      error: 'Tài khoản không tồn tại. Hãy kiểm tra lại Email / Username hoặc đăng ký mới.',
     };
   }
 
@@ -199,26 +260,35 @@ export function loginAccount({ role, identifier, password }) {
   return { ok: true, account: safe };
 }
 
-// Quên & đặt lại mật khẩu theo Email hoặc Tên đăng nhập
-export function resetPassword({ role, identifier, newPassword }) {
-  const raw = String(identifier || '').trim().toLowerCase();
+// Quên & đặt lại mật khẩu theo Username, SĐT hoặc Email
+export function resetPassword({ role, identifier, phone, newPassword }) {
+  const raw = String(identifier || phone || '').trim();
   const pw = String(newPassword || '');
 
-  if (!raw) return { ok: false, error: 'Vui lòng nhập Email hoặc Tên đăng nhập đã đăng ký.' };
+  if (!raw) return { ok: false, error: 'Vui lòng nhập Email, Username hoặc Số điện thoại đã đăng ký.' };
   if (pw.length < 6) return { ok: false, error: 'Mật khẩu mới phải có ít nhất 6 ký tự.' };
 
   const isEmail = raw.includes('@');
+  const isAllDigits = /^\d+$/.test(raw.replace(/\s+/g, ''));
+  const cleanPhone = isAllDigits ? raw.replace(/\D/g, '') : '';
+  const lower = raw.toLowerCase();
+
+  if (isAllDigits && cleanPhone.length !== 10) {
+    return { ok: false, error: 'Số điện thoại phải có đúng 10 chữ số.' };
+  }
+
   const accounts = loadAccounts();
   const idx = accounts.findIndex((a) => {
     if (role && a.role !== role) return false;
-    if (isEmail) return a.email && a.email.toLowerCase() === raw;
-    return a.username && a.username.toLowerCase() === raw;
+    if (isEmail) return a.email && a.email.toLowerCase() === lower;
+    if (isAllDigits) return a.phone === cleanPhone;
+    return Boolean(a.username && a.username.toLowerCase() === lower);
   });
 
   if (idx < 0) {
     return {
       ok: false,
-      error: `Không tìm thấy tài khoản với ${isEmail ? 'Email' : 'Tên đăng nhập'} này.`,
+      error: 'Không tìm thấy tài khoản phù hợp.',
     };
   }
   const next = accounts.map((a, i) => (i === idx ? { ...a, password: encode(pw) } : a));
@@ -249,7 +319,7 @@ export function urlRoleHint() {
   } catch (e) { return null; }
 }
 
-// Đăng nhập nhanh 1 chạm theo vai trò
+// Đăng nhập nhanh theo vai trò đã lưu trên thiết bị
 export function quickLoginRole(role) {
   const r = role === 'tech' ? 'tech' : 'customer';
   const accounts = loadAccounts();

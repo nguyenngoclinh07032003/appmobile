@@ -252,6 +252,18 @@ export function OrderScreen({ params }) {
         {/* ===== Báo giá chờ duyệt (khách duyệt / từ chối) ===== */}
         {o.status === 'quoted' && o.quote ? (
           <Card style={{ marginTop: 12, borderColor: '#F5D77A', backgroundColor: '#FFFBEB' }}>
+            {(() => {
+              const isOnSite = Boolean(o.arrivedAt || o.checkIn || o.history?.some((h) => h.status === 'diagnosing'));
+              return (
+                <View style={{ marginBottom: 10, padding: 10, borderRadius: R.sm, backgroundColor: isOnSite ? '#FEF3C7' : C.greenSoft }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: isOnSite ? '#92400E' : C.green, lineHeight: 18 }}>
+                    {isOnSite
+                      ? '📍 Thợ đã đến kiểm tra thực tế tại nhà bạn. Nếu đồng ý, thợ sẽ tiến hành sửa. Nếu huỷ lúc này, phí kiểm tra tại nhà là 100.000đ.'
+                      : '🚀 Báo giá trước khi thợ xuất phát. Bạn đồng ý thì thợ mới đi. Huỷ lúc này hoàn toàn MIỄN PHÍ (0đ).'}
+                  </Text>
+                </View>
+              );
+            })()}
             <Text style={mx.tlTitle}>🧾 Báo giá từ thợ {o.tech?.name}</Text>
             {o.quote.symptoms ? <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 6 }]}>Triệu chứng: {o.quote.symptoms}</Text> : null}
             <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 4 }]}>Chẩn đoán: {o.quote.diagnosis}</Text>
@@ -496,26 +508,53 @@ export function OrderScreen({ params }) {
         {o.kind !== 'warranty' && o.kind !== 'followup' ? (
           <Card style={{ marginTop: 12 }}>
             <Text style={[mx.tlTitle, { marginBottom: 6 }]}>💳 Chi phí & thanh toán</Text>
-            <Bill l="Tổng tiền dịch vụ" v={formatVND(o.goods)} />
-            {o.productDiscount ? <Bill l="Giảm giá dịch vụ" v={`-${formatVND(o.productDiscount)}`} green /> : null}
-            {o.comboDiscount ? <Bill l={`🔥 Ưu đãi ${o.comboLabel || 'Combo nhiều máy'}`} v={`-${formatVND(o.comboDiscount)}`} green /> : null}
-            {o.quote?.approved && o.quote.total !== o.quote.booked ? <Bill l="Phát sinh theo báo giá" v={`${o.quote.total > o.quote.booked ? '+' : ''}${formatVND(o.quote.total - o.quote.booked)}`} /> : null}
-            {partDisc ? <Bill l={`💎 Đặc quyền hạng ${o.customerTierLabel || ''} (−${o.tierPartDiscountPercent}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
-            {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
-            {lateDiscountAmount(o) ? (
-              <Bill l={`Bồi thường đến muộn (−${o.lateCompensation.percent}% NC)`} v={`−${formatVND(lateDiscountAmount(o))}`} green />
-            ) : null}
-            <Bill l="Phí đi lại" v="Miễn phí" green />
+            {o.status === 'cancelled' ? (
+              <>
+                {(o.inspectionFee || 0) > 0 ? (
+                  <>
+                    <Bill l="Phí kiểm tra thiết bị tại nhà" v={formatVND(o.inspectionFee)} />
+                    <Bill l="Lý do thu phí" v="Thợ đã kiểm tra trực tiếp tại nhà trước khi huỷ" />
+                  </>
+                ) : (
+                  <Bill l="Chi phí huỷ đơn" v="0 đ (Miễn phí hoàn toàn)" green />
+                )}
+              </>
+            ) : (
+              <>
+                <Bill l="Tổng tiền dịch vụ" v={formatVND(o.goods)} />
+                {o.productDiscount ? <Bill l="Giảm giá dịch vụ" v={`-${formatVND(o.productDiscount)}`} green /> : null}
+                {o.comboDiscount ? <Bill l={`🔥 Ưu đãi ${o.comboLabel || 'Combo nhiều máy'}`} v={`-${formatVND(o.comboDiscount)}`} green /> : null}
+                {o.quote?.approved && o.quote.total !== o.quote.booked ? <Bill l="Phát sinh theo báo giá" v={`${o.quote.total > o.quote.booked ? '+' : ''}${formatVND(o.quote.total - o.quote.booked)}`} /> : null}
+                {partDisc ? <Bill l={`💎 Đặc quyền hạng ${o.customerTierLabel || ''} (−${o.tierPartDiscountPercent}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
+                {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
+                {lateDiscountAmount(o) ? (
+                  <Bill l={`Bồi thường đến muộn (−${o.lateCompensation.percent}% NC)`} v={`−${formatVND(lateDiscountAmount(o))}`} green />
+                ) : null}
+                <Bill l="Phí đi lại" v="Miễn phí" green />
+              </>
+            )}
             <Bill l="Hình thức" v={o.payment || 'Thanh toán khi nhận hàng'} />
             <Bill
               l="Trạng thái thu"
-              v={o.status === 'cancelled' ? 'Đã huỷ' : o.report?.paid ? 'Đã thanh toán' : o.status === 'done' ? 'Chờ xác nhận' : 'Chưa thanh toán'}
-              green={!!o.report?.paid}
+              v={o.status === 'cancelled' ? ((o.inspectionFee || 0) > 0 ? 'Cần thanh toán phí KT' : 'Đã huỷ (0đ)') : o.report?.paid ? 'Đã thanh toán' : o.status === 'done' ? 'Chờ xác nhận' : 'Chưa thanh toán'}
+              green={!!o.report?.paid || (o.status === 'cancelled' && !(o.inspectionFee > 0))}
             />
             <View style={mx.totalRow}>
               <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>Tổng thanh toán</Text>
-              <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(o.status === 'cancelled' ? o.total : orderTotal(o))}</Text>
+              <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(o.status === 'cancelled' ? (o.inspectionFee || 0) : orderTotal(o))}</Text>
             </View>
+            {o.status === 'cancelled' && (o.inspectionFee || 0) > 0 ? (
+              <View style={{ marginTop: 14, alignItems: 'center', padding: 12, borderRadius: 14, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#F5D77A' }}>
+                <Text style={{ fontWeight: '800', color: '#92400E', marginBottom: 4 }}>Mã QR thanh toán phí kiểm tra tại nhà</Text>
+                <Text style={[ui.meta, { marginBottom: 8, color: '#92400E', textAlign: 'center' }]}>
+                  Thanh toán phí dịch vụ kiểm tra thiết bị tại nhà {formatVND(o.inspectionFee)} cho thợ.
+                </Text>
+                <PseudoQR value={`HRMSS|KT|${o.code}|${o.inspectionFee}`} size={160} />
+                <Text style={[ui.meta, { marginTop: 8, textAlign: 'center', lineHeight: 18 }]}>
+                  Quét mã QR qua Ngân hàng / Ví điện tử · Nội dung: {o.code} KT · {formatVND(o.inspectionFee)}
+                </Text>
+              </View>
+            ) : null}
             {o.status === 'done' && !o.report?.paid && /vnpay|qr|chuyển khoản|atm|google pay|apple pay/i.test(o.payment || '') ? (
               <View style={{ marginTop: 14, alignItems: 'center', padding: 12, borderRadius: 14, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line }}>
                 <Text style={{ fontWeight: '800', color: C.ink, marginBottom: 8 }}>Mã QR thanh toán</Text>
@@ -737,7 +776,9 @@ export function OrderScreen({ params }) {
         <Text style={[ui.meta, { fontSize: 13, marginBottom: 8 }]}>
           {rejectMode === 'revise'
             ? 'Thợ sẽ nhận được yêu cầu và điều chỉnh lại phương án / chi phí cho bạn.'
-            : 'Đơn sẽ kết thúc ngay và bạn không phải trả bất kỳ chi phí nào.'}
+            : (Boolean(o.arrivedAt || o.checkIn || o.history?.some((h) => h.status === 'diagnosing'))
+              ? 'Thợ đã đến kiểm tra thực tế thiết bị tại nhà theo lịch hẹn. Nếu huỷ, bạn cần thanh toán Phí kiểm tra tại nhà là 100.000đ.'
+              : 'Thợ chưa xuất phát. Đơn sẽ huỷ ngay và bạn hoàn toàn MIỄN PHÍ (0đ).')}
         </Text>
         {REJECT_REASONS.map((r) => (
           <Tap key={r} style={mx.option} onPress={() => setRejectReason(r)}>
@@ -1169,14 +1210,47 @@ export function FavoritesScreen() {
 // =========================================================== HỒ SƠ
 export function ProfileScreen() {
   const { s, a, d, nav, ui: u } = useApp();
-  const [name, setName] = useState(s.user.name || d.address?.name || '');
-  const [phone, setPhone] = useState(s.user.phone || d.address?.phone || '');
+  const [name, setName] = useState(s.user.name || '');
+  const [phone, setPhone] = useState(s.user.phone || '');
   const [email, setEmail] = useState(s.user.email || '');
   const [err, setErr] = useState({});
   const [showPw, setShowPw] = useState(false);
   const [curPw, setCurPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [newPw2, setNewPw2] = useState('');
+  const [showOtp, setShowOtp] = useState(false);
+  const [otpInput, setOtpInput] = useState('');
+  const [otpErr, setOtpErr] = useState('');
+  const [otpHint, setOtpHint] = useState('');
+  const [otpSending, setOtpSending] = useState(false);
+
+  const sendOtp = async () => {
+    setOtpSending(true);
+    setOtpErr('');
+    try {
+      const res = await a.sendEmailOtp();
+      if (res.ok) {
+        if (res.alreadyVerified) setShowOtp(false);
+        else if (res.otpCode) setOtpHint(res.otpCode);
+      } else {
+        setOtpErr(res.error || 'Không thể gửi mã OTP.');
+      }
+    } finally {
+      setOtpSending(false);
+    }
+  };
+
+  const verifyOtp = async () => {
+    const res = await a.verifyEmailOtp(otpInput);
+    if (res.ok) {
+      setShowOtp(false);
+      setOtpInput('');
+      setOtpHint('');
+    } else {
+      setOtpErr(res.error || 'Mã OTP không chính xác.');
+    }
+  };
+
   const save = () => {
     const e = {};
     if (!name.trim()) e.name = 'Vui lòng nhập họ tên.';
@@ -1205,6 +1279,29 @@ export function ProfileScreen() {
           <Field label="Họ và tên" value={name} onChangeText={setName} placeholder="Nguyễn Văn A" error={err.name} style={{ marginTop: -8 }} />
           <Field label="Số điện thoại" value={phone} onChangeText={(t) => setPhone(t.replace(/[^0-9]/g, '').slice(0, 10))} keyboardType="phone-pad" placeholder="10 chữ số" error={err.phone} />
           <Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" placeholder="email@example.com" error={err.email} />
+          <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            {s.auth?.emailVerified ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Badge text="✓ Đã xác thực Email" fg={C.green} bg={C.greenSoft} />
+                <Text style={ui.meta}>Đủ điều kiện đặt lịch dịch vụ</Text>
+              </View>
+            ) : (
+              <>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: '800', color: '#B45309', fontSize: 13 }}>⚠️ Email chưa xác thực</Text>
+                  <Text style={ui.meta}>Bắt buộc xác thực OTP để đặt dịch vụ</Text>
+                </View>
+                <Tap
+                  onPress={() => {
+                    setShowOtp(true);
+                    if (!otpHint) sendOtp();
+                  }}
+                >
+                  <Badge text="📧 Xác thực ngay" fg="#fff" bg="#D97706" />
+                </Tap>
+              </>
+            )}
+          </View>
         </Card>
         <Card style={{ marginTop: 12, padding: 0, overflow: 'hidden' }}>
           <ListRow icon="📍" iconBg={C.redSoft} label="Sổ địa chỉ" value={`${s.addresses.length}`} onPress={() => nav.push('addresses')} />
@@ -1212,6 +1309,48 @@ export function ProfileScreen() {
         </Card>
       </ScrollView>
       <View style={mx.dock}><Btn title="Lưu thay đổi" style={{ flex: 1 }} onPress={save} /></View>
+      <Sheet visible={showOtp} onClose={() => setShowOtp(false)} title="📧 Xác thực Email (OTP 6 số)" footer={<Btn title="Xác nhận mã OTP" onPress={verifyOtp} />}>
+        <Text style={{ color: C.ink2, lineHeight: 20, marginBottom: 12 }}>
+          Nhập mã xác thực 6 chữ số được gửi tới địa chỉ Email:{' '}
+          <Text style={{ fontWeight: '800', color: C.ink }}>{email || s.auth?.email}</Text>
+        </Text>
+        {otpHint ? (
+          <Tap
+            onPress={() => setOtpInput(otpHint)}
+            style={{
+              padding: 12,
+              borderRadius: R.md,
+              backgroundColor: C.greenSoft,
+              borderWidth: 1,
+              borderColor: '#86EFAC',
+              marginBottom: 12,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 12, color: C.green, fontWeight: '700' }}>Mã OTP xác thực vừa gửi:</Text>
+              <Text style={{ fontSize: 20, fontWeight: '900', color: C.ink, letterSpacing: 3, marginTop: 2 }}>{otpHint}</Text>
+            </View>
+            <Badge text="Chạm để điền" fg="#fff" bg={C.green} />
+          </Tap>
+        ) : null}
+        <Field
+          label="Mã OTP (6 chữ số)"
+          value={otpInput}
+          onChangeText={(t) => { setOtpInput(t.replace(/\D/g, '').slice(0, 6)); setOtpErr(''); }}
+          keyboardType="number-pad"
+          placeholder="Nhập 6 chữ số"
+          error={otpErr}
+        />
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+          <Text style={ui.meta}>Hiệu lực trong 5 phút</Text>
+          <Tap onPress={sendOtp} disabled={otpSending}>
+            <Text style={ui.link}>{otpSending ? 'Đang gửi...' : '🔄 Gửi lại mã OTP'}</Text>
+          </Tap>
+        </View>
+      </Sheet>
       <Sheet visible={showPw} onClose={() => setShowPw(false)} title="Đổi mật khẩu" footer={<Btn title="Cập nhật mật khẩu" onPress={savePw} />}>
         <Field label="Mật khẩu hiện tại" value={curPw} onChangeText={setCurPw} secureTextEntry placeholder="••••••" style={{ marginTop: -8 }} />
         <Field label="Mật khẩu mới" value={newPw} onChangeText={setNewPw} secureTextEntry placeholder="Ít nhất 6 ký tự" />

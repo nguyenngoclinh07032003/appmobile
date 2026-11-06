@@ -64,7 +64,12 @@ function useNextAction() {
   const { a, nav } = useApp();
   return (o) => {
     switch (o.status) {
-      case 'confirmed': return { label: 'Bắt đầu di chuyển', icon: '🛵', run: () => a.startTravel(o.code) };
+      case 'confirmed': {
+        if (o.quote && !o.quote.approved) {
+          return { label: 'Chờ khách đồng ý', icon: '⏳', variant: 'ghost', run: () => nav.push('tech-job', { code: o.code }) };
+        }
+        return { label: 'Bắt đầu di chuyển', icon: '🛵', run: () => a.startTravel(o.code) };
+      };
       case 'onway': return {
         label: 'Check-in GPS',
         icon: '📍',
@@ -804,6 +809,7 @@ export function TechJobScreen({ params }) {
   const [showQR, setShowQR] = useState(false);
   const [qrInput, setQrInput] = useState('');
   const [matMode, setMatMode] = useState(null); // 'quote' | 'usage'
+  const [showPreQuote, setShowPreQuote] = useState(false);
   const [matAll, setMatAll] = useState(false);
   const [percent, setPercent] = useState(50);
   const [progressNote, setProgressNote] = useState('');
@@ -1028,8 +1034,28 @@ export function TechJobScreen({ params }) {
           </View>
         </Card>
 
+        {/* Báo giá trước khi xuất phát (Thợ chủ động thỏa thuận trước khi đi) */}
+        {o.status === 'confirmed' && mine && !o.quote ? (
+          <Card style={{ marginTop: 12, borderColor: '#D6E4FF', backgroundColor: '#F0F6FF' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>📋 Báo giá trước khi xuất phát</Text>
+                <Text style={[ui.meta, { marginTop: 2, lineHeight: 18 }]}>
+                  Thỏa thuận chi phí trên app trước. Khách đồng ý bạn mới di chuyển. Khách từ chối huỷ miễn phí.
+                </Text>
+              </View>
+              <Btn
+                title={showPreQuote ? 'Đóng lại' : 'Lập báo giá'}
+                variant={showPreQuote ? 'ghost' : 'soft'}
+                small
+                onPress={() => setShowPreQuote((p) => !p)}
+              />
+            </View>
+          </Card>
+        ) : null}
+
         {/* ===== Chẩn đoán & báo giá ===== */}
-        {o.status === 'diagnosing' && mine ? (
+        {(o.status === 'diagnosing' || (o.status === 'confirmed' && showPreQuote)) && mine ? (
           <>
             {o.quote?.revisionRequested ? (
               <Card style={{ marginTop: 12, backgroundColor: '#FFFBEB', borderColor: '#F5D77A' }}>
@@ -1276,6 +1302,19 @@ export function TechJobScreen({ params }) {
             )}
           </Card>
         ) : null}
+        {o.status === 'cancelled' ? (
+          <Card style={{ marginTop: 12, backgroundColor: (o.inspectionFee || 0) > 0 ? '#FEF3C7' : '#F1F5F9', borderColor: (o.inspectionFee || 0) > 0 ? '#F5D77A' : C.line }}>
+            <Text style={[tx.h, { color: (o.inspectionFee || 0) > 0 ? '#92400E' : C.ink }]}>
+              {(o.inspectionFee || 0) > 0 ? `💰 Phí kiểm tra tại nhà: ${formatVND(o.inspectionFee)}` : 'Đơn huỷ không thu phí (0đ)'}
+            </Text>
+            <Text style={{ color: (o.inspectionFee || 0) > 0 ? '#92400E' : C.ink2, lineHeight: 20 }}>
+              {(o.inspectionFee || 0) > 0
+                ? `Khách huỷ sau khi thợ đã tới kiểm tra thiết bị trực tiếp tại nhà. Khách thanh toán ${formatVND(o.inspectionFee)} phí kiểm tra cho thợ.`
+                : 'Đơn huỷ trước khi thợ tới hiện trường, miễn phí hoàn toàn theo quy định HRMSS.'}
+            </Text>
+          </Card>
+        ) : null}
+
         {o.kind === 'followup' && o.followUp ? (
           <Card style={{ marginTop: 12, backgroundColor: C.cyanSoft, borderColor: '#B6E4F0' }}>
             <Text style={tx.h}>Tái khám của {o.followUp.of}</Text>
@@ -1305,7 +1344,11 @@ export function TechJobScreen({ params }) {
       {mine && ['confirmed', 'onway'].includes(o.status) ? (
         <View style={tx.dock}>
           <Btn title="Trả việc" variant="dangerSoft" style={{ flex: 1 }} onPress={() => { setReleaseReason(RELEASE_REASONS[0]); setReleaseNote(''); setShowRelease(true); }} />
-          <Btn title={next.label} icon={next.icon} style={{ flex: 2 }} onPress={next.run} />
+          {o.status === 'confirmed' && showPreQuote ? (
+            <Btn title="Gửi báo giá trước khi đi" icon="🧾" style={{ flex: 2 }} onPress={sendQuote} />
+          ) : (
+            <Btn title={next.label} icon={next.icon} variant={next.variant || 'primary'} style={{ flex: 2 }} onPress={next.run} />
+          )}
         </View>
       ) : null}
       {mine && o.status === 'diagnosing' ? (
