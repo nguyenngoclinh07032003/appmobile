@@ -255,10 +255,10 @@ export function OrderScreen({ params }) {
             {(() => {
               const isOnSite = Boolean(o.arrivedAt || o.checkIn || o.history?.some((h) => h.status === 'diagnosing'));
               return (
-                <View style={{ marginBottom: 10, padding: 10, borderRadius: R.sm, backgroundColor: isOnSite ? '#FEF3C7' : C.greenSoft }}>
-                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: isOnSite ? '#92400E' : C.green, lineHeight: 18 }}>
+                <View style={{ marginBottom: 10, padding: 10, borderRadius: R.sm, backgroundColor: C.greenSoft }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.green, lineHeight: 18 }}>
                     {isOnSite
-                      ? '📍 Thợ đã đến kiểm tra thực tế tại nhà bạn. Nếu đồng ý, thợ sẽ tiến hành sửa. Nếu huỷ lúc này, phí kiểm tra tại nhà là 100.000đ.'
+                      ? '📍 Thợ đã đến kiểm tra thực tế tại nhà bạn. Bạn có thể đồng ý để thợ sửa hoặc từ chối & huỷ đơn hoàn toàn MIỄN PHÍ (0đ).'
                       : '🚀 Báo giá trước khi thợ xuất phát. Bạn đồng ý thì thợ mới đi. Huỷ lúc này hoàn toàn MIỄN PHÍ (0đ).'}
                   </Text>
                 </View>
@@ -776,9 +776,7 @@ export function OrderScreen({ params }) {
         <Text style={[ui.meta, { fontSize: 13, marginBottom: 8 }]}>
           {rejectMode === 'revise'
             ? 'Thợ sẽ nhận được yêu cầu và điều chỉnh lại phương án / chi phí cho bạn.'
-            : (Boolean(o.arrivedAt || o.checkIn || o.history?.some((h) => h.status === 'diagnosing'))
-              ? 'Thợ đã đến kiểm tra thực tế thiết bị tại nhà theo lịch hẹn. Nếu huỷ, bạn cần thanh toán Phí kiểm tra tại nhà là 100.000đ.'
-              : 'Thợ chưa xuất phát. Đơn sẽ huỷ ngay và bạn hoàn toàn MIỄN PHÍ (0đ).')}
+            : 'Đơn hàng sẽ được huỷ ngay lập tức. Chính sách HRMSS miễn phí 100% kiểm tra tại nhà (0đ), bạn không phải trả bất kỳ khoản phí nào.'}
         </Text>
         {REJECT_REASONS.map((r) => (
           <Tap key={r} style={mx.option} onPress={() => setRejectReason(r)}>

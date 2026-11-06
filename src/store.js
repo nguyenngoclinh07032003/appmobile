@@ -1407,30 +1407,27 @@ export function AppProvider({ children }) {
             },
           };
         }
-        // Khách từ chối báo giá & huỷ đơn:
-        // CHỈ KHI THỢ ĐẾN NHÀ KIỂM TRA MỚI MẤT TIỀN (100.000đ). Nếu thợ chưa đến nhà thì miễn phí!
-        const fee = isOnSite ? 100000 : 0;
+        // Khách từ chối báo giá & huỷ đơn: Miễn phí 100% kiểm tra tại nhà (0đ) theo chính sách HRMSS
+        const fee = 0;
         appliedFee = fee;
         return {
           order: withStatus(o, 'cancelled', now, {
             quote: { ...o.quote, approved: false, revisionRequested: false, rejectReason: reason, respondedAt: now },
-            cancelReason: `Khách từ chối báo giá${reason ? `: ${reason}` : ''}${fee ? ' (áp dụng phí kiểm tra tại nhà 100.000đ)' : ' (miễn phí)'}`,
+            cancelReason: `Khách từ chối báo giá${reason ? `: ${reason}` : ''} (miễn phí 100%)`,
             inspectionFee: fee,
             total: fee,
           }),
           tech: {
             icon: '❌',
             title: `Khách từ chối báo giá · ${code}`,
-            body: fee
-              ? `Khách từ chối sau khi thợ đã đến kiểm tra. Thu phí kiểm tra tại nhà ${formatVND(fee)}.`
+            body: isOnSite
+              ? 'Khách từ chối sau khi thợ đã đến kiểm tra. Đơn đã huỷ, không thu phí (chính sách miễn phí 100%).'
               : 'Khách từ chối báo giá trước khi xuất phát. Đơn đã huỷ, không thu phí.',
           },
           customer: {
             icon: '❌',
             title: `Đã từ chối báo giá & huỷ đơn · ${code}`,
-            body: fee
-              ? `Thợ đã đến tận nhà kiểm tra thiết bị theo yêu cầu. Phí kiểm tra tại nhà: ${formatVND(fee)}.`
-              : 'Đã huỷ đơn thành công. Thợ chưa xuất phát nên bạn được miễn phí 100%.',
+            body: 'Đã huỷ đơn thành công. Bạn được miễn phí kiểm tra 100% (0đ) theo chính sách HRMSS.',
           },
           extra: { myVouchers: o.voucher?.wallet ? [o.voucher, ...p.myVouchers] : p.myVouchers },
           customerProfilePatch: (prof) => ({

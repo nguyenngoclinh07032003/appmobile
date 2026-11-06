@@ -157,7 +157,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     : (customerPhoneFallback || req.address?.contact_phone || '');
 
   const cancelHistory = (req.timeline || []).find((h) => String(h.new_status || '').toUpperCase().startsWith('CANCELLED'));
-  const hasFeeInHistory = cancelHistory && /phí kiểm tra|100[.,]?000/i.test(cancelHistory.reason || '');
+  const hasFeeInHistory = cancelHistory && /(?=.*phí kiểm tra)(?!.*miễn phí)/i.test(cancelHistory.reason || '') && /100[.,]?000/i.test(cancelHistory.reason || '');
   const inspectionFee = hasFeeInHistory ? 100000 : 0;
 
   const history = Array.isArray(req.timeline) && req.timeline.length > 0
@@ -241,7 +241,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     : mapBackendStatusToAppStatus(req.request_status, visit.visit_status, quote?.approved, hasPendingQuote);
 
   const cancelHistory = (req.timeline || req.status_history || []).find((h) => String(h.new_status || '').toUpperCase().startsWith('CANCELLED'));
-  const hasFeeInHistory = cancelHistory && /phí kiểm tra|100[.,]?000/i.test(cancelHistory.reason || '');
+  const hasFeeInHistory = cancelHistory && /(?=.*phí kiểm tra)(?!.*miễn phí)/i.test(cancelHistory.reason || '') && /100[.,]?000/i.test(cancelHistory.reason || '');
   const inspectionFee = hasFeeInHistory ? 100000 : 0;
 
   const preferredIso = req.preferred_time || visit.scheduled_start || job.assigned_time;

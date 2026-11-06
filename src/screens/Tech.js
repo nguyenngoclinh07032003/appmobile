@@ -1310,7 +1310,7 @@ export function TechJobScreen({ params }) {
             <Text style={{ color: (o.inspectionFee || 0) > 0 ? '#92400E' : C.ink2, lineHeight: 20 }}>
               {(o.inspectionFee || 0) > 0
                 ? `Khách huỷ sau khi thợ đã tới kiểm tra thiết bị trực tiếp tại nhà. Khách thanh toán ${formatVND(o.inspectionFee)} phí kiểm tra cho thợ.`
-                : 'Đơn huỷ trước khi thợ tới hiện trường, miễn phí hoàn toàn theo quy định HRMSS.'}
+                : 'Chính sách HRMSS miễn phí 100% kiểm tra tại nhà khi khách từ chối sửa chữa (0đ).'}
             </Text>
           </Card>
         ) : null}
