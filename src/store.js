@@ -562,16 +562,23 @@ export function AppProvider({ children }) {
 
     if (acc.role === 'customer') {
       try {
-        const [addrRes, reqRes, verRes] = await Promise.all([
+        const [meRes, addrRes, reqRes, verRes] = await Promise.all([
+          hrmssApi.getMe(),
           hrmssApi.getCustomerAddresses(),
           hrmssApi.getCustomerRequests('ALL'),
           hrmssApi.getEmailVerificationStatus(),
         ]);
+        const serverProfile = (meRes.ok && meRes.data?.profile) ? meRes.data.profile : null;
+        const serverAccount = (meRes.ok && meRes.data?.account) ? meRes.data.account : null;
+        const serverName = serverProfile?.full_name || serverAccount?.username || acc.name;
+        const serverPhone = serverProfile?.phone || '';
+        const serverEmail = serverAccount?.email || acc.email;
+
         const remoteAddrs = (addrRes.ok && Array.isArray(addrRes.data?.items))
           ? addrRes.data.items.map(mapBackendAddressToApp).filter(Boolean)
           : null;
         const remoteOrders = (reqRes.ok && Array.isArray(reqRes.data?.items))
-          ? reqRes.data.items.map((r) => mapBackendCustomerRequestToOrder(r, acc.phone)).filter(Boolean)
+          ? reqRes.data.items.map((r) => mapBackendCustomerRequestToOrder(r, serverPhone || acc.phone)).filter(Boolean)
           : null;
         const remoteEmailVerified = verRes.ok && verRes.data
           ? Boolean(verRes.data.email_verified)
@@ -587,12 +594,24 @@ export function AppProvider({ children }) {
             ? remoteOrders.map((o) => ({ ...o, customerAccountId: acc.id || o.customerAccountId || null }))
             : null;
           const nextOrders = remoteWithAcc ? mergeBackendOrdersWithLocal(p.orders, remoteWithAcc) : p.orders;
-          const doneCount = nextOrders.filter((o) => o.status === 'done' && isOrderOfCustomer(o, acc.phone, acc.id)).length;
+          const doneCount = nextOrders.filter((o) => o.status === 'done' && isOrderOfCustomer(o, serverPhone || acc.phone, acc.id)).length;
           const minPts = doneCount * 45;
-          const nextAuth = (remoteEmailVerified !== null && p.auth)
-            ? upsertBackendAccount({ ...p.auth, emailVerified: remoteEmailVerified })
+          const nextAuth = p.auth
+            ? upsertBackendAccount({
+                ...p.auth,
+                name: serverName,
+                phone: serverPhone,
+                email: serverEmail,
+                emailVerified: remoteEmailVerified !== null ? remoteEmailVerified : p.auth.emailVerified,
+              })
             : p.auth;
           return {
+            user: {
+              ...(p.user || {}),
+              name: serverName,
+              phone: serverPhone,
+              email: serverEmail,
+            },
             ...(nextAuth ? { auth: nextAuth } : {}),
             addresses: nextAddresses,
             selectedAddressId: nextSelectedId,
@@ -1947,16 +1966,15 @@ export function AppProvider({ children }) {
             ui.toast('Email của bạn đã được xác thực!', '✅');
             return { ok: true, alreadyVerified: true };
           }
-          const code = res.data.otp_code;
           up((p) => ({
             notifications: pushNotif(p, {
               icon: '📧',
-              title: `Mã OTP xác thực Email: ${code}`,
-              body: `Mã xác thực cho ${res.data.email || targetEmail} là ${code} (hiệu lực 5 phút).`,
+              title: 'Mã xác thực Email đã được gửi',
+              body: `Hệ thống vừa gửi mã xác thực 6 chữ số tới ${res.data.email || targetEmail} (hiệu lực 5 phút). Vui lòng kiểm tra hộp thư.`,
             }),
           }));
-          ui.toast(`Đã gửi OTP tới ${res.data.email || targetEmail} (Mã: ${code})`, '📧');
-          return { ok: true, otpCode: code, email: res.data.email || targetEmail };
+          ui.toast(`Đã gửi mã xác thực tới ${res.data.email || targetEmail}`, '📧');
+          return { ok: true, email: res.data.email || targetEmail };
         }
         return { ok: false, error: res.message || 'Không thể gửi mã OTP. Vui lòng thử lại.' };
       }

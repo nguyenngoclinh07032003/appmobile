@@ -755,28 +755,27 @@ export function CheckoutScreen({ params }) {
           Để ngăn chặn đơn hàng ảo và gửi hóa đơn/phiếu bảo hành điện tử chính xác, vui lòng nhập mã OTP 6 chữ số gửi tới địa chỉ Email:{' '}
           <Text style={{ fontWeight: '800', color: C.ink }}>{s.user?.email || s.auth?.email}</Text>
         </Text>
-        {sentOtpHint ? (
-          <Tap
-            onPress={() => setEmailOtpInput(sentOtpHint)}
-            style={{
-              padding: 12,
-              borderRadius: R.md,
-              backgroundColor: C.greenSoft,
-              borderWidth: 1,
-              borderColor: '#86EFAC',
-              marginBottom: 12,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 12, color: C.green, fontWeight: '700' }}>Mã OTP xác thực vừa gửi (hiệu lực 5 phút):</Text>
-              <Text style={{ fontSize: 20, fontWeight: '900', color: C.ink, letterSpacing: 3, marginTop: 2 }}>{sentOtpHint}</Text>
-            </View>
-            <Badge text="Chạm để điền" fg="#fff" bg={C.green} />
-          </Tap>
-        ) : null}
+        <View
+          style={{
+            padding: 12,
+            borderRadius: R.md,
+            backgroundColor: '#EFF6FF',
+            borderWidth: 1,
+            borderColor: '#BFDBFE',
+            marginBottom: 12,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
+          <Text style={{ fontSize: 20 }}>📬</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 12.5, color: '#1E40AF', fontWeight: '700' }}>Kiểm tra hộp thư Email</Text>
+            <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
+              Mã xác thực 6 chữ số đã được gửi tới {s.user?.email || s.auth?.email} (hiệu lực 5 phút).
+            </Text>
+          </View>
+        </View>
         <Field
           label="Mã xác thực OTP (6 chữ số)"
           value={emailOtpInput}

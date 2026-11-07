@@ -1312,28 +1312,27 @@ export function ProfileScreen() {
           Nhập mã xác thực 6 chữ số được gửi tới địa chỉ Email:{' '}
           <Text style={{ fontWeight: '800', color: C.ink }}>{email || s.auth?.email}</Text>
         </Text>
-        {otpHint ? (
-          <Tap
-            onPress={() => setOtpInput(otpHint)}
-            style={{
-              padding: 12,
-              borderRadius: R.md,
-              backgroundColor: C.greenSoft,
-              borderWidth: 1,
-              borderColor: '#86EFAC',
-              marginBottom: 12,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 12, color: C.green, fontWeight: '700' }}>Mã OTP xác thực vừa gửi:</Text>
-              <Text style={{ fontSize: 20, fontWeight: '900', color: C.ink, letterSpacing: 3, marginTop: 2 }}>{otpHint}</Text>
-            </View>
-            <Badge text="Chạm để điền" fg="#fff" bg={C.green} />
-          </Tap>
-        ) : null}
+        <View
+          style={{
+            padding: 12,
+            borderRadius: R.md,
+            backgroundColor: '#EFF6FF',
+            borderWidth: 1,
+            borderColor: '#BFDBFE',
+            marginBottom: 12,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
+          <Text style={{ fontSize: 20 }}>📬</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 12.5, color: '#1E40AF', fontWeight: '700' }}>Kiểm tra hộp thư Email</Text>
+            <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
+              Mã OTP 6 chữ số đã được gửi tới {email || s.auth?.email} (hiệu lực 5 phút).
+            </Text>
+          </View>
+        </View>
         <Field
           label="Mã OTP (6 chữ số)"
           value={otpInput}
