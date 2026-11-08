@@ -16,6 +16,7 @@ import {
   TECH_POLICY, assessCancelAfterAccept, reputationTone, normalizeTechRep, slotStartTs, matchJobForTech,
 } from '../../context';
 import { getCheckInLocation } from '../../utils/geo';
+import { validateVietnamesePhone, validateContactName } from '../../utils';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, PageHead, Segmented, Chip, Badge, Stars, Field, Sheet, Radio, Checkbox,
   EmptyState, StatusChip, Progress, Media, ListRow, Stepper, HScroll, ui,
@@ -741,8 +742,10 @@ export function TechAccountScreen() {
           <Btn
             title="Lưu hồ sơ"
             onPress={() => {
-              if ((name || '').trim().length < 2) { u.alert('Thiếu thông tin', 'Vui lòng nhập họ tên.', '✏️'); return; }
-              if (String(phone).replace(/\D/g, '').length !== 10) { u.alert('SĐT không hợp lệ', 'Số điện thoại phải có 10 chữ số.', '📞'); return; }
+              const nameErr = validateContactName(name);
+              if (nameErr) { u.alert('Họ tên không hợp lệ', nameErr, '✏️'); return; }
+              const phoneErr = validateVietnamesePhone(phone);
+              if (phoneErr) { u.alert('SĐT không hợp lệ', phoneErr, '📞'); return; }
               if (!skills.length) { u.alert('Thiếu chuyên môn', 'Chọn ít nhất một lĩnh vực bạn nhận việc.', '🧰'); return; }
               a.updateTechProfile({
                 name: name.trim(),

@@ -12,7 +12,7 @@ import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Chip, Badge, Stars, Field, Sheet, Radio,
   EmptyState, ServiceGrid, ServiceRow, Progress, Media, ListRow, PseudoQR, HScroll, ui,
 } from '../../components';
-import { pickImage } from '../../utils/media';
+import { pickImage, validateVietnamesePhone, validateContactName } from '../../utils';
 import { TrackingCard, ChatCard } from '../../components/order';
 
 const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
@@ -1332,8 +1332,12 @@ export function ProfileScreen() {
 
   const save = () => {
     const e = {};
-    if (!name.trim()) e.name = 'Vui lòng nhập họ tên.';
-    if (phone && !/^0\d{9}$/.test(phone)) e.phone = 'Số điện thoại gồm 10 chữ số, bắt đầu bằng 0.';
+    const nameErr = validateContactName(name);
+    if (nameErr) e.name = nameErr;
+    if (phone) {
+      const phoneErr = validateVietnamesePhone(phone);
+      if (phoneErr) e.phone = phoneErr;
+    }
     if (email && !/^\S+@\S+\.\S+$/.test(email)) e.email = 'Email không hợp lệ.';
     setErr(e);
     if (Object.keys(e).length) return;

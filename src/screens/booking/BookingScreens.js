@@ -11,7 +11,7 @@ import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Media, Badge, Stars, Stepper, Sheet, Radio, Field,
   SelectRow, Segmented, Checkbox, EmptyState, ServiceCard, Price, Chip, ui, HScroll,
 } from '../../components';
-import { pickImage } from '../../utils/media';
+import { pickImage, validateVietnamesePhone, validateStreetAddress, validateContactName } from '../../utils';
 
 const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const nextDays = (n) => Array.from({ length: n }, (_, i) => {
@@ -1384,9 +1384,15 @@ export function AddressFormScreen({ params }) {
 
   const save = () => {
     const e = {};
-    if (!name.trim()) e.name = 'Vui lòng nhập tên người liên hệ.';
-    if (!/^0\d{9}$/.test(phone.trim())) e.phone = 'Số điện thoại gồm 10 chữ số, bắt đầu bằng 0.';
-    if (street.trim().length < 3) e.street = 'Số nhà, tên đường phải có ít nhất 3 ký tự.';
+    const nameErr = validateContactName(name);
+    if (nameErr) e.name = nameErr;
+
+    const phoneErr = validateVietnamesePhone(phone);
+    if (phoneErr) e.phone = phoneErr;
+
+    const streetErr = validateStreetAddress(street);
+    if (streetErr) e.street = streetErr;
+
     setErr(e);
     if (Object.keys(e).length) return;
     const id = a.saveAddress({ id: initial?.id, name: name.trim(), gender, phone: phone.trim(), area, street: street.trim(), isDefault, full: `${street.trim()}, ${area}` });
@@ -1404,13 +1410,42 @@ export function AddressFormScreen({ params }) {
         <Card>
           <Text style={bx.h}>Thông tin liên hệ</Text>
           <Segmented items={[{ id: 'Nam', label: 'Anh' }, { id: 'Nữ', label: 'Chị' }]} value={gender} onChange={setGender} style={{ marginTop: 10 }} />
-          <Field label="Họ và tên" value={name} onChangeText={setName} placeholder="Tên người liên hệ" error={err.name} />
-          <Field label="Số điện thoại" value={phone} onChangeText={(t) => setPhone(t.replace(/[^0-9]/g, '').slice(0, 10))} keyboardType="phone-pad" placeholder="10 chữ số" error={err.phone} />
+          <Field
+            label="Họ và tên"
+            value={name}
+            onChangeText={(t) => {
+              setName(t);
+              if (err.name) setErr((prev) => ({ ...prev, name: '' }));
+            }}
+            placeholder="Tên người liên hệ (VD: Nguyễn Văn An)"
+            error={err.name}
+          />
+          <Field
+            label="Số điện thoại"
+            value={phone}
+            onChangeText={(t) => {
+              const p = t.replace(/[^0-9]/g, '').slice(0, 10);
+              setPhone(p);
+              if (err.phone) setErr((prev) => ({ ...prev, phone: '' }));
+            }}
+            keyboardType="phone-pad"
+            placeholder="10 chữ số (bắt đầu bằng 03, 05, 07, 08, 09)"
+            error={err.phone}
+          />
         </Card>
         <Card style={{ marginTop: 12 }}>
           <Text style={bx.h}>Địa chỉ</Text>
           <SelectRow label="Khu vực" icon="🗺️" value={area} onPress={() => setShowArea(true)} />
-          <Field label="Số nhà, tên đường" value={street} onChangeText={setStreet} placeholder="VD: 128 Trần Duy Hưng" error={err.street} />
+          <Field
+            label="Số nhà, tên đường"
+            value={street}
+            onChangeText={(t) => {
+              setStreet(t);
+              if (err.street) setErr((prev) => ({ ...prev, street: '' }));
+            }}
+            placeholder="VD: Số 12 ngõ 45 hoặc 128 Trần Duy Hưng"
+            error={err.street}
+          />
           <Checkbox on={isDefault} onPress={() => setIsDefault(!isDefault)} label="Đặt làm địa chỉ mặc định" />
         </Card>
       </ScrollView>
