@@ -199,10 +199,10 @@ export function OrderScreen({ params }) {
       u.dialog({
         icon: '⚠️',
         title: 'Không thể huỷ đơn',
-        message: status.reason || 'Quý khách không thể huỷ đơn khi còn dưới 1 tiếng trước giờ hẹn với thợ. Để huỷ hoặc dời lịch gấp, vui lòng gọi Hotline 1900 6868.',
+        message: status.reason || `Quý khách không thể huỷ đơn khi còn dưới 1 tiếng trước giờ hẹn với thợ. Để huỷ hoặc dời lịch gấp, vui lòng gọi Hotline ${HOTLINE}.`,
         actions: [
           { label: 'Đóng', variant: 'ghost' },
-          { label: 'Gọi Hotline 1900 6868', onPress: u.call },
+          { label: `Gọi Hotline ${HOTLINE}`, onPress: u.call },
         ],
       });
       return;
@@ -452,7 +452,7 @@ export function OrderScreen({ params }) {
           {['pending', 'confirmed'].includes(o.status) && !cancelStatus.allowed ? (
             <View style={{ marginVertical: 6, padding: 8, borderRadius: 8, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A' }}>
               <Text style={{ fontSize: 11.5, color: '#92400E', lineHeight: 16 }}>
-                Đã sát giờ hẹn (dưới 1 tiếng): Quý khách không thể tự huỷ đơn để bảo đảm lịch trình của thợ. Vui lòng gọi 1900 6868 nếu cần hỗ trợ.
+                Đã sát giờ hẹn (dưới 1 tiếng): Quý khách không thể tự huỷ đơn để bảo đảm lịch trình của thợ. Vui lòng gọi {HOTLINE} nếu cần hỗ trợ.
               </Text>
             </View>
           ) : ['pending', 'confirmed'].includes(o.status) ? (
