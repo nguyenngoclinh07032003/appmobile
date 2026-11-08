@@ -688,15 +688,16 @@ export function AppProvider({ children }) {
     // Thiết bị
     addDevice: ({ category, brand, room, lastAgo }) => {
       const lastService = lastAgo ? addMonths(Date.now(), -lastAgo) : null;
-      const d = { id: uid(), category, brand: brand.trim(), room: room?.trim() || '', lastService, createdAt: Date.now() };
+      const d = { id: uid(), category, brand: (brand || '').trim(), room: (room || '').trim(), lastService, createdAt: Date.now() };
       up((p) => ({
-        devices: [...p.devices, d],
+        devices: [...(p.devices || []), d],
         notifications: pushNotif(p, {
           icon: '📺', title: `Đã thêm ${catLabel(category)}`,
           body: 'Thợ HRMSS sẽ nhắc bạn khi đến kỳ bảo dưỡng.', link: { tab: 'devices' },
         }),
       }));
       ui.toast('Đã lưu thiết bị');
+      return d;
     },
     updateDevice: (id, patch) => up((p) => ({ devices: p.devices.map((d) => (d.id === id ? { ...d, ...patch } : d)) })),
     removeDevice: (id) => { up((p) => ({ devices: p.devices.filter((d) => d.id !== id) })); ui.toast('Đã xoá thiết bị'); },

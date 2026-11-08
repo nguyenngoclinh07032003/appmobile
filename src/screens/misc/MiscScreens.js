@@ -1526,14 +1526,17 @@ export function QRScreen() {
 
 // =========================================================== THÊM THIẾT BỊ
 const ROOMS = ['Phòng khách', 'Phòng ngủ', 'Bếp', 'Phòng tắm', 'Văn phòng'];
-export function DeviceFormScreen({ params }) {
-  const { a, nav } = useApp();
+export function DeviceFormScreen({ params = {} }) {
+  const { a, nav, setPendingDeviceId } = useApp();
   const [category, setCategory] = useState(params.category || 'may-lanh');
   const [brand, setBrand] = useState('');
   const [room, setRoom] = useState('');
   const [last, setLast] = useState('unknown');
   const save = () => {
-    a.addDevice({ category, brand, room, lastAgo: LAST_SERVICE_OPTIONS.find((x) => x.id === last)?.ago });
+    const d = a.addDevice({ category, brand, room, lastAgo: LAST_SERVICE_OPTIONS.find((x) => x.id === last)?.ago });
+    if (params.selectOnSave && d?.id && setPendingDeviceId) {
+      setPendingDeviceId(d.id);
+    }
     nav.back();
   };
   return (
