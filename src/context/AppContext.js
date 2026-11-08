@@ -21,12 +21,12 @@ import {
 } from '../services/syncService';
 import {
   TECH_POLICY, normalizeTechRep, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
-  applyTechPenalty, applyTechBonus, mintWalletVoucher, slotStartTs,
+  applyTechPenalty, applyTechBonus, mintWalletVoucher, slotStartTs, getCancellationWindowStatus,
 } from '../constants/techPolicy';
 import { advanceTracking } from '../utils/geo';
 export {
   TECH_POLICY, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
-  reputationTone, normalizeTechRep, slotStartTs,
+  reputationTone, normalizeTechRep, slotStartTs, getCancellationWindowStatus,
 } from '../constants/techPolicy';
 
 // ---------------------------------------------------------------------------
@@ -2102,7 +2102,16 @@ export function AppProvider({ children }) {
       const cur = s.orders.find((x) => x.code === code);
       if (!cur || !['pending', 'confirmed'].includes(cur.status)) {
         ui.alert('Không huỷ được', 'Chỉ huỷ khi thợ chưa bắt đầu di chuyển. Sau đó vui lòng gọi hotline.', 'ℹ️');
-        return;
+        return false;
+      }
+      const cancelCheck = getCancellationWindowStatus(cur, now);
+      if (!cancelCheck.allowed) {
+        ui.alert(
+          'Không thể huỷ đơn',
+          cancelCheck.reason || 'Không thể huỷ đơn khi còn dưới 1 tiếng trước giờ hẹn với thợ. Vui lòng gọi Hotline 1900 6868.',
+          '⚠️'
+        );
+        return false;
       }
       up((p) => {
         const o = p.orders.find((x) => x.code === code);

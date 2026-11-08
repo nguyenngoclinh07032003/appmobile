@@ -6,7 +6,8 @@ import {
   getService, formatVND, normalize, catLabel, tierOf, TIERS, TIME_SLOTS, MATERIALS, SAFETY_CHECKLIST_ITEMS,
 } from '../../constants/data';
 import {
-  useApp, fmtDate, fmtDateTime, timeAgo, warrantyInfo, LAST_SERVICE_OPTIONS, isActiveOrder, orderTotal, lateDiscountAmount, tierPartDiscountAmount, normalizeTechRep,
+  useApp, fmtDate, fmtDateTime, timeAgo, warrantyInfo, LAST_SERVICE_OPTIONS, isActiveOrder, orderTotal,
+  lateDiscountAmount, tierPartDiscountAmount, normalizeTechRep, getCancellationWindowStatus,
 } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Chip, Badge, Stars, Field, Sheet, Radio,
@@ -178,7 +179,25 @@ export function OrderScreen({ params }) {
   const orderCats = [...new Set(o.items.map((it) => getService(it.id)?.category).filter(Boolean))];
   const refMaterials = MATERIALS.filter((m) => orderCats.includes(m.category) || m.category === 'all');
   const canCancel = ['pending', 'confirmed'].includes(o.status);
+  const cancelStatus = getCancellationWindowStatus(o);
   const canEdit = o.status === 'pending';
+
+  const handlePressCancel = () => {
+    const status = getCancellationWindowStatus(o);
+    if (!status.allowed) {
+      u.dialog({
+        icon: '⚠️',
+        title: 'Không thể huỷ đơn',
+        message: status.reason || 'Quý khách không thể huỷ đơn khi còn dưới 1 tiếng trước giờ hẹn với thợ. Để huỷ hoặc dời lịch gấp, vui lòng gọi Hotline 1900 6868.',
+        actions: [
+          { label: 'Đóng', variant: 'ghost' },
+          { label: 'Gọi Hotline 1900 6868', onPress: u.call },
+        ],
+      });
+      return;
+    }
+    setShowCancel(true);
+  };
   const active = isActiveOrder(o);
   const reorder = () => nav.push('checkout', { items: o.items.map(({ id, qty }) => ({ id, qty })) });
   const evidence = o.evidence || [];
@@ -436,6 +455,19 @@ export function OrderScreen({ params }) {
 
         <Card style={{ marginTop: 12 }}>
           <InfoLine icon="📅" label="Lịch hẹn" value={`${o.dateLabel} · ${o.slot}`} />
+          {['pending', 'confirmed'].includes(o.status) && !cancelStatus.allowed ? (
+            <View style={{ marginVertical: 6, padding: 8, borderRadius: 8, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A' }}>
+              <Text style={{ fontSize: 11.5, color: '#92400E', lineHeight: 16 }}>
+                Đã sát giờ hẹn (dưới 1 tiếng): Quý khách không thể tự huỷ đơn để bảo đảm lịch trình của thợ. Vui lòng gọi 1900 6868 nếu cần hỗ trợ.
+              </Text>
+            </View>
+          ) : ['pending', 'confirmed'].includes(o.status) ? (
+            <View style={{ marginVertical: 6, padding: 8, borderRadius: 8, backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD' }}>
+              <Text style={{ fontSize: 11.5, color: '#0369A1', lineHeight: 16 }}>
+                Quý khách có thể huỷ đơn miễn phí trước giờ hẹn tối thiểu 1 tiếng.
+              </Text>
+            </View>
+          ) : null}
           <InfoLine icon="📍" label={`${o.address?.gender === 'Nữ' ? 'Chị' : 'Anh'} ${o.address?.name || ''} · ${o.address?.phone || ''}`} value={o.address?.full} />
           <InfoLine icon="💳" label="Thanh toán" value={o.payment} />
           {o.device ? (
@@ -759,7 +791,7 @@ export function OrderScreen({ params }) {
       {(canEdit || canCancel || (o.status === 'done' && o.kind !== 'warranty') || (o.status === 'cancelled' && o.kind !== 'warranty') || (o.kind === 'warranty' && !active)) ? (
         <View style={mx.dock}>
           {canEdit ? <Btn title="Sửa yêu cầu" variant="soft" style={{ flex: 1 }} onPress={openEdit} /> : null}
-          {canCancel ? <Btn title="Huỷ đơn" variant="dangerSoft" style={{ flex: 1 }} onPress={() => setShowCancel(true)} /> : null}
+          {canCancel ? <Btn title="Huỷ đơn" variant="dangerSoft" style={{ flex: 1 }} onPress={handlePressCancel} /> : null}
           {o.status === 'done' && !o.report?.paid && o.kind !== 'warranty' && o.kind !== 'followup' ? (
             <Btn title="Đã thanh toán" icon="💳" variant="soft" style={{ flex: 1 }} onPress={() => a.confirmPayment(o.code)} />
           ) : null}
@@ -855,6 +887,12 @@ export function OrderScreen({ params }) {
         title="Lý do huỷ đơn"
         footer={<Btn title="Xác nhận huỷ" variant="danger" onPress={() => { setShowCancel(false); a.cancelOrder(o.code, reason); }} />}
       >
+        <View style={{ backgroundColor: '#F0F4FA', borderRadius: R.md, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#DCE5F5' }}>
+          <Text style={{ fontSize: 12.5, color: C.ink, fontWeight: '700', marginBottom: 2 }}>Chính sách huỷ đơn</Text>
+          <Text style={{ fontSize: 12, color: C.ink2, lineHeight: 17 }}>
+            Quý khách được huỷ đơn miễn phí trước giờ hẹn tối thiểu 1 tiếng. Nếu còn dưới 1 tiếng trước giờ hẹn, tính năng huỷ đơn sẽ bị khoá để bảo đảm lịch trình của thợ.
+          </Text>
+        </View>
         {CANCEL_REASONS.map((r) => (
           <Tap key={r} style={mx.option} onPress={() => setReason(r)}>
             <Radio on={reason === r} />

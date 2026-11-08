@@ -20,10 +20,44 @@ export const slotStartTs = (order) => {
   if (!order?.dateKey || !order?.slot) return null;
   const parts = String(order.dateKey).split('-').map(Number);
   if (parts.length < 3 || parts.some((x) => Number.isNaN(x))) return null;
-  const hour = parseInt(order.slot, 10);
+  const match = String(order.slot).match(/^(\d{1,2})(?:h|:)(\d{2})?/);
+  const hour = match ? parseInt(match[1], 10) : parseInt(order.slot, 10);
+  const minute = match && match[2] ? parseInt(match[2], 10) : 0;
   if (Number.isNaN(hour)) return null;
   const [y, m, d] = parts;
-  return new Date(y, m - 1, d, hour, 0, 0, 0).getTime();
+  return new Date(y, m - 1, d, hour, minute, 0, 0).getTime();
+};
+
+/**
+ * Kiểm tra xem khách hàng có được phép huỷ đơn hay không.
+ * Quy định: Khách hàng không được huỷ đơn khi còn dưới 1 tiếng trước giờ hẹn với thợ.
+ */
+export const getCancellationWindowStatus = (order, now = Date.now()) => {
+  if (!order || !['pending', 'confirmed'].includes(order.status)) {
+    return {
+      allowed: false,
+      reason: 'Đơn hàng ở trạng thái hiện tại không thể tự huỷ qua ứng dụng.',
+    };
+  }
+  const startTs = slotStartTs(order);
+  if (!startTs) {
+    return { allowed: true };
+  }
+  const diffMs = startTs - now;
+  const ONE_HOUR_MS = 60 * 60 * 1000;
+  if (diffMs <= ONE_HOUR_MS) {
+    const minsLeft = Math.max(0, Math.floor(diffMs / 60000));
+    return {
+      allowed: false,
+      isNearAppointment: true,
+      diffMs,
+      minsLeft,
+      reason: diffMs <= 0
+        ? 'Đã qua thời gian hẹn với kỹ thuật viên. Quý khách không thể tự huỷ đơn. Vui lòng liên hệ Hotline 1900 6868.'
+        : `Chỉ còn ${minsLeft} phút đến giờ hẹn (${order.slot}). Theo quy định, quý khách không thể huỷ đơn trước 1 tiếng để đảm bảo quyền lợi và lịch trình của kỹ thuật viên. Vui lòng liên hệ Hotline 1900 6868 nếu có việc đột xuất.`,
+    };
+  }
+  return { allowed: true, diffMs };
 };
 
 export const normalizeTechRep = (profile) => {
