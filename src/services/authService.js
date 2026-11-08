@@ -122,6 +122,18 @@ export function listAccounts() {
   return loadAccounts().map(({ password, ...rest }) => rest);
 }
 
+export function deleteAccountById(id) {
+  if (!id) return false;
+  const accounts = loadAccounts();
+  const next = accounts.filter((a) => a.id !== id);
+  saveAccounts(next);
+  const cur = readJson(ss(), SESSION_KEY);
+  if (cur?.accountId === id) {
+    clearSession();
+  }
+  return true;
+}
+
 export function findAccountByPhone(phone, role) {
   const p = String(phone || '').replace(/\D/g, '');
   return loadAccounts().find((a) => a.phone === p && (!role || a.role === role)) || null;

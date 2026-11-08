@@ -7,7 +7,7 @@ import {
 import { MOCK_ORDERS, MOCK_DEVICES, MOCK_ADDRESSES } from '../constants/mockData';
 export { matchJobForTech, comboDiscountFor } from '../constants/data';
 import {
-  getSession, clearSession, loginAccount, registerAccount, urlRoleHint, resetPassword, changePassword, quickLoginRole, setSession, upsertBackendAccount,
+  getSession, clearSession, loginAccount, registerAccount, urlRoleHint, resetPassword, changePassword, quickLoginRole, setSession, upsertBackendAccount, deleteAccountById,
 } from '../services/authService';
 import { hrmssApi, authTokens } from '../services/api';
 import {
@@ -2242,6 +2242,28 @@ export function AppProvider({ children }) {
       setStack([]);
       setTab('home');
       ui.toast('Đã đăng xuất');
+    },
+    deleteAccount: () => {
+      const currentId = s.auth?.id;
+      if (currentId) {
+        deleteAccountById(currentId);
+      }
+      hrmssApi.logout();
+      clearSession();
+      up((p) => {
+        const resetSlice = switchCustomerSlice(p, null);
+        return {
+          ...resetSlice,
+          auth: null,
+          role: 'customer',
+          techProfile: null,
+          user: { name: '', phone: '', email: '' },
+          cart: [],
+        };
+      });
+      setStack([]);
+      setTab('home');
+      ui.toast('Đã xoá tài khoản thành công', '🗑️');
     },
     loadMockData: () => {
       up(() => ({

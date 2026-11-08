@@ -8,7 +8,7 @@ import {
 import { useApp, deviceStatus, warrantyInfo, fmtDate, isActiveOrder, orderTotal } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, PageHead, Pills, Segmented, ServiceGrid, EmptyState, Field, Badge,
-  StatusChip, Progress, Media, ListRow, ui, HScroll,
+  StatusChip, Progress, Media, ListRow, Sheet, ui, HScroll,
 } from '../../components';
 
 // =========================================================== DỊCH VỤ
@@ -269,6 +269,7 @@ export function ActivityScreen() {
 // =========================================================== CÁ NHÂN
 export function PersonalScreen() {
   const { s, a, d, nav, ui: u } = useApp();
+  const [showAccSheet, setShowAccSheet] = useState(false);
   const name = s.user.name || d.address?.name || 'Khách';
   const phone = s.user.phone || d.address?.phone || 'Chưa có số điện thoại';
   const { cur, next } = tierOf(s.lifetimePoints);
@@ -329,7 +330,13 @@ export function PersonalScreen() {
           <ListRow icon="📞" iconBg={C.primarySoft} label="Liên hệ hỗ trợ" value={HOTLINE} onPress={u.call} last />
         </Group>
         <Group title="Khác">
-          <ListRow icon="🔐" iconBg={C.goldSoft} label="Tài khoản đang đăng nhập" sub={`${s.auth?.role === 'customer' ? 'Khách hàng' : 'Thợ'} · ${s.auth?.phone || phone}`} />
+          <ListRow
+            icon="🔐"
+            iconBg={C.goldSoft}
+            label="Tài khoản đang đăng nhập"
+            sub={`${s.auth?.role === 'customer' ? 'Khách hàng' : 'Thợ'} · ${s.auth?.phone || phone}`}
+            onPress={() => setShowAccSheet(true)}
+          />
           <ListRow icon="📄" iconBg="#EEF2F7" label="Điều khoản ứng dụng" onPress={() => nav.push('terms')} />
           <ListRow icon="⬆️" iconBg="#EEF2F7" label="Cập nhật ứng dụng" value="3.0.8" onPress={() => u.alert('Bạn đang dùng bản mới nhất', 'Phiên bản 3.0.8 (v7).', '✅')} last />
         </Group>
@@ -352,6 +359,68 @@ export function PersonalScreen() {
           onPress={() => u.confirm('Xoá toàn bộ dữ liệu?', 'Giỏ hàng, đơn, địa chỉ, thiết bị trên trình duyệt này sẽ bị xoá. Tài khoản đăng ký vẫn giữ.', a.wipeLocalData, 'Xoá', true)}
         />
       </View>
+
+      <Sheet
+        visible={showAccSheet}
+        onClose={() => setShowAccSheet(false)}
+        title="Tài khoản đang đăng nhập"
+      >
+        <View style={{ paddingVertical: 4 }}>
+          <View style={{ alignItems: 'center', marginBottom: 16 }}>
+            <View style={[sx.avatar, { width: 64, height: 64, borderRadius: 22, backgroundColor: C.navy, marginBottom: 8, alignItems: 'center', justifyContent: 'center' }]}>
+              <Text style={{ fontSize: 28, color: '#fff', fontWeight: '900' }}>{(s.user.name || s.auth?.name || 'K').trim().charAt(0).toUpperCase()}</Text>
+            </View>
+            <Text style={{ fontSize: 17, fontWeight: '800', color: C.ink }}>{s.user.name || s.auth?.name || 'Khách hàng'}</Text>
+            <Text style={[ui.meta, { marginTop: 2 }]}>{s.auth?.role === 'customer' ? 'Tài khoản Khách hàng cá nhân' : 'Tài khoản Kỹ thuật viên'}</Text>
+          </View>
+
+          <Card style={{ backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, padding: 12, marginBottom: 16 }}>
+            <View style={{ gap: 8 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={ui.meta}>Tên đăng nhập:</Text>
+                <Text style={{ fontWeight: '700', color: C.ink }}>{s.auth?.username || '—'}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={ui.meta}>Số điện thoại:</Text>
+                <Text style={{ fontWeight: '700', color: C.ink }}>{s.auth?.phone || s.user?.phone || '—'}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={ui.meta}>Email:</Text>
+                <Text style={{ fontWeight: '700', color: C.ink }}>{s.auth?.email || s.user?.email || '—'}</Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={ui.meta}>Ngày tạo:</Text>
+                <Text style={{ fontWeight: '700', color: C.ink }}>{fmtDate(s.auth?.createdAt || Date.now())}</Text>
+              </View>
+            </View>
+          </Card>
+
+          <Btn
+            title="Đăng xuất"
+            variant="ghost"
+            style={{ marginBottom: 10 }}
+            onPress={() => {
+              setShowAccSheet(false);
+              u.confirm('Đăng xuất?', 'Bạn sẽ quay về màn đăng nhập.', a.logout, 'Đăng xuất', true);
+            }}
+          />
+
+          <Btn
+            title="🗑️ Xoá tài khoản này"
+            variant="dangerSoft"
+            onPress={() => {
+              setShowAccSheet(false);
+              u.confirm(
+                'Xoá vĩnh viễn tài khoản?',
+                'Toàn bộ thông tin tài khoản, lịch sử đơn và dữ liệu cá nhân của bạn sẽ bị xoá hoàn toàn khỏi hệ thống. Bạn có chắc chắn muốn xoá không?',
+                () => a.deleteAccount(),
+                'Xoá tài khoản',
+                true,
+              );
+            }}
+          />
+        </View>
+      </Sheet>
     </ScrollView>
   );
 }
