@@ -413,17 +413,13 @@ export function Media({ item, height, width, radius = 0, iconSize }) {
 }
 
 export function ServiceCard({ item, style }) {
-  const { a, s, nav } = useApp();
+  const { a, nav } = useApp();
   const discount = discountOf(item);
-  const fav = s.favorites.includes(item.id);
   return (
     <Tap scaleTo={0.975} style={[ui.sCard, style]} onPress={() => nav.push('detail', { id: item.id })}>
       <View>
         <Media item={item} height={110} />
         {discount > 0 ? <View style={ui.offTag}><Text style={ui.offTagText}>-{discount}%</Text></View> : null}
-        <Tap style={ui.favBtn} scaleTo={0.88} onPress={() => a.toggleFav(item.id)} hitSlop={6}>
-          <Text style={{ fontSize: 14, color: fav ? C.red : C.muted }}>{fav ? '♥' : '♡'}</Text>
-        </Tap>
         <View style={ui.warrantyTag}><Text style={ui.warrantyTagText}>🛡 BH 60 ngày</Text></View>
       </View>
       <View style={{ padding: 11, flex: 1 }}>

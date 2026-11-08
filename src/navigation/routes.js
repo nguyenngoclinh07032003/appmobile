@@ -17,7 +17,6 @@ import AuthScreen from '../screens/auth';
 export const CUSTOMER_TABS = [
   { id: 'home', label: 'Trang chủ', icon: '🏠', Comp: HomeScreen },
   { id: 'services', label: 'Dịch vụ', icon: '🧰', Comp: ServicesScreen },
-  { id: 'devices', label: 'Thiết bị', icon: '📺', Comp: DevicesScreen },
   { id: 'activity', label: 'Hoạt động', icon: '📋', Comp: ActivityScreen },
   { id: 'personal', label: 'Cá nhân', icon: '👤', Comp: PersonalScreen },
 ];
@@ -43,12 +42,10 @@ export const SCREENS = {
   order: OrderScreen,
   rate: RateScreen,
   rewards: RewardsScreen,
-  favorites: FavoritesScreen,
   profile: ProfileScreen,
   help: HelpScreen,
   terms: TermsScreen,
   qr: QRScreen,
-  'device-form': DeviceFormScreen,
   'tech-job': TechJobScreen,
   'tech-notifs': TechNotifsScreen,
 };

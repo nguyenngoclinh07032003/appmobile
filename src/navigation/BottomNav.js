@@ -10,7 +10,7 @@ export default function BottomNav() {
   const tabs = role === 'tech' ? TECH_TABS : CUSTOMER_TABS;
   const badges = role === 'tech'
     ? { 'tech-jobs': d.newJobs.length, 'tech-notifs': d.techUnread }
-    : { activity: d.activeOrders.length, devices: d.dueDevices.length };
+    : { activity: d.activeOrders.length };
 
   return (
     <View style={styles.nav}>

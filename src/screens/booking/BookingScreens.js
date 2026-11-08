@@ -36,7 +36,6 @@ export function DetailScreen({ params }) {
   const curTier = tierOf(s.lifetimePoints || 0).cur;
   const catMaterials = MATERIALS.filter((m) => m.category === service.category || m.category === 'all');
   const discount = discountOf(service);
-  const fav = s.favorites.includes(service.id);
   const reviews = [...(s.userReviews[service.id] || []), ...(REVIEWS_BY_ID[service.id] || []).map((r) => ({ ...r, stars: 5 }))];
   const related = ALL_SERVICES.filter((x) => x.category === service.category && x.id !== service.id).slice(0, 6);
   const video = videoFor(service);
@@ -50,10 +49,7 @@ export function DetailScreen({ params }) {
           <Media item={service} height={260} />
           <View style={bx.floatBar}>
             <IconBtn icon="‹" onPress={nav.back} style={bx.floatBtn} label="Quay lại" />
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <IconBtn icon={fav ? '♥' : '♡'} onPress={() => a.toggleFav(service.id)} style={bx.floatBtn} label="Yêu thích" />
-              <IconBtn icon="🛒" badge={d.cartCount} onPress={() => nav.push('cart')} style={bx.floatBtn} label="Giỏ hàng" />
-            </View>
+            <IconBtn icon="🛒" badge={d.cartCount} onPress={() => nav.push('cart')} style={bx.floatBtn} label="Giỏ hàng" />
           </View>
         </View>
 
@@ -374,29 +370,6 @@ export function CheckoutScreen({ params }) {
   const slotPassed = (sl) => dayIdx === 0 && parseInt(sl, 10) <= nowH + 1;
 
   const lines = items.map((it) => ({ ...it, svc: getService(it.id) })).filter((x) => x.svc);
-  const serviceCats = [...new Set(lines.map((x) => x.svc.category).filter(Boolean))];
-  // Sắp xếp thiết bị: thiết bị khớp với chuyên mục dịch vụ lên trước, các thiết bị khác hiển thị kế tiếp để khách dễ chọn
-  const sortedDevices = [...(s.devices || [])].sort((a, b) => {
-    const aMatch = serviceCats.includes(a.category) ? 1 : 0;
-    const bMatch = serviceCats.includes(b.category) ? 1 : 0;
-    return bMatch - aMatch;
-  });
-  const [selectedDeviceId, setSelectedDeviceId] = useState(() => (
-    params.deviceId || pendingDeviceId || (sortedDevices[0]?.id || 'other')
-  ));
-  const isOther = selectedDeviceId === 'other' || (!selectedDeviceId && !sortedDevices.length);
-  const selectedDevice = s.devices?.find((dv) => dv.id === selectedDeviceId) || null;
-  const [otherCategory, setOtherCategory] = useState(serviceCats[0] || 'may-lanh');
-  const [otherBrand, setOtherBrand] = useState('');
-  const [otherRoom, setOtherRoom] = useState('Phòng khách');
-  const [saveOtherToDevices, setSaveOtherToDevices] = useState(true);
-
-  // Sheet thêm nhanh thiết bị mới trực tiếp tại Checkout
-  const [showAddDeviceSheet, setShowAddDeviceSheet] = useState(false);
-  const [newCat, setNewCat] = useState(serviceCats[0] || 'may-lanh');
-  const [newBrand, setNewBrand] = useState('');
-  const [newRoom, setNewRoom] = useState('Phòng khách');
-  const [newLast, setNewLast] = useState('unknown');
 
   // Sheet thêm dịch vụ khác trực tiếp vào đơn đặt lịch
   const [showAddServiceSheet, setShowAddServiceSheet] = useState(false);
@@ -415,33 +388,6 @@ export function CheckoutScreen({ params }) {
   const [siteConditionId, setSiteConditionId] = useState(SITE_CONDITIONS[0].id);
   const selectedSite = SITE_CONDITIONS.find((sc) => sc.id === siteConditionId) || SITE_CONDITIONS[0];
   const curTier = tierOf(s.lifetimePoints || 0).cur;
-
-  React.useEffect(() => {
-    if (pendingDeviceId) {
-      setSelectedDeviceId(pendingDeviceId);
-      setPendingDeviceId(null);
-    }
-  }, [pendingDeviceId, setPendingDeviceId]);
-
-  const handleQuickAdd = () => {
-    if (!newBrand.trim()) {
-      u.alert('Thiếu thông tin', 'Vui lòng nhập hãng hoặc model máy (VD: Daikin 1.5HP, Panasonic...)', '📺');
-      return;
-    }
-    const lastAgo = LAST_SERVICE_OPTIONS?.find((x) => x.id === newLast)?.ago;
-    const created = a.addDevice({
-      category: newCat,
-      brand: newBrand.trim(),
-      room: newRoom.trim() || 'Tại nhà',
-      lastAgo,
-    });
-    if (created?.id) {
-      setSelectedDeviceId(created.id);
-    }
-    setShowAddDeviceSheet(false);
-    setNewBrand('');
-    u.toast(`Đã thêm & chọn ${catLabel(newCat)}!`, '✅');
-  };
 
   const addAttachment = async () => {
     if (attachments.length >= 5) { u.alert('Giới hạn ảnh', 'Bạn chỉ đính kèm tối đa 5 ảnh cho yêu cầu.', '📷'); return; }
@@ -533,50 +479,9 @@ export function CheckoutScreen({ params }) {
     }
     if (slotPassed(slot)) { u.alert('Khung giờ đã qua', 'Vui lòng chọn khung giờ khác hoặc ngày khác.', '⏰'); return; }
 
-    let devicePayload = null;
-    if (selectedDevice) {
-      devicePayload = {
-        id: selectedDevice.id,
-        category: selectedDevice.category,
-        brand: selectedDevice.brand || '',
-        room: selectedDevice.room || '',
-        serial: selectedDevice.serial || '',
-      };
-    } else if (isOther) {
-      const bName = otherBrand.trim() || 'Thiết bị tại nhà';
-      if (saveOtherToDevices && otherBrand.trim()) {
-        const created = a.addDevice({
-          category: otherCategory,
-          brand: bName,
-          room: otherRoom.trim() || 'Tại nhà',
-        });
-        devicePayload = created ? {
-          id: created.id,
-          category: created.category,
-          brand: created.brand,
-          room: created.room,
-          serial: '',
-        } : {
-          id: 'custom',
-          category: otherCategory,
-          brand: bName,
-          room: otherRoom.trim() || 'Tại nhà',
-          serial: '',
-        };
-      } else {
-        devicePayload = {
-          id: 'custom',
-          category: otherCategory,
-          brand: bName,
-          room: otherRoom.trim() || 'Tại nhà',
-          serial: '',
-        };
-      }
-    }
-
     const code = a.placeOrder({
       items: lines.map(({ id, qty }) => ({ id, qty })),
-      device: devicePayload,
+      device: { category: lines[0]?.svc?.category || 'may-lanh' },
       siteCondition: selectedSite,
       comboDiscount: combo.amount,
       comboLabel: combo.label,
@@ -732,122 +637,6 @@ export function CheckoutScreen({ params }) {
           ))}
         </View>
         <Text style={[ui.meta, { marginTop: 6 }]}>{selectedSite.note}</Text>
-
-        {/* Thiết bị áp dụng (liên kết với Thiết bị của tôi) */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 18, marginBottom: 8 }}>
-          <Text style={[bx.sec, { marginTop: 0, marginBottom: 0 }]}>Thiết bị tại nhà</Text>
-          <Tap onPress={() => setShowAddDeviceSheet(true)}>
-            <Text style={ui.link}>＋ Thêm thiết bị</Text>
-          </Tap>
-        </View>
-
-        <HScroll contentContainerStyle={{ gap: 8, paddingBottom: 4 }}>
-          {sortedDevices.map((dv) => {
-            const on = selectedDeviceId === dv.id;
-            const isMatch = serviceCats.includes(dv.category);
-            return (
-              <Tap
-                key={dv.id}
-                onPress={() => setSelectedDeviceId(on ? 'other' : dv.id)}
-                style={[
-                  {
-                    flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10,
-                    borderRadius: 14, borderWidth: 1.5, borderColor: on ? C.primary : C.line,
-                    backgroundColor: on ? C.primarySoft : '#fff',
-                    minWidth: 140,
-                  },
-                ]}
-              >
-                <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: on ? '#DBEAFE' : '#F1F5F9', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 16 }}>{catIcon(dv.category)}</Text>
-                </View>
-                <View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ fontWeight: '800', fontSize: 13, color: on ? C.primary : C.ink }}>
-                      {catLabel(dv.category)}{dv.brand ? ` · ${dv.brand}` : ''}
-                    </Text>
-                    {isMatch ? (
-                      <View style={{ backgroundColor: '#ECFDF5', paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 6, borderWidth: 0.5, borderColor: '#A7F3D0' }}>
-                        <Text style={{ fontSize: 10, fontWeight: '700', color: '#059669' }}>Khớp dịch vụ</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                  <Text style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                    {dv.room || 'Tại nhà'}
-                  </Text>
-                </View>
-                {on ? <Text style={{ fontSize: 14, color: C.primary, fontWeight: '800', marginLeft: 4 }}>✓</Text> : null}
-              </Tap>
-            );
-          })}
-          <Tap
-            onPress={() => setSelectedDeviceId('other')}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 10,
-              borderRadius: 14, borderWidth: 1.5, borderColor: isOther ? C.navy : C.line,
-              backgroundColor: isOther ? '#EEF2F7' : '#fff',
-            }}
-          >
-            <Text style={{ fontSize: 16 }}>✏️</Text>
-            <View>
-              <Text style={{ fontWeight: '700', fontSize: 12.5, color: isOther ? C.navy : C.muted }}>Thiết bị khác</Text>
-              <Text style={{ fontSize: 10.5, color: isOther ? C.navy : C.faint }}>{isOther ? 'Đang chọn' : 'Nhập tự do'}</Text>
-            </View>
-            {isOther ? <Text style={{ fontSize: 13, color: C.navy, fontWeight: '800', marginLeft: 2 }}>✓</Text> : null}
-          </Tap>
-          <Tap
-            onPress={() => setShowAddDeviceSheet(true)}
-            style={{
-              flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 10,
-              borderRadius: 14, borderWidth: 1.5, borderColor: C.primary, borderStyle: 'dashed',
-              backgroundColor: C.primarySoft,
-            }}
-          >
-            <Text style={{ fontSize: 16, color: C.primary, fontWeight: '800' }}>＋</Text>
-            <Text style={{ fontWeight: '700', fontSize: 12.5, color: C.primary }}>Thêm mới</Text>
-          </Tap>
-        </HScroll>
-
-        {isOther ? (
-          <Card style={{ marginTop: 10, backgroundColor: '#F8FAFC', borderColor: C.primary, borderWidth: 1.5 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-              <Text style={{ fontSize: 15 }}>✏️</Text>
-              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>Thông tin thiết bị thực tế cần làm</Text>
-            </View>
-            <Text style={[ui.meta, { marginBottom: 6, fontWeight: '700' }]}>Loại thiết bị:</Text>
-            <HScroll contentContainerStyle={{ gap: 6, marginBottom: 8 }}>
-              {CATEGORIES.map((c) => (
-                <Chip
-                  key={c.id}
-                  label={`${c.icon} ${c.label}`}
-                  on={otherCategory === c.id}
-                  onPress={() => setOtherCategory(c.id)}
-                />
-              ))}
-            </HScroll>
-            <Field
-              label="Tên hãng / model máy"
-              value={otherBrand}
-              onChangeText={setOtherBrand}
-              placeholder="VD: Daikin Inverter 1.5 HP, Quạt hơi nước Kangaroo..."
-            />
-            <Text style={[ui.meta, { marginBottom: 6, marginTop: 4, fontWeight: '700' }]}>Vị trí đặt máy:</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-              {['Phòng khách', 'Phòng ngủ', 'Phòng ngủ 2', 'Bếp', 'Ban công'].map((r) => (
-                <Chip key={r} label={r} on={otherRoom === r} onPress={() => setOtherRoom(r)} />
-              ))}
-            </View>
-            <Tap
-              onPress={() => setSaveOtherToDevices(!saveOtherToDevices)}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line }}
-            >
-              <Text style={{ fontSize: 16 }}>{saveOtherToDevices ? '☑️' : '◻️'}</Text>
-              <Text style={{ fontSize: 12.5, color: C.ink2, fontWeight: '600', flex: 1 }}>
-                Lưu vào danh sách thiết bị nhà bạn để quản lý và tự động nhắc lịch bảo dưỡng
-              </Text>
-            </Tap>
-          </Card>
-        ) : null}
 
         <Text style={[bx.sec, { marginTop: 14 }]}>Hình ảnh hiện trạng (tùy chọn)</Text>
         <Text style={[ui.meta, { marginBottom: 8 }]}>Gửi ảnh lỗi hoặc vị trí lắp đặt để thợ chuẩn bị vật tư phù hợp (tối đa 5 ảnh).</Text>
@@ -1117,73 +906,6 @@ export function CheckoutScreen({ params }) {
         })}
       </Sheet>
 
-      {/* Sheet Thêm nhanh thiết bị */}
-      <Sheet visible={showAddDeviceSheet} onClose={() => setShowAddDeviceSheet(false)} title="Thêm thiết bị mới tại nhà">
-        <ScrollView style={{ maxHeight: 480 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          <Text style={[ui.meta, { marginBottom: 12 }]}>
-            Lưu thiết bị vào hệ thống để thợ chuẩn bị linh kiện tương thích và tự động lên lịch bảo dưỡng định kỳ cho gia đình bạn.
-          </Text>
-
-          <Text style={[bx.sec, { marginTop: 0, marginBottom: 8 }]}>Loại thiết bị</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-            {CATEGORIES.map((c) => {
-              const on = newCat === c.id;
-              return (
-                <Tap
-                  key={c.id}
-                  onPress={() => setNewCat(c.id)}
-                  style={{
-                    flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8,
-                    borderRadius: 12, borderWidth: 1.5, borderColor: on ? C.primary : C.line,
-                    backgroundColor: on ? C.primarySoft : '#fff',
-                  }}
-                >
-                  <Text style={{ fontSize: 16 }}>{c.icon}</Text>
-                  <Text style={{ fontSize: 12.5, fontWeight: on ? '800' : '600', color: on ? C.primary : C.ink }}>{c.label}</Text>
-                </Tap>
-              );
-            })}
-          </View>
-
-          <Field
-            label="Hãng / Model máy"
-            value={newBrand}
-            onChangeText={setNewBrand}
-            placeholder="VD: Daikin Inverter 1.5 HP, Panasonic Inverter..."
-          />
-
-          <Text style={[bx.sec, { marginTop: 10, marginBottom: 8 }]}>Vị trí trong nhà</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-            {['Phòng khách', 'Phòng ngủ 1', 'Phòng ngủ 2', 'Bếp', 'Ban công', 'Văn phòng'].map((r) => (
-              <Chip key={r} label={r} on={newRoom === r} onPress={() => setNewRoom(r)} />
-            ))}
-          </View>
-
-          <Text style={[bx.sec, { marginTop: 4, marginBottom: 8 }]}>Lần bảo dưỡng gần nhất</Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
-            {(LAST_SERVICE_OPTIONS || []).map((o) => (
-              <Chip key={o.id} label={o.label} on={newLast === o.id} onPress={() => setNewLast(o.id)} />
-            ))}
-          </View>
-
-          <Btn
-            title="Lưu & Chọn thiết bị này ngay"
-            icon="✓"
-            onPress={handleQuickAdd}
-            style={{ marginBottom: 12 }}
-          />
-          <Tap
-            onPress={() => {
-              setShowAddDeviceSheet(false);
-              nav.push('device-form', { category: newCat, selectOnSave: true });
-            }}
-            style={{ alignItems: 'center', paddingVertical: 6 }}
-          >
-            <Text style={[ui.link, { fontSize: 13 }]}>Mở biểu mẫu chi tiết đầy đủ ›</Text>
-          </Tap>
-        </ScrollView>
-      </Sheet>
-
       {/* Sheet Thêm dịch vụ khác vào đơn đặt lịch */}
       <Sheet visible={showAddServiceSheet} onClose={() => setShowAddServiceSheet(false)} title="Thêm dịch vụ vào đơn">
         <ScrollView style={{ maxHeight: 520 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -1301,8 +1023,6 @@ export function SuccessScreen({ params }) {
   const { s, nav } = useApp();
   const o = s.orders.find((x) => x.code === params.code);
   if (!o) return null;
-  const cats = [...new Set(o.items.map((it) => getService(it.id)?.category))];
-  const missing = cats.find((c) => c && !s.devices.some((dv) => dv.category === c));
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingTop: 40, paddingBottom: 32 }}>
       <View style={bx.successIcon}><Text style={{ fontSize: 48, color: '#fff' }}>✓</Text></View>
@@ -1318,16 +1038,6 @@ export function SuccessScreen({ params }) {
         </View>
         <Text style={[ui.meta, { marginTop: 10 }]} numberOfLines={2}>📍 {o.address?.full}</Text>
       </Card>
-      {missing ? (
-        <Card style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.primarySoft, borderColor: '#BFDBFE' }} onPress={() => nav.push('device-form', { category: missing })}>
-          <Text style={{ fontSize: 28 }}>{catIcon(missing)}</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontWeight: '800', color: C.ink }}>Lưu {catLabel(missing).toLowerCase()} vào Thiết bị</Text>
-            <Text style={ui.meta}>Để được nhắc lịch bảo dưỡng lần sau</Text>
-          </View>
-          <Text style={ui.chevron}>›</Text>
-        </Card>
-      ) : null}
       <Btn title="Theo dõi đơn hàng" style={{ marginTop: 24 }} onPress={() => { nav.reset(); nav.push('order', { code: o.code }); }} />
       <Btn title="Về trang chủ" variant="outline" style={{ marginTop: 10 }} onPress={() => nav.go('home')} />
     </ScrollView>

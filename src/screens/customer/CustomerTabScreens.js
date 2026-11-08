@@ -416,8 +416,7 @@ export function PersonalScreen() {
       <View style={sx.pStats}>
         {[
           { v: s.orders.length, l: 'Đơn hàng', onPress: () => nav.activity(d.activeOrders.length ? 'active' : s.orders.some((o) => o.status === 'done') ? 'done' : 'active') },
-          { v: s.points, l: 'Điểm', onPress: () => nav.push('rewards') },
-          { v: s.favorites.length, l: 'Yêu thích', onPress: () => nav.push('favorites') },
+          { v: s.points, l: 'Điểm tích luỹ', onPress: () => nav.push('rewards') },
           { v: s.myVouchers.length, l: 'Voucher', onPress: () => nav.push('rewards') },
         ].map((x, i) => (
           <Tap key={x.l} style={[{ flex: 1, alignItems: 'center' }, i > 0 && { borderLeftWidth: 1, borderLeftColor: C.line }]} onPress={x.onPress}>
@@ -431,8 +430,6 @@ export function PersonalScreen() {
         <Group title="Tài khoản">
           <ListRow icon="👤" iconBg={C.primarySoft} label="Thông tin cá nhân" sub={s.user.email || 'Tên, số điện thoại, email'} onPress={() => nav.push('profile')} />
           <ListRow icon="📍" iconBg={C.redSoft} label="Sổ địa chỉ" value={s.addresses.length ? `${s.addresses.length}` : 'Thêm'} onPress={() => nav.push('addresses')} />
-          <ListRow icon="📺" iconBg={C.cyanSoft} label="Thiết bị của tôi" value={`${s.devices.length}`} onPress={() => nav.go('devices')} />
-          <ListRow icon="♥" iconBg={C.redSoft} label="Dịch vụ yêu thích" value={`${s.favorites.length}`} onPress={() => nav.push('favorites')} />
           <ListRow icon="🎁" iconBg={C.goldSoft} label="Quyền lợi & đổi điểm" value={`${s.points} điểm`} onPress={() => nav.push('rewards')} />
           <ListRow icon="🔳" iconBg="#EEF2F7" label="Mã QR của tôi" sub="Đưa thợ quét khi đến nhà" onPress={() => nav.push('qr')} last />
         </Group>

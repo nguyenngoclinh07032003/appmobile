@@ -58,7 +58,7 @@ export default function HomeScreen() {
         {[
           { value: s.points, label: 'Điểm tích luỹ', onPress: () => nav.push('rewards') },
           { value: d.activeOrders.length, label: 'Đang xử lý', onPress: () => nav.activity('active') },
-          { value: s.devices.length, label: 'Thiết bị', onPress: () => nav.go('devices') },
+          { value: s.myVouchers.length, label: 'Voucher', onPress: () => nav.push('rewards') },
         ].map((x, i) => (
           <Tap key={x.label} style={[st.stat, i > 0 && st.statBorder]} onPress={x.onPress}>
             <Text style={st.statValue}>{x.value}</Text>
@@ -118,43 +118,8 @@ export default function HomeScreen() {
           </Tap>
         </View>
 
-        {/* ---------------- Nhắc lịch bảo dưỡng ---------------- */}
-        <Card style={{ marginTop: 18 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-            <IconBox icon="🗓️" size={38} bg={C.goldSoft} radius={12} />
-            <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={st.cardTitle}>Nhắc lịch bảo dưỡng</Text>
-              <Text style={ui.meta}>{s.devices.length ? `${d.dueDevices.length}/${s.devices.length} thiết bị cần chú ý` : 'Theo dõi thiết bị trong nhà'}</Text>
-            </View>
-            {s.devices.length ? <Tap onPress={() => nav.go('devices')}><Text style={ui.link}>Quản lý ›</Text></Tap> : null}
-          </View>
-          {s.devices.length === 0 ? (
-            <View>
-              <Text style={st.body}>Đồng bộ thiết bị từ hệ thống HRMSS theo SĐT hoặc thêm thiết bị trong nhà để được tự động nhắc lịch bảo dưỡng định kỳ.</Text>
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                <Btn title="Đồng bộ thiết bị HRMSS" small style={{ flex: 1.3 }} onPress={a.syncHrmssDevices} />
-                <Btn title="Thêm thủ công" icon="＋" variant="soft" small style={{ flex: 1 }} onPress={() => nav.push('device-form')} />
-              </View>
-            </View>
-          ) : d.dueDevices.length === 0 ? (
-            <Text style={[st.body, { color: C.green, fontWeight: '600' }]}>Tất cả thiết bị đều đang trong chu kỳ hoạt động tốt.</Text>
-          ) : d.dueDevices.slice(0, 2).map((dev) => {
-            const stt = deviceStatus(dev);
-            return (
-              <View key={dev.id} style={st.dueRow}>
-                <IconBox icon={catIcon(dev.category)} size={40} bg={toneOf(dev.category).bg} radius={12} />
-                <View style={{ flex: 1 }}>
-                  <Text style={st.dueName} numberOfLines={1}>{catLabel(dev.category)}{dev.brand ? ` · ${dev.brand}` : ''}</Text>
-                  <Text style={[ui.meta, { color: stt.level === 'overdue' ? C.red : C.orange }]}>{stt.label}</Text>
-                </View>
-                <Btn title="Đặt lịch" small onPress={() => nav.services('bao-duong', dev.category, dev.id)} />
-              </View>
-            );
-          })}
-        </Card>
-
         {/* ---------------- Ưu đãi ---------------- */}
-        <SectionTitle title="Ưu đãi cho bạn" action="Quyền lợi" onAction={() => nav.push('rewards')} />
+        <SectionTitle title="Ưu đãi cho bạn" action="Quyền lợi" onAction={() => nav.push('rewards')} style={{ marginTop: 14 }} />
       </View>
       <HScroll contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
         {[
