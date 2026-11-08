@@ -6,8 +6,8 @@ import { AppIcon } from '../components';
 import { CUSTOMER_TABS, TECH_TABS } from './routes';
 
 export default function BottomNav() {
-  const { s, nav, d } = useApp();
-  const isDark = Boolean(s.darkMode);
+  const { s, nav, d, isDark, colors } = useApp();
+  const themeColors = colors || C;
   const role = s.auth?.role || s.role;
   const tabs = role === 'tech' ? TECH_TABS : CUSTOMER_TABS;
   const badges = role === 'tech'
@@ -15,7 +15,13 @@ export default function BottomNav() {
     : { activity: d.activeOrders.length };
 
   return (
-    <View style={[styles.nav, isDark && styles.navDark]}>
+    <View style={[
+      styles.nav,
+      isDark && {
+        backgroundColor: themeColors.card,
+        borderTopColor: themeColors.line,
+      },
+    ]}>
       {tabs.map((t) => {
         const on = nav.tab === t.id;
         return (
@@ -27,23 +33,31 @@ export default function BottomNav() {
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
           >
-            <View style={[styles.navIcon, on && (isDark ? styles.navIconOnDark : styles.navIconOn)]}>
+            <View style={[
+              styles.navIcon,
+              on && [styles.navIconOn, isDark && { backgroundColor: themeColors.primarySoft }],
+            ]}>
               <AppIcon
                 icon={t.icon}
                 size={20}
-                color={on ? (isDark ? '#60A5FA' : C.primary) : (isDark ? '#94A3B8' : C.muted)}
+                color={on ? themeColors.primary : themeColors.muted}
                 strokeWidth={on ? 2.4 : 1.9}
               />
               {badges[t.id] ? (
-                <View style={[styles.navBadge, isDark && { borderColor: '#0F172A' }]}>
+                <View style={[styles.navBadge, isDark && { borderColor: themeColors.card }]}>
                   <Text style={styles.navBadgeText}>{badges[t.id]}</Text>
                 </View>
               ) : null}
             </View>
-            <Text style={[styles.navLabel, isDark && styles.navLabelDark, on && (isDark ? styles.navLabelOnDark : styles.navLabelOn)]}>
-              {t.label}
-            </Text>
-            <View style={[styles.navDot, on && isDark && styles.navDotDark, !on && styles.navDotOff]} />
+            <Text style={[
+              styles.navLabel,
+              isDark && { color: themeColors.muted },
+              on && [styles.navLabelOn, { color: themeColors.primary }],
+            ]}>{t.label}</Text>
+            <View style={[
+              styles.navDot,
+              { backgroundColor: on ? themeColors.primary : 'transparent' },
+            ]} />
           </TouchableOpacity>
         );
       })}
@@ -61,20 +75,12 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === 'ios' ? 24 : 9,
     ...shadow.sm,
   },
-  navDark: {
-    backgroundColor: '#0F172A',
-    borderTopColor: '#1E293B',
-  },
   navItem: { flex: 1, alignItems: 'center' },
   navIcon: { width: 48, height: 32, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   navIconOn: { backgroundColor: C.primarySoft },
-  navIconOnDark: { backgroundColor: '#1E293B' },
   navLabel: { fontSize: 11, color: C.muted, marginTop: 3, fontWeight: '600' },
-  navLabelDark: { color: '#94A3B8' },
   navLabelOn: { color: C.primary, fontWeight: '800' },
-  navLabelOnDark: { color: '#60A5FA', fontWeight: '800' },
   navDot: { width: 16, height: 3, borderRadius: 2, backgroundColor: C.primary, marginTop: 3 },
-  navDotDark: { backgroundColor: '#60A5FA' },
   navDotOff: { backgroundColor: 'transparent' },
   navBadge: {
     position: 'absolute',
@@ -92,3 +98,4 @@ const styles = StyleSheet.create({
   },
   navBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
 });
+

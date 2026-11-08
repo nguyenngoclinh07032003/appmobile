@@ -590,10 +590,11 @@ export function TechNotifsScreen() {
 
 // =========================================================== TAB: TÀI KHOẢN THỢ
 export function TechAccountScreen() {
-  const { s, a, d, nav, ui: u } = useApp();
+  const { s, a, d, nav, ui: u, isDark, colors, themeMode, setThemeMode } = useApp();
   const me = s.techProfile || TECH_ME;
   const [showProfile, setShowProfile] = useState(false);
   const [showAccountInfo, setShowAccountInfo] = useState(false);
+  const [showThemeSheet, setShowThemeSheet] = useState(false);
   const [showIncome, setShowIncome] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [curPw, setCurPw] = useState('');
@@ -741,12 +742,17 @@ export function TechAccountScreen() {
             </Card>
           )}
 
-          <Text style={{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }}>Tài khoản & Công việc</Text>
-          <View style={tx.menu}>
+          <Text style={[{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }, isDark && { color: colors?.ink }]}>Tài khoản & Công việc</Text>
+          <View style={[tx.menu, isDark && { backgroundColor: colors?.card, borderColor: colors?.line }]}>
             <ListRow icon="briefcase" label="Công việc của tôi" value={d.workingJobs.length ? `${d.workingJobs.length} đang làm` : ''} onPress={() => nav.go('tech-jobs')} />
             <ListRow icon="calendar-clock" label="Lịch làm việc" onPress={() => nav.go('tech-schedule')} />
             <ListRow icon="bell" label="Thông báo" value={d.techUnread ? `${d.techUnread} mới` : ''} onPress={() => nav.go('tech-notifs')} />
-            <ListRow icon="moon" label="Chế độ tối" sub="Giao diện màn đêm dịu mắt" value={s.darkMode ? 'Đang bật' : 'Đang tắt'} onPress={a.toggleDarkMode} />
+            <ListRow
+              icon={themeMode === 'dark' ? 'moon' : themeMode === 'light' ? 'sun' : 'laptop'}
+              label="Giao diện hiển thị"
+              value={themeMode === 'dark' ? 'Tối' : themeMode === 'light' ? 'Sáng' : 'Tự động (Hệ thống)'}
+              onPress={() => setShowThemeSheet(true)}
+            />
             <ListRow icon="circle-user-round" label="Sửa thông tin kỹ thuật viên" onPress={openProfile} />
             <ListRow icon="lock" label="Đổi mật khẩu" onPress={() => { setCurPw(''); setNewPw(''); setNewPw2(''); setShowPw(true); }} />
             {s.auth ? (
@@ -759,8 +765,8 @@ export function TechAccountScreen() {
             ) : null}
           </View>
 
-          <Text style={{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }}>Hỗ trợ kỹ thuật viên</Text>
-          <View style={tx.menu}>
+          <Text style={[{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }, isDark && { color: colors?.ink }]}>Hỗ trợ kỹ thuật viên</Text>
+          <View style={[tx.menu, isDark && { backgroundColor: colors?.card, borderColor: colors?.line }]}>
             <ListRow icon="headphones" label="Liên hệ điều phối" value={HOTLINE} onPress={u.call} last />
           </View>
           <Btn
@@ -779,6 +785,74 @@ export function TechAccountScreen() {
           />
         </View>
       </ScrollView>
+
+      <Sheet
+        visible={showThemeSheet}
+        onClose={() => setShowThemeSheet(false)}
+        title="Chọn giao diện hiển thị"
+      >
+        <View style={{ paddingVertical: 8, gap: 10 }}>
+          {[
+            { id: 'system', label: 'Tự động (Theo hệ thống)', desc: 'Tự đổi theo cài đặt Sáng/Tối của điện thoại', icon: 'laptop' },
+            { id: 'light', label: 'Giao diện Sáng (Light)', desc: 'Tiêu chuẩn rõ ràng, sắc nét cho ban ngày', icon: 'sun' },
+            { id: 'dark', label: 'Giao diện Tối (Dark)', desc: 'Obsidian Slate sang trọng, bảo vệ mắt & tiết kiệm pin', icon: 'moon' },
+          ].map((item) => {
+            const active = themeMode === item.id;
+            return (
+              <Tap
+                key={item.id}
+                onPress={() => {
+                  setThemeMode(item.id);
+                  setShowThemeSheet(false);
+                }}
+                style={[
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: 14,
+                    borderRadius: 16,
+                    borderWidth: 1.5,
+                    borderColor: active ? (colors?.primary || C.primary) : (colors?.line || C.line),
+                    backgroundColor: active ? (colors?.primarySoft || C.primarySoft) : (colors?.cardElevated || '#F8FAFC'),
+                    gap: 12,
+                  },
+                ]}
+              >
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    backgroundColor: active ? (colors?.primary || C.primary) : (colors?.card || '#fff'),
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <AppIcon
+                    icon={item.icon}
+                    size={20}
+                    color={active ? '#fff' : (colors?.primary || C.primary)}
+                    strokeWidth={2.2}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: active ? (colors?.primary || C.primary) : (colors?.ink || C.ink) }}>
+                    {item.label}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors?.muted || C.muted, marginTop: 2 }}>
+                    {item.desc}
+                  </Text>
+                </View>
+                {active ? (
+                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: colors?.primary || C.primary, alignItems: 'center', justifyContent: 'center' }}>
+                    <AppIcon name="check" size={13} color="#fff" strokeWidth={3} />
+                  </View>
+                ) : null}
+              </Tap>
+            );
+          })}
+        </View>
+      </Sheet>
 
       <Sheet
         visible={showProfile}

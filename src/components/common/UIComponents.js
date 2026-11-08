@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, ScrollView, Platform, Animated, Easing,
 } from 'react-native';
-import { C, R, shadow, toneOf, STATUS_META, grad } from '../../theme';
+import { C, R, shadow, toneOf, STATUS_META, getStatusMeta, grad } from '../../theme';
 import { formatVND, discountOf, isEstimate, isClean, durationText } from '../../constants/data';
 import { useApp } from '../../context';
 import { AppIcon, resolveIconColor } from './AppIcon';
@@ -193,8 +193,10 @@ export function IconBtn({ icon, onPress, badge, dark, style, size = 40, label, i
 
 // ------------------------------------------------------------------ Layout
 export function Card({ children, style, onPress }) {
-  if (onPress) return <Tap onPress={onPress} scaleTo={0.985} style={[ui.card, style]}>{children}</Tap>;
-  return <View style={[ui.card, style]}>{children}</View>;
+  const { isDark, colors } = useApp() || {};
+  const darkStyle = isDark ? { backgroundColor: colors?.card, borderColor: colors?.line } : null;
+  if (onPress) return <Tap onPress={onPress} scaleTo={0.985} style={[ui.card, darkStyle, style]}>{children}</Tap>;
+  return <View style={[ui.card, darkStyle, style]}>{children}</View>;
 }
 
 export function IconBox({ icon, size = 44, bg = C.primarySoft, color, radius, style }) {
@@ -206,13 +208,13 @@ export function IconBox({ icon, size = 44, bg = C.primarySoft, color, radius, st
 }
 
 export function TopBar({ title, sub, onBack, right }) {
-  const { nav } = useApp();
+  const { nav, isDark, colors } = useApp() || {};
   return (
-    <View style={ui.topBar}>
-      <IconBtn icon="‹" onPress={onBack || nav.back} size={38} label="Quay lại" style={{ backgroundColor: '#F1F5F9' }} />
+    <View style={[ui.topBar, isDark && { backgroundColor: colors?.card, borderBottomColor: colors?.line }]}>
+      <IconBtn icon="‹" onPress={onBack || nav?.back} size={38} label="Quay lại" style={{ backgroundColor: isDark ? colors?.cardElevated : '#F1F5F9' }} />
       <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: 8 }}>
-        <Text style={ui.topBarTitle} numberOfLines={1}>{title}</Text>
-        {sub ? <Text style={ui.topBarSub} numberOfLines={1}>{sub}</Text> : null}
+        <Text style={[ui.topBarTitle, isDark && { color: colors?.ink }]} numberOfLines={1}>{title}</Text>
+        {sub ? <Text style={[ui.topBarSub, isDark && { color: colors?.muted }]} numberOfLines={1}>{sub}</Text> : null}
       </View>
       <View style={{ minWidth: 38, alignItems: 'flex-end' }}>{right || null}</View>
     </View>
@@ -220,11 +222,12 @@ export function TopBar({ title, sub, onBack, right }) {
 }
 
 export function PageHead({ title, sub, right }) {
+  const { isDark, colors } = useApp() || {};
   return (
-    <View style={ui.pageHead}>
+    <View style={[ui.pageHead, isDark && { backgroundColor: colors?.card, borderBottomColor: colors?.line }]}>
       <View style={{ flex: 1 }}>
-        <Text style={ui.pageHeadTitle}>{title}</Text>
-        {sub ? <Text style={ui.pageHeadSub}>{sub}</Text> : null}
+        <Text style={[ui.pageHeadTitle, isDark && { color: colors?.ink }]}>{title}</Text>
+        {sub ? <Text style={[ui.pageHeadSub, isDark && { color: colors?.muted }]}>{sub}</Text> : null}
       </View>
       {right}
     </View>
@@ -232,22 +235,36 @@ export function PageHead({ title, sub, right }) {
 }
 
 export function SectionTitle({ title, action, onAction, style }) {
+  const { isDark, colors } = useApp() || {};
   return (
     <View style={[ui.sectionRow, style]}>
-      <Text style={ui.section}>{title}</Text>
-      {action ? <Tap onPress={onAction} hitSlop={8}><Text style={ui.link}>{action} ›</Text></Tap> : null}
+      <Text style={[ui.section, isDark && { color: colors?.ink }]}>{title}</Text>
+      {action ? <Tap onPress={onAction} hitSlop={8}><Text style={[ui.link, isDark && { color: colors?.primary }]}>{action} ›</Text></Tap> : null}
     </View>
   );
 }
 
-export function Divider({ style }) { return <View style={[{ height: 1, backgroundColor: C.line }, style]} />; }
+export function Divider({ style }) {
+  const { isDark, colors } = useApp() || {};
+  return <View style={[{ height: 1, backgroundColor: isDark ? colors?.line : C.line }, style]} />;
+}
 
 // ------------------------------------------------------------------ Bits
 export function Chip({ label, icon, on, onPress, style }) {
+  const { isDark, colors } = useApp() || {};
   return (
-    <Tap onPress={onPress} scaleTo={0.95} style={[ui.chip, on && ui.chipOn, style]}>
-      {icon ? <AppIcon icon={icon} size={15} color={on ? '#fff' : C.primary} strokeWidth={2.1} style={{ marginRight: 6 }} /> : null}
-      <Text style={[ui.chipText, on && ui.chipTextOn]}>{label}</Text>
+    <Tap
+      onPress={onPress}
+      scaleTo={0.95}
+      style={[
+        ui.chip,
+        isDark && { backgroundColor: colors?.card, borderColor: colors?.line },
+        on && (isDark ? { backgroundColor: colors?.primary, borderColor: colors?.primary } : ui.chipOn),
+        style,
+      ]}
+    >
+      {icon ? <AppIcon icon={icon} size={15} color={on ? '#fff' : (isDark ? colors?.primary : C.primary)} strokeWidth={2.1} style={{ marginRight: 6 }} /> : null}
+      <Text style={[ui.chipText, isDark && { color: colors?.ink2 }, on && ui.chipTextOn]}>{label}</Text>
     </Tap>
   );
 }
@@ -331,13 +348,31 @@ export const HScroll = React.forwardRef(({ children, style, contentContainerStyl
 });
 
 export function Segmented({ items, value, onChange, style }) {
+  const { isDark, colors } = useApp() || {};
   return (
-    <View style={[ui.segment, style]}>
+    <View style={[ui.segment, isDark && { backgroundColor: colors?.cardElevated }, style]}>
       {items.map((it) => {
         const on = value === it.id;
         return (
-          <Tap key={it.id} onPress={() => onChange(it.id)} scaleTo={0.97} style={[ui.segmentItem, on && ui.segmentOn]}>
-            <Text style={[ui.segmentText, on && ui.segmentTextOn]} numberOfLines={1}>{it.label}{it.count ? ` (${it.count})` : ''}</Text>
+          <Tap
+            key={it.id}
+            onPress={() => onChange(it.id)}
+            scaleTo={0.97}
+            style={[
+              ui.segmentItem,
+              on && (isDark ? { backgroundColor: colors?.card, ...shadow.sm } : ui.segmentOn),
+            ]}
+          >
+            <Text
+              style={[
+                ui.segmentText,
+                isDark && { color: colors?.muted },
+                on && (isDark ? { color: colors?.ink, fontWeight: '800' } : ui.segmentTextOn),
+              ]}
+              numberOfLines={1}
+            >
+              {it.label}{it.count ? ` (${it.count})` : ''}
+            </Text>
           </Tap>
         );
       })}
@@ -350,7 +385,8 @@ export function Badge({ text, fg = C.primary, bg = C.primarySoft, style }) {
 }
 
 export function StatusChip({ status }) {
-  const m = STATUS_META[status] || STATUS_META.pending;
+  const { isDark } = useApp() || {};
+  const m = getStatusMeta ? getStatusMeta(status, isDark) : (STATUS_META[status] || STATUS_META.pending);
   return <Badge text={m.label} fg={m.fg} bg={m.bg} />;
 }
 
@@ -416,42 +452,55 @@ export function Stepper({ value, onChange, min = 1 }) {
 }
 
 export function Field({ label, error, style, inputStyle, ...rest }) {
+  const { isDark, colors } = useApp() || {};
   return (
     <View style={style}>
-      {label ? <Text style={ui.fieldLabel}>{label}</Text> : null}
-      <TextInput placeholderTextColor={C.faint} style={[ui.input, rest.multiline && ui.inputMulti, error && { borderColor: '#F7A39C' }, inputStyle]} {...rest} />
+      {label ? <Text style={[ui.fieldLabel, isDark && { color: colors?.ink2 }]}>{label}</Text> : null}
+      <TextInput
+        placeholderTextColor={isDark ? colors?.faint : C.faint}
+        style={[
+          ui.input,
+          isDark && { backgroundColor: colors?.cardElevated, borderColor: colors?.line, color: colors?.ink },
+          rest.multiline && ui.inputMulti,
+          error && { borderColor: '#F7A39C' },
+          inputStyle,
+        ]}
+        {...rest}
+      />
       {error ? <Text style={ui.fieldErr}>{error}</Text> : null}
     </View>
   );
 }
 
 export function SelectRow({ label, value, placeholder, onPress, icon }) {
+  const { isDark, colors } = useApp() || {};
   return (
     <View>
-      {label ? <Text style={ui.fieldLabel}>{label}</Text> : null}
-      <Tap onPress={onPress} scaleTo={0.985} style={ui.selectRow}>
-        {icon ? <AppIcon icon={icon} size={18} color={C.primary} strokeWidth={2.1} style={{ marginRight: 10 }} /> : null}
-        <Text style={[{ flex: 1, fontSize: 15, color: value ? C.ink : C.faint }]} numberOfLines={1}>{value || placeholder}</Text>
-        <AppIcon name="chevron-right" size={18} color={C.faint} strokeWidth={2.2} style={{ marginLeft: 6 }} />
+      {label ? <Text style={[ui.fieldLabel, isDark && { color: colors?.ink2 }]}>{label}</Text> : null}
+      <Tap onPress={onPress} scaleTo={0.985} style={[ui.selectRow, isDark && { backgroundColor: colors?.cardElevated, borderColor: colors?.line }]}>
+        {icon ? <AppIcon icon={icon} size={18} color={isDark ? colors?.primary : C.primary} strokeWidth={2.1} style={{ marginRight: 10 }} /> : null}
+        <Text style={[{ flex: 1, fontSize: 15, color: value ? (isDark ? colors?.ink : C.ink) : (isDark ? colors?.faint : C.faint) }]} numberOfLines={1}>{value || placeholder}</Text>
+        <AppIcon name="chevron-right" size={18} color={isDark ? colors?.faint : C.faint} strokeWidth={2.2} style={{ marginLeft: 6 }} />
       </Tap>
     </View>
   );
 }
 
 export function ListRow({ icon, iconBg, label, sub, value, onPress, danger, last, right }) {
+  const { isDark, colors } = useApp() || {};
   return (
-    <Tap onPress={onPress} scaleTo={0.99} style={[ui.listRow, !last && ui.listDivider]}>
+    <Tap onPress={onPress} scaleTo={0.99} style={[ui.listRow, !last && ui.listDivider, isDark && !last && { borderBottomColor: colors?.line }]}>
       {icon ? (
         <View style={{ width: 28, alignItems: 'center', justifyContent: 'center' }}>
-          <AppIcon icon={icon} size={22} color={danger ? C.red : '#1E3A8A'} strokeWidth={1.75} />
+          <AppIcon icon={icon} size={22} color={danger ? (colors?.red || C.red) : (isDark ? colors?.primary : '#1E3A8A')} strokeWidth={1.75} />
         </View>
       ) : null}
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[ui.listLabel, danger && { color: C.red }]} numberOfLines={1}>{label}</Text>
-        {sub ? <Text style={ui.meta} numberOfLines={1}>{sub}</Text> : null}
+        <Text style={[ui.listLabel, isDark && { color: colors?.ink }, danger && { color: colors?.red || C.red }]} numberOfLines={1}>{label}</Text>
+        {sub ? <Text style={[ui.meta, isDark && { color: colors?.muted }]} numberOfLines={1}>{sub}</Text> : null}
       </View>
-      {right || (value ? <Text style={[ui.listValue, { maxWidth: '42%' }]} numberOfLines={1}>{value}</Text> : null)}
-      {right ? null : <AppIcon name="chevron-right" size={18} color={C.primary} strokeWidth={2} style={{ marginLeft: 4 }} />}
+      {right || (value ? <Text style={[ui.listValue, isDark && { color: colors?.muted }, { maxWidth: '42%' }]} numberOfLines={1}>{value}</Text> : null)}
+      {right ? null : <AppIcon name="chevron-right" size={18} color={isDark ? colors?.primary : C.primary} strokeWidth={2} style={{ marginLeft: 4 }} />}
     </Tap>
   );
 }
@@ -478,7 +527,8 @@ export function Price({ value, old, size = 15, row }) {
 
 // ------------------------------------------------------------------ Service visuals
 export function Media({ item, height, width, radius = 0, iconSize }) {
-  const tone = toneOf(item?.category);
+  const { isDark } = useApp() || {};
+  const tone = toneOf(item?.category, isDark);
   const fs = iconSize || (height >= 180 ? 74 : height >= 100 ? 44 : 26);
   const emblemSize = height >= 180 ? 116 : height >= 100 ? 68 : 42;
   return (
@@ -496,16 +546,16 @@ export function Media({ item, height, width, radius = 0, iconSize }) {
         Platform.OS === 'web' && tone.grad ? { backgroundImage: tone.grad } : null,
       ]}
     >
-      <View style={{ position: 'absolute', width: height * 1.15, height: height * 1.15, borderRadius: height, backgroundColor: 'rgba(255,255,255,0.52)', top: -height * 0.45, right: -height * 0.32 }} />
-      <View style={{ position: 'absolute', width: height * 0.65, height: height * 0.65, borderRadius: height, backgroundColor: 'rgba(255,255,255,0.38)', bottom: -height * 0.25, left: -height * 0.15 }} />
+      <View style={{ position: 'absolute', width: height * 1.15, height: height * 1.15, borderRadius: height, backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.52)', top: -height * 0.45, right: -height * 0.32 }} />
+      <View style={{ position: 'absolute', width: height * 0.65, height: height * 0.65, borderRadius: height, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.38)', bottom: -height * 0.25, left: -height * 0.15 }} />
       <View
         style={{
           width: emblemSize,
           height: emblemSize,
           borderRadius: emblemSize * 0.36,
-          backgroundColor: 'rgba(255,255,255,0.68)',
+          backgroundColor: isDark ? 'rgba(15,23,42,0.65)' : 'rgba(255,255,255,0.68)',
           borderWidth: 1,
-          borderColor: 'rgba(255,255,255,0.9)',
+          borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.9)',
           alignItems: 'center',
           justifyContent: 'center',
           ...shadow.sm,
@@ -518,30 +568,38 @@ export function Media({ item, height, width, radius = 0, iconSize }) {
 }
 
 export function ServiceCard({ item, style }) {
-  const { a, nav } = useApp();
+  const { a, nav, isDark, colors } = useApp() || {};
   const discount = discountOf(item);
   return (
-    <Tap scaleTo={0.975} style={[ui.sCard, style]} onPress={() => nav.push('detail', { id: item.id })}>
+    <Tap
+      scaleTo={0.975}
+      style={[
+        ui.sCard,
+        isDark && { backgroundColor: colors?.card, borderColor: colors?.line },
+        style,
+      ]}
+      onPress={() => nav?.push('detail', { id: item.id })}
+    >
       <View>
         <Media item={item} height={110} />
         {discount > 0 ? <View style={ui.offTag}><Text style={ui.offTagText}>-{discount}%</Text></View> : null}
-        <View style={[ui.warrantyTag, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-          <AppIcon name="shield-check" size={11} color={C.green} strokeWidth={2.4} />
+        <View style={[ui.warrantyTag, isDark && { backgroundColor: 'rgba(15,23,42,0.85)' }, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+          <AppIcon name="shield-check" size={11} color={colors?.green || C.green} strokeWidth={2.4} />
           <Text style={ui.warrantyTagText}>BH 60 ngày</Text>
         </View>
       </View>
       <View style={{ padding: 11, flex: 1 }}>
-        <Text numberOfLines={2} style={ui.sCardName}>{item.name}</Text>
-        <Text numberOfLines={1} style={ui.meta}>
+        <Text numberOfLines={2} style={[ui.sCardName, isDark && { color: colors?.ink }]}>{item.name}</Text>
+        <Text numberOfLines={1} style={[ui.meta, isDark && { color: colors?.muted }]}>
           {item.rating ? `★ ${item.rating}` : '✦ Mới'}{item.sold ? ` · ${item.sold.replace('Đã bán ', '')} đã đặt` : ''}
         </Text>
-        {isEstimate(item) ? <Text style={ui.estimate}>Giá tham khảo</Text> : isClean(item) ? <Text style={ui.cleanLine}>Bao sạch · {durationText(item.id)}</Text> : <Text style={ui.cleanLine}> </Text>}
+        {isEstimate(item) ? <Text style={ui.estimate}>Giá tham khảo</Text> : isClean(item) ? <Text style={[ui.cleanLine, isDark && { color: colors?.green }]}>Bao sạch · {durationText(item.id)}</Text> : <Text style={ui.cleanLine}> </Text>}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginTop: 6 }}>
           <View style={{ flex: 1 }}>
-            <Text style={ui.price}>{formatVND(item.price)}</Text>
-            {item.oldPrice ? <Text style={ui.oldPrice}>{formatVND(item.oldPrice)}</Text> : <Text style={[ui.oldPrice, { textDecorationLine: 'none' }]}> </Text>}
+            <Text style={[ui.price, isDark && { color: colors?.red }]}>{formatVND(item.price)}</Text>
+            {item.oldPrice ? <Text style={[ui.oldPrice, isDark && { color: colors?.faint }]}>{formatVND(item.oldPrice)}</Text> : <Text style={[ui.oldPrice, { textDecorationLine: 'none' }]}> </Text>}
           </View>
-          <Tap style={ui.addBtn} scaleTo={0.9} onPress={() => a.addToCart(item.id)} accessibilityLabel="Thêm vào giỏ" hitSlop={6}>
+          <Tap style={[ui.addBtn, isDark && { backgroundColor: colors?.primary }]} scaleTo={0.9} onPress={() => a?.addToCart(item.id)} accessibilityLabel="Thêm vào giỏ" hitSlop={6}>
             <AppIcon name="plus" size={15} color="#fff" strokeWidth={2.6} />
           </Tap>
         </View>
@@ -559,12 +617,19 @@ export function ServiceGrid({ data, style }) {
 }
 
 export function ServiceRow({ item, right, onPress }) {
-  const { nav } = useApp();
+  const { nav, isDark, colors } = useApp() || {};
   return (
-    <Tap scaleTo={0.985} style={ui.sRow} onPress={onPress || (() => nav.push('detail', { id: item.id }))}>
+    <Tap
+      scaleTo={0.985}
+      style={[
+        ui.sRow,
+        isDark && { backgroundColor: colors?.card, borderColor: colors?.line },
+      ]}
+      onPress={onPress || (() => nav?.push('detail', { id: item.id }))}
+    >
       <Media item={item} height={64} width={64} radius={16} />
       <View style={{ flex: 1 }}>
-        <Text numberOfLines={2} style={ui.sRowName}>{item.name}</Text>
+        <Text numberOfLines={2} style={[ui.sRowName, isDark && { color: colors?.ink }]}>{item.name}</Text>
         <Price value={item.price} old={item.oldPrice} size={14} row />
       </View>
       {right}
@@ -578,6 +643,7 @@ const frameBox = (rect) => (rect ? { position: 'absolute', left: rect.left, top:
 
 export function Sheet({ visible, onClose, title, children, footer }) {
   const rect = React.useContext(FrameCtx);
+  const { isDark, colors } = useApp() || {};
   const slide = useRef(new Animated.Value(60)).current;
   const fade = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -597,11 +663,11 @@ export function Sheet({ visible, onClose, title, children, footer }) {
           <Animated.View style={[ui.backdrop, { opacity: fade }]}>
             <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
           </Animated.View>
-          <Animated.View style={[ui.sheet, { transform: [{ translateY: slide }] }]}>
-            <View style={ui.handle} />
+          <Animated.View style={[ui.sheet, isDark && { backgroundColor: colors?.card }, { transform: [{ translateY: slide }] }]}>
+            <View style={[ui.handle, isDark && { backgroundColor: colors?.line }]} />
             <View style={ui.sheetHead}>
-              <Text style={ui.sheetTitle}>{title}</Text>
-              <IconBtn icon="✕" size={32} onPress={onClose} label="Đóng" />
+              <Text style={[ui.sheetTitle, isDark && { color: colors?.ink }]}>{title}</Text>
+              <IconBtn icon="✕" size={32} onPress={onClose} label="Đóng" style={isDark && { backgroundColor: colors?.cardElevated }} />
             </View>
             <ScrollView style={{ flexGrow: 0 }} contentContainerStyle={{ paddingBottom: footer ? 8 : 24 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               {children}
@@ -615,11 +681,11 @@ export function Sheet({ visible, onClose, title, children, footer }) {
 }
 
 export function DialogHost() {
-  const { ui: u } = useApp();
+  const { ui: u, isDark, colors } = useApp() || {};
   const rect = React.useContext(FrameCtx);
   const scale = useRef(new Animated.Value(0.92)).current;
   const fade = useRef(new Animated.Value(0)).current;
-  const cfg = u.dialogCfg;
+  const cfg = u?.dialogCfg;
   useEffect(() => {
     if (cfg) {
       scale.setValue(0.92);
@@ -654,21 +720,25 @@ export function DialogHost() {
           <Animated.View style={[ui.backdrop, { opacity: fade }]}>
             <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={u.closeDialog} />
           </Animated.View>
-          <Animated.View style={[ui.dialog, { opacity: fade, transform: [{ scale }] }]}>
+          <Animated.View style={[
+            ui.dialog,
+            isDark && { backgroundColor: colors?.card, borderColor: colors?.line },
+            { opacity: fade, transform: [{ scale }] }
+          ]}>
             <View style={ui.dialogTopRow}>
               {displayIcon ? (
-                <View style={[ui.dialogIconOuter, { backgroundColor: sem.unreadBg || '#FFFBEB' }]}>
+                <View style={[ui.dialogIconOuter, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : (sem.unreadBg || '#FFFBEB') }]}>
                   <View style={[ui.dialogIconInner, { backgroundColor: sem.bg }]}>
                     <AppIcon icon={displayIcon} size={22} color={sem.accent} strokeWidth={2.2} />
                   </View>
                 </View>
               ) : <View />}
-              <Tap onPress={u.closeDialog} hitSlop={10} style={ui.dialogCloseBtn} accessibilityLabel="Đóng">
-                <AppIcon name="x" size={20} color="#475569" strokeWidth={2.2} />
+              <Tap onPress={u.closeDialog} hitSlop={10} style={[ui.dialogCloseBtn, isDark && { backgroundColor: colors?.cardElevated }]} accessibilityLabel="Đóng">
+                <AppIcon name="x" size={20} color={isDark ? colors?.muted : '#475569'} strokeWidth={2.2} />
               </Tap>
             </View>
-            <Text style={ui.dialogTitle}>{cfg.title}</Text>
-            {cfg.message ? <Text style={ui.dialogBody}>{cfg.message}</Text> : null}
+            <Text style={[ui.dialogTitle, isDark && { color: colors?.ink }]}>{cfg.title}</Text>
+            {cfg.message ? <Text style={[ui.dialogBody, isDark && { color: colors?.muted }]}>{cfg.message}</Text> : null}
             {cfg.content || null}
             <View style={[ stacked ? { flexDirection: 'column', gap: 10, marginTop: 22 } : { flexDirection: 'row', gap: 10, marginTop: 22 } ]}>
               {orderedActions.map((ac) => {
@@ -685,9 +755,9 @@ export function DialogHost() {
                     variant={resolvedVariant}
                     style={[
                       stacked ? { width: '100%', minHeight: 48, borderRadius: 12 } : { flex: 1, minHeight: 46 },
-                      isCancelLike && stacked ? { borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' } : null,
+                      isCancelLike && stacked ? { borderWidth: 1, borderColor: isDark ? colors?.line : '#E2E8F0', backgroundColor: isDark ? colors?.cardElevated : '#FFFFFF' } : null,
                     ]}
-                    textStyle={isCancelLike && stacked ? { color: '#475569', fontWeight: '700' } : null}
+                    textStyle={isCancelLike && stacked ? { color: isDark ? colors?.ink : '#475569', fontWeight: '700' } : null}
                     onPress={() => { u.closeDialog(); ac.onPress?.(); }}
                   />
                 );

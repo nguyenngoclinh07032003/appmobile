@@ -277,8 +277,9 @@ export function ActivityScreen() {
 
 // =========================================================== CÁ NHÂN
 export function PersonalScreen() {
-  const { s, a, d, nav, ui: u } = useApp();
+  const { s, a, d, nav, ui: u, isDark, colors, themeMode, setThemeMode } = useApp();
   const [showAccSheet, setShowAccSheet] = useState(false);
+  const [showThemeSheet, setShowThemeSheet] = useState(false);
   const name = s.user.name || d.address?.name || 'Khách';
   const phone = s.user.phone || d.address?.phone || 'Chưa có số điện thoại';
   const { cur, next } = tierOf(s.lifetimePoints);
@@ -286,8 +287,8 @@ export function PersonalScreen() {
 
   const Group = ({ title, children }) => (
     <View style={{ marginTop: 22 }}>
-      <Text style={sx.groupLabel}>{title}</Text>
-      <View style={sx.menuCard}>{children}</View>
+      <Text style={[sx.groupLabel, isDark && { color: colors?.ink }]}>{title}</Text>
+      <View style={[sx.menuCard, isDark && { backgroundColor: colors?.card, borderColor: colors?.line }]}>{children}</View>
     </View>
   );
 
@@ -314,15 +315,15 @@ export function PersonalScreen() {
         </Tap>
       </View>
 
-      <View style={sx.pStats}>
+      <View style={[sx.pStats, isDark && { backgroundColor: colors?.card, borderColor: colors?.line }]}>
         {[
           { v: s.orders.length, l: 'Đơn hàng', onPress: () => nav.activity(d.activeOrders.length ? 'active' : s.orders.some((o) => o.status === 'done') ? 'done' : 'active') },
           { v: s.points, l: 'Điểm tích luỹ', onPress: () => nav.push('rewards') },
           { v: s.myVouchers.length, l: 'Voucher', onPress: () => nav.push('rewards') },
         ].map((x, i) => (
-          <Tap key={x.l} style={[{ flex: 1, alignItems: 'center' }, i > 0 && { borderLeftWidth: 1, borderLeftColor: C.line }]} onPress={x.onPress}>
-            <Text style={{ fontSize: 19, fontWeight: '900', color: C.ink }}>{x.v}</Text>
-            <Text style={[ui.meta, { fontWeight: '600' }]}>{x.l}</Text>
+          <Tap key={x.l} style={[{ flex: 1, alignItems: 'center' }, i > 0 && { borderLeftWidth: 1, borderLeftColor: isDark ? colors?.line : C.line }]} onPress={x.onPress}>
+            <Text style={{ fontSize: 19, fontWeight: '900', color: isDark ? colors?.ink : C.ink }}>{x.v}</Text>
+            <Text style={[ui.meta, isDark && { color: colors?.muted }, { fontWeight: '600' }]}>{x.l}</Text>
           </Tap>
         ))}
       </View>
@@ -342,11 +343,10 @@ export function PersonalScreen() {
         </Group>
         <Group title="Khác">
           <ListRow
-            icon="moon"
-            label="Chế độ tối"
-            sub="Giao diện màn đêm dịu mắt"
-            value={s.darkMode ? 'Đang bật' : 'Đang tắt'}
-            onPress={a.toggleDarkMode}
+            icon={themeMode === 'dark' ? 'moon' : themeMode === 'light' ? 'sun' : 'laptop'}
+            label="Giao diện hiển thị"
+            value={themeMode === 'dark' ? 'Tối' : themeMode === 'light' ? 'Sáng' : 'Tự động (Hệ thống)'}
+            onPress={() => setShowThemeSheet(true)}
           />
           <ListRow icon="scale" label="Điều khoản ứng dụng" onPress={() => nav.push('terms')} />
           <ListRow icon="refresh-cw" label="Cập nhật ứng dụng" value="3.0.8" onPress={() => u.alert('Bạn đang dùng bản mới nhất', 'Phiên bản 3.0.8 (v7).', '✅')} last />
@@ -366,6 +366,74 @@ export function PersonalScreen() {
           onPress={() => u.confirm('Thông báo', 'Bạn có muốn đăng xuất?', a.logout, 'Đồng ý', false)}
         />
       </View>
+
+      <Sheet
+        visible={showThemeSheet}
+        onClose={() => setShowThemeSheet(false)}
+        title="Chọn giao diện hiển thị"
+      >
+        <View style={{ paddingVertical: 8, gap: 10 }}>
+          {[
+            { id: 'system', label: 'Tự động (Theo hệ thống)', desc: 'Tự đổi theo cài đặt Sáng/Tối của điện thoại', icon: 'laptop' },
+            { id: 'light', label: 'Giao diện Sáng (Light)', desc: 'Tiêu chuẩn rõ ràng, sắc nét cho ban ngày', icon: 'sun' },
+            { id: 'dark', label: 'Giao diện Tối (Dark)', desc: 'Obsidian Slate sang trọng, bảo vệ mắt & tiết kiệm pin', icon: 'moon' },
+          ].map((item) => {
+            const active = themeMode === item.id;
+            return (
+              <Tap
+                key={item.id}
+                onPress={() => {
+                  setThemeMode(item.id);
+                  setShowThemeSheet(false);
+                }}
+                style={[
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: 14,
+                    borderRadius: 16,
+                    borderWidth: 1.5,
+                    borderColor: active ? (colors?.primary || C.primary) : (colors?.line || C.line),
+                    backgroundColor: active ? (colors?.primarySoft || C.primarySoft) : (colors?.cardElevated || '#F8FAFC'),
+                    gap: 12,
+                  },
+                ]}
+              >
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 12,
+                    backgroundColor: active ? (colors?.primary || C.primary) : (colors?.card || '#fff'),
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <AppIcon
+                    icon={item.icon}
+                    size={20}
+                    color={active ? '#fff' : (colors?.primary || C.primary)}
+                    strokeWidth={2.2}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: active ? (colors?.primary || C.primary) : (colors?.ink || C.ink) }}>
+                    {item.label}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors?.muted || C.muted, marginTop: 2 }}>
+                    {item.desc}
+                  </Text>
+                </View>
+                {active ? (
+                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: colors?.primary || C.primary, alignItems: 'center', justifyContent: 'center' }}>
+                    <AppIcon name="check" size={13} color="#fff" strokeWidth={3} />
+                  </View>
+                ) : null}
+              </Tap>
+            );
+          })}
+        </View>
+      </Sheet>
 
       <Sheet
         visible={showAccSheet}
