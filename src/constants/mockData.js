@@ -83,7 +83,7 @@ export const MOCK_ORDERS = [
     dateLabel: todayLabel,
     slot: '14h00 - 16h00',
     items: [{ id: 'vs-ml-1', qty: 1 }],
-    payment: 'Thanh toán khi nhận hàng',
+    payment: 'Chuyển khoản VietQR (Công ty HRMSS)',
     address: {
       name: 'Chị Hoàng Mai Anh',
       phone: '0912345678',
@@ -117,7 +117,7 @@ export const MOCK_ORDERS = [
     dateLabel: todayLabel,
     slot: '10h00 - 12h00',
     items: [{ id: 'vs-mg-truoc', qty: 1 }],
-    payment: 'Thanh toán khi nhận hàng',
+    payment: 'Tiền mặt cho thợ tại nhà',
     address: {
       name: 'Anh Trần Minh Quân',
       phone: '0908987654',
@@ -223,7 +223,7 @@ export const MOCK_ORDERS = [
     dateLabel: '2 ngày trước',
     slot: '08h00 - 10h00',
     items: [{ id: 'sc-mg', qty: 1 }],
-    payment: 'VietQR MBBank',
+    payment: 'Chuyển khoản VietQR (Công ty HRMSS)',
     address: {
       name: 'Nguyễn Minh Anh',
       phone: '0901234567',

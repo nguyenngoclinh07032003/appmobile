@@ -582,7 +582,7 @@ export function OrderScreen({ params }) {
                 <Bill l="Phí đi lại" v="Miễn phí" green />
               </>
             )}
-            <Bill l="Hình thức" v={o.payment || 'Thanh toán khi nhận hàng'} />
+            <Bill l="Hình thức" v={o.payment || 'Chuyển khoản VietQR (Công ty HRMSS)'} />
             <Bill
               l="Trạng thái thu"
               v={o.status === 'cancelled' ? ((o.inspectionFee || 0) > 0 ? 'Cần thanh toán phí KT' : 'Đã huỷ (0đ)') : o.report?.paid ? 'Đã thanh toán' : o.status === 'done' ? 'Chờ xác nhận' : 'Chưa thanh toán'}

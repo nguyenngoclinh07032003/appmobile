@@ -352,7 +352,7 @@ export const mapBackendOpenRequestToOrder = (req) => {
     dateLabel: formatDateLabelFromIso(preferredIso),
     dateKey: formatDateKeyFromIso(preferredIso),
     slot: formatSlotFromIso(preferredIso),
-    payment: 'Thanh toán khi nhận hàng',
+    payment: 'Chuyển khoản VietQR (Công ty HRMSS)',
     note: req.problem_description || '',
     address: {
       id: `addr-open-${req.request_id}`,
