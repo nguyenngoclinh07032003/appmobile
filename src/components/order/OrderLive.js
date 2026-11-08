@@ -47,7 +47,7 @@ export function TrackingCard({ order, compact }) {
           <View style={[st.dot, { backgroundColor: C.green, left: `${Math.round(progress * 86)}%` }]}>
             <Text style={{ fontSize: 11 }}>👷</Text>
           </View>
-          <View style={[st.dot, { backgroundColor: C.gold, right: 0, left: undefined }]}>
+          <View style={[st.dot, { backgroundColor: C.primary, right: 0, left: undefined }]}>
             <Text style={{ fontSize: 11 }}>🏠</Text>
           </View>
         </View>

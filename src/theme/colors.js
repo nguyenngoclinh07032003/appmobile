@@ -1,54 +1,54 @@
 import { Platform } from 'react-native';
 
-// Bảng màu + token dùng chung — Thợ HRMSS (navy / gold / xanh dịch vụ)
+// Bảng màu chuẩn Thiết kế Doanh nghiệp Tối giản: 2 màu chủ đạo XANH DƯƠNG & TRẮNG (Blue & White)
 export const C = {
-  primary: '#1A5FFF',
-  primaryDark: '#0A3FD4',
-  primarySoft: '#EAF1FF',
-  navy: '#071A3A',
-  navy2: '#102A5C',
-  gold: '#FFC83D',
-  goldSoft: '#FFF7E0',
-  goldInk: '#8A5A00',
-  ink: '#0B1220',
-  ink2: '#334155',
-  muted: '#64748B',
-  faint: '#94A3B8',
-  line: '#E2E8F0',
-  bg: '#EFF3F9',
-  card: '#FFFFFF',
-  red: '#E5372B',
-  redSoft: '#FDECEA',
-  green: '#0E9F6E',
-  greenSoft: '#E6F7EF',
-  orange: '#D97706',
-  orangeSoft: '#FFF4E0',
-  purple: '#6D28D9',
-  purpleSoft: '#F1EAFE',
-  cyan: '#0891B2',
-  cyanSoft: '#E2F6FB',
+  primary: '#0062E0',        // Xanh dương chủ đạo (Royal Corporate Blue)
+  primaryDark: '#004CB8',    // Xanh đậm
+  primarySoft: '#EBF3FF',    // Xanh nhạt tinh khiết
+  navy: '#0052CC',           // Xanh đậm thanh lịch
+  navy2: '#0844A4',          // Xanh đậm phụ
+  gold: '#0062E0',           // Thay toàn bộ màu vàng chói thành Xanh chủ đạo
+  goldSoft: '#F0F6FF',       // Nền xanh trắng nhạt
+  goldInk: '#0844A4',        // Chữ xanh đậm
+  ink: '#0F172A',            // Chữ đen xám đậm dễ đọc
+  ink2: '#334155',           // Chữ phụ
+  muted: '#64748B',          // Chữ mờ
+  faint: '#94A3B8',          // Viền mờ
+  line: '#E2E8F0',           // Đường kẻ viền xám sáng
+  bg: '#F8FAFC',             // Nền trang xám trắng mát mắt
+  card: '#FFFFFF',           // Nền thẻ trắng tinh
+  red: '#DC2626',            // Đỏ cảnh báo / huỷ đơn
+  redSoft: '#FEF2F2',        // Nền đỏ nhạt
+  green: '#059669',          // Xanh ngọc cho trạng thái thành công
+  greenSoft: '#ECFDF5',      // Nền xanh ngọc nhạt
+  orange: '#0284C7',         // Chuyển cam thành Sky Blue
+  orangeSoft: '#F0F8FF',     // Nền sky blue nhạt
+  purple: '#0062E0',         // Chuyển tím thành Xanh chủ đạo
+  purpleSoft: '#EBF3FF',     // Nền xanh nhạt
+  cyan: '#0284C7',           // Xanh Cyan
+  cyanSoft: '#F0F9FF',       // Nền cyan nhạt
 };
 
 export const CAT_TONE = {
-  'may-lanh': { bg: '#E6F0FF', fg: '#1A5FFF', grad: 'linear-gradient(135deg, #E8F1FF 0%, #D3E4FF 100%)' },
-  'may-giat': { bg: '#F1EAFE', fg: '#6D28D9', grad: 'linear-gradient(135deg, #F3ECFF 0%, #E4D4FF 100%)' },
-  'tu-lanh': { bg: '#E3F7F1', fg: '#0E9F6E', grad: 'linear-gradient(135deg, #E6F9F3 0%, #CCF0E3 100%)' },
-  'nuoc-nong': { bg: '#FFF0E3', fg: '#D97706', grad: 'linear-gradient(135deg, #FFF3E6 0%, #FFE2C6 100%)' },
-  'hut-mui': { bg: '#FDEBEC', fg: '#E5372B', grad: 'linear-gradient(135deg, #FEECEE 0%, #FAD6D9 100%)' },
-  quat: { bg: '#E2F6FB', fg: '#0891B2', grad: 'linear-gradient(135deg, #E5F7FC 0%, #C9EEF8 100%)' },
-  'loc-khong-khi': { bg: '#EEF6E2', fg: '#65A30D', grad: 'linear-gradient(135deg, #F1F8E6 0%, #DCEFC4 100%)' },
+  'may-lanh': { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
+  'may-giat': { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
+  'tu-lanh': { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
+  'nuoc-nong': { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
+  'hut-mui': { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
+  quat: { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
+  'loc-khong-khi': { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
 };
 
 export const toneOf = (cat) => CAT_TONE[cat] || CAT_TONE['may-lanh'];
 
 export const STATUS_META = {
-  pending: { label: 'Chờ thợ nhận', fg: C.orange, bg: C.orangeSoft },
-  confirmed: { label: 'Thợ đã nhận', fg: C.primary, bg: C.primarySoft },
-  onway: { label: 'Thợ đang đến', fg: C.cyan, bg: C.cyanSoft },
+  pending: { label: 'Chờ thợ nhận', fg: '#0062E0', bg: '#EFF6FF' },
+  confirmed: { label: 'Thợ đã nhận', fg: '#0062E0', bg: '#DBEAFE' },
+  onway: { label: 'Thợ đang đến', fg: '#0284C7', bg: '#E0F2FE' },
   diagnosing: { label: 'Đang kiểm tra', fg: '#0369A1', bg: '#E0F2FE' },
-  quoted: { label: 'Chờ duyệt báo giá', fg: C.goldInk, bg: C.goldSoft },
-  repairing: { label: 'Đang thực hiện', fg: C.purple, bg: C.purpleSoft },
-  done: { label: 'Hoàn thành', fg: C.green, bg: C.greenSoft },
-  cancelled: { label: 'Đã huỷ', fg: C.muted, bg: '#EEF2F6' },
+  quoted: { label: 'Chờ duyệt báo giá', fg: '#0B4FB8', bg: '#EFF6FF' },
+  repairing: { label: 'Đang thực hiện', fg: '#0062E0', bg: '#DBEAFE' },
+  done: { label: 'Hoàn thành', fg: '#059669', bg: '#ECFDF5' },
+  cancelled: { label: 'Đã huỷ', fg: '#64748B', bg: '#F1F5F9' },
 };
 

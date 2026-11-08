@@ -280,10 +280,10 @@ export function TechJobsScreen() {
             if (!soon) return null;
             const mins = Math.max(1, Math.ceil((slotStartTs(soon) - Date.now()) / 60000));
             return (
-              <View style={[tx.offline, { marginTop: 14, backgroundColor: C.goldSoft, borderColor: '#F5D77A' }]}>
-                <Text style={{ color: C.goldInk, fontWeight: '800' }}>⏰ Còn ~{mins} phút đến giờ hẹn · {soon.code}</Text>
-                <Text style={{ color: C.goldInk, marginTop: 4, lineHeight: 18 }}>Bấm “Đang đến” đúng giờ. Check-in muộn sẽ bị trừ uy tín và bồi thường khách.</Text>
-                <Btn title="Mở việc sắp tới" small variant="gold" style={{ marginTop: 10, alignSelf: 'flex-start' }} onPress={() => nav.push('tech-job', { code: soon.code })} />
+              <View style={[tx.offline, { marginTop: 14, backgroundColor: C.primarySoft, borderColor: '#BFDBFE' }]}>
+                <Text style={{ color: C.primaryDark, fontWeight: '800' }}>⏰ Còn ~{mins} phút đến giờ hẹn · {soon.code}</Text>
+                <Text style={{ color: C.primaryDark, marginTop: 4, lineHeight: 18 }}>Bấm “Đang đến” đúng giờ. Check-in muộn sẽ bị trừ uy tín và bồi thường khách.</Text>
+                <Btn title="Mở việc sắp tới" small variant="primary" style={{ marginTop: 10, alignSelf: 'flex-start' }} onPress={() => nav.push('tech-job', { code: soon.code })} />
               </View>
             );
           })()}
@@ -296,7 +296,7 @@ export function TechJobsScreen() {
                 <Text style={tx.nextMeta} numberOfLines={1}>📅 {nextJob.dateLabel} · {nextJob.slot}</Text>
                 <Text style={tx.nextMeta} numberOfLines={1}>📍 {nextJob.address?.full}</Text>
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
-                  <Btn title="Gọi khách" icon="📞" small variant="gold" style={{ flex: 1 }} onPress={() => callPhone(nextJob.address?.phone)} />
+                  <Btn title="Gọi khách" icon="📞" small variant="primary" style={{ flex: 1 }} onPress={() => callPhone(nextJob.address?.phone)} />
                   <Btn
                     title={nextAct?.label || 'Xem chi tiết'}
                     icon={nextAct?.icon || '🔧'}
@@ -602,7 +602,7 @@ export function TechAccountScreen() {
               <Text style={tx.techName}>{me.name}</Text>
               <Text style={tx.techSub}>{me.code} · {me.phone}</Text>
               <View style={{ flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                <Badge text="Kỹ thuật viên" fg={C.navy} bg={C.gold} />
+                <Badge text="Kỹ thuật viên" fg={C.primary} bg="#fff" />
                 {d.techLocked ? <Badge text="○ Hạn chế nhận việc" fg="#fff" bg={C.red} /> : null}
               </View>
             </View>
@@ -1952,17 +1952,17 @@ const tx = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 4,
-    backgroundColor: C.gold,
+    backgroundColor: C.primary,
     opacity: 0.9,
   },
   avatar: {
     width: 58,
     height: 58,
     borderRadius: 20,
-    backgroundColor: C.gold,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadow.gold,
+    ...shadow.sm,
   },
   hello: { color: 'rgba(255,255,255,0.68)', fontSize: 12, fontWeight: '600', letterSpacing: 0.2 },
   techName: { color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: -0.3 },
@@ -2014,8 +2014,8 @@ const tx = StyleSheet.create({
     overflow: 'hidden',
     ...shadow.lg,
   },
-  nextAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: C.gold },
-  nextEyebrow: { color: C.gold, fontWeight: '800', fontSize: 11, letterSpacing: 0.8 },
+  nextAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: '#FFFFFF' },
+  nextEyebrow: { color: '#FFFFFF', fontWeight: '800', fontSize: 11, letterSpacing: 0.8 },
   nextTitle: { color: '#fff', fontWeight: '900', fontSize: 17, marginTop: 6, lineHeight: 23, letterSpacing: -0.2 },
   nextMeta: { color: 'rgba(255,255,255,0.78)', fontSize: 13, marginTop: 5, fontWeight: '500' },
   offline: {

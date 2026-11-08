@@ -248,12 +248,12 @@ export function DevicesScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: '600' }}>Tổng quan thiết bị gia đình</Text>
                 <Text style={{ color: '#fff', fontSize: 22, fontWeight: '900', marginTop: 4 }}>{s.devices.length} thiết bị</Text>
-                <Text style={{ color: d.dueDevices.length ? C.gold : '#9BE7C4', fontSize: 13, fontWeight: '700', marginTop: 4 }}>
+                <Text style={{ color: d.dueDevices.length ? '#fff' : '#D1E4FF', fontSize: 13, fontWeight: '700', marginTop: 4 }}>
                   {d.dueDevices.length ? `⚠ ${d.dueDevices.length} thiết bị cần bảo dưỡng` : '✓ Tất cả đều ổn'}
                 </Text>
               </View>
               {d.dueDevices.length ? (
-                <Btn title="Đặt lịch" variant="gold" small onPress={() => nav.services('bao-duong', d.dueDevices[0].category, d.dueDevices[0].id)} />
+                <Btn title="Đặt lịch" variant="primary" small onPress={() => nav.services('bao-duong', d.dueDevices[0].category, d.dueDevices[0].id)} />
               ) : <Text style={{ fontSize: 42 }}>🏠</Text>}
             </View>
             {s.devices.map((dev) => {
@@ -408,9 +408,9 @@ export function PersonalScreen() {
         <Tap style={sx.tierBox} onPress={() => nav.push('rewards')}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
             <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>{next ? `Còn ${next.min - s.lifetimePoints} điểm để lên hạng ${next.label}` : 'Bạn đang ở hạng cao nhất'}</Text>
-            <Text style={{ color: C.gold, fontWeight: '800', fontSize: 13 }}>Quyền lợi ›</Text>
+            <Text style={{ color: '#fff', fontWeight: '800', fontSize: 13 }}>Quyền lợi ›</Text>
           </View>
-          <Progress value={progress} color={C.gold} style={{ backgroundColor: 'rgba(255,255,255,0.18)' }} />
+          <Progress value={progress} color="#fff" style={{ backgroundColor: 'rgba(255,255,255,0.25)' }} />
         </Tap>
       </View>
 
@@ -492,8 +492,8 @@ const sx = StyleSheet.create({
   oFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F0F3F8' },
   profile: { backgroundColor: C.navy, ...grad.navyHero, padding: 16, paddingTop: 20, paddingBottom: 48, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: 'hidden' },
   blob: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.06)' },
-  avatar: { width: 64, height: 64, borderRadius: 22, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { fontSize: 28, fontWeight: '900', color: C.navy },
+  avatar: { width: 64, height: 64, borderRadius: 22, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 28, fontWeight: '900', color: C.primary },
   pName: { color: '#fff', fontSize: 20, fontWeight: '800' },
   pPhone: { color: 'rgba(255,255,255,0.7)', marginTop: 2, fontSize: 13 },
   tier: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3, marginTop: 6 },

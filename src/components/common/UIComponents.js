@@ -67,7 +67,7 @@ export function Btn({ title, onPress, variant = 'primary', small, style, disable
 const BTN = {
   primary: { box: { backgroundColor: C.primary, ...grad.primaryBtn, ...shadow.primary }, text: { color: '#fff' } },
   dark: { box: { backgroundColor: C.navy, ...grad.navyCard, ...shadow.md }, text: { color: '#fff' } },
-  gold: { box: { backgroundColor: C.gold, ...grad.goldBtn, ...shadow.gold }, text: { color: C.navy } },
+  gold: { box: { backgroundColor: C.primary, ...grad.primaryBtn, ...shadow.primary }, text: { color: '#fff' } },
   soft: { box: { backgroundColor: C.primarySoft, borderWidth: 1, borderColor: '#D6E4FF' }, text: { color: C.primary } },
   ghost: { box: { backgroundColor: '#F1F5F9' }, text: { color: C.ink2 } },
   outline: { box: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: C.line }, text: { color: C.ink } },
@@ -576,7 +576,7 @@ export function ToastHost() {
   return (
     <Animated.View style={[ui.toast, { opacity: anim, transform: [{ translateY }] }]} pointerEvents="none">
       <View style={ui.toastIconWrap}>
-        <Text style={{ fontSize: 13, color: C.navy, fontWeight: '900' }}>{u.toastMsg.icon}</Text>
+        <Text style={{ fontSize: 13, color: '#fff', fontWeight: '900' }}>{u.toastMsg.icon}</Text>
       </View>
       <Text style={ui.toastText}>{u.toastMsg.text}</Text>
     </Animated.View>
@@ -719,7 +719,7 @@ export const ui = StyleSheet.create({
   dialogTitle: { fontSize: 18, fontWeight: '800', color: C.ink, textAlign: 'center' },
   dialogBody: { fontSize: 14, color: C.ink2, textAlign: 'center', marginTop: 8, lineHeight: 21 },
   toast: { position: 'absolute', alignSelf: 'center', bottom: 94, backgroundColor: 'rgba(7,26,58,0.96)', paddingLeft: 10, paddingRight: 18, paddingVertical: 9, borderRadius: 999, flexDirection: 'row', alignItems: 'center', zIndex: 100, ...shadow.lg, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
-  toastIconWrap: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  toastIconWrap: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   toastText: { color: '#fff', fontWeight: '700', fontSize: 13.5 },
 });
 

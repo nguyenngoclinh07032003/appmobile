@@ -762,7 +762,7 @@ export function OrderScreen({ params }) {
         ) : <Btn title="Đóng phiếu" onPress={() => setShowCertificate(false)} />}
       >
         <View style={{ backgroundColor: C.navy, borderRadius: R.lg, padding: 16, alignItems: 'center', marginBottom: 14 }}>
-          <Text style={{ color: C.gold, fontWeight: '900', fontSize: 12, letterSpacing: 0.8 }}>THỢ HRMSS · CHỨNG NHẬN ĐIỆN TỬ</Text>
+          <Text style={{ color: '#93C5FD', fontWeight: '900', fontSize: 12, letterSpacing: 0.8 }}>THỢ HRMSS · CHỨNG NHẬN ĐIỆN TỬ</Text>
           <Text style={{ color: '#fff', fontWeight: '900', fontSize: 18, marginTop: 4 }}>
             Mã chứng nhận: {o.report?.warrantyCertificateCode || `BH-${o.code}`}
           </Text>
@@ -1001,14 +1001,14 @@ export function RewardsScreen({ params }) {
         <View style={mx.pointsHero}>
           <View style={[mx.blob, { width: 180, height: 180, right: -40, top: -60 }]} />
           <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '600' }}>Điểm hiện có</Text>
-          <Text style={{ color: C.gold, fontSize: 40, fontWeight: '900', marginTop: 2 }}>{s.points}</Text>
+          <Text style={{ color: '#FFFFFF', fontSize: 40, fontWeight: '900', marginTop: 2 }}>{s.points}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
             <Tap onPress={() => setSelectedTierId(cur.id)}>
               <Badge text={`👑 ${cur.label} · Xem quyền lợi ›`} fg="#fff" bg={cur.color} />
             </Tap>
             <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12 }}>Tích luỹ: {s.lifetimePoints} điểm</Text>
           </View>
-          <Progress value={progress} color={C.gold} style={{ marginTop: 14, backgroundColor: 'rgba(255,255,255,0.18)' }} />
+          <Progress value={progress} color="#FFFFFF" style={{ marginTop: 14, backgroundColor: 'rgba(255,255,255,0.25)' }} />
           <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 6 }}>{next ? `Còn ${next.min - s.lifetimePoints} điểm để lên hạng ${next.label}` : 'Bạn đã đạt hạng cao nhất 🎉'}</Text>
         </View>
 
@@ -1153,7 +1153,7 @@ export function RewardsScreen({ params }) {
         <SectionTitle title={`Ví voucher (${s.myVouchers.length + VOUCHERS.length})`} />
         {[...s.myVouchers, ...VOUCHERS].map((v) => (
           <View key={v.code} style={mx.ticket}>
-            <View style={[mx.ticketLeft, v.wallet && { backgroundColor: C.gold }]}>
+            <View style={[mx.ticketLeft, v.wallet && { backgroundColor: C.primary }]}>
               <Text style={{ fontSize: 22 }}>{v.wallet ? '🎁' : '🎟️'}</Text>
             </View>
             <View style={{ flex: 1, padding: 12 }}>
@@ -1612,7 +1612,7 @@ const mx = StyleSheet.create({
   slot: { paddingHorizontal: 10, height: 36, borderRadius: 11, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   slotOn: { backgroundColor: C.navy, borderColor: C.navy },
   slotText: { fontSize: 12, color: C.ink, fontWeight: '700' },
-  bigAvatar: { width: 92, height: 92, borderRadius: 32, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center' },
+  bigAvatar: { width: 92, height: 92, borderRadius: 32, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
   qrCard: { width: '100%', maxWidth: 340, backgroundColor: '#fff', borderRadius: 26, padding: 22, alignItems: 'center', ...shadow.lg },
   devGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   devType: { width: '31%', height: 92, borderRadius: R.lg, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },

@@ -32,9 +32,9 @@ export default function HomeScreen() {
           <View style={{ flex: 1 }}>
             <Text style={st.hello}>{firstName ? `Xin chào, ${firstName} 👋` : 'Xin chào 👋'}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
-              <Text style={st.brand}><Text style={{ color: C.gold }}>Thợ</Text> HRMSS</Text>
-              <View style={{ backgroundColor: C.gold, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }}>
-                <Text style={{ color: C.navy, fontSize: 10, fontWeight: '900' }}>CHÍNH HÃNG</Text>
+              <Text style={st.brand}>Thợ HRMSS</Text>
+              <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' }}>
+                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>CHÍNH HÃNG</Text>
               </View>
             </View>
           </View>
@@ -162,7 +162,7 @@ export default function HomeScreen() {
         {[
           { bg: C.navy, gradStyle: grad.navyCard, fg: '#fff', tag: 'MÃ THO20', title: 'Giảm 20.000đ', body: 'Cho đơn từ 150.000đ', icon: '🎟️', onPress: () => nav.push('rewards') },
           { bg: C.primary, gradStyle: grad.primaryBtn, fg: '#fff', tag: 'BÁN CHẠY', title: 'Vệ sinh máy lạnh 180K', body: 'Giảm 10% · Bảo hành 60 ngày', icon: '❄️', onPress: () => nav.push('detail', { id: 'vs-ml-1' }) },
-          { bg: C.gold, gradStyle: grad.goldBtn, fg: C.navy, tag: 'TIẾT KIỆM', title: 'Bảo dưỡng trọn đời', body: 'Một lần đăng ký, thợ nhắc định kỳ', icon: '♾️', onPress: () => nav.services('tron-doi') },
+          { bg: C.navy2, gradStyle: grad.navyCard, fg: '#fff', tag: 'TIẾT KIỆM', title: 'Bảo dưỡng trọn đời', body: 'Một lần đăng ký, thợ nhắc định kỳ', icon: '♾️', onPress: () => nav.services('tron-doi') },
         ].map((b) => (
           <Tap key={b.tag} style={[st.promo, { backgroundColor: b.bg }, b.gradStyle]} onPress={b.onPress}>
             <View style={[st.blob, { width: 130, height: 130, right: -30, top: -40, backgroundColor: 'rgba(255,255,255,0.14)' }]} />
@@ -224,7 +224,7 @@ export default function HomeScreen() {
             <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12 }}>Cần hỗ trợ? Gọi miễn phí</Text>
             <Text style={{ color: '#fff', fontSize: 20, fontWeight: '800', marginTop: 2 }}>{HOTLINE}</Text>
           </View>
-          <Badge text="7:30 – 22:00" fg={C.navy} bg={C.gold} />
+          <Badge text="7:30 – 22:00" fg={C.primary} bg="#fff" />
         </Tap>
       </View>
 

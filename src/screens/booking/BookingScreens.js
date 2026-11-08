@@ -139,12 +139,12 @@ export function DetailScreen({ params }) {
             <Text style={bx.h}>Quy trình thực hiện</Text>
             {video ? (
               <Tap style={bx.video} onPress={() => setShowVideo(true)}>
-                <View style={bx.play}><Text style={{ color: C.navy, fontSize: 18, marginLeft: 3 }}>▶</Text></View>
+                <View style={bx.play}><Text style={{ color: C.primary, fontSize: 18, marginLeft: 3 }}>▶</Text></View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>{video.title}</Text>
                   <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2 }}>{video.sub}</Text>
                 </View>
-                <Badge text="Xem ›" fg={C.navy} bg={C.gold} />
+                <Badge text="Xem ›" fg="#fff" bg={C.primary} />
               </Tap>
             ) : null}
             {steps.map((st, i, arr) => (
@@ -214,9 +214,9 @@ export function DetailScreen({ params }) {
       >
         <View style={{ backgroundColor: C.navy, borderRadius: 16, padding: 16, marginBottom: 14 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <View style={bx.play}><Text style={{ color: C.navy, fontSize: 18, marginLeft: 3 }}>▶</Text></View>
+            <View style={bx.play}><Text style={{ color: C.primary, fontSize: 18, marginLeft: 3 }}>▶</Text></View>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: C.gold, fontWeight: '800', fontSize: 11 }}>TIÊU CHUẨN KỸ THUẬT THỢ HRMSS</Text>
+              <Text style={{ color: '#93C5FD', fontWeight: '800', fontSize: 11 }}>TIÊU CHUẨN KỸ THUẬT THỢ HRMSS</Text>
               <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15, marginTop: 2 }}>{service.name}</Text>
               <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2 }}>⏱ Thời gian dự kiến: {video?.duration || '45 – 60 phút'}</Text>
             </View>
@@ -1325,7 +1325,7 @@ export function SuccessScreen({ params }) {
         <Text style={[ui.meta, { marginTop: 10 }]} numberOfLines={2}>📍 {o.address?.full}</Text>
       </Card>
       {missing ? (
-        <Card style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.goldSoft, borderColor: '#FBE7A8' }} onPress={() => nav.push('device-form', { category: missing })}>
+        <Card style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.primarySoft, borderColor: '#BFDBFE' }} onPress={() => nav.push('device-form', { category: missing })}>
           <Text style={{ fontSize: 28 }}>{catIcon(missing)}</Text>
           <View style={{ flex: 1 }}>
             <Text style={{ fontWeight: '800', color: C.ink }}>Lưu {catLabel(missing).toLowerCase()} vào Thiết bị</Text>
@@ -1453,7 +1453,7 @@ export const bx = StyleSheet.create({
   commitT: { fontSize: 13, fontWeight: '800', color: C.ink },
   commitS: { fontSize: 11, color: C.muted, lineHeight: 15, marginTop: 1 },
   video: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.navy, borderRadius: R.md, padding: 14, marginVertical: 10 },
-  play: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.gold, alignItems: 'center', justifyContent: 'center' },
+  play: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   dot: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center' },
   dotText: { color: '#fff', fontSize: 12, fontWeight: '800' },
   rail: { width: 2, flex: 1, backgroundColor: '#DCE5F5', marginVertical: 3 },

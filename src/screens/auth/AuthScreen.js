@@ -128,9 +128,7 @@ export default function AuthScreen() {
               <Text style={{ fontSize: 22 }}>⚡</Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={st.brand}>
-                <Text style={{ color: C.gold }}>Thợ</Text> HRMSS
-              </Text>
+              <Text style={st.brand}>Thợ HRMSS</Text>
               <Text style={st.brandSlogan}>HỆ THỐNG DỊCH VỤ SỬA CHỮA & BẢO TRÌ TẬN NHÀ</Text>
             </View>
           </View>
@@ -355,20 +353,20 @@ const st = StyleSheet.create({
     top: 50,
     left: -60,
     right: undefined,
-    backgroundColor: 'rgba(255, 200, 61, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   brandMark: {
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: C.gold,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadow.gold,
+    ...shadow.sm,
   },
   brand: { fontSize: 26, fontWeight: '900', color: '#FFFFFF', letterSpacing: -0.5 },
-  brandSlogan: { color: C.gold, fontSize: 10, fontWeight: '800', letterSpacing: 0.6, marginTop: 2 },
+  brandSlogan: { color: 'rgba(255, 255, 255, 0.85)', fontSize: 10, fontWeight: '800', letterSpacing: 0.6, marginTop: 2 },
   
   welcomeBox: { marginTop: 20 },
   heroTitle: { fontSize: 24, fontWeight: '900', color: '#FFFFFF', letterSpacing: -0.4 },

@@ -89,7 +89,7 @@ export function DesktopShowcase({ style }) {
         <View style={st.sidePillDot} />
         <Text style={st.sidePillText}>Dịch vụ Kỹ thuật Tại nhà Chính hãng</Text>
       </View>
-      <Text style={st.sideBrand}><Text style={{ color: C.gold }}>Thợ</Text> HRMSS</Text>
+      <Text style={st.sideBrand}><Text style={{ color: C.primary }}>Thợ</Text> HRMSS</Text>
       <Text style={st.sideText}>
         Đặt lịch vệ sinh, bảo dưỡng, sửa chữa và lắp đặt thiết bị điện máy tận nhà. Báo giá minh bạch, theo dõi hành trình trực tiếp và bảo hành 60 ngày.
       </Text>
