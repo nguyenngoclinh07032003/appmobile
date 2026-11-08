@@ -3,7 +3,7 @@ import { View, Text, ScrollView, StyleSheet, TextInput, Platform, Image, Linking
 import { C, R, shadow, toneOf, STATUS_META, grad } from '../../theme';
 import {
   ALL_SERVICES, CATEGORIES, POPULAR_SEARCHES, FAQ, REDEEM_OPTIONS, VOUCHERS, ORDER_STEPS, HOTLINE, STATUS_DESC, stepIndexOf,
-  getService, formatVND, normalize, catLabel, tierOf, TIERS, TIME_SLOTS, MATERIALS, SAFETY_CHECKLIST_ITEMS,
+  getService, formatVND, normalize, catLabel, catIcon, tierOf, TIERS, TIME_SLOTS, MATERIALS, SAFETY_CHECKLIST_ITEMS,
 } from '../../constants/data';
 import {
   useApp, fmtDate, fmtDateTime, timeAgo, warrantyInfo, LAST_SERVICE_OPTIONS, isActiveOrder, orderTotal,
@@ -43,9 +43,9 @@ export function SearchScreen() {
   return (
     <View style={{ flex: 1 }}>
       <View style={mx.searchBar}>
-        <IconBtn icon="‹" size={38} onPress={nav.back} label="Quay lại" />
+        <IconBtn icon="chevron-left" size={38} onPress={nav.back} label="Quay lại" />
         <View style={mx.searchBox}>
-          <Text>🔍</Text>
+          <AppIcon name="search" size={16} color={C.muted} strokeWidth={2.2} />
           <TextInput
             autoFocus
             value={q}
@@ -56,7 +56,7 @@ export function SearchScreen() {
             style={mx.searchInput}
             returnKeyType="search"
           />
-          {q ? <Tap onPress={() => setQ('')} hitSlop={8}><Text style={{ color: C.faint }}>✕</Text></Tap> : null}
+          {q ? <Tap onPress={() => setQ('')} hitSlop={8}><AppIcon name="x" size={16} color={C.faint} /></Tap> : null}
         </View>
       </View>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }} keyboardShouldPersistTaps="handled">
@@ -68,11 +68,11 @@ export function SearchScreen() {
                   <Text style={mx.h}>Tìm kiếm gần đây</Text>
                   <Tap onPress={a.clearSearches}><Text style={[ui.link, { color: C.muted }]}>Xoá</Text></Tap>
                 </View>
-                <View style={mx.chips}>{s.searches.map((t) => <Chip key={t} label={`🕘 ${t}`} onPress={() => pick(t)} />)}</View>
+                <View style={mx.chips}>{s.searches.map((t) => <Chip key={t} icon="clock" label={t} onPress={() => pick(t)} />)}</View>
               </View>
             ) : null}
             <Text style={[mx.h, { marginTop: 18 }]}>Tìm kiếm phổ biến</Text>
-            <View style={mx.chips}>{POPULAR_SEARCHES.map((t) => <Chip key={t} label={`🔥 ${t}`} onPress={() => pick(t)} />)}</View>
+            <View style={mx.chips}>{POPULAR_SEARCHES.map((t) => <Chip key={t} icon="flame" label={t} onPress={() => pick(t)} />)}</View>
             <Text style={[mx.h, { marginTop: 18 }]}>Danh mục</Text>
             <Card style={{ padding: 0, overflow: 'hidden' }}>
               {CATEGORIES.map((c, i) => (
@@ -81,7 +81,7 @@ export function SearchScreen() {
             </Card>
           </View>
         ) : results.length === 0 ? (
-          <EmptyState icon="🔎" title="Không tìm thấy dịch vụ" body={`Không có kết quả cho "${q}". Thử từ khoá khác hoặc gọi hotline ${HOTLINE} để được tư vấn.`} />
+          <EmptyState icon="search" title="Không tìm thấy dịch vụ" body={`Không có kết quả cho "${q}". Thử từ khoá khác hoặc gọi hotline ${HOTLINE} để được tư vấn.`} />
         ) : (
           <View>
             <Text style={[ui.meta, { marginBottom: 10 }]}>{results.length} kết quả cho "{q}"</Text>
@@ -124,9 +124,9 @@ export function NotificationsScreen() {
         )}
       />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
-        {s.notifications.length === 0 ? <EmptyState icon="🔔" title="Chưa có thông báo" body="Cập nhật về đơn hàng, ưu đãi và lịch bảo dưỡng sẽ hiện ở đây." /> : s.notifications.map((n) => (
+        {s.notifications.length === 0 ? <EmptyState icon="bell" title="Chưa có thông báo" body="Cập nhật về đơn hàng, ưu đãi và lịch bảo dưỡng sẽ hiện ở đây." /> : s.notifications.map((n) => (
           <Tap key={n.id} style={[mx.notif, !n.read && mx.notifUnread]} onPress={() => { a.readNotif(n.id); nav.open(n.link); }}>
-            <IconBox icon={n.icon || '🔔'} size={44} bg={n.read ? '#F1F4F9' : C.primarySoft} radius={14} />
+            <IconBox icon={n.icon || 'bell'} size={44} bg={n.read ? '#F1F4F9' : C.primarySoft} radius={14} />
             <View style={{ flex: 1 }}>
               <Text style={[mx.notifTitle, !n.read && { color: C.ink }]}>{n.title}</Text>
               <Text style={mx.notifBody}>{n.body}</Text>
@@ -399,7 +399,7 @@ export function OrderScreen({ params }) {
 
         {o.tech ? (
           <Card style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <View style={mx.techAvatar}><Text style={{ fontSize: 26 }}>👷</Text></View>
+            <View style={mx.techAvatar}><AppIcon name="hard-hat" size={24} color={C.goldInk} strokeWidth={2.2} /></View>
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <Text style={mx.tlTitle}>{o.tech.name}</Text>
@@ -417,12 +417,12 @@ export function OrderScreen({ params }) {
                 <Text style={[ui.meta, { color: C.green, fontWeight: '700', marginTop: 2 }]}>Đã check-in đúng chính sách giờ hẹn</Text>
               ) : null}
             </View>
-            <IconBtn icon="📞" onPress={() => Linking.openURL(`tel:${o.tech.phone || ''}`).catch(() => {})} style={{ backgroundColor: C.greenSoft }} label="Gọi thợ" />
+            <IconBtn icon="phone-call" onPress={() => Linking.openURL(`tel:${o.tech.phone || ''}`).catch(() => {})} style={{ backgroundColor: C.greenSoft }} label="Gọi thợ" />
           </Card>
         ) : active ? (
           <Card style={{ marginTop: 12, backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontSize: 18 }}>⚙️</Text>
+              <AppIcon name="settings" size={18} color="#0369A1" strokeWidth={2.2} />
               <Text style={{ fontWeight: '800', color: '#0369A1', fontSize: 14 }}>Hệ thống đang điều phối Kỹ thuật viên</Text>
             </View>
             <Text style={{ color: '#0C4A6E', marginTop: 6, fontSize: 12.5, lineHeight: 18 }}>
@@ -437,7 +437,7 @@ export function OrderScreen({ params }) {
         ) : null}
 
         <Card style={{ marginTop: 12 }}>
-          <InfoLine icon="📅" label="Lịch hẹn" value={`${o.dateLabel} · ${o.slot}`} />
+          <InfoLine icon="calendar-clock" label="Lịch hẹn" value={`${o.dateLabel} · ${o.slot}`} />
           {['pending', 'confirmed'].includes(o.status) && !cancelStatus.allowed ? (
             <View style={{ marginVertical: 6, padding: 8, borderRadius: 8, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A' }}>
               <Text style={{ fontSize: 11.5, color: '#92400E', lineHeight: 16 }}>
@@ -451,33 +451,33 @@ export function OrderScreen({ params }) {
               </Text>
             </View>
           ) : null}
-          <InfoLine icon="📍" label={`${o.address?.gender === 'Nữ' ? 'Chị' : 'Anh'} ${o.address?.name || ''} · ${o.address?.phone || ''}`} value={o.address?.full} />
-          <InfoLine icon="💳" label="Thanh toán" value={o.payment} />
+          <InfoLine icon="map-pin" label={`${o.address?.gender === 'Nữ' ? 'Chị' : 'Anh'} ${o.address?.name || ''} · ${o.address?.phone || ''}`} value={o.address?.full} />
+          <InfoLine icon="credit-card" label="Thanh toán" value={o.payment} />
           {o.device ? (
             <InfoLine
-              icon="📺"
+              icon={catIcon(o.device.category)}
               label="Thiết bị tại nhà"
               value={`${catLabel(o.device.category)}${o.device.brand ? ` · ${o.device.brand}` : ''}${o.device.room ? ` (${o.device.room})` : ''}${o.device.serial ? ` · SN: ${o.device.serial}` : ''}`}
             />
           ) : null}
           {o.siteCondition ? (
-            <InfoLine icon="🏢" label="Vị trí thi công" value={o.siteCondition.label} />
+            <InfoLine icon="building-2" label="Vị trí thi công" value={o.siteCondition.label} />
           ) : null}
-          {o.note ? <InfoLine icon="📝" label="Ghi chú" value={o.note} /> : null}
+          {o.note ? <InfoLine icon="file-text" label="Ghi chú" value={o.note} /> : null}
           {(o.attachments || []).length ? (
             <View style={{ marginTop: 4, marginBottom: 4 }}>
               <Text style={{ fontSize: 12, color: C.muted, fontWeight: '600', marginBottom: 6 }}>📷 Ảnh đính kèm</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {o.attachments.map((att) => (
                   <View key={att.id} style={mx.thumb}>
-                    {att.uri ? <Image source={{ uri: att.uri }} style={{ width: '100%', height: '100%' }} /> : <Text style={{ fontSize: 22 }}>🖼️</Text>}
+                    {att.uri ? <Image source={{ uri: att.uri }} style={{ width: '100%', height: '100%' }} /> : <AppIcon name="image" size={22} color={C.muted} />}
                   </View>
                 ))}
               </View>
             </View>
           ) : null}
           {o.warrantyOf ? (
-            <Tap onPress={() => nav.push('order', { code: o.warrantyOf })}><InfoLine icon="🔗" label="Bảo hành cho đơn" value={`${o.warrantyOf} ›`} link /></Tap>
+            <Tap onPress={() => nav.push('order', { code: o.warrantyOf })}><InfoLine icon="link" label="Bảo hành cho đơn" value={`${o.warrantyOf} ›`} link /></Tap>
           ) : null}
         </Card>
 
@@ -719,7 +719,7 @@ export function OrderScreen({ params }) {
         {o.kind !== 'warranty' && o.status !== 'cancelled' ? (
           <Card style={{ marginTop: 12, backgroundColor: winfo.ok ? '#F3FBF7' : '#fff' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <Text style={{ fontSize: 24 }}>🛡️</Text>
+              <IconBox icon="shield-check" size={40} bg={winfo.ok ? C.greenSoft : C.primarySoft} radius={13} />
               <View style={{ flex: 1 }}>
                 <Text style={mx.tlTitle}>
                   Bảo hành {winfo.totalDays || 60} ngày{o.customerTierLabel ? ` · Hạng ${o.customerTierLabel}` : ''}
@@ -1081,8 +1081,8 @@ export function RewardsScreen({ params }) {
                   isSelected && { borderColor: t.color, borderWidth: 2, backgroundColor: '#fff', ...shadow.sm },
                 ]}
               >
-                <Text style={{ fontSize: 18 }}>{unlocked ? '👑' : '🔒'}</Text>
-                <Text style={{ fontSize: 11, fontWeight: '800', color: isCurrent || isSelected ? t.color : C.muted, marginTop: 2 }}>{t.label}</Text>
+                <AppIcon name={unlocked ? 'crown' : 'lock'} size={18} color={unlocked ? t.color : C.muted} strokeWidth={2.2} />
+                <Text style={{ fontSize: 11, fontWeight: '800', color: isCurrent || isSelected ? t.color : C.muted, marginTop: 4 }}>{t.label}</Text>
                 <Text style={{ fontSize: 10, color: C.faint }}>{t.min}+</Text>
                 {isCurrent ? (
                   <View style={{ marginTop: 4, paddingHorizontal: 6, paddingVertical: 1, borderRadius: R.pill, backgroundColor: t.bg || C.primarySoft }}>
@@ -1125,8 +1125,8 @@ export function RewardsScreen({ params }) {
 
         <SectionTitle title="Cách tích điểm" />
         <Card style={{ padding: 0, overflow: 'hidden' }}>
-          <ListRow icon="🧾" iconBg={C.primarySoft} label="Hoàn thành đơn hàng" sub="10.000đ = 1 điểm" onPress={() => nav.services()} />
-          <ListRow icon="⭐" iconBg={C.goldSoft} label="Đánh giá sau khi dùng dịch vụ" sub="+20 điểm mỗi đơn" onPress={() => nav.activity('done')} last />
+          <ListRow icon="receipt-text" iconBg={C.primarySoft} label="Hoàn thành đơn hàng" sub="10.000đ = 1 điểm" onPress={() => nav.services()} />
+          <ListRow icon="star" iconBg={C.goldSoft} label="Đánh giá sau khi dùng dịch vụ" sub="+20 điểm mỗi đơn" onPress={() => nav.activity('done')} last />
         </Card>
 
         {(() => {
@@ -1164,7 +1164,7 @@ export function RewardsScreen({ params }) {
                       }}
                     >
                       <IconBox
-                        icon={h.delta > 0 ? '⬆️' : '🎁'}
+                        icon={h.delta > 0 ? 'trending-up' : 'gift'}
                         size={38}
                         bg={h.delta > 0 ? C.greenSoft : C.goldSoft}
                         radius={12}
@@ -1189,7 +1189,7 @@ export function RewardsScreen({ params }) {
           const enough = s.points >= r.cost;
           return (
             <Card key={r.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-              <IconBox icon="🎁" size={46} bg={C.goldSoft} radius={14} />
+              <IconBox icon="gift" size={46} bg={C.goldSoft} radius={14} />
               <View style={{ flex: 1 }}>
                 <Text style={mx.tlTitle}>{r.title}</Text>
                 <Text style={[ui.meta, { color: C.goldInk, fontWeight: '700' }]}>{r.cost} điểm</Text>
@@ -1203,7 +1203,7 @@ export function RewardsScreen({ params }) {
         {[...s.myVouchers, ...VOUCHERS].map((v) => (
           <View key={v.code} style={mx.ticket}>
             <View style={[mx.ticketLeft, v.wallet && { backgroundColor: C.primary }]}>
-              <Text style={{ fontSize: 22 }}>{v.wallet ? '🎁' : '🎟️'}</Text>
+              <AppIcon icon={v.wallet ? 'gift' : 'ticket'} size={22} color={v.wallet ? '#fff' : C.primary} strokeWidth={2.1} />
             </View>
             <View style={{ flex: 1, padding: 12 }}>
               <Text style={{ fontWeight: '900', color: C.ink, letterSpacing: 0.5 }}>{v.code}</Text>
@@ -1500,11 +1500,11 @@ export function ProfileScreen() {
           </View>
         </Card>
         <Card style={{ marginTop: 12, padding: 0, overflow: 'hidden' }}>
-          <ListRow icon="🔐" iconBg={C.primarySoft} label="Đổi mật khẩu" onPress={() => setShowPw(true)} last />
+          <ListRow icon="lock" iconBg={C.primarySoft} label="Đổi mật khẩu" onPress={() => setShowPw(true)} last />
         </Card>
       </ScrollView>
       <View style={mx.dock}><Btn title="Lưu thay đổi" style={{ flex: 1 }} onPress={save} /></View>
-      <Sheet visible={showOtp} onClose={() => setShowOtp(false)} title="📧 Xác thực Email (OTP 6 số)" footer={<Btn title="Xác nhận mã OTP" onPress={verifyOtp} />}>
+      <Sheet visible={showOtp} onClose={() => setShowOtp(false)} title="Xác thực Email (OTP 6 số)" footer={<Btn title="Xác nhận mã OTP" onPress={verifyOtp} />}>
         <Text style={{ color: C.ink2, lineHeight: 20, marginBottom: 12 }}>
           Nhập mã xác thực 6 chữ số được gửi tới địa chỉ Email:{' '}
           <Text style={{ fontWeight: '800', color: C.ink }}>{email || s.auth?.email}</Text>
@@ -1522,7 +1522,7 @@ export function ProfileScreen() {
             gap: 10,
           }}
         >
-          <Text style={{ fontSize: 20 }}>📬</Text>
+          <AppIcon name="mail-open" size={20} color="#1E40AF" strokeWidth={2.2} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 12.5, color: '#1E40AF', fontWeight: '700' }}>Kiểm tra hộp thư Email</Text>
             <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
@@ -1564,13 +1564,13 @@ export function HelpScreen() {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {[
-            { i: '📞', t: 'Gọi hotline', onPress: u.call },
-            { i: '🛡️', t: 'Bảo hành', onPress: () => nav.warranty() },
-            { i: '📋', t: 'Đơn của tôi', onPress: () => nav.activity() },
+            { i: 'phone-call', t: 'Gọi hotline', onPress: u.call },
+            { i: 'shield-check', t: 'Bảo hành', onPress: () => nav.warranty() },
+            { i: 'clipboard-list', t: 'Đơn của tôi', onPress: () => nav.activity() },
           ].map((x) => (
             <Card key={x.t} style={{ flex: 1, alignItems: 'center', paddingVertical: 16 }} onPress={x.onPress}>
-              <Text style={{ fontSize: 26 }}>{x.i}</Text>
-              <Text style={{ fontWeight: '700', color: C.ink, marginTop: 6, fontSize: 13 }}>{x.t}</Text>
+              <IconBox icon={x.i} size={44} bg={C.primarySoft} radius={14} />
+              <Text style={{ fontWeight: '700', color: C.ink, marginTop: 8, fontSize: 13 }}>{x.t}</Text>
             </Card>
           ))}
         </View>

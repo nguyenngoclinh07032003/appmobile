@@ -74,21 +74,21 @@ function useNextAction() {
     switch (o.status) {
       case 'confirmed': {
         if (o.quote && !o.quote.approved) {
-          return { label: 'Chờ khách đồng ý', icon: '⏳', variant: 'ghost', run: () => nav.push('tech-job', { code: o.code }) };
+          return { label: 'Chờ khách đồng ý', icon: 'clock', variant: 'ghost', run: () => nav.push('tech-job', { code: o.code }) };
         }
-        return { label: 'Bắt đầu di chuyển', icon: '🛵', run: () => a.startTravel(o.code) };
+        return { label: 'Bắt đầu di chuyển', icon: 'navigation', run: () => a.startTravel(o.code) };
       };
       case 'onway': return {
         label: 'Check-in GPS',
-        icon: '📍',
+        icon: 'map-pin',
         run: async () => {
           const loc = await getCheckInLocation();
           a.arrive(o.code, loc);
         },
       };
-      case 'diagnosing': return { label: 'Chẩn đoán & báo giá', icon: '🧾', run: () => nav.push('tech-job', { code: o.code }) };
-      case 'quoted': return { label: 'Chờ khách duyệt', icon: '⏳', variant: 'ghost', run: () => nav.push('tech-job', { code: o.code }) };
-      case 'repairing': return { label: 'Cập nhật công việc', icon: '🔧', run: () => nav.push('tech-job', { code: o.code }) };
+      case 'diagnosing': return { label: 'Chẩn đoán & báo giá', icon: 'receipt-text', run: () => nav.push('tech-job', { code: o.code }) };
+      case 'quoted': return { label: 'Chờ khách duyệt', icon: 'clock', variant: 'ghost', run: () => nav.push('tech-job', { code: o.code }) };
+      case 'repairing': return { label: 'Cập nhật công việc', icon: 'wrench', run: () => nav.push('tech-job', { code: o.code }) };
       default: return null;
     }
   };
@@ -170,20 +170,20 @@ function JobCard({ o, compact, onDecline, canAccept = true }) {
           </View>
         ) : null}
         <View style={tx.metaBlock}>
-          <MetaLine icon="📅" text={`${o.dateLabel} · ${o.slot}`} />
+          <MetaLine icon="calendar" text={`${o.dateLabel} · ${o.slot}`} />
           {o.device ? (
             <MetaLine
-              icon="📺"
+              icon={catIcon(o.device.category)}
               text={`${catLabel(o.device.category)}${o.device.brand ? ` · ${o.device.brand}` : ''}${o.device.room ? ` (${o.device.room})` : ''}`}
             />
           ) : null}
-          <MetaLine icon="👤" text={who} last={compact} />
-          {!compact ? <MetaLine icon="📍" text={o.address?.full || ''} last /> : null}
+          <MetaLine icon="user" text={who} last={compact} />
+          {!compact ? <MetaLine icon="map-pin" text={o.address?.full || ''} last /> : null}
         </View>
         <View style={tx.cardFoot}>
           <View style={{ flexDirection: 'row', gap: 8, flex: 1 }}>
-            <Btn title="Gọi" small variant="ghost" icon="📞" onPress={() => callPhone(o.address?.phone)} />
-            {!compact ? <Btn title="Chỉ đường" small variant="ghost" icon="🗺️" onPress={() => openMap(o.address?.full)} /> : null}
+            <Btn title="Gọi" small variant="ghost" icon="phone-call" onPress={() => callPhone(o.address?.phone)} />
+            {!compact ? <Btn title="Chỉ đường" small variant="ghost" icon="compass" onPress={() => openMap(o.address?.full)} /> : null}
           </View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {compact ? (
@@ -191,9 +191,9 @@ function JobCard({ o, compact, onDecline, canAccept = true }) {
             ) : o.status === 'pending' ? (
               <>
                 <Btn title="Từ chối ca" small variant="ghost" onPress={() => (onDecline ? onDecline(o) : null)} />
-                <Btn title="Tiếp nhận ca" icon="🤝" small disabled={!canAccept} onPress={() => a.acceptJob(o.code)} />
+                <Btn title="Tiếp nhận ca" icon="handshake" small disabled={!canAccept} onPress={() => a.acceptJob(o.code)} />
               </>
-            ) : next ? <Btn title={next.label} small variant={next.variant || 'soft'} onPress={next.run} /> : null}
+            ) : next ? <Btn title={next.label} icon={next.icon} small variant={next.variant || 'soft'} onPress={next.run} /> : null}
           </View>
         </View>
       </View>
@@ -314,7 +314,7 @@ export function TechJobsScreen() {
           <View style={{ marginTop: 14 }}>
             {list.length === 0 ? (
               <EmptyState
-                icon={tab === 'new' ? '📭' : tab === 'working' ? '🧰' : '🗂️'}
+                icon={tab === 'new' ? 'inbox' : tab === 'working' ? 'briefcase' : 'clipboard-check'}
                 title={tab === 'new' ? 'Chưa có việc mới' : tab === 'working' ? 'Không có việc đang làm' : 'Chưa có việc hoàn thành'}
                 body={
                   tab === 'new'
@@ -685,16 +685,16 @@ export function TechAccountScreen() {
           )}
 
           <View style={[tx.menu, { marginTop: 12 }]}>
-            <ListRow icon="🧰" iconBg={C.primarySoft} label="Công việc của tôi" value={`${d.workingJobs.length} đang làm`} onPress={() => nav.go('tech-jobs')} />
-            <ListRow icon="📅" iconBg={C.cyanSoft} label="Lịch làm việc" onPress={() => nav.go('tech-schedule')} />
-            <ListRow icon="🔔" iconBg={C.goldSoft} label="Thông báo" value={d.techUnread ? `${d.techUnread} mới` : ''} onPress={() => nav.go('tech-notifs')} />
-            <ListRow icon="👤" iconBg={C.purpleSoft} label="Hồ sơ kỹ thuật viên" sub={`${me.code} · ${me.phone}${me.dob ? ` · 🎂 ${me.dob}` : ''}`} onPress={openProfile} />
-            <ListRow icon="🔐" iconBg={C.orangeSoft} label="Đổi mật khẩu" onPress={() => { setCurPw(''); setNewPw(''); setNewPw2(''); setShowPw(true); }} />
-            <ListRow icon="🎧" iconBg={C.greenSoft} label="Liên hệ điều phối" value={HOTLINE} onPress={u.call} last={!s.auth} />
+            <ListRow icon="briefcase" iconBg={C.primarySoft} label="Công việc của tôi" value={`${d.workingJobs.length} đang làm`} onPress={() => nav.go('tech-jobs')} />
+            <ListRow icon="calendar-clock" iconBg={C.cyanSoft} label="Lịch làm việc" onPress={() => nav.go('tech-schedule')} />
+            <ListRow icon="bell" iconBg={C.goldSoft} label="Thông báo" value={d.techUnread ? `${d.techUnread} mới` : ''} onPress={() => nav.go('tech-notifs')} />
+            <ListRow icon="id-card" iconBg={C.purpleSoft} label="Hồ sơ kỹ thuật viên" sub={`${me.code} · ${me.phone}${me.dob ? ` · ${me.dob}` : ''}`} onPress={openProfile} />
+            <ListRow icon="lock" iconBg={C.orangeSoft} label="Đổi mật khẩu" onPress={() => { setCurPw(''); setNewPw(''); setNewPw2(''); setShowPw(true); }} />
+            <ListRow icon="headphones" iconBg={C.greenSoft} label="Liên hệ điều phối" value={HOTLINE} onPress={u.call} last={!s.auth} />
             {s.auth ? (
               <ListRow
-                icon="🔑"
-                iconBg={C.goldSoft}
+                icon="user-check"
+                iconBg={C.primarySoft}
                 label="Tài khoản đang đăng nhập"
                 sub={`${s.auth.name || me.name} · ${s.auth.phone || s.auth.email || me.phone}`}
                 right={(
@@ -1265,15 +1265,15 @@ export function TechJobScreen({ params }) {
         <Card style={{ marginTop: 12 }}>
           <Text style={tx.h}>Khách hàng</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <IconBox icon="👤" size={46} bg={C.primarySoft} radius={15} />
+            <IconBox icon="user" size={46} bg={C.primarySoft} radius={15} />
             <View style={{ flex: 1 }}>
               <Text style={tx.name}>{o.address?.gender === 'Nữ' ? 'Chị' : 'Anh'} {o.address?.name}</Text>
               <Text style={ui.meta}>{o.address?.phone}</Text>
             </View>
-            <IconBtn icon="📞" onPress={() => callPhone(o.address?.phone)} style={{ backgroundColor: C.greenSoft }} label="Gọi khách" />
+            <IconBtn icon="phone-call" onPress={() => callPhone(o.address?.phone)} style={{ backgroundColor: C.greenSoft }} label="Gọi khách" />
           </View>
           <Tap style={tx.addrBox} onPress={() => openMap(o.address?.full)}>
-            <Text style={{ fontSize: 16 }}>📍</Text>
+            <AppIcon name="map-pin" size={16} color={C.primary} strokeWidth={2.2} />
             <Text style={{ flex: 1, color: C.ink, fontWeight: '600', lineHeight: 20 }}>{o.address?.full}</Text>
             <Text style={ui.link}>Chỉ đường</Text>
           </Tap>
@@ -1303,7 +1303,7 @@ export function TechJobScreen({ params }) {
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
               {o.attachments.map((att) => (
                 <View key={att.id} style={tx.thumb}>
-                  {att.uri ? <Image source={{ uri: att.uri }} style={{ width: '100%', height: '100%' }} /> : <Text style={{ fontSize: 22 }}>🖼️</Text>}
+                  {att.uri ? <Image source={{ uri: att.uri }} style={{ width: '100%', height: '100%' }} /> : <AppIcon name="image" size={22} color={C.muted} />}
                 </View>
               ))}
             </View>
@@ -1314,7 +1314,7 @@ export function TechJobScreen({ params }) {
               const sv = getService(it.id);
               return (
                 <View key={it.id} style={tx.svcRow}>
-                  <Text style={{ fontSize: 20 }}>{sv?.icon}</Text>
+                  <AppIcon icon={sv?.icon} size={20} color={C.primary} strokeWidth={2.1} />
                   <Text style={{ flex: 1, color: C.ink, fontWeight: '600' }} numberOfLines={2}>{sv?.name}</Text>
                   <Text style={{ color: C.ink2, fontWeight: '800' }}>x{it.qty}</Text>
                 </View>
@@ -1704,7 +1704,7 @@ export function TechJobScreen({ params }) {
       {o.status === 'pending' ? (
         <View style={tx.dock}>
           <Btn title="Từ chối ca" variant="ghost" style={{ flex: 1 }} onPress={() => { setReason(DECLINE_REASONS[0]); setReasonNote(''); setShowDecline(true); }} />
-          <Btn title="Tiếp nhận ca" icon="🤝" style={{ flex: 2 }} onPress={() => a.acceptJob(o.code)} />
+          <Btn title="Tiếp nhận ca" icon="handshake" style={{ flex: 2 }} onPress={() => a.acceptJob(o.code)} />
         </View>
       ) : null}
       {o.status === 'quoted' && mine ? (
@@ -1714,14 +1714,14 @@ export function TechJobScreen({ params }) {
             <Text style={ui.meta}>Chờ khách duyệt</Text>
             <Text style={{ fontWeight: '800', color: C.ink, fontSize: 15 }}>{formatVND(o.quote?.total || 0)}</Text>
           </View>
-          <Btn title="Nhắc" icon="📨" variant="soft" style={{ flex: 1 }} onPress={() => a.remindQuote(o.code)} />
+          <Btn title="Nhắc" icon="send" variant="soft" style={{ flex: 1 }} onPress={() => a.remindQuote(o.code)} />
         </View>
       ) : null}
       {mine && ['confirmed', 'onway'].includes(o.status) ? (
         <View style={tx.dock}>
           <Btn title="Trả việc" variant="dangerSoft" style={{ flex: 1 }} onPress={() => { setReleaseReason(RELEASE_REASONS[0]); setReleaseNote(''); setShowRelease(true); }} />
           {o.status === 'confirmed' && showPreQuote ? (
-            <Btn title="Gửi báo giá trước khi đi" icon="🧾" style={{ flex: 2 }} onPress={sendQuote} />
+            <Btn title="Gửi báo giá trước khi đi" icon="receipt-text" style={{ flex: 2 }} onPress={sendQuote} />
           ) : (
             <Btn title={next.label} icon={next.icon} variant={next.variant || 'primary'} style={{ flex: 2 }} onPress={next.run} />
           )}
@@ -1746,7 +1746,7 @@ export function TechJobScreen({ params }) {
       {mine && o.status === 'repairing' ? (
         <View style={tx.dock}>
           <Btn title="Trả việc" variant="dangerSoft" style={{ flex: 1 }} onPress={() => { setReleaseReason(RELEASE_REASONS[0]); setReleaseNote(''); setShowRelease(true); }} />
-          <Btn title="Hoàn thành" icon="✅" style={{ flex: 2 }} onPress={openComplete} />
+          <Btn title="Hoàn thành" icon="check-circle-2" style={{ flex: 2 }} onPress={openComplete} />
         </View>
       ) : null}
       {!editable && o.status !== 'done' && o.status !== 'cancelled' ? (
@@ -1759,7 +1759,7 @@ export function TechJobScreen({ params }) {
         <View style={{ height: 8 }} />
         {mats.map((m) => (
           <Tap key={m.id} style={tx.option} onPress={() => addPart(m)}>
-            <IconBox icon={m.category === 'all' ? '🧰' : catIcon(m.category)} size={38} bg={m.category === 'all' ? '#F1F4F9' : toneOf(m.category).bg} radius={12} />
+            <IconBox icon={m.category === 'all' ? 'package' : catIcon(m.category)} size={38} bg={m.category === 'all' ? '#F1F4F9' : toneOf(m.category).bg} radius={12} />
             <View style={{ flex: 1 }}>
               <Text style={{ color: C.ink, fontWeight: '700' }}>{m.name}</Text>
               <Text style={ui.meta}>{formatVND(m.price)} / {m.unit}</Text>
@@ -1932,11 +1932,11 @@ export function TechJobScreen({ params }) {
 
 // Phiên bản không dùng hook (gọi sau early-return ở TechJobScreen)
 function nextActionFor(o, a, nav) {
-  if (o.status === 'confirmed') return { label: 'Bắt đầu di chuyển', icon: '🛵', run: () => a.startTravel(o.code) };
+  if (o.status === 'confirmed') return { label: 'Bắt đầu di chuyển', icon: 'navigation', run: () => a.startTravel(o.code) };
   if (o.status === 'onway') {
     return {
       label: 'Đã đến nơi (check-in GPS)',
-      icon: '📍',
+      icon: 'map-pin',
       run: async () => {
         const loc = await getCheckInLocation();
         a.arrive(o.code, loc);

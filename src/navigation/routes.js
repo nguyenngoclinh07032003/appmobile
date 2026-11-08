@@ -23,8 +23,8 @@ export const CUSTOMER_TABS = [
 
 // App Thợ (Technician)
 export const TECH_TABS = [
-  { id: 'tech-jobs', label: 'Công việc', icon: 'wrench', Comp: TechJobsScreen },
-  { id: 'tech-schedule', label: 'Lịch', icon: 'calendar', Comp: TechScheduleScreen },
+  { id: 'tech-jobs', label: 'Công việc', icon: 'briefcase', Comp: TechJobsScreen },
+  { id: 'tech-schedule', label: 'Lịch', icon: 'calendar-clock', Comp: TechScheduleScreen },
   { id: 'tech-notifs', label: 'Thông báo', icon: 'bell', Comp: TechNotifsScreen },
   { id: 'tech-account', label: 'Tài khoản', icon: 'hard-hat', Comp: TechAccountScreen },
 ];

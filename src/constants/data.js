@@ -1,45 +1,45 @@
 // Dữ liệu dịch vụ, giá niêm yết, lượt bán và đánh giá trên hệ thống Thợ HRMSS
 export const CATEGORIES = [
-  { id: 'may-lanh', label: 'Máy lạnh', icon: '❄️' },
-  { id: 'may-giat', label: 'Máy giặt/sấy', icon: '🧺' },
-  { id: 'tu-lanh', label: 'Tủ lạnh', icon: '🧊' },
-  { id: 'nuoc-nong', label: 'Máy nước nóng/Bồn nước', icon: '🚿' },
-  { id: 'hut-mui', label: 'Máy hút mùi/khói', icon: '🍳' },
-  { id: 'quat', label: 'Quạt điều hòa/nước', icon: '🌀' },
-  { id: 'loc-khong-khi', label: 'Máy lọc không khí', icon: '🌬️' },
+  { id: 'may-lanh', label: 'Máy lạnh', icon: 'snowflake' },
+  { id: 'may-giat', label: 'Máy giặt/sấy', icon: 'washing-machine' },
+  { id: 'tu-lanh', label: 'Tủ lạnh', icon: 'refrigerator' },
+  { id: 'nuoc-nong', label: 'Máy nước nóng/Bồn nước', icon: 'shower-head' },
+  { id: 'hut-mui', label: 'Máy hút mùi/khói', icon: 'air-vent' },
+  { id: 'quat', label: 'Quạt điều hòa/nước', icon: 'fan' },
+  { id: 'loc-khong-khi', label: 'Máy lọc không khí', icon: 'wind' },
 ];
 
 export const SERVICES = [
   // Máy lạnh
-  { id: 'vs-ml-1', dbId: 1, category: 'may-lanh', name: 'Vệ sinh máy lạnh từ 1-2.5 HP', price: 180000, oldPrice: 200000, rating: 5, sold: 'Đã bán 631,7k', reviews: 16732, icon: '❄️', warranty: 'BH 60 ngày' },
-  { id: 'vs-ml-am-tran', dbId: 2, category: 'may-lanh', name: 'Vệ sinh Máy lạnh Âm Trần', price: 480000, oldPrice: 600000, rating: 5, sold: 'Đã bán 230', icon: '🏢', warranty: 'BH 60 ngày' },
-  { id: 'gas-410-1hp', dbId: 3, category: 'may-lanh', name: 'Sạc gas R410 - R32 (Inverter) máy lạnh 1HP...', price: 850000, rating: 0, sold: 'Đã bán 104', icon: '⛽', warranty: 'BH 60 ngày' },
-  { id: 'vs-ml-tu-dung', dbId: 4, category: 'may-lanh', name: 'Vệ sinh Máy lạnh Tủ Đứng', price: 480000, oldPrice: 600000, rating: 5, sold: 'Đã bán 20', icon: '🗄️', warranty: 'BH 60 ngày' },
-  { id: 'gas-410-2hp', dbId: 5, category: 'may-lanh', name: 'Sạc gas R410 - R32 (Inverter) máy lạnh 2H...', price: 1150000, rating: 0, sold: 'Đã bán 10', icon: '⛽', warranty: 'BH 60 ngày' },
-  { id: 'gas-r22-1hp', dbId: 6, category: 'may-lanh', name: 'Sạc gas R22 (Mono) máy lạnh 1-1.5 HP', price: 700000, rating: 0, sold: 'Đã bán 8', icon: '⛽', warranty: 'BH 60 ngày' },
-  { id: 'vs-ml-chuyen-sau', dbId: 7, category: 'may-lanh', name: 'Vệ sinh chuyên sâu máy lạnh treo tường 1-2,5 HP', price: 600000, oldPrice: 750000, rating: 0, sold: '', icon: '❄️', warranty: 'BH 60 ngày' },
-  { id: 'gas-r22-2hp', dbId: 8, category: 'may-lanh', name: 'Sạc gas R22 (Mono) máy lạnh 2HP-2.5HP', price: 850000, rating: 0, sold: '', icon: '⛽', warranty: 'BH 60 ngày' },
+  { id: 'vs-ml-1', dbId: 1, category: 'may-lanh', name: 'Vệ sinh máy lạnh từ 1-2.5 HP', price: 180000, oldPrice: 200000, rating: 5, sold: 'Đã bán 631,7k', reviews: 16732, icon: 'snowflake', warranty: 'BH 60 ngày' },
+  { id: 'vs-ml-am-tran', dbId: 2, category: 'may-lanh', name: 'Vệ sinh Máy lạnh Âm Trần', price: 480000, oldPrice: 600000, rating: 5, sold: 'Đã bán 230', icon: 'air-vent', warranty: 'BH 60 ngày' },
+  { id: 'gas-410-1hp', dbId: 3, category: 'may-lanh', name: 'Sạc gas R410 - R32 (Inverter) máy lạnh 1HP...', price: 850000, rating: 0, sold: 'Đã bán 104', icon: 'gauge', warranty: 'BH 60 ngày' },
+  { id: 'vs-ml-tu-dung', dbId: 4, category: 'may-lanh', name: 'Vệ sinh Máy lạnh Tủ Đứng', price: 480000, oldPrice: 600000, rating: 5, sold: 'Đã bán 20', icon: 'server', warranty: 'BH 60 ngày' },
+  { id: 'gas-410-2hp', dbId: 5, category: 'may-lanh', name: 'Sạc gas R410 - R32 (Inverter) máy lạnh 2H...', price: 1150000, rating: 0, sold: 'Đã bán 10', icon: 'gauge', warranty: 'BH 60 ngày' },
+  { id: 'gas-r22-1hp', dbId: 6, category: 'may-lanh', name: 'Sạc gas R22 (Mono) máy lạnh 1-1.5 HP', price: 700000, rating: 0, sold: 'Đã bán 8', icon: 'gauge', warranty: 'BH 60 ngày' },
+  { id: 'vs-ml-chuyen-sau', dbId: 7, category: 'may-lanh', name: 'Vệ sinh chuyên sâu máy lạnh treo tường 1-2,5 HP', price: 600000, oldPrice: 750000, rating: 0, sold: '', icon: 'snowflake', warranty: 'BH 60 ngày' },
+  { id: 'gas-r22-2hp', dbId: 8, category: 'may-lanh', name: 'Sạc gas R22 (Mono) máy lạnh 2HP-2.5HP', price: 850000, rating: 0, sold: '', icon: 'gauge', warranty: 'BH 60 ngày' },
   // Máy giặt
-  { id: 'vs-mg-tren', dbId: 9, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Cửa Trên', price: 357000, oldPrice: 420000, rating: 5, sold: 'Đã bán 8,3k', icon: '🧺', warranty: 'BH 60 ngày' },
-  { id: 'vs-mg-truoc', dbId: 10, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Cửa Trước', price: 552500, oldPrice: 650000, rating: 5, sold: 'Đã bán 7,1k', icon: '🌀', warranty: 'BH 60 ngày' },
-  { id: 'vs-mg-quan-ao', dbId: 11, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Quần Áo', price: 357000, oldPrice: 420000, rating: 4.9, sold: 'Đã bán 185', icon: '👕', warranty: 'BH 60 ngày' },
+  { id: 'vs-mg-tren', dbId: 9, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Cửa Trên', price: 357000, oldPrice: 420000, rating: 5, sold: 'Đã bán 8,3k', icon: 'washing-machine', warranty: 'BH 60 ngày' },
+  { id: 'vs-mg-truoc', dbId: 10, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Cửa Trước', price: 552500, oldPrice: 650000, rating: 5, sold: 'Đã bán 7,1k', icon: 'washing-machine', warranty: 'BH 60 ngày' },
+  { id: 'vs-mg-quan-ao', dbId: 11, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Quần Áo', price: 357000, oldPrice: 420000, rating: 4.9, sold: 'Đã bán 185', icon: 'shirt', warranty: 'BH 60 ngày' },
   // Tủ lạnh
-  { id: 'vs-tl-300', dbId: 12, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh ≤ 300 lít', price: 247500, oldPrice: 275000, rating: 0, sold: 'Đã bán 66', icon: '🧊', warranty: 'BH 60 ngày' },
-  { id: 'vs-tl-side', dbId: 13, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh side-by-side', price: 450000, oldPrice: 500000, rating: 0, sold: 'Đã bán 29', icon: '🧊', warranty: 'BH 60 ngày' },
-  { id: 'vs-tl-tren300', dbId: 14, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh > 300 lít', price: 315000, oldPrice: 350000, rating: 0, sold: 'Đã bán 23', icon: '🧊', warranty: 'BH 60 ngày' },
+  { id: 'vs-tl-300', dbId: 12, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh ≤ 300 lít', price: 247500, oldPrice: 275000, rating: 0, sold: 'Đã bán 66', icon: 'refrigerator', warranty: 'BH 60 ngày' },
+  { id: 'vs-tl-side', dbId: 13, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh side-by-side', price: 450000, oldPrice: 500000, rating: 0, sold: 'Đã bán 29', icon: 'refrigerator', warranty: 'BH 60 ngày' },
+  { id: 'vs-tl-tren300', dbId: 14, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh > 300 lít', price: 315000, oldPrice: 350000, rating: 0, sold: 'Đã bán 23', icon: 'refrigerator', warranty: 'BH 60 ngày' },
   // Nước nóng / Bồn nước
-  { id: 'vs-bnn', dbId: 15, category: 'nuoc-nong', name: 'Vệ sinh Bình nước nóng', price: 250000, rating: 0, sold: 'Đã bán 106', icon: '🚿', warranty: 'BH 60 ngày' },
-  { id: 'vs-nlmt-300', dbId: 16, category: 'nuoc-nong', name: 'Vệ sinh Bình năng lượng mặt trời ≤ 300 lít', price: 700000, rating: 0, sold: 'Đã bán 26', icon: '☀️', warranty: 'BH 60 ngày' },
-  { id: 'vs-nlmt-tren300', dbId: 17, category: 'nuoc-nong', name: 'Vệ sinh Bình năng lượng mặt trời > 300 lít', price: 900000, rating: 0, sold: 'Đã bán 2', icon: '☀️', warranty: 'BH 60 ngày' },
-  { id: 'vs-bon-2500', dbId: 18, category: 'nuoc-nong', name: 'Vệ sinh bồn nước từ 2500 đến 5000 lít', price: 525000, oldPrice: 750000, rating: 0, sold: '', icon: '🛢️', warranty: 'BH 60 ngày' },
-  { id: 'vs-bon-duoi', dbId: 19, category: 'nuoc-nong', name: 'Vệ sinh bồn nước dưới 2500 lít', price: 385000, oldPrice: 550000, rating: 0, sold: '', icon: '🛢️', warranty: 'BH 60 ngày' },
+  { id: 'vs-bnn', dbId: 15, category: 'nuoc-nong', name: 'Vệ sinh Bình nước nóng', price: 250000, rating: 0, sold: 'Đã bán 106', icon: 'shower-head', warranty: 'BH 60 ngày' },
+  { id: 'vs-nlmt-300', dbId: 16, category: 'nuoc-nong', name: 'Vệ sinh Bình năng lượng mặt trời ≤ 300 lít', price: 700000, rating: 0, sold: 'Đã bán 26', icon: 'sun', warranty: 'BH 60 ngày' },
+  { id: 'vs-nlmt-tren300', dbId: 17, category: 'nuoc-nong', name: 'Vệ sinh Bình năng lượng mặt trời > 300 lít', price: 900000, rating: 0, sold: 'Đã bán 2', icon: 'sun', warranty: 'BH 60 ngày' },
+  { id: 'vs-bon-2500', dbId: 18, category: 'nuoc-nong', name: 'Vệ sinh bồn nước từ 2500 đến 5000 lít', price: 525000, oldPrice: 750000, rating: 0, sold: '', icon: 'droplets', warranty: 'BH 60 ngày' },
+  { id: 'vs-bon-duoi', dbId: 19, category: 'nuoc-nong', name: 'Vệ sinh bồn nước dưới 2500 lít', price: 385000, oldPrice: 550000, rating: 0, sold: '', icon: 'droplets', warranty: 'BH 60 ngày' },
   // Hút mùi
-  { id: 'vs-hut-mui', dbId: 20, category: 'hut-mui', name: 'Vệ sinh Máy hút mùi', price: 350000, rating: 0, sold: 'Đã bán 29', icon: '🍳', warranty: 'BH 60 ngày' },
+  { id: 'vs-hut-mui', dbId: 20, category: 'hut-mui', name: 'Vệ sinh Máy hút mùi', price: 350000, rating: 0, sold: 'Đã bán 29', icon: 'air-vent', warranty: 'BH 60 ngày' },
   // Quạt
-  { id: 'vs-quat-dh', dbId: 21, category: 'quat', name: 'Vệ sinh Quạt điều hòa', price: 180000, oldPrice: 200000, rating: 5, sold: 'Đã bán 329', icon: '🌀', warranty: 'BH 60 ngày' },
-  { id: 'vs-quat-dung', dbId: 22, category: 'quat', name: 'Vệ sinh Quạt đứng/treo tường', price: 150000, rating: 0, sold: 'Đã bán 184', icon: '🌀', warranty: 'BH 60 ngày' },
+  { id: 'vs-quat-dh', dbId: 21, category: 'quat', name: 'Vệ sinh Quạt điều hòa', price: 180000, oldPrice: 200000, rating: 5, sold: 'Đã bán 329', icon: 'fan', warranty: 'BH 60 ngày' },
+  { id: 'vs-quat-dung', dbId: 22, category: 'quat', name: 'Vệ sinh Quạt đứng/treo tường', price: 150000, rating: 0, sold: 'Đã bán 184', icon: 'fan', warranty: 'BH 60 ngày' },
   // Lọc không khí
-  { id: 'vs-loc-kk', dbId: 23, category: 'loc-khong-khi', name: 'Vệ sinh Máy lọc không khí', price: 250000, rating: 0, sold: 'Đã bán 16', icon: '🌬️', warranty: 'BH 60 ngày' },
+  { id: 'vs-loc-kk', dbId: 23, category: 'loc-khong-khi', name: 'Vệ sinh Máy lọc không khí', price: 250000, rating: 0, sold: 'Đã bán 16', icon: 'wind', warranty: 'BH 60 ngày' },
 ];
 
 export const COMMITMENTS = [
@@ -209,13 +209,13 @@ export const noteFor = (items) => {
 // Bảng giá dịch vụ sửa chữa & bảo dưỡng định kỳ chính hãng Thợ HRMSS (Hệ thống không cung cấp lắp đặt mới).
 export const INSTALL_SERVICES = [];
 export const REPAIR_SERVICES = [
-  { id: 'sc-ml', dbId: 24, category: 'may-lanh', name: 'Kiểm tra / sửa máy lạnh không lạnh', price: 200000, rating: 0, sold: '', icon: '❄️', warranty: 'BH 60 ngày' },
-  { id: 'sc-mg', dbId: 25, category: 'may-giat', name: 'Kiểm tra / sửa máy giặt không vắt', price: 200000, rating: 0, sold: '', icon: '🧺', warranty: 'BH 60 ngày' },
-  { id: 'sc-tl', dbId: 26, category: 'tu-lanh', name: 'Kiểm tra / sửa tủ lạnh kém lạnh', price: 200000, rating: 0, sold: '', icon: '🧊', warranty: 'BH 60 ngày' },
+  { id: 'sc-ml', dbId: 24, category: 'may-lanh', name: 'Kiểm tra / sửa máy lạnh không lạnh', price: 200000, rating: 0, sold: '', icon: 'snowflake', warranty: 'BH 60 ngày' },
+  { id: 'sc-mg', dbId: 25, category: 'may-giat', name: 'Kiểm tra / sửa máy giặt không vắt', price: 200000, rating: 0, sold: '', icon: 'washing-machine', warranty: 'BH 60 ngày' },
+  { id: 'sc-tl', dbId: 26, category: 'tu-lanh', name: 'Kiểm tra / sửa tủ lạnh kém lạnh', price: 200000, rating: 0, sold: '', icon: 'refrigerator', warranty: 'BH 60 ngày' },
 ];
 export const LIFETIME_SERVICES = [
-  { id: 'td-ml', dbId: 27, category: 'may-lanh', name: 'Gói bảo dưỡng trọn đời máy lạnh treo tường', price: 1200000, rating: 0, sold: '', icon: '❄️', warranty: 'BH 60 ngày' },
-  { id: 'td-mg', dbId: 28, category: 'may-giat', name: 'Gói bảo dưỡng trọn đời máy giặt', price: 900000, rating: 0, sold: '', icon: '🧺', warranty: 'BH 60 ngày' },
+  { id: 'td-ml', dbId: 27, category: 'may-lanh', name: 'Gói bảo dưỡng trọn đời máy lạnh treo tường', price: 1200000, rating: 0, sold: '', icon: 'snowflake', warranty: 'BH 60 ngày' },
+  { id: 'td-mg', dbId: 28, category: 'may-giat', name: 'Gói bảo dưỡng trọn đời máy giặt', price: 900000, rating: 0, sold: '', icon: 'washing-machine', warranty: 'BH 60 ngày' },
 ];
 export const AREAS = [
   'An Khánh, Hà Nội', 'Hoài Đức, Hà Nội', 'Cầu Giấy, Hà Nội', 'Nam Từ Liêm, Hà Nội',
@@ -251,7 +251,7 @@ export const CAT_SHORT = {
   'loc-khong-khi': 'Lọc khí',
 };
 export const catLabel = (id) => CATEGORIES.find((c) => c.id === id)?.label || CAT_SHORT[id] || 'Thiết bị';
-export const catIcon = (id) => CATEGORIES.find((c) => c.id === id)?.icon || '🔧';
+export const catIcon = (id) => CATEGORIES.find((c) => c.id === id)?.icon || 'wrench';
 
 // Chu kỳ bảo dưỡng khuyến nghị (tháng) theo loại thiết bị — dùng để nhắc lịch ở tab Thiết bị / Trang chủ
 export const MAINT_MONTHS = {
@@ -259,23 +259,23 @@ export const MAINT_MONTHS = {
 };
 
 export const SERVICE_TYPES = [
-  { id: 'bao-duong', label: 'Bảo dưỡng', icon: '🧼', desc: 'Vệ sinh định kỳ' },
-  { id: 'sua-chua', label: 'Sửa chữa', icon: '🔧', desc: 'Báo giá trước' },
-  { id: 'bao-hanh', label: 'Bảo hành', icon: '🛡️', desc: 'Tra cứu 60 ngày' },
-  { id: 'tron-doi', label: 'Trọn đời', icon: '♾️', desc: 'Gói định kỳ' },
+  { id: 'bao-duong', label: 'Bảo dưỡng', icon: 'spray-can', desc: 'Vệ sinh định kỳ' },
+  { id: 'sua-chua', label: 'Sửa chữa', icon: 'wrench', desc: 'Báo giá trước' },
+  { id: 'bao-hanh', label: 'Bảo hành', icon: 'shield-check', desc: 'Tra cứu 60 ngày' },
+  { id: 'tron-doi', label: 'Trọn đời', icon: 'infinity', desc: 'Gói định kỳ' },
 ];
 
 export const TIPS = [
   {
-    id: 'tip-1', title: '5 cách dùng tủ lạnh giúp tăng tuổi thọ máy', views: '10,2K lượt xem', icon: '🧊', category: 'tu-lanh', serviceId: 'vs-tl-300',
+    id: 'tip-1', title: '5 cách dùng tủ lạnh giúp tăng tuổi thọ máy', views: '10,2K lượt xem', icon: 'refrigerator', category: 'tu-lanh', serviceId: 'vs-tl-300',
     body: '1. Không để thức ăn còn nóng vào tủ.\n2. Đặt tủ cách tường ít nhất 10 cm để dàn nóng tản nhiệt.\n3. Không chất đầy quá 3/4 dung tích.\n4. Kiểm tra gioăng cửa định kỳ, gioăng hở làm tủ chạy liên tục.\n5. Vệ sinh tủ 6 tháng/lần để khử mùi và giữ dàn lạnh sạch.',
   },
   {
-    id: 'tip-2', title: 'Máy lạnh kém mát? 3 dấu hiệu cần vệ sinh ngay', views: '8,4K lượt xem', icon: '❄️', category: 'may-lanh', serviceId: 'vs-ml-1',
+    id: 'tip-2', title: 'Máy lạnh kém mát? 3 dấu hiệu cần vệ sinh ngay', views: '8,4K lượt xem', icon: 'snowflake', category: 'may-lanh', serviceId: 'vs-ml-1',
     body: '• Gió thổi ra yếu hoặc có mùi hôi.\n• Dàn lạnh chảy nước, đọng sương.\n• Tiền điện tăng bất thường dù dùng như cũ.\n\nNếu gặp một trong các dấu hiệu trên, hãy đặt lịch vệ sinh để máy mát nhanh và tiết kiệm điện hơn.',
   },
   {
-    id: 'tip-3', title: 'Vì sao máy giặt có mùi hôi và cách xử lý', views: '6,1K lượt xem', icon: '🧺', category: 'may-giat', serviceId: 'vs-mg-tren',
+    id: 'tip-3', title: 'Vì sao máy giặt có mùi hôi và cách xử lý', views: '6,1K lượt xem', icon: 'washing-machine', category: 'may-giat', serviceId: 'vs-mg-tren',
     body: 'Cặn bột giặt và nước tồn đọng trong lồng là nơi vi khuẩn phát triển. Hãy mở cửa máy sau khi giặt, vệ sinh khay bột hàng tháng và vệ sinh lồng giặt chuyên sâu 6 tháng/lần.',
   },
 ];
@@ -435,7 +435,7 @@ export const PAYMENT_METHODS = [
     id: 'vietqr',
     label: 'Chuyển khoản VietQR (MBBank)',
     shortLabel: 'VietQR (MBBank)',
-    icon: '📲',
+    icon: 'qr-code',
     desc: 'Quét mã QR thanh toán sau nghiệm thu · Kích hoạt bảo hành điện tử 60 ngày tự động',
     badge: 'Khuyên dùng',
     badgeBg: '#ECFDF5',
@@ -446,7 +446,7 @@ export const PAYMENT_METHODS = [
     id: 'cash',
     label: 'Tiền mặt cho thợ tại nhà',
     shortLabel: 'Tiền mặt tại nhà',
-    icon: '💵',
+    icon: 'banknote',
     desc: 'Trả tiền mặt trực tiếp cho thợ sau khi kiểm tra thiết bị chạy tốt & ký nghiệm thu',
     badge: 'Phổ biến',
     badgeBg: '#FFFBEB',

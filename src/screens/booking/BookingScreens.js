@@ -49,14 +49,17 @@ export function DetailScreen({ params }) {
         <View>
           <Media item={service} height={260} />
           <View style={bx.floatBar}>
-            <IconBtn icon="‹" onPress={nav.back} style={bx.floatBtn} label="Quay lại" />
-            <IconBtn icon="🛒" badge={d.cartCount} onPress={() => nav.push('cart')} style={bx.floatBtn} label="Giỏ hàng" />
+            <IconBtn icon="chevron-left" onPress={nav.back} style={bx.floatBtn} label="Quay lại" />
+            <IconBtn icon="shopping-cart" badge={d.cartCount} onPress={() => nav.push('cart')} style={bx.floatBtn} label="Giỏ hàng" />
           </View>
         </View>
 
         <View style={bx.sheet}>
-          <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-            <Badge text={`${catIcon(service.category)} ${catLabel(service.category)}`} />
+          <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.primarySoft, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 999 }}>
+              <AppIcon icon={catIcon(service.category)} size={13} color={C.primary} strokeWidth={2.2} />
+              <Text style={{ fontSize: 11, fontWeight: '800', color: C.primary }}>{catLabel(service.category)}</Text>
+            </View>
             {isEstimate(service) ? <Badge text="Giá tham khảo" fg={C.orange} bg={C.orangeSoft} /> : null}
           </View>
           <Text style={bx.name}>{service.name}</Text>
@@ -100,7 +103,7 @@ export function DetailScreen({ params }) {
         <View style={{ paddingHorizontal: 16 }}>
           <Card style={{ marginTop: 12 }} onPress={() => setShowMatPrice(true)}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <IconBox icon="🔩" size={42} bg={C.primarySoft} radius={13} />
+              <IconBox icon="settings" size={42} bg={C.primarySoft} radius={13} />
               <View style={{ flex: 1 }}>
                 <Text style={bx.h}>Bảng giá vật tư & linh kiện niêm yết HRMSS</Text>
                 <Text style={ui.meta}>
@@ -296,7 +299,7 @@ export function CartScreen() {
         right={s.cart.length ? <Tap onPress={() => u.confirm('Xoá toàn bộ giỏ hàng?', '', a.clearCart, 'Xoá hết', true)}><Text style={{ color: C.red, fontWeight: '700' }}>Xoá hết</Text></Tap> : null}
       />
       {s.cart.length === 0 ? (
-        <EmptyState icon="🛒" title="Giỏ hàng đang trống" body="Thêm dịch vụ bạn cần, chọn giờ và thợ HRMSS sẽ đến tận nhà." action="Khám phá dịch vụ" onAction={() => nav.services()} style={{ flex: 1 }} />
+        <EmptyState icon="shopping-cart" title="Giỏ hàng đang trống" body="Thêm dịch vụ bạn cần, chọn giờ và thợ HRMSS sẽ đến tận nhà." action="Khám phá dịch vụ" onAction={() => nav.services()} style={{ flex: 1 }} />
       ) : (
         <View style={{ flex: 1 }}>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
@@ -539,7 +542,7 @@ export function CheckoutScreen({ params }) {
     return (
       <View style={{ flex: 1 }}>
         <TopBar title="Xác nhận đặt lịch" />
-        <EmptyState icon="🧾" title="Chưa có dịch vụ" body="Hãy chọn ít nhất một dịch vụ." action="Chọn dịch vụ" onAction={() => nav.services()} style={{ flex: 1 }} />
+        <EmptyState icon="receipt-text" title="Chưa có dịch vụ" body="Hãy chọn ít nhất một dịch vụ." action="Chọn dịch vụ" onAction={() => nav.services()} style={{ flex: 1 }} />
       </View>
     );
   }
@@ -565,7 +568,7 @@ export function CheckoutScreen({ params }) {
               if (!sentOtpHint) handleSendEmailOtp();
             }}
           >
-            <IconBox icon="📧" size={42} bg="#FEF3C7" radius={13} />
+            <IconBox icon="mail" size={42} bg="#FEF3C7" radius={13} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontWeight: '800', color: '#92400E', fontSize: 14 }}>
                 Bắt buộc xác thực Email trước khi đặt lịch
@@ -578,7 +581,7 @@ export function CheckoutScreen({ params }) {
           </Card>
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10, paddingHorizontal: 4 }}>
-            <Text style={{ fontSize: 13 }}>✅</Text>
+            <AppIcon name="check-circle-2" size={14} color={C.green} strokeWidth={2.3} />
             <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.green }}>
               Email đặt lịch đã xác thực ({s.user?.email || s.auth?.email})
             </Text>
@@ -588,7 +591,7 @@ export function CheckoutScreen({ params }) {
         {/* Địa chỉ */}
         {d.address ? (
           <Card style={{ flexDirection: 'row', gap: 12 }} onPress={() => nav.push('addresses', { select: true })}>
-            <IconBox icon="📍" size={42} bg={C.redSoft} radius={13} />
+            <IconBox icon="map-pin" size={42} bg={C.redSoft} radius={13} />
             <View style={{ flex: 1 }}>
               <Text style={bx.addrName}>{d.address.gender === 'Nữ' ? 'Chị' : 'Anh'} {d.address.name} · {d.address.phone}</Text>
               <Text style={[bx.p, { marginTop: 2 }]} numberOfLines={2}>{d.address.full}</Text>
@@ -597,12 +600,12 @@ export function CheckoutScreen({ params }) {
           </Card>
         ) : (
           <Tap style={bx.addAddr} onPress={() => nav.push('address-form', { useNow: true })}>
-            <Text style={{ fontSize: 24 }}>📍</Text>
+            <IconBox icon="map-pin" size={40} bg={C.primarySoft} radius={12} />
             <View style={{ flex: 1 }}>
               <Text style={{ color: C.primary, fontWeight: '800', fontSize: 15 }}>Thêm địa chỉ nhận dịch vụ</Text>
               <Text style={ui.meta}>Bắt buộc để thợ đến đúng nhà</Text>
             </View>
-            <Text style={ui.chevron}>›</Text>
+            <AppIcon name="chevron-right" size={18} color={C.faint} />
           </Tap>
         )}
 
@@ -972,7 +975,8 @@ export function CheckoutScreen({ params }) {
             {CATEGORIES.map((c) => (
               <Chip
                 key={c.id}
-                label={`${c.icon} ${c.label}`}
+                icon={c.icon}
+                label={c.label}
                 on={selectedSvcCat === c.id}
                 onPress={() => setSelectedSvcCat(c.id)}
               />
@@ -1094,7 +1098,7 @@ export function AddressesScreen({ params }) {
       <TopBar title={selectMode ? 'Chọn địa chỉ' : 'Sổ địa chỉ'} />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
         {s.addresses.length === 0 ? (
-          <EmptyState icon="📍" title="Chưa có địa chỉ" body="Thêm địa chỉ để thợ HRMSS đến đúng nhà và phục vụ bạn." action="Thêm địa chỉ mới" onAction={() => nav.push('address-form', { useNow: selectMode })} />
+          <EmptyState icon="map-pin" title="Chưa có địa chỉ" body="Thêm địa chỉ để thợ HRMSS đến đúng nhà và phục vụ bạn." action="Thêm địa chỉ mới" onAction={() => nav.push('address-form', { useNow: selectMode })} />
         ) : s.addresses.map((ad) => {
           const on = d.address?.id === ad.id;
           return (

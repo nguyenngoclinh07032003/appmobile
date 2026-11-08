@@ -32,8 +32,8 @@ export function ServicesScreen() {
         sub="Thợ đến tận nhà · Báo giá minh bạch"
         right={(
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <IconBtn icon="🔍" onPress={() => nav.push('search')} label="Tìm kiếm" />
-            <IconBtn icon="🛒" badge={d.cartCount} onPress={() => nav.push('cart')} label="Giỏ hàng" />
+            <IconBtn icon="search" onPress={() => nav.push('search')} label="Tìm kiếm" />
+            <IconBtn icon="shopping-cart" badge={d.cartCount} onPress={() => nav.push('cart')} label="Giỏ hàng" />
           </View>
         )}
       />
@@ -130,13 +130,14 @@ function WarrantyView() {
           </View>
           <StatusChip status={o.status} />
         </Tap>
-        <View style={[sx.wInfo, { backgroundColor: info.ok ? C.greenSoft : info.pending ? C.orangeSoft : '#F1F4F9' }]}>
-          <Text style={{ color: info.ok ? C.green : info.pending ? C.orange : C.muted, fontWeight: '700', fontSize: 13 }}>
-            {info.ok ? '🛡 ' : 'ⓘ '}{info.text}
+        <View style={[sx.wInfo, { backgroundColor: info.ok ? C.greenSoft : info.pending ? C.orangeSoft : '#F1F4F9', flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+          <AppIcon name={info.ok ? 'shield-check' : 'info'} size={16} color={info.ok ? C.green : info.pending ? C.orange : C.muted} strokeWidth={2.2} />
+          <Text style={{ color: info.ok ? C.green : info.pending ? C.orange : C.muted, fontWeight: '700', fontSize: 13, flex: 1 }}>
+            {info.text}
           </Text>
         </View>
-        {info.ok ? <Btn title="Yêu cầu bảo hành" small variant="soft" style={{ marginTop: 10 }} onPress={() => request(o)} /> : null}
-        {info.openCode ? <Btn title={`Xem đơn bảo hành ${info.openCode}`} small variant="outline" style={{ marginTop: 10 }} onPress={() => nav.push('order', { code: info.openCode })} /> : null}
+        {info.ok ? <Btn title="Yêu cầu bảo hành" icon="shield-check" small variant="soft" style={{ marginTop: 10 }} onPress={() => request(o)} /> : null}
+        {info.openCode ? <Btn title={`Xem đơn bảo hành ${info.openCode}`} icon="eye" small variant="outline" style={{ marginTop: 10 }} onPress={() => nav.push('order', { code: info.openCode })} /> : null}
       </Card>
     );
   };
@@ -167,7 +168,7 @@ function WarrantyView() {
           style={{ marginTop: -8 }}
         />
         {result?.error ? <Text style={ui.fieldErr}>{result.error}</Text> : null}
-        <Btn title="Tra cứu" icon="🔎" style={{ marginTop: 14 }} onPress={() => lookup()} />
+        <Btn title="Tra cứu" icon="search" style={{ marginTop: 14 }} onPress={() => lookup()} />
       </Card>
       {result?.orders ? (
         <View>
@@ -203,7 +204,7 @@ export function ActivityScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      <PageHead title="Hoạt động" sub="Theo dõi đơn đặt thợ của bạn" right={<IconBtn icon="🔔" onPress={() => nav.push('notifications')} label="Thông báo" />} />
+      <PageHead title="Hoạt động" sub="Theo dõi đơn đặt thợ của bạn" right={<IconBtn icon="bell" onPress={() => nav.push('notifications')} label="Thông báo" />} />
       <View style={{ backgroundColor: '#fff', paddingHorizontal: 16, paddingBottom: 12 }}>
         <Segmented
           value={actFilter}
@@ -218,7 +219,7 @@ export function ActivityScreen() {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
         {list.length === 0 ? (
           <EmptyState
-            icon={actFilter === 'active' ? '🗓️' : actFilter === 'done' ? '✅' : '🗂️'}
+            icon={actFilter === 'active' ? 'calendar-clock' : actFilter === 'done' ? 'check-circle-2' : 'archive'}
             title={actFilter === 'active' ? 'Không có đơn đang xử lý' : actFilter === 'done' ? 'Chưa có đơn hoàn thành' : 'Không có đơn bị huỷ'}
             body="Đặt dịch vụ để thợ HRMSS đến tận nhà. Đơn của bạn sẽ hiện tại đây."
             action="Đặt dịch vụ ngay"
@@ -230,7 +231,10 @@ export function ActivityScreen() {
           return (
             <Card key={o.code} style={{ marginBottom: 12, padding: 0, overflow: 'hidden' }} onPress={() => nav.push('order', { code: o.code })}>
               <View style={[sx.oHead, { backgroundColor: meta.bg }]}>
-                <Text style={[sx.oCode, { color: meta.fg }]}>{o.kind === 'warranty' ? '🛡 ' : ''}{o.code}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  {o.kind === 'warranty' ? <AppIcon name="shield-check" size={14} color={meta.fg} strokeWidth={2.2} /> : null}
+                  <Text style={[sx.oCode, { color: meta.fg }]}>{o.code}</Text>
+                </View>
                 <Text style={[sx.oStatus, { color: meta.fg }]}>● {meta.label}</Text>
               </View>
               <View style={{ padding: 14 }}>
@@ -239,7 +243,10 @@ export function ActivityScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={sx.oName} numberOfLines={2}>{svc0?.name}</Text>
                     {o.items.length > 1 ? <Text style={ui.meta}>+{o.items.length - 1} dịch vụ khác</Text> : null}
-                    <Text style={ui.meta}>📅 {o.dateLabel} · {o.slot}</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
+                      <AppIcon name="calendar" size={13} color={C.muted} strokeWidth={2.1} />
+                      <Text style={[ui.meta, { marginTop: 0 }]}>{o.dateLabel} · {o.slot}</Text>
+                    </View>
                   </View>
                 </View>
                 <View style={sx.oFoot}>
@@ -250,13 +257,13 @@ export function ActivityScreen() {
                     {o.status === 'done' && !o.report?.paid && o.kind !== 'warranty' ? <Text style={[ui.meta, { color: C.orange, fontWeight: '700' }]}>Chờ xác nhận TT</Text> : null}
                   </View>
                   <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', flex: 1 }}>
-                    {o.status === 'quoted' ? <Btn title="Duyệt báo giá" icon="🧾" small variant="gold" onPress={() => nav.push('order', { code: o.code })} /> : null}
+                    {o.status === 'quoted' ? <Btn title="Duyệt báo giá" icon="receipt-text" small variant="gold" onPress={() => nav.push('order', { code: o.code })} /> : null}
                     {o.status === 'done' && !o.report?.paid && o.kind !== 'warranty' && o.kind !== 'followup' ? (
-                      <Btn title="Thanh toán" icon="💳" small variant="soft" onPress={() => nav.push('order', { code: o.code })} />
+                      <Btn title="Thanh toán" icon="credit-card" small variant="soft" onPress={() => nav.push('order', { code: o.code })} />
                     ) : null}
-                    {o.status === 'done' && !o.rating && o.kind !== 'warranty' ? <Btn title="Đánh giá" icon="⭐" small variant="gold" onPress={() => nav.push('rate', { code: o.code })} /> : null}
-                    {['done', 'cancelled'].includes(o.status) && o.kind !== 'warranty' ? <Btn title="Đặt lại" small variant="soft" onPress={() => reorder(o)} /> : null}
-                    {isActiveOrder(o) && o.status !== 'quoted' ? <Btn title="Theo dõi" small variant="soft" onPress={() => nav.push('order', { code: o.code })} /> : null}
+                    {o.status === 'done' && !o.rating && o.kind !== 'warranty' ? <Btn title="Đánh giá" icon="star" small variant="gold" onPress={() => nav.push('rate', { code: o.code })} /> : null}
+                    {['done', 'cancelled'].includes(o.status) && o.kind !== 'warranty' ? <Btn title="Đặt lại" icon="rotate-ccw" small variant="soft" onPress={() => reorder(o)} /> : null}
+                    {isActiveOrder(o) && o.status !== 'quoted' ? <Btn title="Theo dõi" icon="eye" small variant="soft" onPress={() => nav.push('order', { code: o.code })} /> : null}
                   </View>
                 </View>
               </View>
@@ -296,7 +303,7 @@ export function PersonalScreen() {
               <Text style={sx.tierText}>{cur.label} ›</Text>
             </Tap>
           </View>
-          <IconBtn icon="✏️" dark onPress={() => nav.push('profile')} label="Sửa thông tin" />
+          <IconBtn icon="pencil" dark onPress={() => nav.push('profile')} label="Sửa thông tin" />
         </View>
         <Tap style={sx.tierBox} onPress={() => nav.push('rewards')}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -322,25 +329,34 @@ export function PersonalScreen() {
 
       <View style={{ paddingHorizontal: 16 }}>
         <Group title="Tài khoản">
-          <ListRow icon="👤" iconBg={C.primarySoft} label="Thông tin cá nhân" sub={s.user.email || 'Tên, số điện thoại, email'} onPress={() => nav.push('profile')} />
-          <ListRow icon="📍" iconBg={C.redSoft} label="Sổ địa chỉ" value={s.addresses.length ? `${s.addresses.length}` : 'Thêm'} onPress={() => nav.push('addresses')} />
-          <ListRow icon="🎁" iconBg={C.goldSoft} label="Quyền lợi & đổi điểm" value={`${s.points} điểm`} onPress={() => nav.push('rewards')} last />
+          <ListRow icon="id-card" iconBg={C.primarySoft} label="Thông tin cá nhân" sub={s.user.email || 'Tên, số điện thoại, ngày sinh, email'} onPress={() => nav.push('profile')} />
+          <ListRow icon="map-pin" iconBg={C.redSoft} label="Sổ địa chỉ" value={s.addresses.length ? `${s.addresses.length}` : 'Thêm'} onPress={() => nav.push('addresses')} />
+          <ListRow icon="gift" iconBg={C.goldSoft} label="Quyền lợi & đổi điểm" value={`${s.points} điểm`} onPress={() => nav.push('rewards')} last />
         </Group>
         <Group title="Hỗ trợ khách hàng">
-          <ListRow icon="🛡️" iconBg={C.greenSoft} label="Tra cứu bảo hành" onPress={() => nav.warranty(s.user.phone || '')} />
-          <ListRow icon="❓" iconBg={C.purpleSoft} label="Trợ giúp & câu hỏi thường gặp" onPress={() => nav.push('help')} />
-          <ListRow icon="📞" iconBg={C.primarySoft} label="Liên hệ hỗ trợ" value={HOTLINE} onPress={u.call} last />
+          <ListRow icon="shield-check" iconBg={C.greenSoft} label="Tra cứu bảo hành" onPress={() => nav.warranty(s.user.phone || '')} />
+          <ListRow icon="help-circle" iconBg={C.purpleSoft} label="Trợ giúp & câu hỏi thường gặp" onPress={() => nav.push('help')} />
+          <ListRow icon="phone-call" iconBg={C.primarySoft} label="Liên hệ hỗ trợ" value={HOTLINE} onPress={u.call} last />
         </Group>
         <Group title="Khác">
           <ListRow
-            icon="🔐"
-            iconBg={C.goldSoft}
+            icon="user-check"
+            iconBg={C.primarySoft}
             label="Tài khoản đang đăng nhập"
-            sub={`${s.auth?.role === 'customer' ? 'Khách hàng' : 'Thợ'} · ${s.auth?.phone || phone}`}
+            sub={`${name} · ${s.auth?.phone || phone}`}
+            right={(
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.greenSoft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.green }} />
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: C.green }}>KH</Text>
+                </View>
+                <AppIcon name="chevron-right" size={18} color={C.faint} strokeWidth={2.2} />
+              </View>
+            )}
             onPress={() => setShowAccSheet(true)}
           />
-          <ListRow icon="📄" iconBg="#EEF2F7" label="Điều khoản ứng dụng" onPress={() => nav.push('terms')} />
-          <ListRow icon="⬆️" iconBg="#EEF2F7" label="Cập nhật ứng dụng" value="3.0.8" onPress={() => u.alert('Bạn đang dùng bản mới nhất', 'Phiên bản 3.0.8 (v7).', '✅')} last />
+          <ListRow icon="scale" iconBg="#EEF2F7" label="Điều khoản ứng dụng" onPress={() => nav.push('terms')} />
+          <ListRow icon="refresh-cw" iconBg="#EEF2F7" label="Cập nhật ứng dụng" value="3.0.8" onPress={() => u.alert('Bạn đang dùng bản mới nhất', 'Phiên bản 3.0.8 (v7).', '✅')} last />
         </Group>
         <Btn
           title="Nạp dữ liệu kịch bản Demo (Review với cô)"
@@ -372,29 +388,58 @@ export function PersonalScreen() {
       >
         <View style={{ paddingVertical: 4 }}>
           <View style={{ alignItems: 'center', marginBottom: 16 }}>
-            <View style={[sx.avatar, { width: 64, height: 64, borderRadius: 22, backgroundColor: C.navy, marginBottom: 8, alignItems: 'center', justifyContent: 'center' }]}>
-              <Text style={{ fontSize: 28, color: '#fff', fontWeight: '900' }}>{(s.user.name || s.auth?.name || 'K').trim().charAt(0).toUpperCase()}</Text>
+            <View style={{ position: 'relative', marginBottom: 10 }}>
+              <View style={[sx.avatar, { width: 66, height: 66, borderRadius: 22, backgroundColor: C.navy, alignItems: 'center', justifyContent: 'center', ...shadow.sm }]}>
+                <Text style={{ fontSize: 28, color: '#fff', fontWeight: '900' }}>{(s.user.name || s.auth?.name || 'K').trim().charAt(0).toUpperCase()}</Text>
+              </View>
+              <View style={{ position: 'absolute', right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10, backgroundColor: C.green, borderWidth: 2.5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
+                <AppIcon name="check" size={11} color="#fff" strokeWidth={3} />
+              </View>
             </View>
-            <Text style={{ fontSize: 17, fontWeight: '800', color: C.ink }}>{s.user.name || s.auth?.name || 'Khách hàng'}</Text>
-            <Text style={[ui.meta, { marginTop: 2 }]}>{s.auth?.role === 'customer' ? 'Tài khoản Khách hàng cá nhân' : 'Tài khoản Kỹ thuật viên'}</Text>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: C.ink }}>{s.user.name || s.auth?.name || 'Khách hàng'}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+              <Badge text={s.auth?.role === 'customer' ? 'Khách hàng cá nhân' : 'Kỹ thuật viên'} fg={C.primary} bg={C.primarySoft} />
+              <Badge text="Đang hoạt động" fg={C.green} bg={C.greenSoft} />
+            </View>
           </View>
 
-          <Card style={{ backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, padding: 12, marginBottom: 16 }}>
-            <View style={{ gap: 8 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={ui.meta}>Tên đăng nhập:</Text>
-                <Text style={{ fontWeight: '700', color: C.ink }}>{s.auth?.username || '—'}</Text>
+          <Card style={{ backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, padding: 14, marginBottom: 16 }}>
+            <View style={{ gap: 12 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <AppIcon name="user" size={16} color={C.primary} />
+                  <Text style={ui.meta}>Tên đăng nhập</Text>
+                </View>
+                <Text style={{ fontWeight: '700', color: C.ink }}>{s.auth?.username || s.auth?.phone || '—'}</Text>
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={ui.meta}>Số điện thoại:</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <AppIcon name="phone" size={16} color={C.primary} />
+                  <Text style={ui.meta}>Số điện thoại</Text>
+                </View>
                 <Text style={{ fontWeight: '700', color: C.ink }}>{s.auth?.phone || s.user?.phone || '—'}</Text>
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={ui.meta}>Email:</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <AppIcon name="mail" size={16} color={C.primary} />
+                  <Text style={ui.meta}>Email</Text>
+                </View>
                 <Text style={{ fontWeight: '700', color: C.ink }}>{s.auth?.email || s.user?.email || '—'}</Text>
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={ui.meta}>Ngày tạo:</Text>
+              {(s.user?.dob || s.auth?.dob) ? (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <AppIcon name="cake" size={16} color={C.primary} />
+                    <Text style={ui.meta}>Ngày sinh</Text>
+                  </View>
+                  <Text style={{ fontWeight: '700', color: C.ink }}>{s.user?.dob || s.auth?.dob}</Text>
+                </View>
+              ) : null}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <AppIcon name="calendar" size={16} color={C.primary} />
+                  <Text style={ui.meta}>Ngày tạo</Text>
+                </View>
                 <Text style={{ fontWeight: '700', color: C.ink }}>{fmtDate(s.auth?.createdAt || Date.now())}</Text>
               </View>
             </View>
@@ -402,6 +447,7 @@ export function PersonalScreen() {
 
           <Btn
             title="Đăng xuất"
+            icon="log-out"
             variant="ghost"
             style={{ marginBottom: 10 }}
             onPress={() => {
