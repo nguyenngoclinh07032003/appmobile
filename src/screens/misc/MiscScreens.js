@@ -1349,22 +1349,6 @@ export function RewardsScreen({ params }) {
   );
 }
 
-// =========================================================== YÊU THÍCH
-export function FavoritesScreen() {
-  const { s, nav } = useApp();
-  const list = s.favorites.map(getService).filter(Boolean);
-  return (
-    <View style={{ flex: 1 }}>
-      <TopBar title="Dịch vụ yêu thích" sub={list.length ? `${list.length} dịch vụ` : null} />
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
-        {list.length ? <ServiceGrid data={list} /> : (
-          <EmptyState icon="♡" title="Chưa có dịch vụ yêu thích" body="Nhấn ♡ trên dịch vụ để lưu lại và đặt nhanh hơn lần sau." action="Khám phá dịch vụ" onAction={() => nav.services()} />
-        )}
-      </ScrollView>
-    </View>
-  );
-}
-
 // =========================================================== HỒ SƠ
 export function ProfileScreen() {
   const { s, a, d, nav, ui: u } = useApp();
@@ -1599,52 +1583,6 @@ export function QRScreen() {
           <Text style={[ui.meta, { textAlign: 'center', marginTop: 12, lineHeight: 18 }]}>Đưa mã này cho thợ quét khi đến nhà để xác nhận đơn và tích điểm.</Text>
         </View>
       </ScrollView>
-    </View>
-  );
-}
-
-// =========================================================== THÊM THIẾT BỊ
-const ROOMS = ['Phòng khách', 'Phòng ngủ', 'Bếp', 'Phòng tắm', 'Văn phòng'];
-export function DeviceFormScreen({ params = {} }) {
-  const { a, nav, setPendingDeviceId } = useApp();
-  const [category, setCategory] = useState(params.category || 'may-lanh');
-  const [brand, setBrand] = useState('');
-  const [room, setRoom] = useState('');
-  const [last, setLast] = useState('unknown');
-  const save = () => {
-    const d = a.addDevice({ category, brand, room, lastAgo: LAST_SERVICE_OPTIONS.find((x) => x.id === last)?.ago });
-    if (params.selectOnSave && d?.id && setPendingDeviceId) {
-      setPendingDeviceId(d.id);
-    }
-    nav.back();
-  };
-  return (
-    <View style={{ flex: 1 }}>
-      <TopBar title="Thêm thiết bị" />
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
-        <Text style={[mx.sec, { marginTop: 0 }]}>Loại thiết bị</Text>
-        <View style={mx.devGrid}>
-          {CATEGORIES.map((c) => {
-            const on = category === c.id;
-            const tone = toneOf(c.id);
-            return (
-              <Tap key={c.id} style={[mx.devType, on && { borderColor: tone.fg, backgroundColor: tone.bg }]} onPress={() => setCategory(c.id)}>
-                <Text style={{ fontSize: 26 }}>{c.icon}</Text>
-                <Text style={[{ fontSize: 12, fontWeight: '700', color: C.ink2, textAlign: 'center', marginTop: 4 }, on && { color: tone.fg }]} numberOfLines={2}>{c.label}</Text>
-              </Tap>
-            );
-          })}
-        </View>
-        <Field label="Hãng / model" value={brand} onChangeText={setBrand} placeholder="VD: Daikin 1.5 HP Inverter" />
-        <Text style={mx.fl}>Vị trí trong nhà</Text>
-        <View style={mx.chips}>{ROOMS.map((r) => <Chip key={r} label={r} on={room === r} onPress={() => setRoom(room === r ? '' : r)} />)}</View>
-        <Text style={mx.fl}>Lần bảo dưỡng gần nhất</Text>
-        <View style={mx.chips}>{LAST_SERVICE_OPTIONS.map((o) => <Chip key={o.id} label={o.label} on={last === o.id} onPress={() => setLast(o.id)} />)}</View>
-        <View style={[mx.bonus, { backgroundColor: C.primarySoft, marginTop: 20 }]}>
-          <Text style={{ color: C.primary, fontWeight: '600', lineHeight: 19 }}>Khi bạn hoàn tất đơn bảo dưỡng {catLabel(category).toLowerCase()} trên hệ thống, lịch nhắc bảo dưỡng định kỳ sẽ tự động được cập nhật.</Text>
-        </View>
-      </ScrollView>
-      <View style={mx.dock}><Btn title="Lưu thiết bị" style={{ flex: 1 }} onPress={save} /></View>
     </View>
   );
 }
