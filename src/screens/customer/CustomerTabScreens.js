@@ -321,8 +321,7 @@ export function PersonalScreen() {
         <Group title="Tài khoản">
           <ListRow icon="👤" iconBg={C.primarySoft} label="Thông tin cá nhân" sub={s.user.email || 'Tên, số điện thoại, email'} onPress={() => nav.push('profile')} />
           <ListRow icon="📍" iconBg={C.redSoft} label="Sổ địa chỉ" value={s.addresses.length ? `${s.addresses.length}` : 'Thêm'} onPress={() => nav.push('addresses')} />
-          <ListRow icon="🎁" iconBg={C.goldSoft} label="Quyền lợi & đổi điểm" value={`${s.points} điểm`} onPress={() => nav.push('rewards')} />
-          <ListRow icon="🔳" iconBg="#EEF2F7" label="Mã QR của tôi" sub="Đưa thợ quét khi đến nhà" onPress={() => nav.push('qr')} last />
+          <ListRow icon="🎁" iconBg={C.goldSoft} label="Quyền lợi & đổi điểm" value={`${s.points} điểm`} onPress={() => nav.push('rewards')} last />
         </Group>
         <Group title="Hỗ trợ khách hàng">
           <ListRow icon="🛡️" iconBg={C.greenSoft} label="Tra cứu bảo hành" onPress={() => nav.warranty(s.user.phone || '')} />

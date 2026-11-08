@@ -7,7 +7,7 @@ import {
 } from '../screens/booking';
 import {
   SearchScreen, NotificationsScreen, OrderScreen, RateScreen, RewardsScreen,
-  ProfileScreen, HelpScreen, TermsScreen, QRScreen,
+  ProfileScreen, HelpScreen, TermsScreen,
 } from '../screens/misc';
 import {
   TechJobsScreen, TechScheduleScreen, TechNotifsScreen, TechAccountScreen, TechJobScreen,
@@ -45,7 +45,6 @@ export const SCREENS = {
   profile: ProfileScreen,
   help: HelpScreen,
   terms: TermsScreen,
-  qr: QRScreen,
   'tech-job': TechJobScreen,
   'tech-notifs': TechNotifsScreen,
 };

@@ -36,7 +36,7 @@ export function Shell() {
   const tabs = role === 'tech' ? TECH_TABS : CUSTOMER_TABS;
   const Tab = tabs.find((t) => t.id === nav.tab)?.Comp || tabs[0].Comp;
   const topName = nav.top?.name;
-  const darkTop = !loggedIn ? true : (topName ? topName === 'qr' : DARK_TOP.includes(nav.tab));
+  const darkTop = !loggedIn ? true : (topName ? false : DARK_TOP.includes(nav.tab));
   const topInset = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : Platform.OS === 'ios' ? 47 : 0;
 
   // Chặn stack thuộc vai trò khác (phân quyền) & chỉ giữ màn hình có định nghĩa trong SCREENS

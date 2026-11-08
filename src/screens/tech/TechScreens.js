@@ -919,8 +919,6 @@ export function TechJobScreen({ params }) {
       return { key: it.id, type: 'labor', name: sv?.name || 'Dịch vụ', qty: it.qty, price: o?.kind === 'warranty' ? 0 : sv?.price || 0 };
     });
   });
-  const [showQR, setShowQR] = useState(false);
-  const [qrInput, setQrInput] = useState('');
   const [matMode, setMatMode] = useState(null); // 'quote' | 'usage'
   const [showPreQuote, setShowPreQuote] = useState(false);
   const [matAll, setMatAll] = useState(false);
@@ -1110,24 +1108,6 @@ export function TechJobScreen({ params }) {
             <Text style={{ flex: 1, color: C.ink, fontWeight: '600', lineHeight: 20 }}>{o.address?.full}</Text>
             <Text style={ui.link}>Chỉ đường</Text>
           </Tap>
-          {o.qrVerified ? (
-            <View style={{ marginTop: 10, padding: 10, borderRadius: R.md, backgroundColor: C.greenSoft, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontSize: 16 }}>🔳</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontWeight: '800', color: C.green, fontSize: 13 }}>Đã xác thực QR khách hàng (Ghi nhận đạt chuẩn dịch vụ)</Text>
-                <Text style={[ui.meta, { color: C.green }]}>Lúc {fmtDateTime(o.qrVerified.at)} · Mã {o.qrVerified.code}</Text>
-              </View>
-            </View>
-          ) : mine && ['onway', 'diagnosing', 'quoted', 'repairing'].includes(o.status) ? (
-            <Btn
-              title="Quét / Xác thực QR khách hàng"
-              icon="🔳"
-              variant="soft"
-              small
-              style={{ marginTop: 10 }}
-              onPress={() => { setQrInput(''); setShowQR(true); }}
-            />
-          ) : null}
         </Card>
 
         {/* Lịch hẹn + dịch vụ */}
@@ -1606,41 +1586,6 @@ export function TechJobScreen({ params }) {
       ) : null}
 
       {/* ===== Sheets ===== */}
-      <Sheet
-        visible={showQR}
-        onClose={() => setShowQR(false)}
-        title="Xác thực QR khách hàng"
-        footer={(
-          <Btn
-            title="Xác nhận mã đã nhập"
-            disabled={!qrInput.trim()}
-            onPress={() => {
-              const res = a.verifyCustomerQR(o.code, qrInput);
-              if (res?.ok) setShowQR(false);
-            }}
-          />
-        )}
-      >
-        <Text style={[ui.meta, { lineHeight: 19, marginBottom: 12 }]}>
-          Quét mã QR trên màn hình “Mã QR của tôi” của khách hàng tại nhà để xác nhận đã gặp đúng chủ nhà và nhận <Text style={{ fontWeight: '800', color: C.green }}>đánh giá hài lòng</Text>.
-        </Text>
-        <Btn
-          title="📷 Quét mã QR trực tiếp của khách"
-          variant="primary"
-          onPress={() => {
-            const res = a.verifyCustomerQR(o.code, 'AUTO_SCAN');
-            if (res?.ok) setShowQR(false);
-          }}
-        />
-        <View style={{ height: 1, backgroundColor: C.line, marginVertical: 14 }} />
-        <Field
-          label="Hoặc nhập mã xác thực / SĐT khách"
-          value={qrInput}
-          onChangeText={setQrInput}
-          placeholder={`VD: HRMSS:${o.address?.phone || '0344699180'}`}
-          style={{ marginTop: 0 }}
-        />
-      </Sheet>
       <Sheet visible={!!matMode} onClose={() => setMatMode(null)} title={matMode === 'usage' ? 'Ghi nhận vật tư' : 'Thêm vật tư / linh kiện'}>
         <Checkbox on={matAll} onPress={() => setMatAll(!matAll)} label="Hiện tất cả loại vật tư" />
         <View style={{ height: 8 }} />

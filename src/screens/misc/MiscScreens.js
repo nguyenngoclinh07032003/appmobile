@@ -463,9 +463,6 @@ export function OrderScreen({ params }) {
           {o.siteCondition ? (
             <InfoLine icon="🏢" label="Vị trí thi công" value={o.siteCondition.label} />
           ) : null}
-          {o.qrVerified ? (
-            <InfoLine icon="🔳" label="Xác thực QR tại nhà" value={`Đã xác thực lúc ${fmtDateTime(o.qrVerified.at)}`} />
-          ) : null}
           {o.note ? <InfoLine icon="📝" label="Ghi chú" value={o.note} /> : null}
           {(o.attachments || []).length ? (
             <View style={{ marginTop: 4, marginBottom: 4 }}>
@@ -1577,29 +1574,6 @@ export function TermsScreen() {
             <Text style={{ color: C.ink2, lineHeight: 21, marginTop: 6 }}>{b}</Text>
           </Card>
         ))}
-      </ScrollView>
-    </View>
-  );
-}
-
-// =========================================================== QR
-export function QRScreen() {
-  const { s, d } = useApp();
-  const name = s.user.name || d.address?.name || 'Khách';
-  const phone = s.user.phone || d.address?.phone || '';
-  return (
-    <View style={{ flex: 1, backgroundColor: C.navy }}>
-      <TopBar title="Mã QR của tôi" />
-      <ScrollView contentContainerStyle={{ padding: 24, alignItems: 'center' }}>
-        <View style={mx.qrCard}>
-          <Text style={{ fontSize: 18, fontWeight: '900', color: C.ink }}>{name}</Text>
-          <Text style={[ui.meta, { marginBottom: 16 }]}>{phone || 'Chưa có số điện thoại'}</Text>
-          <PseudoQR value={`HRMSS:${phone || name}`} size={210} />
-          <View style={{ marginTop: 12, paddingHorizontal: 12, paddingVertical: 6, borderRadius: R.pill, backgroundColor: C.primarySoft }}>
-            <Text style={{ fontSize: 12, fontWeight: '800', color: C.primary }}>Mã xác thực: HRMSS:{phone || name}</Text>
-          </View>
-          <Text style={[ui.meta, { textAlign: 'center', marginTop: 12, lineHeight: 18 }]}>Đưa mã này cho thợ quét khi đến nhà để xác nhận đơn và tích điểm.</Text>
-        </View>
       </ScrollView>
     </View>
   );
