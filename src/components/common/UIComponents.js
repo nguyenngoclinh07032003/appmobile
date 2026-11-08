@@ -5,6 +5,7 @@ import {
 import { C, R, shadow, toneOf, STATUS_META, grad } from '../../theme';
 import { formatVND, discountOf, isEstimate, isClean, durationText } from '../../constants/data';
 import { useApp } from '../../context';
+import { AppIcon, resolveIconColor } from './AppIcon';
 
 const webTapStyle = Platform.select({
   web: {
@@ -59,7 +60,7 @@ export function Btn({ title, onPress, variant = 'primary', small, style, disable
         disabled && { opacity: 0.45 },
       ]}
     >
-      {icon ? <Text style={[ui.btnIcon, small && { fontSize: 13 }, v.text]}>{icon}</Text> : null}
+      {icon ? <AppIcon icon={icon} size={small ? 14 : 17} color={v.text.color} strokeWidth={2.2} style={{ marginRight: 6 }} /> : null}
       <Text style={[ui.btnText, small && ui.btnTextSm, v.text, textStyle]} numberOfLines={1}>{title}</Text>
     </TouchableOpacity>
   );
@@ -75,7 +76,7 @@ const BTN = {
   dangerSoft: { box: { backgroundColor: C.redSoft, borderWidth: 1, borderColor: '#FAD4D0' }, text: { color: C.red } },
 };
 
-export function IconBtn({ icon, onPress, badge, dark, style, size = 40, label }) {
+export function IconBtn({ icon, onPress, badge, dark, style, size = 40, label, iconColor }) {
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -96,7 +97,7 @@ export function IconBtn({ icon, onPress, badge, dark, style, size = 40, label })
         style,
       ]}
     >
-      <Text style={{ fontSize: size * 0.42, color: dark ? '#fff' : C.ink }}>{icon}</Text>
+      <AppIcon icon={icon} size={Math.round(size * 0.46)} color={iconColor || (dark ? '#fff' : C.ink)} strokeWidth={2.2} />
       {badge ? (
         <View style={[ui.badge, dark && { borderColor: C.navy }]}><Text style={ui.badgeText}>{badge > 99 ? '99+' : badge}</Text></View>
       ) : null}
@@ -110,10 +111,10 @@ export function Card({ children, style, onPress }) {
   return <View style={[ui.card, style]}>{children}</View>;
 }
 
-export function IconBox({ icon, size = 44, bg = C.primarySoft, radius, style }) {
+export function IconBox({ icon, size = 44, bg = C.primarySoft, color, radius, style }) {
   return (
     <View style={[{ width: size, height: size, borderRadius: radius ?? size * 0.34, backgroundColor: bg, alignItems: 'center', justifyContent: 'center' }, style]}>
-      <Text style={{ fontSize: size * 0.46 }}>{icon}</Text>
+      <AppIcon icon={icon} size={Math.round(size * 0.48)} color={color || resolveIconColor(bg, C.primary)} strokeWidth={2.1} />
     </View>
   );
 }
@@ -159,7 +160,7 @@ export function Divider({ style }) { return <View style={[{ height: 1, backgroun
 export function Chip({ label, icon, on, onPress, style }) {
   return (
     <Tap onPress={onPress} scaleTo={0.95} style={[ui.chip, on && ui.chipOn, style]}>
-      {icon ? <Text style={{ fontSize: 14, marginRight: 6 }}>{icon}</Text> : null}
+      {icon ? <AppIcon icon={icon} size={15} color={on ? '#fff' : C.primary} strokeWidth={2.1} style={{ marginRight: 6 }} /> : null}
       <Text style={[ui.chipText, on && ui.chipTextOn]}>{label}</Text>
     </Tap>
   );
@@ -269,10 +270,24 @@ export function StatusChip({ status }) {
 
 export function Stars({ value = 5, size = 12, onChange }) {
   return (
-    <View style={{ flexDirection: 'row', gap: onChange ? 8 : 1 }}>
-      {[1, 2, 3, 4, 5].map((i) => (
-        <Text key={i} onPress={onChange ? () => onChange(i) : undefined} style={[{ fontSize: size, color: i <= value ? '#F5A623' : '#D9DEE7' }, onChange && webTapStyle]}>★</Text>
-      ))}
+    <View style={{ flexDirection: 'row', gap: onChange ? 8 : 2, alignItems: 'center' }}>
+      {[1, 2, 3, 4, 5].map((i) => {
+        const active = i <= value;
+        const star = (
+          <AppIcon
+            name="star"
+            size={size + 2}
+            color={active ? '#F5A623' : '#CBD5E1'}
+            fill={active ? '#F5A623' : 'none'}
+            strokeWidth={2}
+          />
+        );
+        return onChange ? (
+          <Tap key={i} onPress={() => onChange(i)} scaleTo={0.9}>{star}</Tap>
+        ) : (
+          <View key={i}>{star}</View>
+        );
+      })}
     </View>
   );
 }
@@ -298,7 +313,7 @@ export function Radio({ on }) {
 export function Checkbox({ on, label, onPress }) {
   return (
     <Tap onPress={onPress} scaleTo={0.98} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 }}>
-      <View style={[ui.checkbox, on && ui.checkboxOn]}>{on ? <Text style={{ color: '#fff', fontSize: 13, fontWeight: '800' }}>✓</Text> : null}</View>
+      <View style={[ui.checkbox, on && ui.checkboxOn]}>{on ? <AppIcon name="check" size={14} color="#fff" strokeWidth={3} /> : null}</View>
       <Text style={{ fontSize: 14, color: C.ink, fontWeight: '500' }}>{label}</Text>
     </Tap>
   );
@@ -307,9 +322,9 @@ export function Checkbox({ on, label, onPress }) {
 export function Stepper({ value, onChange, min = 1 }) {
   return (
     <View style={ui.stepper}>
-      <Tap style={ui.stepBtn} scaleTo={0.9} onPress={() => onChange(Math.max(min, value - 1))} hitSlop={6}><Text style={ui.stepMark}>−</Text></Tap>
+      <Tap style={ui.stepBtn} scaleTo={0.9} onPress={() => onChange(Math.max(min, value - 1))} hitSlop={6}><AppIcon name="minus" size={14} color={C.ink} strokeWidth={2.5} /></Tap>
       <Text style={ui.stepVal}>{value}</Text>
-      <Tap style={[ui.stepBtn, { backgroundColor: C.primarySoft }]} scaleTo={0.9} onPress={() => onChange(value + 1)} hitSlop={6}><Text style={[ui.stepMark, { color: C.primary }]}>+</Text></Tap>
+      <Tap style={[ui.stepBtn, { backgroundColor: C.primarySoft }]} scaleTo={0.9} onPress={() => onChange(value + 1)} hitSlop={6}><AppIcon name="plus" size={14} color={C.primary} strokeWidth={2.5} /></Tap>
     </View>
   );
 }
@@ -329,9 +344,9 @@ export function SelectRow({ label, value, placeholder, onPress, icon }) {
     <View>
       {label ? <Text style={ui.fieldLabel}>{label}</Text> : null}
       <Tap onPress={onPress} scaleTo={0.985} style={ui.selectRow}>
-        {icon ? <Text style={{ fontSize: 16, marginRight: 10 }}>{icon}</Text> : null}
+        {icon ? <AppIcon icon={icon} size={18} color={C.primary} strokeWidth={2.1} style={{ marginRight: 10 }} /> : null}
         <Text style={[{ flex: 1, fontSize: 15, color: value ? C.ink : C.faint }]} numberOfLines={1}>{value || placeholder}</Text>
-        <Text style={ui.chevron}>›</Text>
+        <AppIcon name="chevron-right" size={18} color={C.faint} strokeWidth={2.2} style={{ marginLeft: 6 }} />
       </Tap>
     </View>
   );
@@ -346,7 +361,7 @@ export function ListRow({ icon, iconBg, label, sub, value, onPress, danger, last
         {sub ? <Text style={ui.meta} numberOfLines={1}>{sub}</Text> : null}
       </View>
       {right || (value ? <Text style={ui.listValue}>{value}</Text> : null)}
-      {right ? null : <Text style={ui.chevron}>›</Text>}
+      {right ? null : <AppIcon name="chevron-right" size={18} color={C.faint} strokeWidth={2.2} style={{ marginLeft: 4 }} />}
     </Tap>
   );
 }
@@ -354,7 +369,7 @@ export function ListRow({ icon, iconBg, label, sub, value, onPress, danger, last
 export function EmptyState({ icon, title, body, action, onAction, style }) {
   return (
     <View style={[ui.empty, style]}>
-      <View style={ui.emptyIcon}><Text style={{ fontSize: 38 }}>{icon}</Text></View>
+      <View style={ui.emptyIcon}><AppIcon icon={icon || 'clipboard-list'} size={38} color={C.primary} strokeWidth={1.9} /></View>
       <Text style={ui.emptyTitle}>{title}</Text>
       {body ? <Text style={ui.emptyBody}>{body}</Text> : null}
       {action ? <Btn title={action} onPress={onAction} style={{ alignSelf: 'stretch', marginTop: 20 }} /> : null}
@@ -406,7 +421,7 @@ export function Media({ item, height, width, radius = 0, iconSize }) {
           ...shadow.sm,
         }}
       >
-        <Text style={{ fontSize: fs }}>{item?.icon || '🔧'}</Text>
+        <AppIcon icon={item?.icon || 'wrench'} size={Math.round(emblemSize * 0.5)} color={tone.fg || C.primary} strokeWidth={1.9} />
       </View>
     </View>
   );
@@ -420,7 +435,10 @@ export function ServiceCard({ item, style }) {
       <View>
         <Media item={item} height={110} />
         {discount > 0 ? <View style={ui.offTag}><Text style={ui.offTagText}>-{discount}%</Text></View> : null}
-        <View style={ui.warrantyTag}><Text style={ui.warrantyTagText}>🛡 BH 60 ngày</Text></View>
+        <View style={[ui.warrantyTag, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+          <AppIcon name="shield-check" size={11} color={C.green} strokeWidth={2.4} />
+          <Text style={ui.warrantyTagText}>BH 60 ngày</Text>
+        </View>
       </View>
       <View style={{ padding: 11, flex: 1 }}>
         <Text numberOfLines={2} style={ui.sCardName}>{item.name}</Text>
@@ -434,7 +452,7 @@ export function ServiceCard({ item, style }) {
             {item.oldPrice ? <Text style={ui.oldPrice}>{formatVND(item.oldPrice)}</Text> : <Text style={[ui.oldPrice, { textDecorationLine: 'none' }]}> </Text>}
           </View>
           <Tap style={ui.addBtn} scaleTo={0.9} onPress={() => a.addToCart(item.id)} accessibilityLabel="Thêm vào giỏ" hitSlop={6}>
-            <Text style={ui.addBtnText}>+</Text>
+            <AppIcon name="plus" size={15} color="#fff" strokeWidth={2.6} />
           </Tap>
         </View>
       </View>
@@ -572,7 +590,7 @@ export function ToastHost() {
   return (
     <Animated.View style={[ui.toast, { opacity: anim, transform: [{ translateY }] }]} pointerEvents="none">
       <View style={ui.toastIconWrap}>
-        <Text style={{ fontSize: 13, color: '#fff', fontWeight: '900' }}>{u.toastMsg.icon}</Text>
+        <AppIcon icon={u.toastMsg.icon || 'check'} size={14} color="#fff" strokeWidth={2.5} />
       </View>
       <Text style={ui.toastText}>{u.toastMsg.text}</Text>
     </Animated.View>

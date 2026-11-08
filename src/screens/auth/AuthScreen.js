@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { C, R, shadow, grad } from '../../theme';
 import { useApp } from '../../context';
-import { Btn, Tap } from '../../components';
+import { Btn, Tap, AppIcon } from '../../components';
 
 const webNoOutline = Platform.select({ web: { outlineStyle: 'none' }, default: {} });
 
@@ -23,7 +23,11 @@ function ModernField({
           error ? st.inputWrapError : null,
         ]}
       >
-        {icon ? <Text style={st.inputIcon}>{icon}</Text> : null}
+        {icon ? (
+          <View style={st.inputIcon}>
+            <AppIcon icon={icon} size={18} color={focused ? C.primary : '#64748B'} strokeWidth={2.1} />
+          </View>
+        ) : null}
         <TextInput
           style={[st.input, webNoOutline]}
           value={value}
@@ -125,7 +129,7 @@ export default function AuthScreen() {
           
           <View style={st.brandRow}>
             <View style={st.brandMark}>
-              <Text style={{ fontSize: 22 }}>⚡</Text>
+              <AppIcon name="zap" size={22} color={C.primary} strokeWidth={2.4} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={st.brand}>Thợ HRMSS</Text>
@@ -237,14 +241,14 @@ export default function AuthScreen() {
 
             <ModernField
               label={mode === 'forgot' ? 'Mật khẩu mới' : 'Mật khẩu'}
-              icon="🔒"
+              icon="lock"
               value={password}
               onChangeText={setPassword}
               placeholder={mode === 'login' ? 'Nhập mật khẩu của bạn' : 'Tối thiểu 6 ký tự'}
               secure={!showPw}
               right={(
                 <Tap onPress={() => setShowPw(!showPw)} style={st.eyeToggle} hitSlop={10}>
-                  <Text style={st.eyeIcon}>{showPw ? '👁️' : '👁️‍🗨️'}</Text>
+                  <AppIcon name={showPw ? 'eye' : 'eye-off'} size={18} color="#64748B" strokeWidth={2} />
                 </Tap>
               )}
             />
@@ -252,7 +256,7 @@ export default function AuthScreen() {
             {(mode === 'register' || mode === 'forgot' || mode === 'tech_partner') && (
               <ModernField
                 label="Xác nhận mật khẩu"
-                icon="🛡️"
+                icon="shield-check"
                 value={password2}
                 onChangeText={setPassword2}
                 placeholder="Nhập lại mật khẩu"
@@ -262,7 +266,7 @@ export default function AuthScreen() {
 
             {formErr ? (
               <View style={st.errorBox}>
-                <Text style={{ fontSize: 16 }}>⚠️</Text>
+                <AppIcon name="alert-triangle" size={18} color={C.red} strokeWidth={2.2} />
                 <Text style={st.errorText}>{formErr}</Text>
               </View>
             ) : null}
@@ -312,7 +316,7 @@ export default function AuthScreen() {
               ) : null}
 
               <View style={st.securityBadge}>
-                <Text style={st.securityIcon}>🔒</Text>
+                <AppIcon name="lock" size={14} color={C.primary} strokeWidth={2.2} />
                 <Text style={st.securityText}>Bảo mật thông tin người dùng theo tiêu chuẩn an toàn HRMSS</Text>
               </View>
             </View>

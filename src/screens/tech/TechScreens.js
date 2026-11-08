@@ -19,7 +19,7 @@ import { getCheckInLocation } from '../../utils/geo';
 import { validateVietnamesePhone, validateContactName } from '../../utils';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, PageHead, Segmented, Chip, Badge, Stars, Field, Sheet, Radio, Checkbox,
-  EmptyState, StatusChip, Progress, Media, ListRow, Stepper, HScroll, ui,
+  EmptyState, StatusChip, Progress, Media, ListRow, Stepper, HScroll, ui, AppIcon,
 } from '../../components';
 import { pickImage, pickCamera } from '../../utils/media';
 import { TrackingCard } from '../../components/order';
@@ -97,7 +97,7 @@ function useNextAction() {
 function MetaLine({ icon, text, last }) {
   return (
     <View style={[tx.metaLine, last && { marginBottom: 0 }]}>
-      <View style={tx.metaIcon}><Text style={{ fontSize: 12 }}>{icon}</Text></View>
+      <View style={tx.metaIcon}><AppIcon icon={icon} size={13} color={C.primary} strokeWidth={2.2} /></View>
       <Text style={tx.info} numberOfLines={2}>{text}</Text>
     </View>
   );
@@ -155,23 +155,18 @@ function JobCard({ o, compact, onDecline, canAccept = true }) {
             <Text style={[ui.price, { fontSize: 15, marginTop: 2 }]}>{o.kind === 'warranty' ? '0đ' : formatVND(orderTotal(o))}</Text>
           </View>
         </View>
-        {(o.workerCode || match) ? (
+        {match ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-            {o.workerCode ? <Badge text={`Chỉ định Thợ Now · ${o.workerCode}`} fg={C.navy} bg={C.goldSoft} /> : null}
-            {match ? (
-              <Badge
-                text={match.skillMatch ? '✓ Đúng chuyên môn' : '⚠ Trái chuyên môn'}
-                fg={match.skillMatch ? C.green : C.orange}
-                bg={match.skillMatch ? C.greenSoft : C.orangeSoft}
-              />
-            ) : null}
-            {match ? (
-              <Badge
-                text={match.areaMatch ? '📍 Trong khu vực' : '🗺️ Ngoài khu vực'}
-                fg={match.areaMatch ? C.primary : C.muted}
-                bg={match.areaMatch ? C.primarySoft : '#F1F5F9'}
-              />
-            ) : null}
+            <Badge
+              text={match.skillMatch ? '✓ Đúng chuyên môn' : '⚠ Trái chuyên môn'}
+              fg={match.skillMatch ? C.green : C.orange}
+              bg={match.skillMatch ? C.greenSoft : C.orangeSoft}
+            />
+            <Badge
+              text={match.areaMatch ? 'Trong khu vực' : 'Ngoài khu vực'}
+              fg={match.areaMatch ? C.primary : C.muted}
+              bg={match.areaMatch ? C.primarySoft : '#F1F5F9'}
+            />
           </View>
         ) : null}
         <View style={tx.metaBlock}>
@@ -235,7 +230,7 @@ export function TechJobsScreen() {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
         <View style={tx.header}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <View style={tx.avatar}><Text style={{ fontSize: 28 }}>👷</Text></View>
+            <View style={tx.avatar}><AppIcon name="hard-hat" size={28} color={C.primary} strokeWidth={2.1} /></View>
             <View style={{ flex: 1 }}>
               <Text style={tx.hello}>Kỹ thuật viên HRMSS</Text>
               <Text style={tx.techName} numberOfLines={1}>{me.name}</Text>
@@ -590,7 +585,7 @@ export function TechAccountScreen() {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 32 }} showsVerticalScrollIndicator={false}>
         <View style={[tx.header, { paddingBottom: 28 }]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-            <View style={[tx.avatar, { width: 68, height: 68, borderRadius: 24 }]}><Text style={{ fontSize: 34 }}>👷</Text></View>
+            <View style={[tx.avatar, { width: 68, height: 68, borderRadius: 24 }]}><AppIcon name="hard-hat" size={34} color={C.primary} strokeWidth={2.1} /></View>
             <View style={{ flex: 1 }}>
               <Text style={tx.techName}>{me.name}</Text>
               <Text style={tx.techSub}>{me.code} · {me.phone}</Text>
@@ -611,7 +606,7 @@ export function TechAccountScreen() {
               <Card style={{ marginBottom: 0, borderColor: '#E8EEF5', backgroundColor: '#fff', ...shadow.md }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                   <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 24 }}>⭐</Text>
+                    <AppIcon name="star" size={26} color="#D97706" fill="#D97706" strokeWidth={2} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -648,12 +643,12 @@ export function TechAccountScreen() {
           <Text style={[tx.h, { marginTop: 18, marginBottom: 10 }]}>Hiệu suất làm việc</Text>
           <View style={[tx.kpis, { marginHorizontal: 0, marginTop: 0 }]}>
             {[
-              { i: '✅', v: completedCount, l: 'Việc hoàn thành' },
-              { i: '⭐', v: avg, l: 'Đánh giá TB' },
-              { i: '🤝', v: `${rate}%`, l: 'Tỉ lệ nhận việc' },
+              { i: 'check-circle-2', v: completedCount, l: 'Việc hoàn thành' },
+              { i: 'star', v: avg, l: 'Đánh giá TB' },
+              { i: 'handshake', v: `${rate}%`, l: 'Tỉ lệ nhận việc' },
             ].map((k) => (
               <View key={k.l} style={tx.kpi}>
-                <Text style={{ fontSize: 20 }}>{k.i}</Text>
+                <AppIcon icon={k.i} size={22} color={C.primary} strokeWidth={2.1} />
                 <Text style={tx.kpiV} numberOfLines={1}>{k.v}</Text>
                 <Text style={tx.kpiL}>{k.l}</Text>
               </View>

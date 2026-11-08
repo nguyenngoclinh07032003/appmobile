@@ -6,11 +6,11 @@ import {
 } from '../../constants/data';
 import { useApp, deviceStatus } from '../../context';
 import {
-  Tap, IconBtn, IconBox, Card, SectionTitle, ServiceCard, Sheet, Btn, StatusChip, Media, Badge, ui, HScroll,
+  Tap, IconBtn, IconBox, Card, SectionTitle, ServiceCard, Sheet, Btn, StatusChip, Media, Badge, ui, HScroll, AppIcon,
 } from '../../components';
 
 const POPULAR = ['vs-ml-1', 'vs-mg-tren', 'vs-mg-truoc', 'vs-quat-dh', 'vs-ml-am-tran', 'vs-tl-300'].map(getService);
-const COMMIT_ICON = ['⏰', '🏅', '🤝', '😊'];
+const COMMIT_ICON = ['clock', 'award', 'handshake', 'smile'];
 
 export default function HomeScreen() {
   const { s, a, d, nav, ui: u } = useApp();
@@ -40,15 +40,15 @@ export default function HomeScreen() {
           <IconBtn icon="🛒" dark badge={d.cartCount} onPress={() => nav.push('cart')} style={{ marginLeft: 10 }} label="Giỏ hàng" />
         </View>
         <Tap style={st.addr} onPress={() => nav.push(d.address ? 'addresses' : 'address-form')}>
-          <Text style={{ fontSize: 14 }}>📍</Text>
+          <AppIcon name="map-pin" size={16} color="#fff" strokeWidth={2.2} />
           <View style={{ flex: 1, marginLeft: 8 }}>
             <Text style={st.addrLabel}>Địa chỉ phục vụ</Text>
             <Text style={st.addrText} numberOfLines={1}>{d.address ? d.address.full : 'Thêm địa chỉ của bạn'}</Text>
           </View>
-          <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 20 }}>›</Text>
+          <AppIcon name="chevron-right" size={18} color="rgba(255,255,255,0.75)" strokeWidth={2.2} />
         </Tap>
         <Tap style={st.search} onPress={() => nav.push('search')}>
-          <Text style={{ fontSize: 15 }}>🔍</Text>
+          <AppIcon name="search" size={18} color={C.primary} strokeWidth={2.2} />
           <Text style={st.searchText}>Tìm dịch vụ: vệ sinh máy lạnh, sạc gas…</Text>
         </Tap>
       </View>
@@ -94,7 +94,7 @@ export default function HomeScreen() {
         <View style={st.types}>
           {SERVICE_TYPES.map((t) => (
             <Tap key={t.id} style={st.type} onPress={() => openType(t.id)}>
-              <View style={st.typeIcon}><Text style={{ fontSize: 22 }}>{t.icon}</Text></View>
+              <View style={st.typeIcon}><AppIcon icon={t.icon} size={23} color={C.primary} strokeWidth={2} /></View>
               <Text style={st.typeLabel}>{t.label}</Text>
             </Tap>
           ))}
@@ -107,13 +107,13 @@ export default function HomeScreen() {
             const tone = toneOf(c.id);
             return (
               <Tap key={c.id} style={st.cat} onPress={() => nav.services('bao-duong', c.id)}>
-                <View style={[st.catIcon, { backgroundColor: tone.bg }]}><Text style={{ fontSize: 24 }}>{c.icon}</Text></View>
+                <View style={[st.catIcon, { backgroundColor: tone.bg }]}><AppIcon icon={c.icon} size={24} color={tone.fg} strokeWidth={2} /></View>
                 <Text style={st.catLabel} numberOfLines={1}>{CAT_SHORT[c.id]}</Text>
               </Tap>
             );
           })}
           <Tap style={st.cat} onPress={() => nav.push('search')}>
-            <View style={[st.catIcon, { backgroundColor: '#EEF2F7' }]}><Text style={{ fontSize: 22 }}>🔎</Text></View>
+            <View style={[st.catIcon, { backgroundColor: '#EEF2F7' }]}><AppIcon name="search" size={22} color={C.ink2} strokeWidth={2} /></View>
             <Text style={st.catLabel}>Tìm thêm</Text>
           </Tap>
         </View>
@@ -123,12 +123,12 @@ export default function HomeScreen() {
       </View>
       <HScroll contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
         {[
-          { bg: C.navy, gradStyle: grad.navyCard, fg: '#fff', tag: 'MÃ THO20', title: 'Giảm 20.000đ', body: 'Cho đơn từ 150.000đ', icon: '🎟️', onPress: () => nav.push('rewards') },
-          { bg: C.primary, gradStyle: grad.primaryBtn, fg: '#fff', tag: 'BÁN CHẠY', title: 'Vệ sinh máy lạnh 180K', body: 'Giảm 10% · Bảo hành 60 ngày', icon: '❄️', onPress: () => nav.push('detail', { id: 'vs-ml-1' }) },
-          { bg: C.navy2, gradStyle: grad.navyCard, fg: '#fff', tag: 'TIẾT KIỆM', title: 'Bảo dưỡng định kỳ', body: 'Nhắc lịch tự động, ưu đãi dài lâu', icon: '♾️', onPress: () => nav.services('tron-doi') },
+          { bg: C.navy, gradStyle: grad.navyCard, fg: '#fff', tag: 'MÃ THO20', title: 'Giảm 20.000đ', body: 'Cho đơn từ 150.000đ', icon: 'ticket', onPress: () => nav.push('rewards') },
+          { bg: C.primary, gradStyle: grad.primaryBtn, fg: '#fff', tag: 'BÁN CHẠY', title: 'Vệ sinh máy lạnh 180K', body: 'Giảm 10% · Bảo hành 60 ngày', icon: 'snowflake', onPress: () => nav.push('detail', { id: 'vs-ml-1' }) },
+          { bg: C.navy2, gradStyle: grad.navyCard, fg: '#fff', tag: 'TIẾT KIỆM', title: 'Bảo dưỡng định kỳ', body: 'Nhắc lịch tự động, ưu đãi dài lâu', icon: 'infinity', onPress: () => nav.services('tron-doi') },
         ].map((b) => (
           <Tap key={b.tag} style={[st.promo, { backgroundColor: b.bg }, b.gradStyle]} onPress={b.onPress}>
-            <Text style={st.promoIcon}>{b.icon}</Text>
+            <View style={st.promoIcon}><AppIcon icon={b.icon} size={36} color="rgba(255,255,255,0.28)" strokeWidth={1.8} /></View>
             <Text style={[st.promoTag, { color: b.fg, borderColor: b.fg }]}>{b.tag}</Text>
             <Text style={[st.promoTitle, { color: b.fg }]}>{b.title}</Text>
             <Text style={[st.promoBody, { color: b.fg }]}>{b.body}</Text>
@@ -150,7 +150,7 @@ export default function HomeScreen() {
         <View style={st.commitGrid}>
           {COMMITMENTS.map((c, i) => (
             <Tap key={c.title} style={st.commit} onPress={() => setCommit(c)}>
-              <Text style={{ fontSize: 24 }}>{COMMIT_ICON[i]}</Text>
+              <AppIcon icon={COMMIT_ICON[i]} size={24} color={C.primary} strokeWidth={2.1} />
               <Text style={st.commitTitle}>{c.title}</Text>
               <Text style={st.commitSub} numberOfLines={2}>{c.sub}</Text>
             </Tap>
@@ -163,7 +163,7 @@ export default function HomeScreen() {
       <HScroll contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
         {TIPS.map((t) => (
           <Tap key={t.id} style={st.tip} onPress={() => setTip(t)}>
-            <View style={[st.tipMedia, { backgroundColor: toneOf(t.category).bg }]}><Text style={{ fontSize: 34 }}>{t.icon}</Text></View>
+            <View style={[st.tipMedia, { backgroundColor: toneOf(t.category).bg }]}><AppIcon icon={t.icon} size={34} color={toneOf(t.category).fg} strokeWidth={1.9} /></View>
             <View style={{ padding: 12 }}>
               <Text style={st.tipTitle} numberOfLines={2}>{t.title}</Text>
               <Text style={ui.meta}>{t.views} lượt xem</Text>

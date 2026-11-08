@@ -11,7 +11,7 @@ import {
 } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Chip, Badge, Stars, Field, Sheet, Radio,
-  EmptyState, ServiceGrid, ServiceRow, Progress, Media, ListRow, PseudoQR, HScroll, ui,
+  EmptyState, ServiceGrid, ServiceRow, Progress, Media, ListRow, PseudoQR, HScroll, ui, AppIcon,
   TimeRangeSlider, minutesToSlotStr, minutesToTimeStr,
 } from '../../components';
 import { pickImage, validateVietnamesePhone, validateContactName } from '../../utils';
@@ -971,8 +971,8 @@ export function OrderScreen({ params }) {
 }
 
 const InfoLine = ({ icon, label, value, link }) => (
-  <View style={{ flexDirection: 'row', gap: 10, paddingVertical: 8 }}>
-    <Text style={{ fontSize: 16, width: 22 }}>{icon}</Text>
+  <View style={{ flexDirection: 'row', gap: 10, paddingVertical: 8, alignItems: 'flex-start' }}>
+    <View style={{ width: 22, paddingTop: 2 }}><AppIcon icon={icon} size={17} color={C.primary} strokeWidth={2.1} /></View>
     <View style={{ flex: 1 }}>
       <Text style={{ fontSize: 12, color: C.muted, fontWeight: '600' }}>{label}</Text>
       <Text style={{ fontSize: 14, color: link ? C.primary : C.ink, fontWeight: '600', marginTop: 2, lineHeight: 20 }}>{value}</Text>

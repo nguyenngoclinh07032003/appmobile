@@ -1114,38 +1114,6 @@ export function AppProvider({ children }) {
         return { orders: p.orders.map((x) => (x.code === code ? { ...x, tracking } : x)) };
       });
     },
-    sendOrderChat: (code, text, from) => {
-      const msg = String(text || '').trim();
-      if (!msg) return;
-      const now = Date.now();
-      const row = { id: uid(), from: from === 'tech' ? 'tech' : 'customer', text: msg.slice(0, 400), at: now };
-      let ok = false;
-      up((p) => {
-        const o = p.orders.find((x) => x.code === code);
-        if (!o || o.status === 'cancelled') return {};
-        if (!o.tech && o.status === 'pending') return {};
-        ok = true;
-        const chat = [...(o.chat || []), row];
-        const patch = { orders: p.orders.map((x) => (x.code === code ? { ...x, chat } : x)) };
-        if (from === 'tech') {
-          return {
-            ...patch,
-            notifications: pushNotif(p, {
-              icon: '💬', title: `Thợ nhắn tin · ${code}`, body: msg.slice(0, 80),
-              link: { name: 'order', params: { code } },
-            }),
-          };
-        }
-        return {
-          ...patch,
-          techNotifs: pushTech(p, {
-            icon: '💬', title: `Khách nhắn tin · ${code}`, body: msg.slice(0, 80),
-            link: { name: 'tech-job', params: { code } },
-          }),
-        };
-      });
-      if (!ok) ui.alert('Chưa gửi được', 'Chat khả dụng sau khi thợ nhận đơn.', '💬');
-    },
     arrive: (code, checkIn = null) => {
       let lateInfo = null;
       let ok = false;

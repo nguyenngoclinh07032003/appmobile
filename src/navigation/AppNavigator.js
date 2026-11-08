@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { C, shadow } from '../theme';
 import { useApp } from '../context';
-import { DialogHost, ToastHost, FrameCtx } from '../components';
+import { DialogHost, ToastHost, FrameCtx, AppIcon } from '../components';
 import BottomNav from './BottomNav';
 import { CUSTOMER_TABS, TECH_TABS, SCREENS, DARK_TOP, PHONE_W, BEZEL, AuthScreen } from './routes';
 
@@ -96,14 +96,14 @@ export function DesktopShowcase({ style }) {
 
       <View style={st.sideCard}>
         {[
-          { icon: '⚡', title: 'Đặt lịch nhanh chóng', sub: 'Chọn dịch vụ và khung giờ linh hoạt tại nhà' },
-          { icon: '🧾', title: 'Báo giá minh bạch', sub: 'Khảo sát thực tế, chỉ thực hiện khi khách duyệt' },
-          { icon: '📍', title: 'Theo dõi trực tuyến', sub: 'Cập nhật vị trí GPS và tiến độ công việc' },
-          { icon: '🛡️', title: 'Bảo hành 60 ngày', sub: 'Hỗ trợ kiểm tra lại miễn phí sau dịch vụ' },
+          { icon: 'zap', title: 'Đặt lịch nhanh chóng', sub: 'Chọn dịch vụ và khung giờ linh hoạt tại nhà' },
+          { icon: 'receipt-text', title: 'Báo giá minh bạch', sub: 'Khảo sát thực tế, chỉ thực hiện khi khách duyệt' },
+          { icon: 'map-pin', title: 'Theo dõi trực tuyến', sub: 'Cập nhật vị trí GPS và tiến độ công việc' },
+          { icon: 'shield-check', title: 'Bảo hành 60 ngày', sub: 'Hỗ trợ kiểm tra lại miễn phí sau dịch vụ' },
         ].map((item, idx) => (
           <View key={item.title} style={[st.sideFeature, idx > 0 && st.sideFeatureBorder]}>
             <View style={st.sideFeatureIcon}>
-              <Text style={{ fontSize: 16 }}>{item.icon}</Text>
+              <AppIcon icon={item.icon} size={18} color={C.primary} strokeWidth={2.2} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={st.sideFeatureTitle}>{item.title}</Text>

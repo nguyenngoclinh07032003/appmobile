@@ -15,18 +15,18 @@ import {
 import AuthScreen from '../screens/auth';
 
 export const CUSTOMER_TABS = [
-  { id: 'home', label: 'Trang chủ', icon: '🏠', Comp: HomeScreen },
-  { id: 'services', label: 'Dịch vụ', icon: '🧰', Comp: ServicesScreen },
-  { id: 'activity', label: 'Hoạt động', icon: '📋', Comp: ActivityScreen },
-  { id: 'personal', label: 'Cá nhân', icon: '👤', Comp: PersonalScreen },
+  { id: 'home', label: 'Trang chủ', icon: 'home', Comp: HomeScreen },
+  { id: 'services', label: 'Dịch vụ', icon: 'wrench', Comp: ServicesScreen },
+  { id: 'activity', label: 'Hoạt động', icon: 'clipboard-list', Comp: ActivityScreen },
+  { id: 'personal', label: 'Cá nhân', icon: 'user', Comp: PersonalScreen },
 ];
 
 // App Thợ (Technician)
 export const TECH_TABS = [
-  { id: 'tech-jobs', label: 'Công việc', icon: '🧰', Comp: TechJobsScreen },
-  { id: 'tech-schedule', label: 'Lịch', icon: '📅', Comp: TechScheduleScreen },
-  { id: 'tech-notifs', label: 'Thông báo', icon: '🔔', Comp: TechNotifsScreen },
-  { id: 'tech-account', label: 'Tài khoản', icon: '👷', Comp: TechAccountScreen },
+  { id: 'tech-jobs', label: 'Công việc', icon: 'wrench', Comp: TechJobsScreen },
+  { id: 'tech-schedule', label: 'Lịch', icon: 'calendar', Comp: TechScheduleScreen },
+  { id: 'tech-notifs', label: 'Thông báo', icon: 'bell', Comp: TechNotifsScreen },
+  { id: 'tech-account', label: 'Tài khoản', icon: 'hard-hat', Comp: TechAccountScreen },
 ];
 
 // Màn hình phủ lên trên tab (điều hướng dạng stack)

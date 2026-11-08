@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { C, shadow } from '../theme';
 import { useApp } from '../context';
+import { AppIcon } from '../components';
 import { CUSTOMER_TABS, TECH_TABS } from './routes';
 
 export default function BottomNav() {
@@ -26,7 +27,12 @@ export default function BottomNav() {
             accessibilityState={{ selected: on }}
           >
             <View style={[styles.navIcon, on && styles.navIconOn]}>
-              <Text style={{ fontSize: 19, opacity: on ? 1 : 0.58, transform: [{ scale: on ? 1.06 : 1 }] }}>{t.icon}</Text>
+              <AppIcon
+                icon={t.icon}
+                size={20}
+                color={on ? C.primary : C.muted}
+                strokeWidth={on ? 2.4 : 1.9}
+              />
               {badges[t.id] ? <View style={styles.navBadge}><Text style={styles.navBadgeText}>{badges[t.id]}</Text></View> : null}
             </View>
             <Text style={[styles.navLabel, on && styles.navLabelOn]}>{t.label}</Text>

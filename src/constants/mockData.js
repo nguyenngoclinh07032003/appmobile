@@ -83,7 +83,7 @@ export const MOCK_ORDERS = [
     dateLabel: todayLabel,
     slot: '14h00 - 16h00',
     items: [{ id: 'vs-ml-1', qty: 1 }],
-    payment: 'Chuyển khoản VietQR (Công ty HRMSS)',
+    payment: 'Chuyển khoản VietQR',
     address: {
       name: 'Chị Hoàng Mai Anh',
       phone: '0912345678',
@@ -141,11 +141,6 @@ export const MOCK_ORDERS = [
       label: 'Thợ đang di chuyển trên đường Lê Duẩn, dự kiến đến sau 8 phút',
       updatedAt: now,
     },
-    messages: [
-      { id: 'm-1', from: 'tech', text: 'Chào anh Quân, em là Hùng KTV HRMSS. Em đang trên đường qua nhà mình ạ.', at: now - 8 * 60 * 1000 },
-      { id: 'm-2', from: 'customer', text: 'Chào em, khi đến tòa nhà em bấm chuông phòng 402 nhé.', at: now - 6 * 60 * 1000 },
-      { id: 'm-3', from: 'tech', text: 'Dạ vâng anh, khoảng 8 phút nữa em có mặt ạ!', at: now - 4 * 60 * 1000 },
-    ],
     history: [
       { status: 'pending', at: now - 90 * 60 * 1000 },
       { status: 'confirmed', at: now - 45 * 60 * 1000 },
@@ -223,7 +218,7 @@ export const MOCK_ORDERS = [
     dateLabel: '2 ngày trước',
     slot: '08h00 - 10h00',
     items: [{ id: 'sc-mg', qty: 1 }],
-    payment: 'Chuyển khoản VietQR (Công ty HRMSS)',
+    payment: 'Chuyển khoản VietQR',
     address: {
       name: 'Nguyễn Minh Anh',
       phone: '0901234567',
@@ -275,6 +270,7 @@ export const MOCK_ORDERS = [
     },
     rating: {
       stars: 5,
+      text: 'Kỹ thuật viên Hùng sửa chữa rất chuyên nghiệp và nhanh nhẹn! Báo giá minh bạch trên app, thay linh kiện mới tinh có dán tem bảo hành 90 ngày. Máy giặt xong chạy cực kỳ êm ái!',
       comment: 'Kỹ thuật viên Hùng sửa chữa rất chuyên nghiệp và nhanh nhẹn! Báo giá minh bạch trên app, thay linh kiện mới tinh có dán tem bảo hành 90 ngày. Máy giặt xong chạy cực kỳ êm ái!',
       at: now - 86400000 * 2 + 130 * 60 * 1000,
     },

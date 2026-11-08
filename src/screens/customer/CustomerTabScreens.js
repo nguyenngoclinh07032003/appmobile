@@ -8,7 +8,7 @@ import {
 import { useApp, deviceStatus, warrantyInfo, fmtDate, isActiveOrder, orderTotal } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, PageHead, Pills, Segmented, ServiceGrid, EmptyState, Field, Badge,
-  StatusChip, Progress, Media, ListRow, Sheet, ui, HScroll,
+  StatusChip, Progress, Media, ListRow, Sheet, ui, HScroll, AppIcon,
 } from '../../components';
 
 // =========================================================== DỊCH VỤ
@@ -51,7 +51,7 @@ export function ServicesScreen() {
                 const owned = s.devices.some((dv) => dv.category === c.id);
                 return (
                   <Tap key={c.id} onPress={() => setSvc((p) => ({ ...p, category: c.id }))} style={[sx.catTile, on && { borderColor: tone.fg, backgroundColor: tone.bg }]}>
-                    <Text style={{ fontSize: 24 }}>{c.icon}</Text>
+                    <AppIcon icon={c.icon} size={24} color={on ? tone.fg : C.ink2} strokeWidth={2} />
                     <Text style={[sx.catTileText, on && { color: tone.fg }]}>{CAT_SHORT[c.id]}</Text>
                     {owned ? <View style={[sx.ownedDot, { backgroundColor: tone.fg }]} /> : null}
                   </Tap>
@@ -61,7 +61,7 @@ export function ServicesScreen() {
           ) : (
             <View>
               <View style={sx.notice}>
-                <Text style={{ fontSize: 18 }}>{type?.icon}</Text>
+                <AppIcon icon={type?.icon || 'info'} size={18} color={C.primary} strokeWidth={2.2} />
                 <Text style={sx.noticeText}>Giá hiển thị là giá tham khảo. Thợ khảo sát thực tế và chỉ làm khi bạn đồng ý báo giá.</Text>
               </View>
               <Pills
@@ -152,7 +152,9 @@ function WarrantyView() {
             Áp dụng cho dịch vụ vệ sinh, nạp gas & sửa chữa đặt trên app, tính từ ngày nghiệm thu hoàn thành.
           </Text>
         </View>
-        <Text style={{ fontSize: 46, marginLeft: 8 }}>🛡️</Text>
+        <View style={{ marginLeft: 10 }}>
+          <AppIcon name="shield-check" size={44} color="#fff" strokeWidth={1.8} />
+        </View>
       </View>
       <Card style={{ marginTop: 14 }}>
         <Field
