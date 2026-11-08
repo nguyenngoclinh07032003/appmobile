@@ -50,6 +50,7 @@ export const SCREENS = {
   qr: QRScreen,
   'device-form': DeviceFormScreen,
   'tech-job': TechJobScreen,
+  'tech-notifs': TechNotifsScreen,
 };
 
 export const DARK_TOP = ['home', 'personal', 'tech-jobs', 'tech-account'];

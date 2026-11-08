@@ -39,9 +39,9 @@ export function Shell() {
   const darkTop = !loggedIn ? true : (topName ? topName === 'qr' : DARK_TOP.includes(nav.tab));
   const topInset = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : Platform.OS === 'ios' ? 47 : 0;
 
-  // Chặn stack thuộc vai trò khác (phân quyền)
+  // Chặn stack thuộc vai trò khác (phân quyền) & chỉ giữ màn hình có định nghĩa trong SCREENS
   const allowedStack = loggedIn
-    ? nav.stack.filter((entry) => (role === 'tech' ? String(entry.name).startsWith('tech') : !String(entry.name).startsWith('tech')))
+    ? nav.stack.filter((entry) => Boolean(SCREENS[entry.name]) && (role === 'tech' ? String(entry.name).startsWith('tech') : !String(entry.name).startsWith('tech')))
     : [];
 
   return (

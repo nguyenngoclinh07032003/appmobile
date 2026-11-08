@@ -490,7 +490,27 @@ export function TechNotifsScreen() {
   });
   return (
     <View style={{ flex: 1 }}>
-      <PageHead title="Thông báo" sub="Việc mới, phản hồi của khách" right={list.some((n) => !n.read) ? <Tap onPress={a.readAllTech}><Text style={ui.link}>Đọc hết</Text></Tap> : null} />
+      <TopBar
+        title="Thông báo"
+        sub="Việc mới, phản hồi của khách"
+        onBack={() => {
+          if (nav.stack.length > 0) {
+            nav.back();
+          } else {
+            nav.go('tech-jobs');
+          }
+        }}
+        right={(
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            {list.some((n) => !n.read) ? (
+              <Tap onPress={a.readAllTech}><Text style={ui.link}>Đọc hết</Text></Tap>
+            ) : null}
+            <Tap onPress={() => nav.go('tech-jobs')} hitSlop={6} accessibilityLabel="Về trang chủ">
+              <Text style={{ fontSize: 18 }}>🏠</Text>
+            </Tap>
+          </View>
+        )}
+      />
       <View style={{ backgroundColor: '#fff', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.line }}>
         <HScroll contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
           {[
@@ -506,18 +526,32 @@ export function TechNotifsScreen() {
             icon="🔔"
             title={filter === 'unread' ? 'Đã đọc hết' : 'Chưa có thông báo'}
             body="Việc mới được giao, khách duyệt/từ chối báo giá, huỷ đơn hay đánh giá sẽ hiện ở đây."
+            action="Về trang công việc"
+            onAction={() => nav.go('tech-jobs')}
           />
-        ) : filtered.map((n) => (
-          <Tap key={n.id} style={[tx.notif, !n.read && tx.notifUnread]} onPress={() => { a.readTechNotif(n.id); nav.open(n.link); }}>
-            <IconBox icon={n.icon || '🔔'} size={44} bg={n.read ? '#F1F4F9' : C.primarySoft} radius={14} />
-            <View style={{ flex: 1 }}>
-              <Text style={[tx.notifTitle, !n.read && { color: C.ink }]}>{n.title}</Text>
-              {n.body ? <Text style={tx.notifBody}>{n.body}</Text> : null}
-              <Text style={[ui.meta, { marginTop: 4 }]}>{timeAgo(n.at)}</Text>
-            </View>
-            {!n.read ? <View style={tx.dot} /> : null}
-          </Tap>
-        ))}
+        ) : (
+          <>
+            {filtered.map((n) => (
+              <Tap key={n.id} style={[tx.notif, !n.read && tx.notifUnread]} onPress={() => { a.readTechNotif(n.id); nav.open(n.link); }}>
+                <IconBox icon={n.icon || '🔔'} size={44} bg={n.read ? '#F1F4F9' : C.primarySoft} radius={14} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[tx.notifTitle, !n.read && { color: C.ink }]}>{n.title}</Text>
+                  {n.body ? <Text style={tx.notifBody}>{n.body}</Text> : null}
+                  <Text style={[ui.meta, { marginTop: 4 }]}>{timeAgo(n.at)}</Text>
+                </View>
+                {!n.read ? <View style={tx.dot} /> : null}
+              </Tap>
+            ))}
+            <Btn
+              title="Về màn hình công việc chính"
+              icon="🏠"
+              variant="ghost"
+              small
+              style={{ marginTop: 14, alignSelf: 'center' }}
+              onPress={() => nav.go('tech-jobs')}
+            />
+          </>
+        )}
       </ScrollView>
     </View>
   );

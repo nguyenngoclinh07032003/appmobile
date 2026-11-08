@@ -107,7 +107,23 @@ export function NotificationsScreen() {
   const { s, a, nav } = useApp();
   return (
     <View style={{ flex: 1 }}>
-      <TopBar title="Thông báo" right={s.notifications.some((n) => !n.read) ? <Tap onPress={a.readAll}><Text style={ui.link}>Đọc hết</Text></Tap> : null} />
+      <TopBar
+        title="Thông báo"
+        onBack={() => {
+          if (nav.stack.length > 0) nav.back();
+          else nav.go('home');
+        }}
+        right={(
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            {s.notifications.some((n) => !n.read) ? (
+              <Tap onPress={a.readAll}><Text style={ui.link}>Đọc hết</Text></Tap>
+            ) : null}
+            <Tap onPress={() => nav.go('home')} hitSlop={6} accessibilityLabel="Về trang chủ">
+              <Text style={{ fontSize: 18 }}>🏠</Text>
+            </Tap>
+          </View>
+        )}
+      />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
         {s.notifications.length === 0 ? <EmptyState icon="🔔" title="Chưa có thông báo" body="Cập nhật về đơn hàng, ưu đãi và lịch bảo dưỡng sẽ hiện ở đây." /> : s.notifications.map((n) => (
           <Tap key={n.id} style={[mx.notif, !n.read && mx.notifUnread]} onPress={() => { a.readNotif(n.id); nav.open(n.link); }}>
