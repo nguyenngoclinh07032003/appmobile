@@ -26,11 +26,9 @@ export default function HomeScreen() {
     <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 28 }}>
       {/* ---------------- Header ---------------- */}
       <View style={st.header}>
-        <View style={[st.blob, { width: 220, height: 220, top: -90, right: -60 }]} />
-        <View style={[st.blob, { width: 140, height: 140, top: 60, left: -60, opacity: 0.5 }]} />
         <View style={st.headRow}>
           <View style={{ flex: 1 }}>
-            <Text style={st.hello}>{firstName ? `Xin chào, ${firstName} 👋` : 'Xin chào 👋'}</Text>
+            <Text style={st.hello}>{firstName ? `Xin chào, ${firstName}` : 'Xin chào'}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
               <Text style={st.brand}>Thợ HRMSS</Text>
               <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' }}>
@@ -44,7 +42,7 @@ export default function HomeScreen() {
         <Tap style={st.addr} onPress={() => nav.push(d.address ? 'addresses' : 'address-form')}>
           <Text style={{ fontSize: 14 }}>📍</Text>
           <View style={{ flex: 1, marginLeft: 8 }}>
-            <Text style={st.addrLabel}>Thợ đến tận nhà tại</Text>
+            <Text style={st.addrLabel}>Địa chỉ phục vụ</Text>
             <Text style={st.addrText} numberOfLines={1}>{d.address ? d.address.full : 'Thêm địa chỉ của bạn'}</Text>
           </View>
           <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 20 }}>›</Text>
@@ -58,12 +56,12 @@ export default function HomeScreen() {
       {/* ---------------- Quick stats ---------------- */}
       <View style={st.stats}>
         {[
-          { icon: '⭐', value: s.points, label: 'Điểm thưởng', onPress: () => nav.push('rewards') },
-          { icon: '📋', value: d.activeOrders.length, label: 'Đang xử lý', onPress: () => nav.activity('active') },
-          { icon: '📺', value: s.devices.length, label: 'Thiết bị', onPress: () => nav.go('devices') },
+          { value: s.points, label: 'Điểm tích luỹ', onPress: () => nav.push('rewards') },
+          { value: d.activeOrders.length, label: 'Đang xử lý', onPress: () => nav.activity('active') },
+          { value: s.devices.length, label: 'Thiết bị', onPress: () => nav.go('devices') },
         ].map((x, i) => (
           <Tap key={x.label} style={[st.stat, i > 0 && st.statBorder]} onPress={x.onPress}>
-            <Text style={st.statValue}>{x.icon} {x.value}</Text>
+            <Text style={st.statValue}>{x.value}</Text>
             <Text style={st.statLabel}>{x.label}</Text>
           </Tap>
         ))}
@@ -81,7 +79,7 @@ export default function HomeScreen() {
               </View>
               <Text style={st.activeName} numberOfLines={1}>{activeSvc?.name}</Text>
               <Text style={ui.meta}>
-                {active.status === 'quoted' ? '🧾 Có báo giá chờ bạn duyệt' : `📅 ${active.dateLabel} · ${active.slot}`}
+                {active.status === 'quoted' ? 'Có báo giá chờ bạn duyệt' : `${active.dateLabel} · ${active.slot}`}
               </Text>
             </View>
             {active.status === 'quoted' ? (
@@ -134,12 +132,12 @@ export default function HomeScreen() {
             <View>
               <Text style={st.body}>Đồng bộ thiết bị từ hệ thống HRMSS theo SĐT hoặc thêm thiết bị trong nhà để được tự động nhắc lịch bảo dưỡng định kỳ.</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                <Btn title="🔄 Đồng bộ thiết bị HRMSS" small style={{ flex: 1.3 }} onPress={a.syncHrmssDevices} />
+                <Btn title="Đồng bộ thiết bị HRMSS" small style={{ flex: 1.3 }} onPress={a.syncHrmssDevices} />
                 <Btn title="Thêm thủ công" icon="＋" variant="soft" small style={{ flex: 1 }} onPress={() => nav.push('device-form')} />
               </View>
             </View>
           ) : d.dueDevices.length === 0 ? (
-            <Text style={[st.body, { color: C.green, fontWeight: '600' }]}>✓ Tất cả thiết bị đều đang trong chu kỳ bảo dưỡng tốt.</Text>
+            <Text style={[st.body, { color: C.green, fontWeight: '600' }]}>Tất cả thiết bị đều đang trong chu kỳ hoạt động tốt.</Text>
           ) : d.dueDevices.slice(0, 2).map((dev) => {
             const stt = deviceStatus(dev);
             return (
@@ -162,10 +160,9 @@ export default function HomeScreen() {
         {[
           { bg: C.navy, gradStyle: grad.navyCard, fg: '#fff', tag: 'MÃ THO20', title: 'Giảm 20.000đ', body: 'Cho đơn từ 150.000đ', icon: '🎟️', onPress: () => nav.push('rewards') },
           { bg: C.primary, gradStyle: grad.primaryBtn, fg: '#fff', tag: 'BÁN CHẠY', title: 'Vệ sinh máy lạnh 180K', body: 'Giảm 10% · Bảo hành 60 ngày', icon: '❄️', onPress: () => nav.push('detail', { id: 'vs-ml-1' }) },
-          { bg: C.navy2, gradStyle: grad.navyCard, fg: '#fff', tag: 'TIẾT KIỆM', title: 'Bảo dưỡng trọn đời', body: 'Một lần đăng ký, thợ nhắc định kỳ', icon: '♾️', onPress: () => nav.services('tron-doi') },
+          { bg: C.navy2, gradStyle: grad.navyCard, fg: '#fff', tag: 'TIẾT KIỆM', title: 'Bảo dưỡng định kỳ', body: 'Nhắc lịch tự động, ưu đãi dài lâu', icon: '♾️', onPress: () => nav.services('tron-doi') },
         ].map((b) => (
           <Tap key={b.tag} style={[st.promo, { backgroundColor: b.bg }, b.gradStyle]} onPress={b.onPress}>
-            <View style={[st.blob, { width: 130, height: 130, right: -30, top: -40, backgroundColor: 'rgba(255,255,255,0.14)' }]} />
             <Text style={st.promoIcon}>{b.icon}</Text>
             <Text style={[st.promoTag, { color: b.fg, borderColor: b.fg }]}>{b.tag}</Text>
             <Text style={[st.promoTitle, { color: b.fg }]}>{b.title}</Text>
@@ -184,7 +181,7 @@ export default function HomeScreen() {
 
       <View style={{ paddingHorizontal: 16 }}>
         {/* ---------------- Cam kết ---------------- */}
-        <SectionTitle title="Thợ HRMSS cam kết" />
+        <SectionTitle title="Cam kết chất lượng dịch vụ" />
         <View style={st.commitGrid}>
           {COMMITMENTS.map((c, i) => (
             <Tap key={c.title} style={st.commit} onPress={() => setCommit(c)}>
@@ -196,7 +193,7 @@ export default function HomeScreen() {
         </View>
 
         {/* ---------------- Mẹo hay ---------------- */}
-        <SectionTitle title="Mẹo hay cho nhà bạn" />
+        <SectionTitle title="Cẩm nang thiết bị" />
       </View>
       <HScroll contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
         {TIPS.map((t) => (
@@ -204,7 +201,7 @@ export default function HomeScreen() {
             <View style={[st.tipMedia, { backgroundColor: toneOf(t.category).bg }]}><Text style={{ fontSize: 34 }}>{t.icon}</Text></View>
             <View style={{ padding: 12 }}>
               <Text style={st.tipTitle} numberOfLines={2}>{t.title}</Text>
-              <Text style={ui.meta}>👁 {t.views}</Text>
+              <Text style={ui.meta}>{t.views} lượt xem</Text>
             </View>
           </Tap>
         ))}

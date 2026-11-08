@@ -659,7 +659,7 @@ export function CheckoutScreen({ params }) {
         )}
 
         {/* Lịch hẹn */}
-        <Text style={bx.sec}>🗓️  Thời gian hẹn</Text>
+        <Text style={bx.sec}>Thời gian thực hiện</Text>
         <HScroll contentContainerStyle={{ gap: 8 }}>
           {days.map((dd, i) => (
             <Tap key={dd.ddmm} onPress={() => setDayIdx(i)} style={[bx.day, dayIdx === i && bx.dayOn]}>
@@ -682,7 +682,7 @@ export function CheckoutScreen({ params }) {
 
         {/* Dịch vụ */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, marginBottom: 8 }}>
-          <Text style={[bx.sec, { marginTop: 0, marginBottom: 0 }]}>🧰  Dịch vụ ({lines.length})</Text>
+          <Text style={[bx.sec, { marginTop: 0, marginBottom: 0 }]}>Dịch vụ yêu cầu ({lines.length})</Text>
           <Tap onPress={() => setShowAddServiceSheet(true)}>
             <Text style={ui.link}>＋ Thêm dịch vụ</Text>
           </Tap>
@@ -720,7 +720,7 @@ export function CheckoutScreen({ params }) {
         <Field label="Mô tả tình trạng thiết bị" multiline value={note} onChangeText={setNote} placeholder="VD: Máy lạnh chảy nước, kém lạnh…" />
 
         {/* Điều kiện vị trí thi công chuẩn HRMSS */}
-        <Text style={[bx.sec, { marginTop: 16, marginBottom: 8 }]}>🏢  Điều kiện vị trí thi công</Text>
+        <Text style={[bx.sec, { marginTop: 16, marginBottom: 8 }]}>Vị trí & điều kiện thi công</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           {SITE_CONDITIONS.map((sc) => (
             <Chip
@@ -731,11 +731,11 @@ export function CheckoutScreen({ params }) {
             />
           ))}
         </View>
-        <Text style={[ui.meta, { marginTop: 6 }]}>💡 {selectedSite.note}</Text>
+        <Text style={[ui.meta, { marginTop: 6 }]}>{selectedSite.note}</Text>
 
         {/* Thiết bị áp dụng (liên kết với Thiết bị của tôi) */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 18, marginBottom: 8 }}>
-          <Text style={[bx.sec, { marginTop: 0, marginBottom: 0 }]}>📺  Thiết bị tại nhà bạn</Text>
+          <Text style={[bx.sec, { marginTop: 0, marginBottom: 0 }]}>Thiết bị tại nhà</Text>
           <Tap onPress={() => setShowAddDeviceSheet(true)}>
             <Text style={ui.link}>＋ Thêm thiết bị</Text>
           </Tap>
@@ -751,14 +751,16 @@ export function CheckoutScreen({ params }) {
                 onPress={() => setSelectedDeviceId(on ? 'other' : dv.id)}
                 style={[
                   {
-                    flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10,
+                    flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 10,
                     borderRadius: 14, borderWidth: 1.5, borderColor: on ? C.primary : C.line,
                     backgroundColor: on ? C.primarySoft : '#fff',
                     minWidth: 140,
                   },
                 ]}
               >
-                <Text style={{ fontSize: 20 }}>{catIcon(dv.category)}</Text>
+                <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: on ? '#DBEAFE' : '#F1F5F9', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 16 }}>{catIcon(dv.category)}</Text>
+                </View>
                 <View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Text style={{ fontWeight: '800', fontSize: 13, color: on ? C.primary : C.ink }}>
@@ -847,8 +849,8 @@ export function CheckoutScreen({ params }) {
           </Card>
         ) : null}
 
-        <Text style={[bx.sec, { marginTop: 14 }]}>📷  Ảnh đính kèm (tùy chọn)</Text>
-        <Text style={[ui.meta, { marginBottom: 8 }]}>Gửi ảnh lỗi/thiết bị để thợ chuẩn bị vật tư (tối đa 5 ảnh).</Text>
+        <Text style={[bx.sec, { marginTop: 14 }]}>Hình ảnh hiện trạng (tùy chọn)</Text>
+        <Text style={[ui.meta, { marginBottom: 8 }]}>Gửi ảnh lỗi hoặc vị trí lắp đặt để thợ chuẩn bị vật tư phù hợp (tối đa 5 ảnh).</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
           {attachments.map((att) => (
             <View key={att.id} style={bx.thumb}>
@@ -865,12 +867,11 @@ export function CheckoutScreen({ params }) {
             </Tap>
           ) : null}
         </View>
-        <Field label="Mã Thợ Now (nếu có)" value={workerCode} onChangeText={setWorkerCode} placeholder="VD: HRMSS1024 — chỉ thợ này nhận được" autoCapitalize="characters" />
-        {workerCode.trim() ? <Text style={[ui.meta, { marginTop: -4, marginBottom: 8 }]}>Việc sẽ ưu tiên / chỉ hiện cho thợ có mã khớp.</Text> : null}
+        <Field label="Mã kỹ thuật viên chỉ định (nếu có)" value={workerCode} onChangeText={setWorkerCode} placeholder="VD: HRMSS1024" autoCapitalize="characters" />
+        {workerCode.trim() ? <Text style={[ui.meta, { marginTop: -4, marginBottom: 8 }]}>Đơn sẽ được ưu tiên điều phối tới kỹ thuật viên này.</Text> : null}
 
         <SelectRow
           label="Mã giảm giá"
-          icon="🎟️"
           value={voucher ? `${voucher.code} · -${formatVND(vDiscount)}` : ''}
           placeholder={`Chọn hoặc nhập mã (${allVouchers.length} mã)`}
           onPress={() => setShowVoucher(true)}
@@ -879,9 +880,9 @@ export function CheckoutScreen({ params }) {
         {voucher ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: R.md, paddingHorizontal: 12, paddingVertical: 8, marginTop: 4, marginBottom: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={{ fontSize: 14 }}>🎟️</Text>
+              <Badge text="MÃ ÁP DỤNG" fg="#166534" bg="#DCFCE7" />
               <Text style={{ fontSize: 13, color: '#166534', fontWeight: '700' }}>
-                Đang dùng: {voucher.code} (-{formatVND(vDiscount)})
+                {voucher.code} (-{formatVND(vDiscount)})
               </Text>
             </View>
             <Tap
@@ -900,14 +901,13 @@ export function CheckoutScreen({ params }) {
         ) : null}
         <SelectRow
           label="Phương thức thanh toán"
-          icon="💳"
           value={payment}
           onPress={() => setShowPay(true)}
         />
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F0FDF4', padding: 8, borderRadius: R.md, borderWidth: 1, borderColor: '#DCFCE7', marginTop: -4, marginBottom: 8 }}>
-          <Text style={{ fontSize: 13 }}>🛡️</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F0FDF4', padding: 10, borderRadius: R.md, borderWidth: 1, borderColor: '#DCFCE7', marginTop: -4, marginBottom: 8 }}>
+          <Badge text="0đ TRẢ TRƯỚC" fg="#166534" bg="#DCFCE7" />
           <Text style={{ fontSize: 11.5, color: '#166534', fontWeight: '600', flex: 1, lineHeight: 16 }}>
-            Cam kết 0đ trả trước · Chỉ thanh toán sau khi thợ hoàn tất và kiểm tra máy chạy êm ái.
+            Chỉ thanh toán sau khi thợ hoàn tất và kiểm tra máy chạy êm ái.
           </Text>
         </View>
 
@@ -916,30 +916,30 @@ export function CheckoutScreen({ params }) {
           <Row l="Tổng tiền dịch vụ" v={formatVND(goods)} />
           <Row l="Phí đi lại" v="Miễn phí" green />
           {productDiscount ? <Row l="Giảm giá dịch vụ" v={`-${formatVND(productDiscount)}`} green /> : null}
-          {combo.amount ? <Row l={`🔥 Ưu đãi ${combo.label}`} v={`-${formatVND(combo.amount)}`} green /> : null}
+          {combo.amount ? <Row l={`Ưu đãi ${combo.label}`} v={`-${formatVND(combo.amount)}`} green /> : null}
           {vDiscount ? <Row l={`Voucher ${voucher.code}`} v={`-${formatVND(vDiscount)}`} green /> : null}
           <View style={bx.totalRow}>
             <Text style={{ fontWeight: '800', color: C.ink, fontSize: 15 }}>Tổng thanh toán</Text>
             <Text style={[bx.price, { fontSize: 20 }]}>{formatVND(total)}</Text>
           </View>
           <View style={{ marginTop: 10, padding: 10, borderRadius: R.md, backgroundColor: curTier.bg || C.primarySoft, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={{ fontSize: 16 }}>👑</Text>
+            <Badge text={curTier.label} fg={curTier.color} bg="#FFFFFF" />
             <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: curTier.color, lineHeight: 17 }}>
-              Đặc quyền hạng {curTier.label}: Bảo hành {curTier.warrantyDays || 60} ngày
-              {curTier.partDiscountPercent ? ` · Giảm tự động ${curTier.partDiscountPercent}% vật tư phát sinh` : ''}
+              Bảo hành tiêu chuẩn {curTier.warrantyDays || 60} ngày
+              {curTier.partDiscountPercent ? ` · Giảm ${curTier.partDiscountPercent}% vật tư phát sinh` : ''}
             </Text>
           </View>
-          <Text style={[ui.meta, { color: C.goldInk, marginTop: 8 }]}>⭐ Nhận +{Math.max(1, Math.floor(total / 10000))} điểm khi đơn hoàn thành</Text>
+          <Text style={[ui.meta, { color: C.muted, marginTop: 8 }]}>Tích luỹ +{Math.max(1, Math.floor(total / 10000))} điểm khi hoàn tất</Text>
         </Card>
       </ScrollView>
 
       <View style={bx.dockCol}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <Text style={{ color: C.muted, fontWeight: '600', flex: 1 }} numberOfLines={1}>📅 {days[dayIdx].label} · {slot}</Text>
+          <Text style={{ color: C.ink2, fontWeight: '700', flex: 1 }} numberOfLines={1}>{days[dayIdx].label} · {slot}</Text>
           <Text style={[bx.price, { fontSize: 20 }]}>{formatVND(total)}</Text>
         </View>
         <Btn
-          title={s.auth?.role === 'customer' && !s.auth.emailVerified ? '📧 Xác thực Email để đặt lịch' : 'Xác nhận đặt lịch'}
+          title={s.auth?.role === 'customer' && !s.auth.emailVerified ? 'Xác thực Email để đặt lịch' : 'Xác nhận đặt lịch'}
           onPress={confirm}
         />
       </View>
@@ -947,7 +947,7 @@ export function CheckoutScreen({ params }) {
       <Sheet
         visible={showEmailOtp}
         onClose={() => setShowEmailOtp(false)}
-        title="📧 Xác thực Email đặt dịch vụ"
+        title="Xác thực Email đặt dịch vụ"
         footer={(
           <Btn
             title={otpVerifying ? 'Đang kiểm tra...' : 'Xác nhận mã OTP'}
@@ -968,18 +968,12 @@ export function CheckoutScreen({ params }) {
             borderWidth: 1,
             borderColor: '#BFDBFE',
             marginBottom: 12,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 10,
           }}
         >
-          <Text style={{ fontSize: 20 }}>📬</Text>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 12.5, color: '#1E40AF', fontWeight: '700' }}>Kiểm tra hộp thư Email</Text>
-            <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
-              Mã xác thực 6 chữ số đã được gửi tới {s.user?.email || s.auth?.email} (hiệu lực 5 phút).
-            </Text>
-          </View>
+          <Text style={{ fontSize: 12.5, color: '#1E40AF', fontWeight: '700' }}>Kiểm tra hộp thư Email</Text>
+          <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
+            Mã xác thực 6 chữ số đã được gửi tới {s.user?.email || s.auth?.email} (hiệu lực 5 phút).
+          </Text>
         </View>
         <Field
           label="Mã xác thực OTP (6 chữ số)"
@@ -992,7 +986,7 @@ export function CheckoutScreen({ params }) {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
           <Text style={ui.meta}>Mã có hiệu lực trong 5 phút</Text>
           <Tap onPress={handleSendEmailOtp} disabled={otpSending}>
-            <Text style={ui.link}>{otpSending ? 'Đang gửi...' : '🔄 Gửi lại mã OTP'}</Text>
+            <Text style={ui.link}>{otpSending ? 'Đang gửi...' : 'Gửi lại mã OTP'}</Text>
           </Tap>
         </View>
       </Sheet>

@@ -234,13 +234,10 @@ export function TechJobsScreen() {
     <View style={{ flex: 1 }}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
         <View style={tx.header}>
-          <View style={[tx.blob, { width: 240, height: 240, top: -100, right: -70 }]} />
-          <View style={[tx.blob, { width: 140, height: 140, bottom: -40, left: -40, backgroundColor: 'rgba(255,200,61,0.12)' }]} />
-          <View style={tx.goldBar} />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <View style={tx.avatar}><Text style={{ fontSize: 28 }}>👷</Text></View>
             <View style={{ flex: 1 }}>
-              <Text style={tx.hello}>Xin chào thợ</Text>
+              <Text style={tx.hello}>Kỹ thuật viên HRMSS</Text>
               <Text style={tx.techName} numberOfLines={1}>{me.name}</Text>
               <Text style={tx.techSub}>{me.code} · ★ {me.rating || TECH_ME.rating} · Uy tín {d.techReputation}</Text>
             </View>
@@ -595,7 +592,6 @@ export function TechAccountScreen() {
     <View style={{ flex: 1 }}>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 32 }} showsVerticalScrollIndicator={false}>
         <View style={[tx.header, { paddingBottom: 28 }]}>
-          <View style={[tx.blob, { width: 200, height: 200, top: -80, right: -50 }]} />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
             <View style={[tx.avatar, { width: 68, height: 68, borderRadius: 24 }]}><Text style={{ fontSize: 34 }}>👷</Text></View>
             <View style={{ flex: 1 }}>

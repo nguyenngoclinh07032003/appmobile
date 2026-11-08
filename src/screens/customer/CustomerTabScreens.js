@@ -393,14 +393,13 @@ export function PersonalScreen() {
   return (
     <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 32 }}>
       <View style={sx.profile}>
-        <View style={[sx.blob, { width: 200, height: 200, top: -80, right: -50 }]} />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
           <View style={sx.avatar}><Text style={sx.avatarText}>{name.trim().charAt(0).toUpperCase()}</Text></View>
           <View style={{ flex: 1 }}>
             <Text style={sx.pName} numberOfLines={1}>{name}</Text>
             <Text style={sx.pPhone}>{phone}</Text>
             <Tap style={[sx.tier, { backgroundColor: cur.color }]} onPress={() => nav.push('rewards', { tierId: cur.id })}>
-              <Text style={sx.tierText}>👑 {cur.label} ›</Text>
+              <Text style={sx.tierText}>{cur.label} ›</Text>
             </Tap>
           </View>
           <IconBtn icon="✏️" dark onPress={() => nav.push('profile')} label="Sửa thông tin" />

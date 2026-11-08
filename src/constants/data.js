@@ -677,10 +677,10 @@ export const matchJobForTech = (order, techProfile) => {
 
 // Điều kiện vị trí thi công chuẩn HRMSS (để thợ chuẩn bị thang, giấy đăng ký BQL, đồ bảo hộ)
 export const SITE_CONDITIONS = [
-  { id: 'nha-pho', label: '🏠 Nhà phố / Tầng trệt', note: 'Vị trí dễ tiếp cận, tiêu chuẩn' },
-  { id: 'chung-cu', label: '🏢 Chung cư / Căn hộ', note: 'Thợ cần đăng ký sảnh / BQL toà nhà' },
-  { id: 'vi-tri-cao', label: '🪜 Cục nóng lắp cao / Cần thang', note: 'Thợ mang theo thang chuyên dụng & dây an toàn' },
-  { id: 'van-phong', label: '🏪 Văn phòng / Cửa hàng', note: 'Cần thi công gọn, giữ yên tĩnh' },
+  { id: 'nha-pho', label: 'Nhà phố / Tầng trệt', note: 'Vị trí dễ tiếp cận, thi công tiêu chuẩn' },
+  { id: 'chung-cu', label: 'Chung cư / Căn hộ', note: 'Thợ đăng ký với BQL toà nhà' },
+  { id: 'vi-tri-cao', label: 'Vị trí cao / Cần thang', note: 'Thợ mang theo thang chuyên dụng và dây an toàn' },
+  { id: 'van-phong', label: 'Văn phòng / Cửa hàng', note: 'Thi công gọn gàng, hạn chế tiếng ồn' },
 ];
 
 // Checklist an toàn điện & nghiệm thu bắt buộc của Thợ HRMSS trước khi đóng đơn

@@ -243,7 +243,7 @@ export function OrderScreen({ params }) {
         ) : null}
         {(o.releaseLog || []).length && o.status === 'pending' ? (
           <Card style={{ marginTop: 12, backgroundColor: C.primarySoft, borderColor: '#D6E4FF' }}>
-            <Text style={mx.tlTitle}>🔄 Đang đổi thợ</Text>
+            <Text style={mx.tlTitle}>Đang điều phối lại thợ</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
               Thợ trước đã trả việc. Hệ thống đang điều phối thợ khác; kiểm tra thông báo để nhận voucher xin lỗi (nếu có).
             </Text>
@@ -251,7 +251,7 @@ export function OrderScreen({ params }) {
         ) : null}
         {o.kind === 'followup' ? (
           <Card style={{ marginTop: 12, backgroundColor: C.cyanSoft || '#E8F7FB', borderColor: '#B6E4F0' }}>
-            <Text style={mx.tlTitle}>🔄 Đơn tái khám</Text>
+            <Text style={mx.tlTitle}>Đơn tái khám / kiểm tra lại</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
               Theo dõi sau đơn {o.parentCode || o.followUp?.of || '—'}.
               {o.followUp?.reason ? ` Lý do: ${o.followUp.reason}` : ''}
@@ -274,13 +274,13 @@ export function OrderScreen({ params }) {
                 <View style={{ marginBottom: 10, padding: 10, borderRadius: R.sm, backgroundColor: C.greenSoft }}>
                   <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.green, lineHeight: 18 }}>
                     {isOnSite
-                      ? '📍 Thợ đã đến kiểm tra thực tế tại nhà bạn. Bạn có thể đồng ý để thợ sửa hoặc từ chối & huỷ đơn hoàn toàn MIỄN PHÍ (0đ).'
-                      : '🚀 Báo giá trước khi thợ xuất phát. Bạn đồng ý thì thợ mới đi. Huỷ lúc này hoàn toàn MIỄN PHÍ (0đ).'}
+                      ? 'Thợ đã đến kiểm tra thực tế tại nhà bạn. Bạn có thể đồng ý để thợ sửa hoặc từ chối & huỷ đơn hoàn toàn MIỄN PHÍ (0đ).'
+                      : 'Báo giá trước khi thợ xuất phát. Bạn đồng ý thì thợ mới đi. Huỷ lúc này hoàn toàn MIỄN PHÍ (0đ).'}
                   </Text>
                 </View>
               );
             })()}
-            <Text style={mx.tlTitle}>🧾 Báo giá từ thợ {o.tech?.name}</Text>
+            <Text style={mx.tlTitle}>Báo giá từ thợ {o.tech?.name}</Text>
             {o.quote.symptoms ? <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 6 }]}>Triệu chứng: {o.quote.symptoms}</Text> : null}
             <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 4 }]}>Chẩn đoán: {o.quote.diagnosis}</Text>
             {o.quote.recommendation ? <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 4 }]}>Đề xuất: {o.quote.recommendation}</Text> : null}
@@ -299,14 +299,14 @@ export function OrderScreen({ params }) {
             </View>
             <Bill l="Giá bạn đã đặt" v={formatVND(o.quote.booked)} />
             <Bill l="Phát sinh" v={`+${formatVND(o.quote.total - o.quote.booked)}`} />
-            {partDisc ? <Bill l={`💎 Đặc quyền hạng ${o.customerTierLabel || ''} (−${o.tierPartDiscountPercent}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
+            {partDisc ? <Bill l={`Đặc quyền hạng ${o.customerTierLabel || ''} (−${o.tierPartDiscountPercent}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
             {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
             <View style={mx.totalRow}>
               <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>Tổng sau báo giá</Text>
               <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(orderTotal(o))}</Text>
             </View>
             <Tap onPress={() => setShowMatPrice(true)} style={{ marginTop: 10 }}>
-              <Text style={ui.link}>📋 Đối chiếu bảng giá vật tư niêm yết HRMSS ›</Text>
+              <Text style={ui.link}>Đối chiếu bảng giá vật tư niêm yết HRMSS ›</Text>
             </Tap>
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
               <Btn title="Báo giá lại / Huỷ" variant="dangerSoft" style={{ flex: 1.1 }} onPress={() => { setRejectMode('revise'); setShowReject(true); }} />
@@ -438,7 +438,7 @@ export function OrderScreen({ params }) {
         {/* ===== Thông tin thợ gửi lên ===== */}
         {o.quote && o.status !== 'quoted' ? (
           <Card style={{ marginTop: 4 }}>
-            <Text style={mx.tlTitle}>🔍 Chẩn đoán của thợ</Text>
+            <Text style={mx.tlTitle}>Kết quả chẩn đoán kỹ thuật</Text>
             {o.quote.symptoms ? <Text style={[ui.meta, { marginTop: 6 }]}>Triệu chứng: {o.quote.symptoms}</Text> : null}
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>{o.quote.diagnosis}</Text>
             {o.quote.recommendation ? <Text style={[ui.meta, { marginTop: 6 }]}>Đề xuất: {o.quote.recommendation}</Text> : null}
@@ -456,7 +456,7 @@ export function OrderScreen({ params }) {
             {o.quote.rejectReason ? (
               <Text style={[ui.meta, { color: o.quote.revisionRequested && o.status === 'diagnosing' ? C.orange : C.red, fontWeight: '700', marginTop: 4 }]}>
                 {o.quote.revisionRequested && o.status === 'diagnosing'
-                  ? `🔄 Bạn đã yêu cầu thợ điều chỉnh báo giá: ${o.quote.rejectReason}`
+                  ? `Bạn đã yêu cầu thợ điều chỉnh báo giá: ${o.quote.rejectReason}`
                   : `Bạn đã từ chối báo giá: ${o.quote.rejectReason}`}
               </Text>
             ) : null}
@@ -464,7 +464,7 @@ export function OrderScreen({ params }) {
         ) : null}
         {(o.progress || []).length ? (
           <Card style={{ marginTop: 12 }}>
-            <Text style={mx.tlTitle}>📈 Tiến độ</Text>
+            <Text style={mx.tlTitle}>Tiến độ thi công</Text>
             {o.progress.map((p) => (
               <View key={p.id} style={{ marginTop: 10 }}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -479,7 +479,7 @@ export function OrderScreen({ params }) {
         ) : null}
         {(o.materials || []).length && ['diagnosing', 'quoted', 'repairing', 'done'].includes(o.status) ? (
           <Card style={{ marginTop: 12 }}>
-            <Text style={mx.tlTitle}>🔩 Vật tư / linh kiện</Text>
+            <Text style={mx.tlTitle}>Vật tư & linh kiện thay thế</Text>
             {o.materials.map((m) => (
               <View key={m.id} style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8, gap: 8 }}>
                 <Text style={{ flex: 1, color: C.ink2 }} numberOfLines={2}>{m.name} · {m.qty} {m.unit}</Text>
@@ -490,7 +490,7 @@ export function OrderScreen({ params }) {
         ) : null}
         {(o.repairNotes || []).length ? (
           <Card style={{ marginTop: 12 }}>
-            <Text style={mx.tlTitle}>📝 Nhật ký sửa chữa</Text>
+            <Text style={mx.tlTitle}>Nhật ký thi công</Text>
             {o.repairNotes.map((n) => (
               <View key={n.id} style={{ marginTop: 8 }}>
                 <Text style={{ color: C.ink2, lineHeight: 20 }}>{n.text}</Text>
@@ -501,7 +501,7 @@ export function OrderScreen({ params }) {
         ) : null}
         {evidence.length ? (
           <Card style={{ marginTop: 12 }}>
-            <Text style={mx.tlTitle}>📷 Ảnh minh chứng</Text>
+            <Text style={mx.tlTitle}>Hình ảnh nghiệm thu & minh chứng</Text>
             {[
               { id: 'diagnosis', label: 'Chẩn đoán' },
               { id: 'before', label: 'Trước khi làm' },
@@ -522,7 +522,7 @@ export function OrderScreen({ params }) {
         ) : null}
         {o.report ? (
           <Card style={{ marginTop: 12, backgroundColor: '#F3FBF7', borderColor: '#CDEFDD' }}>
-            <Text style={mx.tlTitle}>✅ Biên bản hoàn thành</Text>
+            <Text style={mx.tlTitle}>Biên bản nghiệm thu kỹ thuật</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>{o.report.summary}</Text>
             {(o.report.safetyChecklist || []).length ? (
               <View style={{ marginTop: 8, gap: 3 }}>
@@ -533,7 +533,7 @@ export function OrderScreen({ params }) {
             ) : null}
             {o.report.customerSignature ? (
               <View style={{ marginTop: 8, padding: 8, borderRadius: R.sm, backgroundColor: '#fff', borderWidth: 1, borderColor: '#D1FAE5' }}>
-                <Text style={{ fontSize: 12, color: C.green, fontWeight: '800' }}>✍️ Chữ ký điện tử của khách hàng:</Text>
+                <Text style={{ fontSize: 12, color: C.green, fontWeight: '800' }}>Chữ ký xác nhận của khách hàng:</Text>
                 <Text style={{ fontStyle: 'italic', fontSize: 16, fontWeight: '800', color: C.navy, marginTop: 2 }}>{o.report.customerSignature}</Text>
               </View>
             ) : null}
@@ -556,7 +556,7 @@ export function OrderScreen({ params }) {
 
         {o.kind !== 'warranty' && o.kind !== 'followup' ? (
           <Card style={{ marginTop: 12 }}>
-            <Text style={[mx.tlTitle, { marginBottom: 6 }]}>💳 Chi phí & thanh toán</Text>
+            <Text style={[mx.tlTitle, { marginBottom: 6 }]}>Chi tiết chi phí & thanh toán</Text>
             {o.status === 'cancelled' ? (
               <>
                 {(o.inspectionFee || 0) > 0 ? (
@@ -572,9 +572,9 @@ export function OrderScreen({ params }) {
               <>
                 <Bill l="Tổng tiền dịch vụ" v={formatVND(o.goods)} />
                 {o.productDiscount ? <Bill l="Giảm giá dịch vụ" v={`-${formatVND(o.productDiscount)}`} green /> : null}
-                {o.comboDiscount ? <Bill l={`🔥 Ưu đãi ${o.comboLabel || 'Combo nhiều máy'}`} v={`-${formatVND(o.comboDiscount)}`} green /> : null}
+                {o.comboDiscount ? <Bill l={`Ưu đãi ${o.comboLabel || 'Combo nhiều máy'}`} v={`-${formatVND(o.comboDiscount)}`} green /> : null}
                 {o.quote?.approved && o.quote.total !== o.quote.booked ? <Bill l="Phát sinh theo báo giá" v={`${o.quote.total > o.quote.booked ? '+' : ''}${formatVND(o.quote.total - o.quote.booked)}`} /> : null}
-                {partDisc ? <Bill l={`💎 Đặc quyền hạng ${o.customerTierLabel || ''} (−${o.tierPartDiscountPercent}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
+                {partDisc ? <Bill l={`Đặc quyền hạng ${o.customerTierLabel || ''} (−${o.tierPartDiscountPercent}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
                 {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
                 {lateDiscountAmount(o) ? (
                   <Bill l={`Bồi thường đến muộn (−${o.lateCompensation.percent}% NC)`} v={`−${formatVND(lateDiscountAmount(o))}`} green />
@@ -999,17 +999,16 @@ export function RewardsScreen({ params }) {
       <TopBar title="Quyền lợi của tôi" />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
         <View style={mx.pointsHero}>
-          <View style={[mx.blob, { width: 180, height: 180, right: -40, top: -60 }]} />
           <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '600' }}>Điểm hiện có</Text>
           <Text style={{ color: '#FFFFFF', fontSize: 40, fontWeight: '900', marginTop: 2 }}>{s.points}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
             <Tap onPress={() => setSelectedTierId(cur.id)}>
-              <Badge text={`👑 ${cur.label} · Xem quyền lợi ›`} fg="#fff" bg={cur.color} />
+              <Badge text={`${cur.label} · Xem quyền lợi ›`} fg="#fff" bg={cur.color} />
             </Tap>
             <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12 }}>Tích luỹ: {s.lifetimePoints} điểm</Text>
           </View>
           <Progress value={progress} color="#FFFFFF" style={{ marginTop: 14, backgroundColor: 'rgba(255,255,255,0.25)' }} />
-          <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 6 }}>{next ? `Còn ${next.min - s.lifetimePoints} điểm để lên hạng ${next.label}` : 'Bạn đã đạt hạng cao nhất 🎉'}</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 6 }}>{next ? `Còn ${next.min - s.lifetimePoints} điểm để lên hạng ${next.label}` : 'Bạn đã đạt hạng cao nhất'}</Text>
         </View>
 
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, marginBottom: 2 }}>
