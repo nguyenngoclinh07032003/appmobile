@@ -646,10 +646,6 @@ export function DialogHost() {
             <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={u.closeDialog} />
           </Animated.View>
           <Animated.View style={[ui.dialog, { opacity: fade, transform: [{ scale }], borderTopWidth: 4, borderTopColor: sem.accent }]}>
-            <View style={[ui.dialogPill, { backgroundColor: sem.bg, borderColor: sem.border }]}>
-              <View style={[ui.dialogDot, { backgroundColor: sem.accent }]} />
-              <Text style={[ui.dialogPillText, { color: sem.fg }]}>{sem.label}</Text>
-            </View>
             {displayIcon ? (
               <IconBox
                 icon={displayIcon}

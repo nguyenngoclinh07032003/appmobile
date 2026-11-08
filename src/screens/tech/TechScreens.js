@@ -575,10 +575,7 @@ export function TechNotifsScreen() {
             >
               <IconBox icon={n.icon || sem.icon} size={44} bg={sem.bg} color={sem.accent} radius={14} />
               <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <Text style={[tx.notifTitle, { flex: 1 }, !n.read && { color: C.ink }]}>{n.title}</Text>
-                  <Badge text={sem.label} fg={sem.fg} bg={sem.bg} />
-                </View>
+                <Text style={[tx.notifTitle, !n.read && { color: C.ink }]}>{n.title}</Text>
                 {n.body ? <Text style={tx.notifBody}>{n.body}</Text> : null}
                 <Text style={[ui.meta, { marginTop: 4 }]}>{timeAgo(n.at)}</Text>
               </View>

@@ -138,10 +138,7 @@ export function NotificationsScreen() {
             >
               <IconBox icon={n.icon || sem.icon} size={44} bg={sem.bg} color={sem.accent} radius={14} />
               <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <Text style={[mx.notifTitle, { flex: 1 }, !n.read && { color: C.ink }]}>{n.title}</Text>
-                  <Badge text={sem.label} fg={sem.fg} bg={sem.bg} />
-                </View>
+                <Text style={[mx.notifTitle, !n.read && { color: C.ink }]}>{n.title}</Text>
                 <Text style={mx.notifBody}>{n.body}</Text>
                 <Text style={[ui.meta, { marginTop: 4 }]}>{timeAgo(n.at)}</Text>
               </View>
