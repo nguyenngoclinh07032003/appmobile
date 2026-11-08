@@ -257,6 +257,7 @@ const makeInitial = () => ({
   declineLog: [],
   techOnline: true,
   techProfile: null,
+  payoutHistory: [],
   tips: { customerHome: true, techJobs: true }, // gợi ý lần đầu
 });
 
@@ -1273,19 +1274,62 @@ export function AppProvider({ children }) {
       } else ui.toast('Đã check-in GPS tại nhà khách', '📍');
     },
     // Khách xác nhận đã thanh toán (sau khi hoàn thành)
-    confirmPayment: (code) => {
+    confirmPayment: (code, mode = 'manual') => {
       let ok = false;
+      let targetTotal = 0;
       updateOrder(code, (o) => {
         if (o.status !== 'done') return {};
         ok = true;
-        const report = { ...(o.report || {}), paid: true, paidAt: Date.now(), paidBy: 'customer' };
+        targetTotal = orderTotal(o);
+        const report = { ...(o.report || {}), paid: true, paidAt: Date.now(), paidBy: mode === 'webhook' ? 'vietqr_webhook' : 'customer' };
         return {
           order: { ...o, report },
-          tech: { icon: '💳', title: `Khách xác nhận đã thanh toán · ${code}`, body: o.payment || 'Đã thanh toán' },
+          tech: {
+            icon: '💳',
+            title: mode === 'webhook' ? `TingTing! MBBank đã nhận ${formatVND(targetTotal)} · ${code}` : `Khách xác nhận đã thanh toán · ${code}`,
+            body: mode === 'webhook' ? `VietQR tự động gạch nợ. Tiền công và hoàn ứng vật tư đã vào Ví thợ!` : (o.payment || 'Đã thanh toán'),
+          },
         };
       });
-      if (ok) ui.toast('Đã ghi nhận thanh toán', '💳');
-      else ui.alert('Không cập nhật được', 'Chỉ xác nhận thanh toán khi đơn đã hoàn thành.', 'ℹ️');
+      if (ok) {
+        if (mode === 'webhook') {
+          ui.toast(`🔔 Webhook MBBank: Nhận ${formatVND(targetTotal)} · Gạch nợ thành công!`, '⚡');
+        } else {
+          ui.toast('Đã ghi nhận thanh toán', '💳');
+        }
+      } else {
+        ui.alert('Không cập nhật được', 'Chỉ xác nhận thanh toán khi đơn đã hoàn thành.', 'ℹ️');
+      }
+    },
+    requestPayout: ({ amount, bankName, accountNumber, accountHolder }) => {
+      const amt = parseInt(String(amount).replace(/[^0-9]/g, ''), 10);
+      if (!amt || amt < 50000) {
+        ui.alert('Số tiền không hợp lệ', 'Số tiền rút tối thiểu là 50.000đ.', '⚠️');
+        return false;
+      }
+      if (!accountNumber || !bankName) {
+        ui.alert('Thiếu thông tin', 'Vui lòng nhập đầy đủ ngân hàng và số tài khoản nhận tiền.', '⚠️');
+        return false;
+      }
+      const entry = {
+        id: uid(),
+        amount: amt,
+        bankName,
+        accountNumber,
+        accountHolder: accountHolder || 'KỸ THUẬT VIÊN',
+        at: Date.now(),
+        status: 'success',
+      };
+      up((p) => ({
+        payoutHistory: [entry, ...(p.payoutHistory || [])],
+        techNotifs: pushTech(p, {
+          icon: '💸',
+          title: `Lệnh rút tiền thành công · -${formatVND(amt)}`,
+          body: `Đã chuyển ${formatVND(amt)} về ${bankName} (${accountNumber}). Tiền về tài khoản trong 30 giây.`,
+        }),
+      }));
+      ui.toast(`Đã rút ${formatVND(amt)} về ${bankName}`, '💸');
+      return true;
     },
     dismissTip: (key) => up((p) => ({ tips: { ...(p.tips || {}), [key]: false } })),
     reopenQuote: (code) => {
@@ -1674,7 +1718,7 @@ export function AppProvider({ children }) {
       return res;
     },
     // Biên bản hoàn thành → đơn hoàn tất, cộng điểm cho khách, cập nhật lịch bảo dưỡng đúng thiết bị (Ghi vào hrmss.repair_visit, technician_assignment, service_request)
-    completeJob: (code, { summary, paid, safetyChecklist }) => {
+    completeJob: (code, { summary, paid, safetyChecklist, customerSignature }) => {
       const now = Date.now();
       const o0 = s.orders.find((x) => x.code === code);
       if (!o0 || o0.status !== 'repairing') {
@@ -1703,6 +1747,7 @@ export function AppProvider({ children }) {
               tech: o.tech?.name,
               techCode: o.tech?.code,
               safetyChecklist: safetyChecklist || [],
+              customerSignature: customerSignature || null,
               warrantyCertificateCode: `BH-${code}`,
               ...(paid ? { paidAt: now, paidBy: 'tech' } : {}),
             },

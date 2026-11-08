@@ -537,6 +537,11 @@ export function TechAccountScreen() {
   const [phone, setPhone] = useState(me.phone || '');
   const [area, setArea] = useState(me.area || TECH_ME.area);
   const [skills, setSkills] = useState(me.skills || TECH_ME.skills);
+  const [showPayout, setShowPayout] = useState(false);
+  const [payoutBank, setPayoutBank] = useState('MBBank');
+  const [payoutAccNum, setPayoutAccNum] = useState(me.phone || '0988123456');
+  const [payoutAccHolder, setPayoutAccHolder] = useState(me.name?.toUpperCase() || 'NGUYEN VAN THO');
+  const [payoutAmount, setPayoutAmount] = useState('');
   const done = d.myJobs.filter((o) => o.status === 'done');
   const rated = done.filter((o) => o.rating);
   const avg = rated.length
@@ -550,6 +555,8 @@ export function TechAccountScreen() {
   const monthIncome = monthDone.reduce((sum, o) => sum + income(o), 0);
   const totalIncome = done.reduce((sum, o) => sum + income(o), 0);
   const completedCount = done.length;
+  const payoutTotal = (s.payoutHistory || []).reduce((sum, p) => sum + p.amount, 0);
+  const availableBalance = Math.max(0, totalIncome - payoutTotal);
 
   const openProfile = () => {
     setName(me.name || '');
@@ -745,12 +752,24 @@ export function TechAccountScreen() {
         <Text style={[ui.meta, { marginTop: 12 }]}>Mã thợ: {me.code}</Text>
       </Sheet>
 
-      <Sheet visible={showIncome} onClose={() => setShowIncome(false)} title="Chi tiết thu nhập & chiết khấu HRMSS">
+      <Sheet visible={showIncome} onClose={() => setShowIncome(false)} title="Ví thu nhập & Chiết khấu HRMSS">
         <View style={tx.incomeHead}>
-          <Text style={ui.meta}>Thực nhận tháng này (Công 70% + Hoa hồng VT 15% + Hoàn trả 100% linh kiện ngoài)</Text>
-          <Text style={[ui.price, { fontSize: 22 }]}>{formatVND(monthIncome)}</Text>
+          <Text style={ui.meta}>Số dư ví khả dụng (Có thể rút ngay)</Text>
+          <Text style={[ui.price, { fontSize: 24, color: C.green }]}>{formatVND(availableBalance)}</Text>
+          <Text style={[ui.meta, { marginTop: 4 }]}>Thực nhận tháng này: {formatVND(monthIncome)} · Đã rút về ATM: {formatVND(payoutTotal)}</Text>
         </View>
-        <View style={{ padding: 10, borderRadius: R.md, backgroundColor: C.primarySoft, marginTop: 10 }}>
+
+        <Btn
+          title="💳 Rút tiền về tài khoản ngân hàng"
+          variant="primary"
+          style={{ marginTop: 10 }}
+          onPress={() => {
+            setPayoutAmount(String(availableBalance > 0 ? availableBalance : 500000));
+            setShowPayout(true);
+          }}
+        />
+
+        <View style={{ padding: 10, borderRadius: R.md, backgroundColor: C.primarySoft, marginTop: 12 }}>
           <Text style={{ fontSize: 12, color: C.primary, fontWeight: '700', lineHeight: 18 }}>
             💡 Chính sách HRMSS: Thợ hưởng 70% phí nhân công + 15% phụ cấp vật tư kho + 100% hoàn tiền linh kiện phát sinh mua ngoài (rút về ATM tức thì).
           </Text>
@@ -775,6 +794,87 @@ export function TechAccountScreen() {
           );
         })}
         <Text style={[ui.meta, { marginTop: 14 }]}>Tổng thực nhận mọi thời điểm: {formatVND(totalIncome)}</Text>
+      </Sheet>
+
+      <Sheet
+        visible={showPayout}
+        onClose={() => setShowPayout(false)}
+        title="Rút tiền về tài khoản ngân hàng"
+        footer={(
+          <Btn
+            title="Xác nhận rút tiền ngay"
+            onPress={() => {
+              const res = a.requestPayout({
+                amount: payoutAmount,
+                bankName: payoutBank,
+                accountNumber: payoutAccNum,
+                accountHolder: payoutAccHolder,
+              });
+              if (res) {
+                setShowPayout(false);
+                setShowIncome(false);
+              }
+            }}
+          />
+        )}
+      >
+        <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', marginBottom: 12 }}>
+          <Text style={{ fontSize: 13, color: '#166534', fontWeight: '700' }}>
+            Số dư khả dụng: <Text style={{ fontSize: 16, fontWeight: '900', color: C.green }}>{formatVND(availableBalance)}</Text>
+          </Text>
+          <Text style={[ui.meta, { color: '#166534', marginTop: 2 }]}>
+            Hạn mức rút: tối thiểu 50.000đ · Không thu phí giao dịch
+          </Text>
+        </View>
+
+        <Text style={[ui.fieldLabel, { marginBottom: 6 }]}>Ngân hàng thụ hưởng</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {['MBBank', 'Vietcombank', 'Techcombank', 'VPBank', 'ACB', 'BIDV', 'MoMo'].map((b) => (
+            <Chip key={b} label={b} on={payoutBank === b} onPress={() => setPayoutBank(b)} />
+          ))}
+        </View>
+
+        <Field label="Số tài khoản ngân hàng" value={payoutAccNum} onChangeText={setPayoutAccNum} placeholder="Nhập số tài khoản" keyboardType="numeric" />
+        <Field label="Tên chủ tài khoản (không dấu)" value={payoutAccHolder} onChangeText={setPayoutAccHolder} placeholder="VD: NGUYEN VAN A" />
+        <Field
+          label="Số tiền muốn rút (VNĐ)"
+          value={payoutAmount}
+          onChangeText={(t) => setPayoutAmount(t.replace(/[^0-9]/g, ''))}
+          placeholder="Ví dụ: 500000"
+          keyboardType="numeric"
+        />
+        <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
+          {[200000, 500000, 1000000].map((v) => (
+            <Tap
+              key={v}
+              style={{ flex: 1, paddingVertical: 6, borderRadius: R.sm, borderWidth: 1, borderColor: C.line, alignItems: 'center', backgroundColor: '#F8FAFC' }}
+              onPress={() => setPayoutAmount(String(v))}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '700', color: C.ink2 }}>{formatVND(v)}</Text>
+            </Tap>
+          ))}
+          <Tap
+            style={{ flex: 1, paddingVertical: 6, borderRadius: R.sm, borderWidth: 1, borderColor: C.primary, alignItems: 'center', backgroundColor: C.primarySoft }}
+            onPress={() => setPayoutAmount(String(availableBalance > 0 ? availableBalance : 500000))}
+          >
+            <Text style={{ fontSize: 12, fontWeight: '700', color: C.primary }}>Tất cả</Text>
+          </Tap>
+        </View>
+
+        {(s.payoutHistory || []).length > 0 ? (
+          <View style={{ marginTop: 16 }}>
+            <Text style={[ui.fieldLabel, { marginBottom: 8 }]}>Lịch sử rút tiền gần đây</Text>
+            {s.payoutHistory.slice(0, 3).map((p) => (
+              <View key={p.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderColor: '#F1F5F9' }}>
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.ink }}>{p.bankName} · {p.accountNumber}</Text>
+                  <Text style={ui.meta}>{fmtDateTime(p.at)}</Text>
+                </View>
+                <Text style={{ fontWeight: '800', color: C.green }}>-{formatVND(p.amount)}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
       </Sheet>
       <Sheet
         visible={showPw}
@@ -812,6 +912,7 @@ export function TechJobScreen({ params }) {
   const [customFeeName, setCustomFeeName] = useState('');
   const [customFeePrice, setCustomFeePrice] = useState('');
   const [customFeeType, setCustomFeeType] = useState('labor'); // 'labor' | 'part'
+  const [signature, setSignature] = useState(() => o?.report?.customerSignature || '');
   const [lines, setLines] = useState(() => {
     if (o?.quote?.lines?.length) {
       return o.quote.lines.map((l, idx) => ({ ...l, key: l.matId || l.key || `q_${idx}` }));
@@ -1695,6 +1796,7 @@ export function TechJobScreen({ params }) {
                 summary: summary.trim(),
                 paid: orderTotal(o) > 0 ? paid : true,
                 safetyChecklist: safetyChecks,
+                customerSignature: signature || null,
               });
             }}
           />
@@ -1714,6 +1816,33 @@ export function TechJobScreen({ params }) {
               />
             );
           })}
+        </View>
+
+        <Text style={[ui.fieldLabel, { marginTop: 6, marginBottom: 6 }]}>✍️ Chữ ký điện tử của khách hàng</Text>
+        <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1', marginBottom: 10 }}>
+          <Text style={[ui.meta, { marginBottom: 8 }]}>Khách hàng xác nhận nghiệm thu đạt yêu cầu kỹ thuật & bàn giao thiết bị:</Text>
+          <View style={{ height: 75, borderRadius: R.sm, backgroundColor: '#fff', borderWidth: 1.5, borderStyle: 'dashed', borderColor: signature ? C.green : '#94A3B8', alignItems: 'center', justifyContent: 'center' }}>
+            {signature ? (
+              <View style={{ alignItems: 'center' }}>
+                <Text style={{ fontSize: 22, fontStyle: 'italic', fontWeight: '900', color: C.navy, letterSpacing: 2 }}>{signature}</Text>
+                <Text style={{ fontSize: 10, color: C.green, fontWeight: '700', marginTop: 2 }}>✓ Đã ký xác thực điện tử lúc {new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</Text>
+              </View>
+            ) : (
+              <Text style={{ color: C.muted, fontStyle: 'italic', fontSize: 13 }}>Chưa có chữ ký của khách</Text>
+            )}
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+            <Btn
+              title={signature ? "Ký lại" : "✍️ Khách ký xác nhận"}
+              variant="outline"
+              small
+              style={{ flex: 1 }}
+              onPress={() => setSignature(o.address?.name || 'Khách hàng ký')}
+            />
+            {signature ? (
+              <Btn title="Xóa" variant="ghost" small onPress={() => setSignature('')} />
+            ) : null}
+          </View>
         </View>
         {orderTotal(o) > 0 ? <Checkbox on={paid} onPress={() => setPaid(!paid)} label={`Đã thu ${formatVND(orderTotal(o))} (${o.payment})`} /> : null}
         {!evidence.some((e) => e.stage === 'after') ? (

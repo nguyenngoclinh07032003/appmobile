@@ -515,6 +515,12 @@ export function OrderScreen({ params }) {
                 ))}
               </View>
             ) : null}
+            {o.report.customerSignature ? (
+              <View style={{ marginTop: 8, padding: 8, borderRadius: R.sm, backgroundColor: '#fff', borderWidth: 1, borderColor: '#D1FAE5' }}>
+                <Text style={{ fontSize: 12, color: C.green, fontWeight: '800' }}>✍️ Chữ ký điện tử của khách hàng:</Text>
+                <Text style={{ fontStyle: 'italic', fontSize: 16, fontWeight: '800', color: C.navy, marginTop: 2 }}>{o.report.customerSignature}</Text>
+              </View>
+            ) : null}
             {(o.materials || []).length ? <Text style={[ui.meta, { marginTop: 6 }]}>Vật tư: {o.materials.map((m) => `${m.name} (${m.qty} ${m.unit})`).join(', ')}</Text> : null}
             <Text style={[ui.meta, { marginTop: 6 }]}>{fmtDateTime(o.report.at)} · Thợ {o.report.tech}</Text>
             <Btn
@@ -610,6 +616,13 @@ export function OrderScreen({ params }) {
                     <Text style={{ fontWeight: '800', color: C.orange, fontSize: 12 }}>{o.code}</Text>
                   </View>
                 </View>
+                <Btn
+                  title="⚡ Giả lập Quét QR thành công (Bank Webhook)"
+                  variant="primary"
+                  small
+                  style={{ marginTop: 10, width: '100%' }}
+                  onPress={() => a.confirmPayment(o.code, 'webhook')}
+                />
               </View>
             ) : null}
             {o.status === 'done' && !o.report?.paid ? (
@@ -770,6 +783,14 @@ export function OrderScreen({ params }) {
             <Text key={idx} style={{ fontSize: 12.5, color: C.green, fontWeight: '700' }}>✓ {chk}</Text>
           ))}
         </View>
+
+        {o.report?.customerSignature ? (
+          <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', marginTop: 10 }}>
+            <Text style={{ fontWeight: '800', color: '#166534', fontSize: 13 }}>3. Chữ ký số xác nhận của Khách hàng</Text>
+            <Text style={{ fontStyle: 'italic', fontSize: 18, fontWeight: '900', color: C.navy, marginTop: 4 }}>{o.report.customerSignature}</Text>
+            <Text style={{ fontSize: 11, color: '#166534', marginTop: 2 }}>✓ Đã xác thực bàn giao thiết bị an toàn và hoạt động bình thường</Text>
+          </View>
+        ) : null}
       </Sheet>
       <Sheet
         visible={showCancel}

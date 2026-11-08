@@ -130,3 +130,4 @@ sequenceDiagram
 
 ### Câu 3: Thợ có sợ bị công ty giữ tiền linh kiện lâu không?
 > **Trả lời:** Không, vì hệ thống áp dụng cơ chế **Hoàn ứng tự động qua Ví (Instant Reimbursement)**. Ngay khi khách nghiệm thu đơn, tiền mua linh kiện được hoàn trả 100% ngay lập tức vào Ví trên App của thợ, thợ có thể rút về tài khoản ngân hàng của mình mà không cần chờ thủ tục giấy tờ cuối tháng.
+

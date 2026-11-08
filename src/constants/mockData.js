@@ -242,6 +242,7 @@ export const MOCK_ORDERS = [
       paidBy: 'customer',
       warrantyCertificateCode: 'BH-HRM261108-04',
       warrantyDays: 60,
+      customerSignature: 'Nguyễn Văn Minh',
       safetyChecklist: [
         'Đã ngắt aptomat nguồn trước khi thao tác',
         'Đã bọc chống nước bo mạch dàn lạnh',
