@@ -83,3 +83,4 @@ flowchart LR
 ### Câu 4: Làm sao ngăn chặn tình trạng thợ ngồi ở nhà bấm 'Đã đến nơi' để tính phí hoặc gian lận?
 > **Trả lời:**  
 > *"Hệ thống tích hợp tính năng **GPS Geofencing**. Khi thợ bấm nút 'Check-in GPS', app sẽ lấy tọa độ thực tế của thợ và so sánh với tọa độ địa chỉ nhà khách hàng. Khoảng cách bắt buộc phải **nhỏ hơn 100 mét** thì hệ thống mới cho phép check-in và bắt đầu giai đoạn chẩn đoán. Ngoài ra, app còn có tính năng quét mã QR của chủ nhà để nhận diện đúng khách và cộng điểm uy tín cho thợ."*
+
