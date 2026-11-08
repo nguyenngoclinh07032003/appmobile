@@ -68,13 +68,99 @@ export function Btn({ title, onPress, variant = 'primary', small, style, disable
 const BTN = {
   primary: { box: { backgroundColor: C.primary, ...grad.primaryBtn, ...shadow.primary }, text: { color: '#fff' } },
   dark: { box: { backgroundColor: C.navy, ...grad.navyCard, ...shadow.md }, text: { color: '#fff' } },
-  gold: { box: { backgroundColor: C.primary, ...grad.primaryBtn, ...shadow.primary }, text: { color: '#fff' } },
+  gold: { box: { backgroundColor: C.orange, ...grad.warningBtn, ...shadow.gold }, text: { color: '#fff' } },
+  warning: { box: { backgroundColor: C.orange, ...grad.warningBtn, ...shadow.gold }, text: { color: '#fff' } },
+  warningSoft: { box: { backgroundColor: C.goldSoft, borderWidth: 1, borderColor: '#FDE68A' }, text: { color: C.goldInk } },
+  success: { box: { backgroundColor: C.green, ...grad.successBtn, ...shadow.success }, text: { color: '#fff' } },
+  successSoft: { box: { backgroundColor: C.greenSoft, borderWidth: 1, borderColor: '#A7F3D0' }, text: { color: C.green } },
   soft: { box: { backgroundColor: C.primarySoft, borderWidth: 1, borderColor: '#D6E4FF' }, text: { color: C.primary } },
   ghost: { box: { backgroundColor: '#F1F5F9' }, text: { color: C.ink2 } },
   outline: { box: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: C.line }, text: { color: C.ink } },
-  danger: { box: { backgroundColor: C.red, ...grad.dangerBtn }, text: { color: '#fff' } },
-  dangerSoft: { box: { backgroundColor: C.redSoft, borderWidth: 1, borderColor: '#FAD4D0' }, text: { color: C.red } },
+  danger: { box: { backgroundColor: C.red, ...grad.dangerBtn, ...shadow.danger }, text: { color: '#fff' } },
+  dangerSoft: { box: { backgroundColor: C.redSoft, borderWidth: 1, borderColor: '#FECACA' }, text: { color: C.red } },
 };
+
+// Hệ thống phân loại 3 màu ngữ nghĩa:
+// - Đỏ (danger): Thông báo nguy hiểm / lỗi / huỷ / xoá / từ chối
+// - Vàng (warning): Alert thường / cảnh báo / nhắc nhở / chờ duyệt
+// - Xanh lá (success): Hoàn thành / thành công / đã duyệt
+export function resolveSemanticTone({ tone, title = '', message = '', text = '', icon = '', danger = false, fallback = 'warning' } = {}) {
+  const combined = `${title} ${message} ${text}`.toLowerCase();
+  const ic = String(icon || '').trim().toLowerCase();
+
+  const isDanger =
+    tone === 'danger' ||
+    tone === 'error' ||
+    danger === true ||
+    ['🚫', '❌', '✖️', '✖', '🗑️', '🗑', 'ban', 'x-circle', 'trash-2', 'shield-alert'].includes(ic) ||
+    /lỗi|không hợp lệ|không khớp|không thể|sai phân quyền|từ chối|đã huỷ|huỷ đơn|xoá tài khoản|vĩnh viễn|nguy hiểm|quá hạn|vi phạm|bị khoá|thất bại/i.test(combined);
+
+  if (isDanger) {
+    return {
+      key: 'danger',
+      label: 'Nguy hiểm / Lỗi',
+      fg: C.red,
+      accent: C.red,
+      bg: C.redSoft,
+      unreadBg: '#FFF5F5',
+      border: '#FECACA',
+      icon: icon || 'alert-triangle',
+      btnVariant: 'danger',
+    };
+  }
+
+  const isSuccess =
+    tone === 'success' ||
+    ['✅', '✓', '🎉', '👍', '🟢', '💸', 'check', 'check-circle-2', 'party-popper', 'thumbs-up', 'shield-check'].includes(ic) ||
+    /thành công|hoàn thành|hoàn tất|đã duyệt|đã lưu|đã nhận việc|đã nhận đơn|đã xác nhận|đã gửi|đã xác thực|đã cập nhật|đã thêm|đã áp dụng|đã thanh toán|mới nhất|đã đồng bộ|đã sao chép|cảm ơn/i.test(combined);
+
+  if (isSuccess && tone !== 'warning') {
+    return {
+      key: 'success',
+      label: 'Hoàn thành',
+      fg: C.green,
+      accent: C.green,
+      bg: C.greenSoft,
+      unreadBg: '#F2FDF9',
+      border: '#A7F3D0',
+      icon: icon || 'check-circle-2',
+      btnVariant: 'success',
+    };
+  }
+
+  const isWarning =
+    tone === 'warning' ||
+    tone === 'alert' ||
+    fallback === 'warning' ||
+    ['⚠️', '⚠', '⏰', '⏳', '🔔', '📝', '✏️', '🔄', '🧾', 'alert-triangle', 'clock', 'timer', 'bell'].includes(ic) ||
+    /cảnh báo|thiếu|chưa|chờ|lưu ý|nhắc|phát sinh|muộn|trễ|tối thiểu|giới hạn|báo giá|kiểm tra|tạm ngưng|đổi lịch/i.test(combined);
+
+  if (isWarning) {
+    return {
+      key: 'warning',
+      label: 'Cảnh báo',
+      fg: C.goldInk,
+      accent: C.orange,
+      bg: C.goldSoft,
+      unreadBg: '#FFFBEB',
+      border: '#FDE68A',
+      icon: icon || 'alert-triangle',
+      btnVariant: 'warning',
+    };
+  }
+
+  return {
+    key: 'info',
+    label: 'Thông báo',
+    fg: C.primary,
+    accent: C.primary,
+    bg: C.primarySoft,
+    unreadBg: '#F5F9FF',
+    border: '#D6E4FF',
+    icon: icon || 'bell',
+    btnVariant: 'primary',
+  };
+}
 
 export function IconBtn({ icon, onPress, badge, dark, style, size = 40, label, iconColor }) {
   return (
@@ -541,7 +627,17 @@ export function DialogHost() {
     }
   }, [cfg, scale, fade]);
   if (!cfg) return null;
-  const actions = cfg.actions || [{ label: 'Đóng', variant: 'primary' }];
+  const hasDangerAction = (cfg.actions || []).some((ac) => ac.variant === 'danger' || ac.variant === 'dangerSoft');
+  const sem = resolveSemanticTone({
+    tone: cfg.tone,
+    title: cfg.title,
+    message: cfg.message,
+    icon: cfg.icon,
+    danger: cfg.danger || hasDangerAction,
+    fallback: cfg.fallbackTone || 'warning',
+  });
+  const actions = cfg.actions || [{ label: 'Đã hiểu', variant: sem.btnVariant }];
+  const displayIcon = cfg.icon || sem.icon;
   return (
     <Modal visible transparent animationType="none" onRequestClose={u.closeDialog}>
       <View style={frameBox(rect)}>
@@ -549,21 +645,39 @@ export function DialogHost() {
           <Animated.View style={[ui.backdrop, { opacity: fade }]}>
             <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={u.closeDialog} />
           </Animated.View>
-          <Animated.View style={[ui.dialog, { opacity: fade, transform: [{ scale }] }]}>
-            {cfg.icon ? <IconBox icon={cfg.icon} size={58} bg={C.primarySoft} radius={20} style={{ alignSelf: 'center', marginBottom: 14 }} /> : null}
+          <Animated.View style={[ui.dialog, { opacity: fade, transform: [{ scale }], borderTopWidth: 4, borderTopColor: sem.accent }]}>
+            <View style={[ui.dialogPill, { backgroundColor: sem.bg, borderColor: sem.border }]}>
+              <View style={[ui.dialogDot, { backgroundColor: sem.accent }]} />
+              <Text style={[ui.dialogPillText, { color: sem.fg }]}>{sem.label}</Text>
+            </View>
+            {displayIcon ? (
+              <IconBox
+                icon={displayIcon}
+                size={58}
+                bg={sem.bg}
+                color={sem.accent}
+                radius={20}
+                style={{ alignSelf: 'center', marginBottom: 14, borderWidth: 1, borderColor: sem.border }}
+              />
+            ) : null}
             <Text style={ui.dialogTitle}>{cfg.title}</Text>
             {cfg.message ? <Text style={ui.dialogBody}>{cfg.message}</Text> : null}
             {cfg.content || null}
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 22 }}>
-              {actions.map((ac) => (
-                <Btn
-                  key={ac.label}
-                  title={ac.label}
-                  variant={ac.variant || 'primary'}
-                  style={{ flex: 1, minHeight: 46 }}
-                  onPress={() => { u.closeDialog(); ac.onPress?.(); }}
-                />
-              ))}
+              {actions.map((ac) => {
+                const resolvedVariant = ac.variant === 'auto' || (!ac.variant && actions.length === 1)
+                  ? sem.btnVariant
+                  : (ac.variant || 'primary');
+                return (
+                  <Btn
+                    key={ac.label}
+                    title={ac.label}
+                    variant={resolvedVariant}
+                    style={{ flex: 1, minHeight: 46 }}
+                    onPress={() => { u.closeDialog(); ac.onPress?.(); }}
+                  />
+                );
+              })}
             </View>
           </Animated.View>
         </View>
@@ -586,11 +700,27 @@ export function ToastHost() {
     }).start();
   }, [u.toastMsg?.id]);
   if (!u.toastMsg) return null;
+  const sem = resolveSemanticTone({
+    tone: u.toastMsg.tone,
+    text: u.toastMsg.text,
+    icon: u.toastMsg.icon,
+    fallback: 'success',
+  });
   const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [16, 0] });
   return (
-    <Animated.View style={[ui.toast, { opacity: anim, transform: [{ translateY }] }]} pointerEvents="none">
-      <View style={ui.toastIconWrap}>
-        <AppIcon icon={u.toastMsg.icon || 'check'} size={14} color="#fff" strokeWidth={2.5} />
+    <Animated.View
+      style={[
+        ui.toast,
+        {
+          opacity: anim,
+          transform: [{ translateY }],
+          borderColor: sem.accent,
+        },
+      ]}
+      pointerEvents="none"
+    >
+      <View style={[ui.toastIconWrap, { backgroundColor: sem.accent }]}>
+        <AppIcon icon={u.toastMsg.icon || sem.icon || 'check'} size={14} color="#fff" strokeWidth={2.5} />
       </View>
       <Text style={ui.toastText}>{u.toastMsg.text}</Text>
     </Animated.View>
@@ -736,10 +866,13 @@ export const ui = StyleSheet.create({
   sheetTitle: { fontSize: 18, fontWeight: '800', color: C.ink, flex: 1, letterSpacing: -0.2 },
   dialogWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   dialog: { width: '100%', maxWidth: 360, backgroundColor: '#fff', borderRadius: 24, padding: 22, ...shadow.lg },
+  dialogPill: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, marginBottom: 12 },
+  dialogDot: { width: 7, height: 7, borderRadius: 4 },
+  dialogPillText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.2, textTransform: 'uppercase' },
   dialogTitle: { fontSize: 18, fontWeight: '800', color: C.ink, textAlign: 'center' },
   dialogBody: { fontSize: 14, color: C.ink2, textAlign: 'center', marginTop: 8, lineHeight: 21 },
-  toast: { position: 'absolute', alignSelf: 'center', bottom: 94, backgroundColor: 'rgba(7,26,58,0.96)', paddingLeft: 10, paddingRight: 18, paddingVertical: 9, borderRadius: 999, flexDirection: 'row', alignItems: 'center', zIndex: 100, ...shadow.lg, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
-  toastIconWrap: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  toast: { position: 'absolute', alignSelf: 'center', bottom: 94, backgroundColor: 'rgba(7,26,58,0.96)', paddingLeft: 10, paddingRight: 18, paddingVertical: 9, borderRadius: 999, flexDirection: 'row', alignItems: 'center', zIndex: 100, ...shadow.lg, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.12)' },
+  toastIconWrap: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   toastText: { color: '#fff', fontWeight: '700', fontSize: 13.5 },
 });
 

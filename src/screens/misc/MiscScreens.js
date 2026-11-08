@@ -12,7 +12,7 @@ import {
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Chip, Badge, Stars, Field, Sheet, Radio,
   EmptyState, ServiceGrid, ServiceRow, Progress, Media, ListRow, PseudoQR, HScroll, ui, AppIcon,
-  TimeRangeSlider, minutesToSlotStr, minutesToTimeStr,
+  TimeRangeSlider, minutesToSlotStr, minutesToTimeStr, resolveSemanticTone,
 } from '../../components';
 import { pickImage, validateVietnamesePhone, validateContactName } from '../../utils';
 import { TrackingCard } from '../../components/order';
@@ -124,17 +124,31 @@ export function NotificationsScreen() {
         )}
       />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
-        {s.notifications.length === 0 ? <EmptyState icon="bell" title="Chưa có thông báo" body="Cập nhật về đơn hàng, ưu đãi và lịch bảo dưỡng sẽ hiện ở đây." /> : s.notifications.map((n) => (
-          <Tap key={n.id} style={[mx.notif, !n.read && mx.notifUnread]} onPress={() => { a.readNotif(n.id); nav.open(n.link); }}>
-            <IconBox icon={n.icon || 'bell'} size={44} bg={n.read ? '#F1F4F9' : C.primarySoft} radius={14} />
-            <View style={{ flex: 1 }}>
-              <Text style={[mx.notifTitle, !n.read && { color: C.ink }]}>{n.title}</Text>
-              <Text style={mx.notifBody}>{n.body}</Text>
-              <Text style={[ui.meta, { marginTop: 4 }]}>{timeAgo(n.at)}</Text>
-            </View>
-            {!n.read ? <View style={mx.dot} /> : null}
-          </Tap>
-        ))}
+        {s.notifications.length === 0 ? <EmptyState icon="bell" title="Chưa có thông báo" body="Cập nhật về đơn hàng, ưu đãi và lịch bảo dưỡng sẽ hiện ở đây." /> : s.notifications.map((n) => {
+          const sem = resolveSemanticTone({ title: n.title, message: n.body, icon: n.icon, fallback: 'warning' });
+          return (
+            <Tap
+              key={n.id}
+              style={[
+                mx.notif,
+                !n.read && { backgroundColor: sem.unreadBg, borderColor: sem.border },
+                { borderLeftWidth: 4, borderLeftColor: sem.accent },
+              ]}
+              onPress={() => { a.readNotif(n.id); nav.open(n.link); }}
+            >
+              <IconBox icon={n.icon || sem.icon} size={44} bg={sem.bg} color={sem.accent} radius={14} />
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <Text style={[mx.notifTitle, { flex: 1 }, !n.read && { color: C.ink }]}>{n.title}</Text>
+                  <Badge text={sem.label} fg={sem.fg} bg={sem.bg} />
+                </View>
+                <Text style={mx.notifBody}>{n.body}</Text>
+                <Text style={[ui.meta, { marginTop: 4 }]}>{timeAgo(n.at)}</Text>
+              </View>
+              {!n.read ? <View style={[mx.dot, { backgroundColor: sem.accent }]} /> : null}
+            </Tap>
+          );
+        })}
       </ScrollView>
     </View>
   );

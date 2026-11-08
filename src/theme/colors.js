@@ -7,9 +7,9 @@ export const C = {
   primarySoft: '#EBF3FF',    // Xanh nhạt tinh khiết
   navy: '#0052CC',           // Xanh đậm thanh lịch
   navy2: '#0844A4',          // Xanh đậm phụ
-  gold: '#0062E0',           // Thay toàn bộ màu vàng chói thành Xanh chủ đạo
-  goldSoft: '#F0F6FF',       // Nền xanh trắng nhạt
-  goldInk: '#0844A4',        // Chữ xanh đậm
+  gold: '#F59E0B',           // Vàng chuẩn cho Cảnh báo (Alert / Warning)
+  goldSoft: '#FEF3C7',       // Nền vàng cảnh báo nhạt
+  goldInk: '#B45309',        // Chữ vàng nâu đậm dễ đọc
   ink: '#0F172A',            // Chữ đen xám đậm dễ đọc
   ink2: '#334155',           // Chữ phụ
   muted: '#64748B',          // Chữ mờ
@@ -17,12 +17,12 @@ export const C = {
   line: '#E2E8F0',           // Đường kẻ viền xám sáng
   bg: '#F8FAFC',             // Nền trang xám trắng mát mắt
   card: '#FFFFFF',           // Nền thẻ trắng tinh
-  red: '#DC2626',            // Đỏ cảnh báo / huỷ đơn
+  red: '#DC2626',            // Đỏ: thông báo nguy hiểm / lỗi / huỷ
   redSoft: '#FEF2F2',        // Nền đỏ nhạt
-  green: '#059669',          // Xanh ngọc cho trạng thái thành công
-  greenSoft: '#ECFDF5',      // Nền xanh ngọc nhạt
-  orange: '#0284C7',         // Chuyển cam thành Sky Blue
-  orangeSoft: '#F0F8FF',     // Nền sky blue nhạt
+  green: '#059669',          // Xanh lá: hoàn thành / thành công (Success)
+  greenSoft: '#ECFDF5',      // Nền xanh lá nhạt
+  orange: '#D97706',         // Vàng cam: cảnh báo (Alert / Warning)
+  orangeSoft: '#FFFBEB',     // Nền vàng kem cảnh báo
   purple: '#0062E0',         // Chuyển tím thành Xanh chủ đạo
   purpleSoft: '#EBF3FF',     // Nền xanh nhạt
   cyan: '#0284C7',           // Xanh Cyan
@@ -42,13 +42,13 @@ export const CAT_TONE = {
 export const toneOf = (cat) => CAT_TONE[cat] || CAT_TONE['may-lanh'];
 
 export const STATUS_META = {
-  pending: { label: 'Chờ thợ nhận', fg: '#0062E0', bg: '#EFF6FF' },
+  pending: { label: 'Chờ thợ nhận', fg: '#B45309', bg: '#FEF3C7' },
   confirmed: { label: 'Thợ đã nhận', fg: '#0062E0', bg: '#DBEAFE' },
   onway: { label: 'Thợ đang đến', fg: '#0284C7', bg: '#E0F2FE' },
-  diagnosing: { label: 'Đang kiểm tra', fg: '#0369A1', bg: '#E0F2FE' },
-  quoted: { label: 'Chờ duyệt báo giá', fg: '#0B4FB8', bg: '#EFF6FF' },
+  diagnosing: { label: 'Đang kiểm tra', fg: '#B45309', bg: '#FFFBEB' },
+  quoted: { label: 'Chờ duyệt báo giá', fg: '#B45309', bg: '#FEF3C7' },
   repairing: { label: 'Đang thực hiện', fg: '#0062E0', bg: '#DBEAFE' },
   done: { label: 'Hoàn thành', fg: '#059669', bg: '#ECFDF5' },
-  cancelled: { label: 'Đã huỷ', fg: '#64748B', bg: '#F1F5F9' },
+  cancelled: { label: 'Đã huỷ', fg: '#DC2626', bg: '#FEF2F2' },
 };
 

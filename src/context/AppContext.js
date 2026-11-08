@@ -491,18 +491,34 @@ export function AppProvider({ children }) {
   }, [toastMsg]);
 
   const ui = {
-    toast: (text, icon = '✓') => setToastMsg({ text, icon, id: uid() }),
+    toast: (text, icon = '✓', tone) => setToastMsg({ text, icon, tone, id: uid() }),
     toastMsg,
     dialog: (cfg) => setDialogCfg(cfg),
     dialogCfg,
     closeDialog: () => setDialogCfg(null),
     confirm: (title, message, onOk, okLabel = 'Đồng ý', danger = false) => setDialogCfg({
-      title, message,
-      actions: [{ label: 'Huỷ', variant: 'ghost' }, { label: okLabel, variant: danger ? 'danger' : 'primary', onPress: onOk }],
+      title,
+      message,
+      danger,
+      tone: danger ? 'danger' : undefined,
+      fallbackTone: danger ? 'danger' : 'warning',
+      actions: [
+        { label: 'Huỷ', variant: 'ghost' },
+        { label: okLabel, variant: danger ? 'danger' : 'auto', onPress: onOk },
+      ],
     }),
-    alert: (title, message, icon) => setDialogCfg({ title, message, icon, actions: [{ label: 'Đã hiểu', variant: 'primary' }] }),
+    alert: (title, message, icon, tone) => setDialogCfg({
+      title,
+      message,
+      icon,
+      tone,
+      fallbackTone: 'warning',
+      actions: [{ label: 'Đã hiểu', variant: 'auto' }],
+    }),
     call: () => setDialogCfg({
       icon: '📞',
+      tone: 'info',
+      fallbackTone: 'info',
       title: `Hotline ${HOTLINE}`,
       message: 'Tổng đài hỗ trợ Thợ HRMSS hoạt động 7:30 – 22:00 mỗi ngày (miễn phí).',
       actions: [

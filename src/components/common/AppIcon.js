@@ -387,9 +387,9 @@ export function resolveIconColor(bg, fallback = C.primary) {
   if (!bg) return fallback;
   const norm = String(bg).toUpperCase();
   if (norm === '#FFFFFF' || norm === '#FFF') return C.primary;
-  if (norm === C.greenSoft.toUpperCase() || norm === '#ECFDF5' || norm === '#D1FAE5' || norm === '#F0FDF4') return C.green;
-  if (norm === C.redSoft.toUpperCase() || norm === '#FEF2F2' || norm === '#FEE2E2') return C.red;
-  if (norm === '#FEF3C7' || norm === '#FFFBEB') return '#D97706';
+  if (norm === C.greenSoft.toUpperCase() || norm === '#ECFDF5' || norm === '#D1FAE5' || norm === '#DCFCE7' || norm === '#F0FDF4' || norm === '#CDEFDD') return C.green;
+  if (norm === C.redSoft.toUpperCase() || norm === '#FEF2F2' || norm === '#FEE2E2' || norm === '#FAD4D0' || norm === '#FECACA') return C.red;
+  if (norm === C.goldSoft.toUpperCase() || norm === C.orangeSoft.toUpperCase() || norm === '#FEF3C7' || norm === '#FFFBEB' || norm === '#FFF7ED' || norm === '#FDE68A' || norm === '#F6D9A8') return C.orange;
   if (norm === C.cyanSoft.toUpperCase() || norm === '#F0F9FF' || norm === '#E0F2FE') return C.cyan;
   if (norm === '#F1F5F9' || norm === '#F1F4F9' || norm === '#EEF2F7') return C.ink2;
   return fallback;

@@ -19,7 +19,7 @@ import { getCheckInLocation } from '../../utils/geo';
 import { validateVietnamesePhone, validateContactName } from '../../utils';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, PageHead, Segmented, Chip, Badge, Stars, Field, Sheet, Radio, Checkbox,
-  EmptyState, StatusChip, Progress, Media, ListRow, Stepper, HScroll, ui, AppIcon,
+  EmptyState, StatusChip, Progress, Media, ListRow, Stepper, HScroll, ui, AppIcon, resolveSemanticTone,
 } from '../../components';
 import { pickImage, pickCamera } from '../../utils/media';
 import { TrackingCard } from '../../components/order';
@@ -527,17 +527,31 @@ export function TechNotifsScreen() {
             action="Về trang công việc"
             onAction={() => nav.go('tech-jobs')}
           />
-        ) : filtered.map((n) => (
-          <Tap key={n.id} style={[tx.notif, !n.read && tx.notifUnread]} onPress={() => { a.readTechNotif(n.id); nav.open(n.link); }}>
-            <IconBox icon={n.icon || '🔔'} size={44} bg={n.read ? '#F1F4F9' : C.primarySoft} radius={14} />
-            <View style={{ flex: 1 }}>
-              <Text style={[tx.notifTitle, !n.read && { color: C.ink }]}>{n.title}</Text>
-              {n.body ? <Text style={tx.notifBody}>{n.body}</Text> : null}
-              <Text style={[ui.meta, { marginTop: 4 }]}>{timeAgo(n.at)}</Text>
-            </View>
-            {!n.read ? <View style={tx.dot} /> : null}
-          </Tap>
-        ))}
+        ) : filtered.map((n) => {
+          const sem = resolveSemanticTone({ title: n.title, message: n.body, icon: n.icon, fallback: 'warning' });
+          return (
+            <Tap
+              key={n.id}
+              style={[
+                tx.notif,
+                !n.read && { backgroundColor: sem.unreadBg, borderColor: sem.border },
+                { borderLeftWidth: 4, borderLeftColor: sem.accent },
+              ]}
+              onPress={() => { a.readTechNotif(n.id); nav.open(n.link); }}
+            >
+              <IconBox icon={n.icon || sem.icon} size={44} bg={sem.bg} color={sem.accent} radius={14} />
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <Text style={[tx.notifTitle, { flex: 1 }, !n.read && { color: C.ink }]}>{n.title}</Text>
+                  <Badge text={sem.label} fg={sem.fg} bg={sem.bg} />
+                </View>
+                {n.body ? <Text style={tx.notifBody}>{n.body}</Text> : null}
+                <Text style={[ui.meta, { marginTop: 4 }]}>{timeAgo(n.at)}</Text>
+              </View>
+              {!n.read ? <View style={[tx.dot, { backgroundColor: sem.accent }]} /> : null}
+            </Tap>
+          );
+        })}
       </ScrollView>
     </View>
   );

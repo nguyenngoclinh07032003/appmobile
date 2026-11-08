@@ -10,7 +10,9 @@ export const shadow = {
   md: { boxShadow: '0px 8px 20px rgba(0, 98, 224, 0.06), 0px 2px 6px rgba(0, 98, 224, 0.04)' },
   lg: { boxShadow: '0px 16px 38px rgba(0, 98, 224, 0.10), 0px 4px 10px rgba(0, 98, 224, 0.04)' },
   primary: { boxShadow: '0px 6px 18px rgba(0, 98, 224, 0.22)' },
-  gold: { boxShadow: '0px 6px 18px rgba(0, 98, 224, 0.22)' },
+  gold: { boxShadow: '0px 6px 18px rgba(217, 119, 6, 0.24)' },
+  success: { boxShadow: '0px 6px 18px rgba(5, 150, 105, 0.22)' },
+  danger: { boxShadow: '0px 6px 18px rgba(220, 38, 38, 0.24)' },
 };
 
 // Gradient bề mặt (chạy mượt trên web, fallback màu đơn trên native)
@@ -19,7 +21,9 @@ export const grad = {
   navyHero: wGrad('linear-gradient(135deg, #0052CC 0%, #0062E0 55%, #1677FF 100%)'),
   navyCard: wGrad('linear-gradient(135deg, #073B82 0%, #0062E0 100%)'),
   primaryBtn: wGrad('linear-gradient(135deg, #0062E0 0%, #0052CC 100%)'),
-  goldBtn: wGrad('linear-gradient(135deg, #0062E0 0%, #0052CC 100%)'),
+  goldBtn: wGrad('linear-gradient(135deg, #F59E0B 0%, #D97706 100%)'),
+  warningBtn: wGrad('linear-gradient(135deg, #F59E0B 0%, #D97706 100%)'),
+  successBtn: wGrad('linear-gradient(135deg, #10B981 0%, #059669 100%)'),
   dangerBtn: wGrad('linear-gradient(135deg, #EF4444 0%, #DC2626 100%)'),
 };
 
