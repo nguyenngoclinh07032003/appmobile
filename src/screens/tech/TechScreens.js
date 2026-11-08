@@ -13,7 +13,7 @@ import {
 } from '../../constants/data';
 import {
   useApp, orderTotal, bookedValue, isActiveOrder, dateKeyOf, todayKey, fmtDateTime, timeAgo,
-  TECH_POLICY, assessCancelAfterAccept, reputationTone, normalizeTechRep, slotStartTs, matchJobForTech,
+  TECH_POLICY, assessCancelAfterAccept, reputationTone, normalizeTechRep, slotStartTs, matchJobForTech, isQRPayment,
 } from '../../context';
 import { getCheckInLocation } from '../../utils/geo';
 import { validateVietnamesePhone, validateContactName } from '../../utils';
@@ -150,10 +150,44 @@ function JobCard({ o, compact, onDecline, canAccept = true }) {
             <Text style={tx.name} numberOfLines={2}>{svc0?.name}</Text>
             {o.items.length > 1 ? <Text style={[ui.meta, { marginTop: 2 }]}>+{o.items.length - 1} dịch vụ khác</Text> : null}
           </View>
-          <View style={tx.payBox}>
-            <Text style={tx.payLabel}>{o.kind === 'warranty' ? 'Bảo hành' : 'Thu'}</Text>
-            <Text style={[ui.price, { fontSize: 15, marginTop: 2 }]}>{o.kind === 'warranty' ? '0đ' : formatVND(orderTotal(o))}</Text>
-          </View>
+          {(() => {
+            const isWarranty = o.kind === 'warranty';
+            const qrPay = !isWarranty && isQRPayment(o);
+            const isPaid = Boolean(o.report?.paid);
+            if (isWarranty) {
+              return (
+                <View style={[tx.payBox, { backgroundColor: C.greenSoft, borderWidth: 1, borderColor: '#A7F3D0' }]}>
+                  <Text style={[tx.payLabel, { color: C.green }]}>Bảo hành</Text>
+                  <Text style={[ui.price, { fontSize: 15, marginTop: 2, color: C.green }]}>0đ</Text>
+                </View>
+              );
+            }
+            if (qrPay) {
+              return (
+                <View style={[tx.payBox, { backgroundColor: isPaid ? C.greenSoft : '#FFFBEB', borderWidth: 1, borderColor: isPaid ? '#A7F3D0' : '#FDE68A' }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <AppIcon name={isPaid ? 'check-circle-2' : 'qr-code'} size={11} color={isPaid ? C.green : C.goldInk} strokeWidth={2.4} />
+                    <Text style={[tx.payLabel, { color: isPaid ? C.green : C.goldInk, fontWeight: '800' }]}>
+                      {isPaid ? 'Đã CK QR' : 'CK QR · Không thu'}
+                    </Text>
+                  </View>
+                  <Text style={[ui.price, { fontSize: 14.5, marginTop: 2, color: isPaid ? C.green : C.goldInk }]}>
+                    {formatVND(orderTotal(o))}
+                  </Text>
+                </View>
+              );
+            }
+            return (
+              <View style={[tx.payBox, isPaid && { backgroundColor: C.greenSoft, borderWidth: 1, borderColor: '#A7F3D0' }]}>
+                <Text style={[tx.payLabel, { color: isPaid ? C.green : C.red, fontWeight: '800' }]}>
+                  {isPaid ? 'Đã thu TM' : 'Thu tiền mặt'}
+                </Text>
+                <Text style={[ui.price, { fontSize: 15, marginTop: 2, color: isPaid ? C.green : C.red }]}>
+                  {formatVND(orderTotal(o))}
+                </Text>
+              </View>
+            );
+          })()}
         </View>
         {match ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
@@ -1335,6 +1369,65 @@ export function TechJobScreen({ params }) {
             </View>
           ) : null}
           <Text style={[tx.info, { marginTop: 6 }]}>💳 {o.payment}</Text>
+          {o.kind !== 'warranty' ? (
+            isQRPayment(o) ? (
+              <View
+                style={{
+                  marginTop: 10,
+                  padding: 12,
+                  borderRadius: R.md,
+                  backgroundColor: o.report?.paid ? C.greenSoft : '#FFFBEB',
+                  borderWidth: 1.5,
+                  borderColor: o.report?.paid ? '#A7F3D0' : '#FDE68A',
+                  gap: 4,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                    <AppIcon name={o.report?.paid ? 'check-circle-2' : 'alert-triangle'} size={16} color={o.report?.paid ? C.green : C.orange} strokeWidth={2.3} />
+                    <Text style={{ fontWeight: '800', color: o.report?.paid ? C.green : C.goldInk, fontSize: 13, flex: 1 }}>
+                      {o.report?.paid ? 'Khách đã chuyển khoản VietQR thành công' : 'Khách chuyển khoản QR · KHÔNG THU TIỀN MẶT'}
+                    </Text>
+                  </View>
+                  <Badge
+                    text={o.report?.paid ? 'ĐÃ THANH TOÁN QR' : 'KHÔNG THU TIỀN'}
+                    fg="#fff"
+                    bg={o.report?.paid ? C.green : C.orange}
+                  />
+                </View>
+                <Text style={{ fontSize: 12.5, color: o.report?.paid ? '#065F46' : C.goldInk, lineHeight: 18 }}>
+                  {o.report?.paid
+                    ? `Hệ thống HRMSS đã nhận đủ ${formatVND(orderTotal(o))} qua VietQR. Thu nhập ca làm & hoàn ứng vật tư đã cộng trực tiếp vào Ví thu nhập của bạn.`
+                    : `Khách thanh toán ${formatVND(orderTotal(o))} qua mã VietQR trên ứng dụng Khách hàng. Kỹ thuật viên tuyệt đối KHÔNG thu tiền mặt. Tiền công & hoàn ứng vật tư sẽ tự động cộng vào Ví của bạn.`}
+                </Text>
+              </View>
+            ) : (
+              <View
+                style={{
+                  marginTop: 10,
+                  padding: 10,
+                  borderRadius: R.md,
+                  backgroundColor: o.report?.paid ? C.greenSoft : C.redSoft,
+                  borderWidth: 1,
+                  borderColor: o.report?.paid ? '#A7F3D0' : '#FECACA',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: '800', color: o.report?.paid ? C.green : C.red, fontSize: 13 }}>
+                    {o.report?.paid ? '✓ Đã thu tiền mặt tại nhà' : `💵 Đơn thu tiền mặt tại nhà: ${formatVND(orderTotal(o))}`}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: C.ink2, marginTop: 2 }}>
+                    {o.report?.paid ? 'Đã đối soát thanh toán hoàn tất.' : 'Kỹ thuật viên trực tiếp thu tiền mặt từ khách sau khi nghiệm thu.'}
+                  </Text>
+                </View>
+                <Badge text={o.report?.paid ? 'Hoàn thành' : 'Thu trực tiếp'} fg={o.report?.paid ? C.green : C.red} bg="#fff" />
+              </View>
+            )
+          ) : null}
           <View style={{ marginTop: 10, gap: 8 }}>
             {o.items.map((it) => {
               const sv = getService(it.id);
@@ -1698,8 +1791,12 @@ export function TechJobScreen({ params }) {
             <Text style={{ color: C.ink2, lineHeight: 21 }}>{o.report.summary}</Text>
             <Text style={[ui.meta, { marginTop: 8 }]}>
               {fmtDateTime(o.report.at)} · {o.report.paid
-                ? `Đã thu ${formatVND(orderTotal(o))}${o.report.paidBy === 'customer' ? ' (khách xác nhận)' : ''}`
-                : 'Chưa thu tiền / chờ khách xác nhận'}
+                ? (isQRPayment(o)
+                  ? `Khách đã chuyển khoản VietQR ${formatVND(orderTotal(o))} về hệ thống (Thợ không thu tiền mặt)`
+                  : `Đã thu tiền mặt ${formatVND(orderTotal(o))}${o.report.paidBy === 'customer' ? ' (khách xác nhận)' : ''}`)
+                : (isQRPayment(o)
+                  ? `Chờ khách quét mã VietQR ${formatVND(orderTotal(o))} trên App Khách (Thợ không thu tiền mặt)`
+                  : 'Chưa thu tiền / chờ khách xác nhận')}
             </Text>
             {o.report.paid && o.report.paidAt ? (
               <Text style={[ui.meta, { marginTop: 4, color: C.green }]}>Xác nhận lúc {fmtDateTime(o.report.paidAt)}</Text>
@@ -1895,7 +1992,7 @@ export function TechJobScreen({ params }) {
               setForceDone(false);
               a.completeJob(o.code, {
                 summary: summary.trim(),
-                paid: orderTotal(o) > 0 ? paid : true,
+                paid: isQRPayment(o) ? Boolean(o.report?.paid) : (orderTotal(o) > 0 ? paid : true),
                 safetyChecklist: safetyChecks,
                 customerSignature: signature || null,
               });
@@ -1945,7 +2042,36 @@ export function TechJobScreen({ params }) {
             ) : null}
           </View>
         </View>
-        {orderTotal(o) > 0 ? <Checkbox on={paid} onPress={() => setPaid(!paid)} label={`Đã thu ${formatVND(orderTotal(o))} (${o.payment})`} /> : null}
+        {orderTotal(o) > 0 ? (
+          isQRPayment(o) ? (
+            <View
+              style={{
+                padding: 12,
+                borderRadius: R.md,
+                backgroundColor: o.report?.paid ? C.greenSoft : '#FFFBEB',
+                borderWidth: 1.5,
+                borderColor: o.report?.paid ? '#A7F3D0' : '#FDE68A',
+                marginTop: 4,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <AppIcon name={o.report?.paid ? 'check-circle-2' : 'qr-code'} size={18} color={o.report?.paid ? C.green : C.orange} strokeWidth={2.3} />
+                <Text style={{ fontWeight: '800', color: o.report?.paid ? C.green : C.goldInk, fontSize: 13.5, flex: 1 }}>
+                  {o.report?.paid
+                    ? `Khách đã chuyển khoản VietQR (${formatVND(orderTotal(o))})`
+                    : `Khách chuyển khoản QR (${formatVND(orderTotal(o))}) — KHÔNG THU TIỀN`}
+                </Text>
+              </View>
+              <Text style={{ fontSize: 12, color: o.report?.paid ? '#065F46' : C.goldInk, marginTop: 4, lineHeight: 18 }}>
+                {o.report?.paid
+                  ? 'Hệ thống đã xác nhận thanh toán QR từ khách hàng. Bạn chỉ cần gửi biên bản hoàn thành.'
+                  : 'Đơn này khách chọn Chuyển khoản VietQR trên App Khách hàng. Kỹ thuật viên không được thu tiền mặt — sau khi gửi biên bản, mã QR sẽ hiển thị trên máy khách để quét.'}
+              </Text>
+            </View>
+          ) : (
+            <Checkbox on={paid} onPress={() => setPaid(!paid)} label={`Đã thu tiền mặt ${formatVND(orderTotal(o))} (${o.payment})`} />
+          )
+        ) : null}
         {!evidence.some((e) => e.stage === 'after') ? (
           <View style={[tx.note, { backgroundColor: C.orangeSoft, marginTop: 14 }]}>
             <Text style={{ color: C.orange, fontWeight: '700', marginBottom: 8 }}>⚠ Chưa có ảnh “Sau khi làm”.</Text>

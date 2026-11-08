@@ -105,6 +105,13 @@ export const orderTotal = (o) => {
   const base = o.finalTotal != null ? o.finalTotal : o.total;
   return Math.max(0, base - lateDiscountAmount(o));
 };
+
+// Kiểm tra đơn hàng thanh toán bằng Chuyển khoản QR (VietQR) -> Thợ tuyệt đối KHÔNG được thu tiền mặt
+export const isQRPayment = (o) => {
+  if (!o) return false;
+  if (o.qrPaymentRequested || o.paymentMethod === 'vietqr') return true;
+  return /vietqr|qr|chuyển khoản|chuyen khoan|ngân hàng|mbbank/i.test(String(o.payment || ''));
+};
 const techCodeOf = (p) => (p.techProfile || TECH_ME).code;
 const declinedFor = (p, techCode) => {
   const map = p.declinedByTech || {};
@@ -1244,32 +1251,78 @@ export function AppProvider({ children }) {
         );
       } else ui.toast('Đã check-in GPS tại nhà khách', '📍');
     },
-    // Khách xác nhận đã thanh toán (sau khi hoàn thành)
+    // Khách yêu cầu / chuyển đổi sang thanh toán Chuyển khoản QR (VietQR) -> Khoá quyền thu tiền mặt của Thợ
+    switchToQRPayment: (code) => {
+      let ok = false;
+      updateOrder(code, (o) => {
+        if (!o || o.status === 'cancelled') return {};
+        ok = true;
+        return {
+          order: {
+            ...o,
+            payment: 'Chuyển khoản VietQR (MBBank)',
+            paymentMethod: 'vietqr',
+            qrPaymentRequested: true,
+            qrRequestedAt: Date.now(),
+          },
+          tech: {
+            icon: '⚠️',
+            title: `Khách chuyển khoản QR · Không thu tiền · ${code}`,
+            body: `Khách yêu cầu chuyển khoản VietQR (${formatVND(orderTotal(o))}) trên App. Kỹ thuật viên tuyệt đối KHÔNG thu tiền mặt!`,
+            link: { name: 'tech-job', params: { code } },
+          },
+          customer: {
+            icon: '🏦',
+            title: `Đã chuyển sang thanh toán VietQR · ${code}`,
+            body: 'Đơn đã khoá thu tiền mặt phía thợ. Bạn vui lòng quét mã VietQR trên ứng dụng sau khi nghiệm thu.',
+            link: { name: 'order', params: { code } },
+          },
+        };
+      });
+      if (ok) {
+        ui.toast('Đã chuyển sang VietQR · Thợ không thu tiền mặt', '🏦', 'success');
+      }
+      return ok;
+    },
+    // Khách xác nhận đã thanh toán (sau khi hoàn thành hoặc khi đang nghiệm thu QR)
     confirmPayment: (code, mode = 'manual') => {
       let ok = false;
       let targetTotal = 0;
       updateOrder(code, (o) => {
-        if (o.status !== 'done') return {};
+        if (!['done', 'repairing', 'quoted'].includes(o.status)) return {};
         ok = true;
         targetTotal = orderTotal(o);
-        const report = { ...(o.report || {}), paid: true, paidAt: Date.now(), paidBy: mode === 'webhook' ? 'vietqr_webhook' : 'customer' };
+        const isQR = mode === 'webhook' || isQRPayment(o);
+        const report = {
+          ...(o.report || {}),
+          paid: true,
+          paidAt: Date.now(),
+          paidBy: mode === 'webhook' ? 'vietqr_webhook' : isQR ? 'customer_qr' : 'customer',
+        };
         return {
-          order: { ...o, report },
+          order: {
+            ...o,
+            ...(isQR ? { payment: 'Chuyển khoản VietQR (MBBank)', qrPaymentRequested: true } : {}),
+            report,
+          },
           tech: {
-            icon: '💳',
-            title: mode === 'webhook' ? `TingTing! MBBank đã nhận ${formatVND(targetTotal)} · ${code}` : `Khách xác nhận đã thanh toán · ${code}`,
-            body: mode === 'webhook' ? `VietQR tự động gạch nợ. Tiền công và hoàn ứng vật tư đã vào Ví thợ!` : (o.payment || 'Đã thanh toán'),
+            icon: '✅',
+            title: isQR ? `TingTing! Khách đã CK VietQR ${formatVND(targetTotal)} · ${code}` : `Khách xác nhận đã thanh toán · ${code}`,
+            body: isQR
+              ? `Hệ thống đã nhận đủ ${formatVND(targetTotal)} qua VietQR. Thợ KHÔNG thu tiền mặt — chiết khấu & hoàn ứng đã cộng vào Ví thợ!`
+              : (o.payment || 'Đã thanh toán'),
+            link: { name: 'tech-job', params: { code } },
           },
         };
       });
       if (ok) {
         if (mode === 'webhook') {
-          ui.toast(`🔔 Webhook MBBank: Nhận ${formatVND(targetTotal)} · Gạch nợ thành công!`, '⚡');
+          ui.toast(`🔔 Webhook MBBank: Nhận ${formatVND(targetTotal)} · Gạch nợ thành công!`, '✅', 'success');
         } else {
-          ui.toast('Đã ghi nhận thanh toán', '💳');
+          ui.toast('Đã ghi nhận thanh toán thành công', '✅', 'success');
         }
       } else {
-        ui.alert('Không cập nhật được', 'Chỉ xác nhận thanh toán khi đơn đã hoàn thành.', 'ℹ️');
+        ui.alert('Không cập nhật được', 'Chỉ xác nhận thanh toán khi đơn đang thực hiện hoặc đã hoàn thành.', 'ℹ️');
       }
     },
     requestPayout: ({ amount, bankName, accountNumber, accountHolder }) => {
@@ -1651,22 +1704,41 @@ export function AppProvider({ children }) {
       const onTimeBonus = !o0.lateCompensation || o0.lateCompensation.tier === 'soft' ? 2 : 1;
       updateOrder(code, (o, p) => {
         const boosted = applyTechBonus(p.techProfile || TECH_ME, onTimeBonus);
+        const qrOrder = isQRPayment(o);
+        const alreadyPaidByCustomer = Boolean(o.report?.paid);
+        // Nếu khách chọn Chuyển khoản QR: Thợ KHÔNG được thu tiền mặt -> chỉ đánh dấu paid nếu khách đã quét QR trước đó
+        const finalPaid = qrOrder ? alreadyPaidByCustomer : Boolean(paid);
+        const finalPaidAt = qrOrder
+          ? (o.report?.paidAt || null)
+          : (finalPaid ? now : null);
+        const finalPaidBy = qrOrder
+          ? (o.report?.paidBy || null)
+          : (finalPaid ? 'tech' : null);
         return {
           order: withStatus(o, 'done', now, {
             doneAt: now,
             report: {
+              ...(o.report || {}),
               summary,
-              paid: !!paid,
+              paid: finalPaid,
               at: now,
               tech: o.tech?.name,
               techCode: o.tech?.code,
               safetyChecklist: safetyChecklist || [],
               customerSignature: customerSignature || null,
               warrantyCertificateCode: `BH-${code}`,
-              ...(paid ? { paidAt: now, paidBy: 'tech' } : {}),
+              ...(finalPaid ? { paidAt: finalPaidAt, paidBy: finalPaidBy } : {}),
             },
           }),
-          customer: { icon: '✅', title: `Đơn ${code} đã hoàn thành`, body: earned ? `Bạn nhận được +${earned} điểm và Phiếu bảo hành điện tử. Đánh giá để nhận thêm 20 điểm!` : 'Cảm ơn bạn đã sử dụng dịch vụ.' },
+          customer: {
+            icon: qrOrder && !alreadyPaidByCustomer ? '🏦' : '✅',
+            title: qrOrder && !alreadyPaidByCustomer
+              ? `Đơn ${code} hoàn thành · Vui lòng quét mã VietQR`
+              : `Đơn ${code} đã hoàn thành`,
+            body: qrOrder && !alreadyPaidByCustomer
+              ? `Thợ đã bàn giao nghiệm thu (không thu tiền mặt). Vui lòng mở đơn để quét mã VietQR ${formatVND(total)} và nhận +${earned} điểm!`
+              : (earned ? `Bạn nhận được +${earned} điểm và Phiếu bảo hành điện tử. Đánh giá để nhận thêm 20 điểm!` : 'Cảm ơn bạn đã sử dụng dịch vụ.'),
+          },
           extra: {
             devices: updateDevList(p.devices),
             points: p.points + earned,

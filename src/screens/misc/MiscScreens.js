@@ -7,7 +7,7 @@ import {
 } from '../../constants/data';
 import {
   useApp, fmtDate, fmtDateTime, timeAgo, warrantyInfo, LAST_SERVICE_OPTIONS, isActiveOrder, orderTotal,
-  lateDiscountAmount, tierPartDiscountAmount, normalizeTechRep, getCancellationWindowStatus,
+  lateDiscountAmount, tierPartDiscountAmount, normalizeTechRep, getCancellationWindowStatus, isQRPayment,
 } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Chip, Badge, Stars, Field, Sheet, Radio,
@@ -646,13 +646,38 @@ export function OrderScreen({ params }) {
             <Bill l="Hình thức" v={o.payment || 'Chuyển khoản VietQR'} />
             <Bill
               l="Trạng thái thu"
-              v={o.status === 'cancelled' ? ((o.inspectionFee || 0) > 0 ? 'Cần thanh toán phí KT' : 'Đã huỷ (0đ)') : o.report?.paid ? 'Đã thanh toán' : o.status === 'done' ? 'Chờ xác nhận' : 'Chưa thanh toán'}
+              v={
+                o.status === 'cancelled'
+                  ? ((o.inspectionFee || 0) > 0 ? 'Cần thanh toán phí KT' : 'Đã huỷ (0đ)')
+                  : o.report?.paid
+                    ? (isQRPayment(o) ? 'Đã chuyển khoản VietQR' : 'Đã thanh toán')
+                    : isQRPayment(o)
+                      ? 'Thanh toán qua QR (Thợ không thu tiền mặt)'
+                      : (o.status === 'done' ? 'Chờ xác nhận' : 'Thanh toán sau nghiệm thu')
+              }
               green={!!o.report?.paid || (o.status === 'cancelled' && !(o.inspectionFee > 0))}
             />
             <View style={mx.totalRow}>
               <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>Tổng thanh toán</Text>
               <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(o.status === 'cancelled' ? (o.inspectionFee || 0) : orderTotal(o))}</Text>
             </View>
+            {o.status !== 'cancelled' && !o.report?.paid && !isQRPayment(o) ? (
+              <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <IconBox icon="qr-code" size={38} bg="#E0F2FE" color="#0284C7" radius={12} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: '800', color: '#0369A1', fontSize: 13 }}>Muốn chuyển khoản bằng mã QR?</Text>
+                  <Text style={{ fontSize: 12, color: '#0C4A6E', marginTop: 2, lineHeight: 17 }}>
+                    Đổi sang VietQR để quét mã trên App — khoá thu tiền mặt bên App của Thợ.
+                  </Text>
+                </View>
+                <Btn
+                  title="Đổi sang QR"
+                  small
+                  variant="primary"
+                  onPress={() => a.switchToQRPayment(o.code)}
+                />
+              </View>
+            ) : null}
             {o.status === 'cancelled' && (o.inspectionFee || 0) > 0 ? (
               <View style={{ marginTop: 14, alignItems: 'center', padding: 12, borderRadius: 14, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#F5D77A' }}>
                 <Text style={{ fontWeight: '800', color: '#92400E', marginBottom: 4 }}>Mã QR thanh toán phí kiểm tra tại nhà</Text>
@@ -665,14 +690,22 @@ export function OrderScreen({ params }) {
                 </Text>
               </View>
             ) : null}
-            {o.status === 'done' && !o.report?.paid && /vietqr|qr|chuyển khoản/i.test(o.payment || '') ? (
+            {o.status !== 'cancelled' && !o.report?.paid && isQRPayment(o) ? (
               <View style={{ marginTop: 14, alignItems: 'center', padding: 14, borderRadius: 14, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1' }}>
+                <View style={{ width: '100%', padding: 10, borderRadius: R.sm, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <AppIcon name="shield-check" size={18} color={C.orange} strokeWidth={2.3} />
+                  <Text style={{ flex: 1, fontSize: 12, color: C.goldInk, fontWeight: '700', lineHeight: 17 }}>
+                    Đơn thanh toán qua VietQR: Kỹ thuật viên đã bị khoá quyền thu tiền mặt. Quý khách vui lòng chỉ quét mã QR dưới đây.
+                  </Text>
+                </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                  <Text style={{ fontSize: 16 }}>🏦</Text>
+                  <AppIcon name="landmark" size={16} color={C.primary} strokeWidth={2.2} />
                   <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>Chuyển khoản nhanh VietQR 24/7</Text>
                 </View>
                 <Text style={[ui.meta, { marginBottom: 10, textAlign: 'center', color: C.muted }]}>
-                  Quét mã VietQR để thanh toán dịch vụ và kích hoạt Bảo hành điện tử 60 ngày
+                  {['repairing', 'done'].includes(o.status)
+                    ? 'Quét mã VietQR để thanh toán dịch vụ và kích hoạt Bảo hành điện tử 60 ngày'
+                    : 'Mã VietQR tạm tính — chỉ quét thanh toán sau khi thợ hoàn thành & nghiệm thu thiết bị'}
                 </Text>
                 <PseudoQR value={`HRMSS|${o.code}|${orderTotal(o)}`} size={160} />
                 <View style={{ marginTop: 10, width: '100%', backgroundColor: '#fff', padding: 10, borderRadius: R.sm, borderWidth: 1, borderColor: '#E2E8F0', gap: 4 }}>
@@ -689,27 +722,33 @@ export function OrderScreen({ params }) {
                     <Text style={{ fontWeight: '800', color: C.primary, fontSize: 12 }}>0908 888 999</Text>
                   </View>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={ui.meta}>Số tiền:</Text>
+                    <Text style={{ fontWeight: '800', color: C.red, fontSize: 12 }}>{formatVND(orderTotal(o))}</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                     <Text style={ui.meta}>Nội dung CK:</Text>
                     <Text style={{ fontWeight: '800', color: C.orange, fontSize: 12 }}>{o.code}</Text>
                   </View>
                 </View>
-                <Btn
-                  title="⚡ Giả lập Quét QR thành công (Bank Webhook)"
-                  variant="primary"
-                  small
-                  style={{ marginTop: 10, width: '100%' }}
-                  onPress={() => a.confirmPayment(o.code, 'webhook')}
-                />
+                {['repairing', 'done'].includes(o.status) ? (
+                  <Btn
+                    title="⚡ Xác nhận đã quét QR (Bank Webhook)"
+                    variant="success"
+                    small
+                    style={{ marginTop: 10, width: '100%' }}
+                    onPress={() => a.confirmPayment(o.code, 'webhook')}
+                  />
+                ) : null}
               </View>
             ) : null}
-            {o.status === 'done' && !o.report?.paid ? (
+            {o.status === 'done' && !o.report?.paid && !isQRPayment(o) ? (
               <Btn
-                title="Xác nhận đã thanh toán"
-                icon="💳"
+                title="Xác nhận đã thanh toán tiền mặt"
+                icon="banknote"
                 style={{ marginTop: 12 }}
                 onPress={() => u.confirm(
                   'Xác nhận đã thanh toán?',
-                  `Hình thức: ${o.payment || 'Tại nhà'}. Tổng ${formatVND(orderTotal(o))}.`,
+                  `Hình thức: ${o.payment || 'Tiền mặt tại nhà'}. Tổng ${formatVND(orderTotal(o))}.`,
                   () => a.confirmPayment(o.code),
                   'Xác nhận',
                 )}
@@ -781,7 +820,13 @@ export function OrderScreen({ params }) {
           {canEdit ? <Btn title="Sửa yêu cầu" icon="pencil" variant="soft" style={{ flex: 1 }} onPress={openEdit} /> : null}
           {canCancel ? <Btn title="Huỷ đơn" variant="dangerSoft" style={{ flex: 1 }} onPress={handlePressCancel} /> : null}
           {o.status === 'done' && !o.report?.paid && o.kind !== 'warranty' && o.kind !== 'followup' ? (
-            <Btn title="Thanh toán" icon="credit-card" variant="soft" style={{ flex: 1.15, paddingHorizontal: 10 }} onPress={() => a.confirmPayment(o.code)} />
+            <Btn
+              title={isQRPayment(o) ? 'Xác nhận QR' : 'Thanh toán'}
+              icon={isQRPayment(o) ? 'qr-code' : 'credit-card'}
+              variant={isQRPayment(o) ? 'success' : 'soft'}
+              style={{ flex: 1.15, paddingHorizontal: 10 }}
+              onPress={() => a.confirmPayment(o.code, isQRPayment(o) ? 'webhook' : 'manual')}
+            />
           ) : null}
           {o.status === 'done' && !o.rating && o.kind !== 'warranty' ? <Btn title="Đánh giá" icon="star" variant="gold" style={{ flex: 1, paddingHorizontal: 10 }} onPress={() => nav.push('rate', { code: o.code })} /> : null}
           {['done', 'cancelled'].includes(o.status) && o.kind !== 'warranty' ? <Btn title="Đặt lại" icon="rotate-ccw" style={{ flex: 1, paddingHorizontal: 10 }} onPress={reorder} /> : null}
