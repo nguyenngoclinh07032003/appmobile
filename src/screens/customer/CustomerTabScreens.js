@@ -343,19 +343,22 @@ export function PersonalScreen() {
           <ListRow icon="⬆️" iconBg="#EEF2F7" label="Cập nhật ứng dụng" value="3.0.8" onPress={() => u.alert('Bạn đang dùng bản mới nhất', 'Phiên bản 3.0.8 (v7).', '✅')} last />
         </Group>
         <Btn
-          title="🎬 Nạp dữ liệu kịch bản Demo (Review với cô)"
+          title="Nạp dữ liệu kịch bản Demo (Review với cô)"
+          icon="clapperboard"
           variant="soft"
           style={{ marginTop: 24 }}
           onPress={a.loadMockData}
         />
         <Btn
           title="Đăng xuất"
+          icon="log-out"
           variant="dangerSoft"
           style={{ marginTop: 12 }}
           onPress={() => u.confirm('Đăng xuất?', 'Bạn sẽ quay về màn đăng nhập. Đơn hàng và dữ liệu trên thiết bị vẫn được giữ.', a.logout, 'Đăng xuất', true)}
         />
         <Btn
           title="Xoá dữ liệu thiết bị"
+          icon="trash-2"
           variant="ghost"
           style={{ marginTop: 10 }}
           onPress={() => u.confirm('Xoá toàn bộ dữ liệu?', 'Giỏ hàng, đơn, địa chỉ, thiết bị trên trình duyệt này sẽ bị xoá. Tài khoản đăng ký vẫn giữ.', a.wipeLocalData, 'Xoá', true)}
@@ -408,7 +411,8 @@ export function PersonalScreen() {
           />
 
           <Btn
-            title="🗑️ Xoá tài khoản này"
+            title="Xoá tài khoản này"
+            icon="trash-2"
             variant="dangerSoft"
             onPress={() => {
               setShowAccSheet(false);

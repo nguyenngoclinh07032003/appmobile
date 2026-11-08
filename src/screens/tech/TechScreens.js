@@ -696,22 +696,31 @@ export function TechAccountScreen() {
                 icon="🔑"
                 iconBg={C.goldSoft}
                 label="Tài khoản đang đăng nhập"
-                value={`${s.auth.name || me.name} · Kỹ thuật viên`}
-                sub={s.auth.phone || s.auth.email || me.phone}
+                sub={`${s.auth.name || me.name} · ${s.auth.phone || s.auth.email || me.phone}`}
+                right={(
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.greenSoft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 }}>
+                      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.green }} />
+                      <Text style={{ fontSize: 11, fontWeight: '800', color: C.green }}>KTV</Text>
+                    </View>
+                    <AppIcon name="chevron-right" size={18} color={C.faint} strokeWidth={2.2} />
+                  </View>
+                )}
                 onPress={() => setShowAccountInfo(true)}
                 last
               />
             ) : null}
           </View>
           <Btn
-            title="🎬 Nạp dữ liệu kịch bản Demo (Review với cô)"
+            title="Nạp dữ liệu kịch bản Demo (Review với cô)"
+            icon="clapperboard"
             variant="soft"
             style={{ marginTop: 18 }}
             onPress={a.loadMockData}
           />
           <Btn
             title="Đăng xuất tài khoản Thợ"
-            icon="🚪"
+            icon="log-out"
             variant="dangerSoft"
             style={{ marginTop: 10 }}
             onPress={() => u.confirm('Đăng xuất?', 'Bạn sẽ quay về màn đăng nhập. Đơn hàng vẫn giữ trên thiết bị.', a.logout, 'Đăng xuất', true)}
@@ -803,10 +812,98 @@ export function TechAccountScreen() {
         visible={showAccountInfo}
         onClose={() => setShowAccountInfo(false)}
         title="Tài khoản đang đăng nhập"
-        footer={(
+      >
+        <View style={{ paddingVertical: 4 }}>
+          <View style={{ alignItems: 'center', marginBottom: 16 }}>
+            <View style={{ position: 'relative', marginBottom: 10 }}>
+              <View style={{ width: 66, height: 66, borderRadius: 22, backgroundColor: C.navy, alignItems: 'center', justifyContent: 'center', ...shadow.sm }}>
+                <Text style={{ fontSize: 28, color: '#fff', fontWeight: '900' }}>
+                  {(s.auth?.name || me.name || 'T').trim().charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={{ position: 'absolute', right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10, backgroundColor: C.green, borderWidth: 2.5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
+                <AppIcon name="check" size={11} color="#fff" strokeWidth={3} />
+              </View>
+            </View>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: C.ink }}>{s.auth?.name || me.name || 'Kỹ thuật viên'}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+              <Badge text="Kỹ thuật viên HRMSS" fg={C.primary} bg={C.primarySoft} />
+              <Badge text="Đang hoạt động" fg={C.green} bg={C.greenSoft} />
+            </View>
+          </View>
+
+          <View style={{ padding: 14, borderRadius: R.lg, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, gap: 12, marginBottom: 14 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <AppIcon name="id-card" size={16} color={C.primary} />
+                <Text style={ui.meta}>Mã kỹ thuật viên</Text>
+              </View>
+              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>{me.code}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <AppIcon name="user" size={16} color={C.primary} />
+                <Text style={ui.meta}>Tên đăng nhập</Text>
+              </View>
+              <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{s.auth?.username || s.auth?.phone || me.phone || '—'}</Text>
+            </View>
+            {(s.auth?.phone || me.phone) ? (
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <AppIcon name="phone" size={16} color={C.primary} />
+                  <Text style={ui.meta}>Số điện thoại</Text>
+                </View>
+                <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{s.auth?.phone || me.phone}</Text>
+              </View>
+            ) : null}
+            {s.auth?.email ? (
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <AppIcon name="mail" size={16} color={C.primary} />
+                  <Text style={ui.meta}>Email</Text>
+                </View>
+                <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{s.auth.email}</Text>
+              </View>
+            ) : null}
+            {(me.dob || s.user?.dob || s.auth?.dob) ? (
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <AppIcon name="cake" size={16} color={C.primary} />
+                  <Text style={ui.meta}>Ngày sinh</Text>
+                </View>
+                <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{me.dob || s.user?.dob || s.auth?.dob}</Text>
+              </View>
+            ) : null}
+            {me.area ? (
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <AppIcon name="map-pin" size={16} color={C.primary} />
+                  <Text style={ui.meta}>Khu vực nhận việc</Text>
+                </View>
+                <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{me.area}</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <Text style={[ui.meta, { marginBottom: 14, lineHeight: 18, textAlign: 'center' }]}>
+            Bạn có thể đăng xuất tạm thời hoặc xoá vĩnh viễn tài khoản kỹ thuật viên này khỏi ứng dụng.
+          </Text>
+
           <Btn
-            title="🗑️ Xoá tài khoản này"
-            variant="danger"
+            title="Đăng xuất tài khoản"
+            icon="log-out"
+            variant="ghost"
+            style={{ marginBottom: 10 }}
+            onPress={() => {
+              setShowAccountInfo(false);
+              u.confirm('Đăng xuất?', 'Bạn sẽ quay về màn đăng nhập. Đơn hàng vẫn giữ trên thiết bị.', a.logout, 'Đăng xuất', true);
+            }}
+          />
+
+          <Btn
+            title="Xoá tài khoản này"
+            icon="trash-2"
+            variant="dangerSoft"
             onPress={() => {
               setShowAccountInfo(false);
               u.confirm(
@@ -818,43 +915,7 @@ export function TechAccountScreen() {
               );
             }}
           />
-        )}
-      >
-        <View style={{ padding: 14, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, gap: 10 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={ui.meta}>Họ và tên</Text>
-            <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>{s.auth?.name || me.name || 'Kỹ thuật viên'}</Text>
-          </View>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={ui.meta}>Phân quyền</Text>
-            <Badge text="Kỹ thuật viên" fg={C.primary} bg={C.primarySoft} />
-          </View>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={ui.meta}>Mã kỹ thuật viên</Text>
-            <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{me.code}</Text>
-          </View>
-          {(s.auth?.phone || me.phone) ? (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={ui.meta}>Số điện thoại</Text>
-              <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{s.auth?.phone || me.phone}</Text>
-            </View>
-          ) : null}
-          {s.auth?.email ? (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={ui.meta}>Email</Text>
-              <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{s.auth.email}</Text>
-            </View>
-          ) : null}
-          {(me.dob || s.user?.dob || s.auth?.dob) ? (
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={ui.meta}>Ngày sinh</Text>
-              <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{me.dob || s.user?.dob || s.auth?.dob}</Text>
-            </View>
-          ) : null}
         </View>
-        <Text style={[ui.meta, { marginTop: 12, lineHeight: 18 }]}>
-          Nếu bạn không còn sử dụng tài khoản này nữa, bạn có thể nhấn nút bên dưới để xoá tài khoản khỏi ứng dụng.
-        </Text>
       </Sheet>
 
       <Sheet visible={showIncome} onClose={() => setShowIncome(false)} title="Ví thu nhập & Chiết khấu HRMSS">

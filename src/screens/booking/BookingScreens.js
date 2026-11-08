@@ -9,7 +9,7 @@ import {
 import { useApp, cartTotal, LAST_SERVICE_OPTIONS } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Media, Badge, Stars, Stepper, Sheet, Radio, Field,
-  SelectRow, Segmented, Checkbox, EmptyState, ServiceCard, Price, Chip, ui, HScroll,
+  SelectRow, Segmented, Checkbox, EmptyState, ServiceCard, Price, Chip, ui, HScroll, AppIcon,
   TimeRangeSlider, minutesToSlotStr, minutesToTimeStr,
 } from '../../components';
 import { pickImage, validateVietnamesePhone, validateStreetAddress, validateContactName } from '../../utils';
@@ -24,7 +24,7 @@ const nextDays = (n) => Array.from({ length: n }, (_, i) => {
     key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
   };
 });
-const COMMIT_ICON = ['⏰', '🏅', '🤝', '😊'];
+const COMMIT_ICON = ['clock', 'award', 'handshake', 'smile'];
 
 // CHI TIẾT DỊCH VỤ
 export function DetailScreen({ params }) {
@@ -75,12 +75,12 @@ export function DetailScreen({ params }) {
 
           <View style={bx.trust}>
             {[
-              { i: '🛡️', t: 'Bảo hành', v: `${curTier.warrantyDays || 60} ngày` },
-              { i: '⏱️', t: 'Thời gian', v: isClean(service) ? durationText(service.id) : 'Theo khảo sát' },
-              { i: '🛵', t: 'Phí đi lại', v: 'Miễn phí' },
+              { i: 'shield-check', t: 'Bảo hành', v: `${curTier.warrantyDays || 60} ngày` },
+              { i: 'timer', t: 'Thời gian', v: isClean(service) ? durationText(service.id) : 'Theo khảo sát' },
+              { i: 'navigation', t: 'Phí đi lại', v: 'Miễn phí' },
             ].map((x) => (
               <View key={x.t} style={bx.trustItem}>
-                <Text style={{ fontSize: 20 }}>{x.i}</Text>
+                <AppIcon icon={x.i} size={20} color={C.primary} strokeWidth={2.1} />
                 <Text style={bx.trustT}>{x.t}</Text>
                 <Text style={bx.trustV}>{x.v}</Text>
               </View>
@@ -88,7 +88,7 @@ export function DetailScreen({ params }) {
           </View>
           {/* Ưu đãi Combo nhiều thiết bị */}
           <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#F5D77A', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Text style={{ fontSize: 20 }}>🔥</Text>
+            <AppIcon name="flame" size={22} color="#D97706" strokeWidth={2.2} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontWeight: '800', color: C.goldInk, fontSize: 13 }}>Ưu đãi Combo nhiều máy chuẩn HRMSS</Text>
               <Text style={{ color: C.ink2, fontSize: 12, marginTop: 2 }}>Đặt 2 máy giảm thêm 5% (tối đa 50K) · Đặt từ 3 máy giảm thêm 10% (tối đa 120K)</Text>
@@ -122,7 +122,7 @@ export function DetailScreen({ params }) {
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 }}>
               {COMMITMENTS.map((c, i) => (
                 <View key={c.title} style={bx.commit}>
-                  <Text style={{ fontSize: 18 }}>{COMMIT_ICON[i]}</Text>
+                  <View style={{ paddingTop: 2 }}><AppIcon icon={COMMIT_ICON[i]} size={18} color={C.primary} strokeWidth={2.1} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={bx.commitT}>{c.title}</Text>
                     <Text style={bx.commitS} numberOfLines={2}>{c.sub}</Text>
@@ -136,7 +136,7 @@ export function DetailScreen({ params }) {
             <Text style={bx.h}>Quy trình thực hiện</Text>
             {video ? (
               <Tap style={bx.video} onPress={() => setShowVideo(true)}>
-                <View style={bx.play}><Text style={{ color: C.primary, fontSize: 18, marginLeft: 3 }}>▶</Text></View>
+                <View style={bx.play}><AppIcon name="play" size={18} color={C.primary} fill={C.primary} strokeWidth={2} /></View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>{video.title}</Text>
                   <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2 }}>{video.sub}</Text>
@@ -192,7 +192,7 @@ export function DetailScreen({ params }) {
 
       <View style={bx.dock}>
         <Tap style={bx.dockCart} onPress={() => a.addToCart(service.id)}>
-          <Text style={{ fontSize: 18 }}>🛒</Text>
+          <AppIcon name="shopping-cart" size={18} color={C.primary} strokeWidth={2.2} />
           <Text style={bx.dockCartText}>{inCart ? `Trong giỏ: ${inCart}` : 'Thêm giỏ'}</Text>
         </Tap>
         <Btn title={`Đặt ngay · ${formatVND(service.price)}`} style={{ flex: 1 }} onPress={() => nav.push('checkout', { items: [{ id: service.id, qty: 1 }] })} />
@@ -844,7 +844,7 @@ export function CheckoutScreen({ params }) {
                 }}
               >
                 <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: on ? C.primarySoft : '#F1F5F9', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: 22 }}>{pm.icon}</Text>
+                  <AppIcon icon={pm.icon} size={22} color={on ? C.primary : C.ink2} strokeWidth={2.1} />
                 </View>
 
                 <View style={{ flex: 1 }}>
@@ -929,7 +929,9 @@ export function CheckoutScreen({ params }) {
                 }
               }}
             >
-              <View style={[bx.vLeft, v.wallet && { backgroundColor: C.gold }]}><Text style={{ fontSize: 22 }}>{v.wallet ? '🎁' : '🎟️'}</Text></View>
+              <View style={[bx.vLeft, v.wallet && { backgroundColor: C.gold }]}>
+                <AppIcon icon={v.wallet ? 'gift' : 'ticket'} size={22} color={v.wallet ? '#fff' : C.primary} strokeWidth={2.1} />
+              </View>
               <View style={{ flex: 1, padding: 12 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Text style={{ fontWeight: '800', color: C.ink }}>{v.code}</Text>
@@ -1064,7 +1066,7 @@ export function SuccessScreen({ params }) {
   if (!o) return null;
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingTop: 40, paddingBottom: 32 }}>
-      <View style={bx.successIcon}><Text style={{ fontSize: 48, color: '#fff' }}>✓</Text></View>
+      <View style={bx.successIcon}><AppIcon name="check" size={48} color="#fff" strokeWidth={3} /></View>
       <Text style={bx.successTitle}>Đặt lịch thành công!</Text>
       <Text style={[bx.p, { textAlign: 'center', marginTop: 6 }]}>Mã đơn <Text style={{ fontWeight: '800', color: C.ink }}>{o.code}</Text>. Thợ sẽ gọi xác nhận trước khi đến.</Text>
       <Card style={{ marginTop: 24 }}>

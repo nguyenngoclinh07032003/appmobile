@@ -356,11 +356,11 @@ export function ListRow({ icon, iconBg, label, sub, value, onPress, danger, last
   return (
     <Tap onPress={onPress} scaleTo={0.99} style={[ui.listRow, !last && ui.listDivider]}>
       {icon ? <IconBox icon={icon} size={38} bg={iconBg || '#F1F5F9'} radius={12} /> : null}
-      <View style={{ flex: 1 }}>
-        <Text style={[ui.listLabel, danger && { color: C.red }]}>{label}</Text>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={[ui.listLabel, danger && { color: C.red }]} numberOfLines={1}>{label}</Text>
         {sub ? <Text style={ui.meta} numberOfLines={1}>{sub}</Text> : null}
       </View>
-      {right || (value ? <Text style={ui.listValue}>{value}</Text> : null)}
+      {right || (value ? <Text style={[ui.listValue, { maxWidth: '42%' }]} numberOfLines={1}>{value}</Text> : null)}
       {right ? null : <AppIcon name="chevron-right" size={18} color={C.faint} strokeWidth={2.2} style={{ marginLeft: 4 }} />}
     </Tap>
   );

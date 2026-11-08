@@ -93,6 +93,8 @@ import {
   Infinity as InfinityIcon,
   Award,
   Smile,
+  Play,
+  Banknote,
 } from 'lucide-react-native';
 import { C } from '../../theme';
 
@@ -191,8 +193,16 @@ export const LUCIDE_ICON_MAP = {
   infinity: InfinityIcon,
   award: Award,
   smile: Smile,
+  play: Play,
+  banknote: Banknote,
 
   // --- Ánh xạ tự động toàn bộ ký hiệu / Emoji hiện có trong App sang Lucide Icons ---
+  '📄': FileText,
+  '🔥': Flame,
+  '⏱️': Timer,
+  '⏱': Timer,
+  '▶': Play,
+  '💵': Banknote,
   '🛒': ShoppingCart,
   '🔎': Search,
   '♾️': InfinityIcon,

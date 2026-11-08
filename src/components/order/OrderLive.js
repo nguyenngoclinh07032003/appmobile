@@ -3,7 +3,7 @@ import React, { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { C } from '../../theme';
 import { useApp, timeAgo } from '../../context';
-import { Card, Progress, ui } from '../common';
+import { Card, Progress, ui, AppIcon } from '../common';
 
 /** Theo dõi tiến độ di chuyển GPS trực tiếp của kỹ thuật viên */
 export function TrackingCard({ order, compact }) {
@@ -23,7 +23,10 @@ export function TrackingCard({ order, compact }) {
   if (!active && tr) {
     return (
       <Card style={{ marginTop: 12, backgroundColor: C.greenSoft, borderColor: '#CDEFDD' }}>
-        <Text style={st.h}>📍 Thợ đã đến nơi</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <AppIcon name="map-pin" size={16} color={C.green} strokeWidth={2.3} />
+          <Text style={st.h}>Thợ đã đến nơi</Text>
+        </View>
         <Text style={st.body}>Hành trình kết thúc khi check-in GPS.</Text>
       </Card>
     );
@@ -35,7 +38,10 @@ export function TrackingCard({ order, compact }) {
   return (
     <Card style={{ marginTop: 12, backgroundColor: '#F0F7FF', borderColor: '#D6E4FF' }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={st.h}>🛵 Theo dõi thợ realtime</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <AppIcon name="navigation" size={16} color={C.primary} strokeWidth={2.3} />
+          <Text style={st.h}>Theo dõi thợ realtime</Text>
+        </View>
         <Text style={{ color: C.primary, fontWeight: '800', fontSize: 13 }}>~{eta} phút</Text>
       </View>
       <Text style={st.body}>{tr?.label || 'Thợ đang di chuyển tới địa chỉ của bạn.'}</Text>
@@ -45,10 +51,10 @@ export function TrackingCard({ order, compact }) {
           <View style={[st.dot, { backgroundColor: C.primary }]} />
           <View style={st.dash} />
           <View style={[st.dot, { backgroundColor: C.green, left: `${Math.round(progress * 86)}%` }]}>
-            <Text style={{ fontSize: 11 }}>👷</Text>
+            <AppIcon name="hard-hat" size={11} color="#fff" strokeWidth={2.5} />
           </View>
           <View style={[st.dot, { backgroundColor: C.primary, right: 0, left: undefined }]}>
-            <Text style={{ fontSize: 11 }}>🏠</Text>
+            <AppIcon name="home" size={11} color="#fff" strokeWidth={2.5} />
           </View>
         </View>
         <Text style={[ui.meta, { marginTop: 8 }]}>
