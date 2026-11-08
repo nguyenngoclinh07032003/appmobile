@@ -1,9 +1,9 @@
-/** Định vị hành trình kỹ thuật viên & Chat trực tiếp — dùng chung Khách hàng / Kỹ thuật viên */
-import React, { useEffect, useState } from 'react';
-import { View, Text, TextInput, StyleSheet } from 'react-native';
-import { C, R } from '../../theme';
-import { useApp, fmtDateTime, timeAgo } from '../../context';
-import { Btn, Card, Progress, Tap, ui } from '../common';
+/** Định vị hành trình kỹ thuật viên (GPS Realtime Tracking) — dùng chung Khách hàng / Kỹ thuật viên */
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import { C } from '../../theme';
+import { useApp, timeAgo } from '../../context';
+import { Card, Progress, ui } from '../common';
 
 /** Theo dõi tiến độ di chuyển GPS trực tiếp của kỹ thuật viên */
 export function TrackingCard({ order, compact }) {
@@ -65,73 +65,8 @@ export function TrackingCard({ order, compact }) {
   );
 }
 
-export function ChatCard({ order, role }) {
-  const { a } = useApp();
-  const [text, setText] = useState('');
-  const chat = order.chat || [];
-  const from = role === 'tech' ? 'tech' : 'customer';
-  const send = () => {
-    const t = text.trim();
-    if (!t) return;
-    a.sendOrderChat(order.code, t, from);
-    setText('');
-  };
-
-  if (!order.tech && order.status === 'pending') {
-    return (
-      <Card style={{ marginTop: 12 }}>
-        <Text style={st.h}>💬 Chat với thợ</Text>
-        <Text style={st.body}>Chat mở sau khi thợ nhận đơn.</Text>
-      </Card>
-    );
-  }
-  if (!order.tech) return null;
-
-  return (
-    <Card style={{ marginTop: 12 }}>
-      <Text style={st.h}>💬 Chat đơn {order.code}</Text>
-      <Text style={[ui.meta, { marginBottom: 8 }]}>
-        {role === 'tech' ? `Khách: ${order.address?.name || '—'}` : `Thợ: ${order.tech?.name || '—'}`}
-      </Text>
-      <View style={st.chatBox}>
-        {chat.length === 0 ? (
-          <Text style={[ui.meta, { textAlign: 'center', paddingVertical: 12 }]}>Chưa có tin nhắn. Gửi vị trí cổng / giờ hẹn tại đây.</Text>
-        ) : chat.slice(-12).map((m) => {
-          const mine = m.from === from;
-          return (
-            <View key={m.id} style={[st.bubble, mine ? st.bubbleMine : st.bubbleOther]}>
-              <Text style={{ color: mine ? '#fff' : C.ink, lineHeight: 19 }}>{m.text}</Text>
-              <Text style={{ color: mine ? 'rgba(255,255,255,0.75)' : C.muted, fontSize: 11, marginTop: 4 }}>
-                {m.from === 'tech' ? 'Thợ' : 'Khách'} · {fmtDateTime(m.at)}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
-      <View style={st.composer}>
-        <TextInput
-          style={st.input}
-          value={text}
-          onChangeText={setText}
-          placeholder={role === 'tech' ? 'Nhắn khách…' : 'Nhắn thợ…'}
-          placeholderTextColor={C.faint}
-          onSubmitEditing={send}
-        />
-        <Btn title="Gửi" small style={{ minWidth: 72 }} onPress={send} />
-      </View>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-        {(role === 'tech'
-          ? ['Em đang trên đường ạ', 'Tới nơi trong 5 phút', 'Cho em hỏi số nhà giúp ạ']
-          : ['Cổng màu xanh', 'Gọi khi tới nhé', 'Ok anh']
-        ).map((q) => (
-          <Tap key={q} style={st.quick} onPress={() => a.sendOrderChat(order.code, q, from)}>
-            <Text style={{ fontSize: 12, color: C.primary, fontWeight: '700' }}>{q}</Text>
-          </Tap>
-        ))}
-      </View>
-    </Card>
-  );
-}
+/** Chat giữa thợ và khách đã được hủy theo yêu cầu */
+export const ChatCard = () => null;
 
 const st = StyleSheet.create({
   h: { fontWeight: '800', color: C.ink, fontSize: 15 },
@@ -143,14 +78,4 @@ const st = StyleSheet.create({
     position: 'absolute', width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
     top: 3, left: 0, borderWidth: 2, borderColor: '#fff',
   },
-  chatBox: { maxHeight: 220, gap: 8 },
-  bubble: { maxWidth: '88%', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14 },
-  bubbleMine: { alignSelf: 'flex-end', backgroundColor: C.primary, borderBottomRightRadius: 4 },
-  bubbleOther: { alignSelf: 'flex-start', backgroundColor: '#F1F4F9', borderBottomLeftRadius: 4 },
-  composer: { flexDirection: 'row', gap: 8, marginTop: 12, alignItems: 'center' },
-  input: {
-    flex: 1, minHeight: 40, borderWidth: 1, borderColor: C.line, borderRadius: 12,
-    paddingHorizontal: 12, color: C.ink, backgroundColor: '#fff',
-  },
-  quick: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: C.primarySoft },
 });

@@ -22,7 +22,7 @@ import {
   EmptyState, StatusChip, Progress, Media, ListRow, Stepper, HScroll, ui,
 } from '../../components';
 import { pickImage, pickCamera } from '../../utils/media';
-import { TrackingCard, ChatCard } from '../../components/order';
+import { TrackingCard } from '../../components/order';
 
 const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const DECLINE_REASONS = ['Bận lịch khác', 'Ngoài khu vực phục vụ', 'Không đúng chuyên môn', 'Lý do khác'];
@@ -1067,7 +1067,6 @@ export function TechJobScreen({ params }) {
           <View style={tx.offline}><Text style={{ color: C.orange, fontWeight: '700' }}>Bạn đã từ chối việc này. Vẫn có thể nhận lại nếu còn trống lịch.</Text></View>
         ) : null}
         {o.status === 'onway' ? <TrackingCard order={o} compact /> : null}
-        {mine || o.tech ? <ChatCard order={o} role="tech" /> : null}
 
         {o.checkIn ? (
           <Card style={{ marginTop: 12, backgroundColor: C.primarySoft, borderColor: '#D6E4FF' }}>

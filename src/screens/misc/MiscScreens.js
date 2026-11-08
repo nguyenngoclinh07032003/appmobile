@@ -15,7 +15,7 @@ import {
   TimeRangeSlider, minutesToSlotStr, minutesToTimeStr,
 } from '../../components';
 import { pickImage, validateVietnamesePhone, validateContactName } from '../../utils';
-import { TrackingCard, ChatCard } from '../../components/order';
+import { TrackingCard } from '../../components/order';
 
 const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const nextDays = (n) => Array.from({ length: n }, (_, i) => {
@@ -277,7 +277,6 @@ export function OrderScreen({ params }) {
           </Text>
         </View>
         <TrackingCard order={o} />
-        <ChatCard order={o} role="customer" />
 
         {o.checkIn ? (
           <Card style={{ marginTop: 12, backgroundColor: C.primarySoft, borderColor: '#D6E4FF' }}>
