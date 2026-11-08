@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Image } from 'react-native';
-import { C, R, shadow } from '../theme';
+import { C, R, shadow } from '../../theme';
 import {
   getService, formatVND, discountOf, isEstimate, isClean, durationText, featureFor, stepsFor, videoFor,
   REVIEWS_BY_ID, COMMITMENTS, ALL_SERVICES, TIME_SLOTS, VOUCHERS, PAYMENTS, AREAS, noteFor, voucherDiscount,
   catLabel, catIcon, MATERIALS, SITE_CONDITIONS, tierOf, comboDiscountFor,
-} from '../data';
-import { useApp, cartTotal } from '../store';
+} from '../../constants/data';
+import { useApp, cartTotal } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Media, Badge, Stars, Stepper, Sheet, Radio, Field,
   SelectRow, Segmented, Checkbox, EmptyState, ServiceCard, Price, Chip, ui, HScroll,
-} from '../ui';
-import { pickImage } from '../media';
+} from '../../components';
+import { pickImage } from '../../utils/media';
 
 const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const nextDays = (n) => Array.from({ length: n }, (_, i) => {

@@ -1,15 +1,15 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { C, R, shadow, toneOf, STATUS_META, grad } from '../theme';
+import { C, R, shadow, toneOf, STATUS_META, grad } from '../../theme';
 import {
   CATEGORIES, SERVICES, INSTALL_SERVICES, REPAIR_SERVICES, LIFETIME_SERVICES, SERVICE_TYPES, CAT_SHORT,
   formatVND, getService, catLabel, catIcon, tierOf, HOTLINE,
-} from '../data';
-import { useApp, deviceStatus, warrantyInfo, fmtDate, isActiveOrder, orderTotal } from '../store';
+} from '../../constants/data';
+import { useApp, deviceStatus, warrantyInfo, fmtDate, isActiveOrder, orderTotal } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, PageHead, Pills, Segmented, ServiceGrid, EmptyState, Field, Badge,
   StatusChip, Progress, Media, ListRow, ui, HScroll,
-} from '../ui';
+} from '../../components';
 
 // =========================================================== DỊCH VỤ
 export function ServicesScreen() {

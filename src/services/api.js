@@ -1,6 +1,6 @@
 // Service kết nối API trực tiếp với Backend HRMSS
 // Hỗ trợ kết nối đa cổng: 5173, 5174 và Cloud https://server.hrmss.cyou/api/v1
-import { API_BASE_URL, API_ENDPOINTS, APP_CONFIG } from './config';
+import { API_BASE_URL, API_ENDPOINTS, APP_CONFIG } from '../constants/config';
 
 // Quản lý Token trong sessionStorage (cô lập theo từng tab & tự động xoá khi đóng trình duyệt, chống rò rỉ localStorage)
 const getStoredToken = () => {

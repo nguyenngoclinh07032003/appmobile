@@ -1,19 +1,19 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TextInput, Platform, Image, Linking } from 'react-native';
-import { C, R, shadow, toneOf, STATUS_META, grad } from '../theme';
+import { C, R, shadow, toneOf, STATUS_META, grad } from '../../theme';
 import {
   ALL_SERVICES, CATEGORIES, POPULAR_SEARCHES, FAQ, REDEEM_OPTIONS, VOUCHERS, ORDER_STEPS, HOTLINE, STATUS_DESC, stepIndexOf,
   getService, formatVND, normalize, catLabel, tierOf, TIERS, TIME_SLOTS, MATERIALS, SAFETY_CHECKLIST_ITEMS,
-} from '../data';
+} from '../../constants/data';
 import {
   useApp, fmtDate, fmtDateTime, timeAgo, warrantyInfo, LAST_SERVICE_OPTIONS, isActiveOrder, orderTotal, lateDiscountAmount, tierPartDiscountAmount, normalizeTechRep,
-} from '../store';
+} from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Chip, Badge, Stars, Field, Sheet, Radio,
   EmptyState, ServiceGrid, ServiceRow, Progress, Media, ListRow, PseudoQR, HScroll, ui,
-} from '../ui';
-import { pickImage } from '../media';
-import { TrackingCard, ChatCard } from '../orderLive';
+} from '../../components';
+import { pickImage } from '../../utils/media';
+import { TrackingCard, ChatCard } from '../../components/order';
 
 const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const nextDays = (n) => Array.from({ length: n }, (_, i) => {

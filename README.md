@@ -18,19 +18,44 @@ App yêu cầu đăng nhập. Vai trò gắn với tài khoản, không chuyển
 
 Mở **2 tab** để chạy song song Khách + Thợ. Phiên đăng nhập lưu theo tab (`sessionStorage`), đơn hàng dùng chung (`localStorage`) nên cập nhật hai bên.
 
-## Cấu trúc
-| File | Nội dung |
-|---|---|
-| `App.js` | Khung app: thanh tab dưới, điều hướng dạng stack, khung điện thoại khi xem trên web desktop |
-| `src/theme.js` | Màu sắc, bo góc, đổ bóng, màu theo danh mục và trạng thái đơn |
-| `src/store.js` | **Trạng thái dùng chung + nghiệp vụ** (giỏ hàng, đơn, thiết bị, địa chỉ, điểm, voucher, thông báo…), điều hướng, toast/hộp thoại, lưu `localStorage` |
-| `src/ui.js` | Component dùng chung: Button, Card, Sheet, Dialog, ServiceCard, Stepper… |
-| `src/data.js` | Dữ liệu dịch vụ, giá, quy trình, FAQ, hạng thành viên, voucher đổi điểm |
-| `src/screens/Home.js` | Trang chủ |
-| `src/screens/Tabs.js` | Dịch vụ (kèm Bảo hành), Thiết bị, Hoạt động, Cá nhân |
-| `src/screens/Booking.js` | Chi tiết dịch vụ, Giỏ hàng, Xác nhận đặt lịch, Đặt thành công, Sổ địa chỉ |
-| `src/screens/Misc.js` | Tìm kiếm, Thông báo, Chi tiết đơn, Đánh giá, Quyền lợi, Yêu thích, Hồ sơ, Trợ giúp, Điều khoản, Mã QR, Thêm thiết bị |
-| `src/screens/Tech.js` | **App Thợ (Technician)**: Công việc, Lịch làm việc, Thông báo, Tài khoản, Chi tiết công việc |
+## Cấu trúc chuẩn React Native
+Dự án được tổ chức theo chuẩn kiến trúc module hóa của React Native:
+
+```
+src/
+├── components/          # Reusable UI components
+│   ├── common/          # Các UI component dùng chung (Button, Card, Input, Sheet, Dialog, Toast...)
+│   └── order/           # Live tracking & chat card (TrackingCard, ChatCard)
+├── constants/           # Dữ liệu tĩnh, cấu hình & chính sách nghiệp vụ
+│   ├── config.js        # Cấu hình API và kết nối Backend HRMSS
+│   ├── data.js          # Danh mục dịch vụ, giá, voucher, FAQ, linh kiện
+│   └── techPolicy.js    # Chính sách, điểm thưởng/phạt kỹ thuật viên
+├── context/             # State Management (React Context)
+│   └── AppContext.js    # Quản lý toàn bộ state toàn cục, giỏ hàng, đơn hàng, auth, thông báo
+├── navigation/          # Quản lý điều hướng & khung ứng dụng
+│   ├── AppNavigator.js  # Điều hướng stack/tab, Shell, khung điện thoại desktop
+│   ├── BottomNav.js     # Thanh điều hướng dưới đáy (Bottom navigation bar)
+│   └── routes.js        # Định nghĩa danh sách routes & tabs (Khách + Thợ)
+├── screens/             # Màn hình ứng dụng (phân chia theo domain / chức năng)
+│   ├── auth/            # Màn hình Đăng nhập / Đăng ký
+│   ├── home/            # Trang chủ Khách hàng
+│   ├── booking/         # Luồng đặt lịch (Chi tiết, Giỏ hàng, Thanh toán, Địa chỉ)
+│   ├── customer/        # Các tab chính (Dịch vụ, Thiết bị, Hoạt động, Cá nhân)
+│   ├── tech/            # App Thợ (Công việc, Lịch làm việc, Thông báo, Chi tiết việc)
+│   └── misc/            # Các màn hình phụ (Tìm kiếm, Đánh giá, Điểm thưởng, QR...)
+├── services/            # Giao tiếp API & đồng bộ dữ liệu
+│   ├── api.js           # Client gọi API Backend
+│   ├── authService.js   # Quản lý tài khoản, token & session
+│   └── syncService.js   # Đồng bộ dữ liệu 2 chiều Khách ↔ Thợ ↔ Backend
+├── theme/               # Bảng màu, typography, shadow, gradient
+│   ├── colors.js        # Màu sắc chủ đạo & màu theo danh mục
+│   └── theme.js         # Tokens, radii, shadows, gradients
+└── utils/               # Tiện ích bổ trợ
+    ├── geo.js           # Định vị GPS, tính khoảng cách, tiến trình thợ di chuyển
+    └── media.js         # Xử lý chọn ảnh & camera
+```
+
+*(Lưu ý: Các đường dẫn cũ ở thư mục gốc `src/*.js` và `src/screens/*.js` vẫn được giữ dưới dạng re-export tương thích 100%, không làm gián đoạn code hay thay đổi bất kỳ giao diện nào).*
 
 ## App Thợ (Technician) — theo sơ đồ ngữ cảnh HRMSS
 Mở: đăng nhập tài khoản Thợ (`0987654321 / 123456`) tại `?role=tech`. Khi đăng nhập, hệ thống tự thêm vài việc demo nếu chưa có đơn chờ. Hai app dùng chung dữ liệu đơn hàng nên cập nhật cho nhau.

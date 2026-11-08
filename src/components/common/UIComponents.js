@@ -2,9 +2,9 @@ import React, { useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, ScrollView, Platform, Animated, Easing,
 } from 'react-native';
-import { C, R, shadow, toneOf, STATUS_META, grad } from './theme';
-import { formatVND, discountOf, isEstimate, isClean, durationText } from './data';
-import { useApp } from './store';
+import { C, R, shadow, toneOf, STATUS_META, grad } from '../../theme';
+import { formatVND, discountOf, isEstimate, isClean, durationText } from '../../constants/data';
+import { useApp } from '../../context';
 
 const webTapStyle = Platform.select({
   web: {

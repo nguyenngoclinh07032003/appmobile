@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import {
   View, Text, TextInput, StyleSheet, ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { C, R, shadow, grad } from '../theme';
-import { useApp } from '../store';
-import { Btn, Tap } from '../ui';
+import { C, R, shadow, grad } from '../../theme';
+import { useApp } from '../../context';
+import { Btn, Tap } from '../../components';
 
 const webNoOutline = Platform.select({ web: { outlineStyle: 'none' }, default: {} });
 

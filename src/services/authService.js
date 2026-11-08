@@ -2,7 +2,7 @@
 // - accounts: localStorage (dùng chung mọi tab / thiết bị trình duyệt)
 // - session: sessionStorage (mỗi tab một phiên — Khách và Thợ có thể mở song song)
 
-import { TECH_ME } from './data';
+import { TECH_ME } from '../constants/data';
 
 const ACCOUNTS_KEY = 'tho-hrmss-accounts-v1';
 const SESSION_KEY = 'tho-hrmss-session-v1';

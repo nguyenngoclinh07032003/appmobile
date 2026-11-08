@@ -3,7 +3,7 @@ import {
   TECH_ME,
   resolveServiceSlugFromBackend,
   resolveDbMaterialId,
-} from './data.js';
+} from '../constants/data';
 
 const pad = (n) => String(n).padStart(2, '0');
 

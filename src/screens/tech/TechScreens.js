@@ -6,22 +6,22 @@
 // ===========================================================================
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Image, Linking } from 'react-native';
-import { C, R, shadow, STATUS_META, toneOf, grad } from '../theme';
+import { C, R, shadow, STATUS_META, toneOf, grad } from '../../theme';
 import {
   getService, formatVND, catIcon, catLabel, TECH_ME, MATERIALS, DIAG_TAGS, TIME_SLOTS, TECH_STATUS_DESC, TECH_ORDER_STEPS, techStepIndexOf, HOTLINE,
   SAFETY_CHECKLIST_ITEMS,
-} from '../data';
+} from '../../constants/data';
 import {
   useApp, orderTotal, bookedValue, isActiveOrder, dateKeyOf, todayKey, fmtDateTime, timeAgo,
   TECH_POLICY, assessCancelAfterAccept, reputationTone, normalizeTechRep, slotStartTs, matchJobForTech,
-} from '../store';
-import { getCheckInLocation } from '../geo';
+} from '../../context';
+import { getCheckInLocation } from '../../utils/geo';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, PageHead, Segmented, Chip, Badge, Stars, Field, Sheet, Radio, Checkbox,
   EmptyState, StatusChip, Progress, Media, ListRow, Stepper, HScroll, ui,
-} from '../ui';
-import { pickImage, pickCamera } from '../media';
-import { TrackingCard, ChatCard } from '../orderLive';
+} from '../../components';
+import { pickImage, pickCamera } from '../../utils/media';
+import { TrackingCard, ChatCard } from '../../components/order';
 
 const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const DECLINE_REASONS = ['Bận lịch khác', 'Ngoài khu vực phục vụ', 'Không đúng chuyên môn', 'Lý do khác'];

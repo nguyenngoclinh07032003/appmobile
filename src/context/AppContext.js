@@ -3,12 +3,12 @@ import { BackHandler, Linking, Platform } from 'react-native';
 import {
   getService, MAINT_MONTHS, TECH_ME, REDEEM_OPTIONS, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech,
   tierOf, lookupHrmssPurchasedDevices, comboDiscountFor, syncCatalogFromBackend,
-} from './data';
-export { matchJobForTech, comboDiscountFor } from './data';
+} from '../constants/data';
+export { matchJobForTech, comboDiscountFor } from '../constants/data';
 import {
   getSession, clearSession, loginAccount, registerAccount, urlRoleHint, resetPassword, changePassword, quickLoginRole, setSession, upsertBackendAccount,
-} from './auth';
-import { hrmssApi, authTokens } from './api';
+} from '../services/authService';
+import { hrmssApi, authTokens } from '../services/api';
 import {
   mapBackendAddressToApp,
   mapBackendCustomerRequestToOrder,
@@ -17,16 +17,16 @@ import {
   mergeBackendOrdersWithLocal,
   buildPreferredTimeIso,
   resolveDbMaterialId,
-} from './backendSync';
+} from '../services/syncService';
 import {
   TECH_POLICY, normalizeTechRep, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
   applyTechPenalty, applyTechBonus, mintWalletVoucher, slotStartTs,
-} from './techPolicy';
-import { advanceTracking } from './geo';
+} from '../constants/techPolicy';
+import { advanceTracking } from '../utils/geo';
 export {
   TECH_POLICY, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
   reputationTone, normalizeTechRep, slotStartTs,
-} from './techPolicy';
+} from '../constants/techPolicy';
 
 // ---------------------------------------------------------------------------
 // Tiện ích thời gian

@@ -1,0 +1,73 @@
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { C, shadow } from '../theme';
+import { useApp } from '../context';
+import { CUSTOMER_TABS, TECH_TABS } from './routes';
+
+export default function BottomNav() {
+  const { s, nav, d } = useApp();
+  const role = s.auth?.role || s.role;
+  const tabs = role === 'tech' ? TECH_TABS : CUSTOMER_TABS;
+  const badges = role === 'tech'
+    ? { 'tech-jobs': d.newJobs.length, 'tech-notifs': d.techUnread }
+    : { activity: d.activeOrders.length, devices: d.dueDevices.length };
+
+  return (
+    <View style={styles.nav}>
+      {tabs.map((t) => {
+        const on = nav.tab === t.id;
+        return (
+          <TouchableOpacity
+            key={t.id}
+            style={styles.navItem}
+            onPress={() => nav.go(t.id)}
+            activeOpacity={0.72}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: on }}
+          >
+            <View style={[styles.navIcon, on && styles.navIconOn]}>
+              <Text style={{ fontSize: 19, opacity: on ? 1 : 0.58, transform: [{ scale: on ? 1.06 : 1 }] }}>{t.icon}</Text>
+              {badges[t.id] ? <View style={styles.navBadge}><Text style={styles.navBadgeText}>{badges[t.id]}</Text></View> : null}
+            </View>
+            <Text style={[styles.navLabel, on && styles.navLabelOn]}>{t.label}</Text>
+            {on ? <View style={styles.navDot} /> : null}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  nav: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+    paddingTop: 7,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 9,
+    ...shadow.sm,
+  },
+  navItem: { flex: 1, alignItems: 'center' },
+  navIcon: { width: 48, height: 32, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  navIconOn: { backgroundColor: C.primarySoft },
+  navLabel: { fontSize: 11, color: C.muted, marginTop: 3, fontWeight: '600' },
+  navLabelOn: { color: C.primary, fontWeight: '800' },
+  navDot: { width: 16, height: 3, borderRadius: 2, backgroundColor: C.primary, marginTop: 3 },
+  navBadge: {
+    position: 'absolute',
+    top: -4,
+    right: 4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: C.red,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#fff',
+  },
+  navBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+});
+

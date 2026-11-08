@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { C, R, shadow, toneOf, grad } from '../theme';
+import { C, R, shadow, toneOf, grad } from '../../theme';
 import {
   CATEGORIES, SERVICES, COMMITMENTS, SERVICE_TYPES, TIPS, PARTNERS, CAT_SHORT, HOTLINE, catLabel, catIcon, getService,
-} from '../data';
-import { useApp, deviceStatus } from '../store';
+} from '../../constants/data';
+import { useApp, deviceStatus } from '../../context';
 import {
   Tap, IconBtn, IconBox, Card, SectionTitle, ServiceCard, Sheet, Btn, StatusChip, Media, Badge, ui, HScroll,
-} from '../ui';
+} from '../../components';
 
 const POPULAR = ['vs-ml-1', 'vs-mg-tren', 'vs-mg-truoc', 'vs-quat-dh', 'vs-ml-am-tran', 'vs-tl-300'].map(getService);
 const COMMIT_ICON = ['⏰', '🏅', '🤝', '😊'];
