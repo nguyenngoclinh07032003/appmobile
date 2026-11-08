@@ -562,17 +562,18 @@ export function TechNotifsScreen() {
             onAction={() => nav.go('tech-jobs')}
           />
         ) : filtered.map((n) => {
-          const sem = resolveSemanticTone({ title: n.title, message: n.body, icon: n.icon, fallback: 'warning' });
+          const sem = resolveSemanticTone({ tone: n.tone, title: n.title, message: n.body, icon: n.icon, fallback: 'warning' });
           return (
             <Tap
               key={n.id}
               style={[
                 tx.notif,
-                !n.read && { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' },
+                !n.read && { backgroundColor: sem.unreadBg, borderColor: sem.border },
+                { borderLeftWidth: 4, borderLeftColor: sem.accent },
               ]}
               onPress={() => { a.readTechNotif(n.id); nav.open(n.link); }}
             >
-              <IconBox icon={n.icon || sem.icon} size={42} bg={sem.bg} color={sem.accent} radius={21} />
+              <IconBox icon={n.icon || sem.icon} size={42} bg={sem.bg} color={sem.accent} radius={14} />
               <View style={{ flex: 1 }}>
                 <Text style={[tx.notifTitle, !n.read && { color: C.ink }]}>{n.title}</Text>
                 {n.body ? <Text style={tx.notifBody}>{n.body}</Text> : null}

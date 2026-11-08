@@ -107,38 +107,62 @@ export function SearchScreen() {
 // =========================================================== THÔNG BÁO
 export function NotificationsScreen() {
   const { s, a, nav } = useApp();
+  const [filter, setFilter] = useState('all');
+  const list = s.notifications || [];
+  const filtered = list.filter((n) => {
+    if (filter === 'unread') return !n.read;
+    if (filter === 'orders') return /đơn|báo giá|bảo hành|thợ|thanh toán|huỷ|hoàn thành/i.test(`${n.title} ${n.body || ''}`);
+    return true;
+  });
   return (
     <View style={{ flex: 1 }}>
       <TopBar
         title="Thông báo"
+        sub="Đơn hàng, báo giá & bảo hành"
         onBack={() => {
           if (nav.stack.length > 0) nav.back();
           else nav.go('home');
         }}
         right={(
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            {s.notifications.some((n) => !n.read) ? (
+            {list.some((n) => !n.read) ? (
               <Tap onPress={a.readAll}><Text style={ui.link}>Đọc hết</Text></Tap>
             ) : null}
           </View>
         )}
       />
+      <View style={{ backgroundColor: '#fff', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.line }}>
+        <HScroll contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
+          {[
+            { id: 'all', label: `Tất cả (${list.length})` },
+            { id: 'unread', label: `Chưa đọc (${list.filter((n) => !n.read).length})` },
+            { id: 'orders', label: 'Đơn hàng' },
+          ].map((f) => <Chip key={f.id} label={f.label} on={filter === f.id} onPress={() => setFilter(f.id)} />)}
+        </HScroll>
+      </View>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
-        {s.notifications.length === 0 ? <EmptyState icon="bell" title="Chưa có thông báo" body="Cập nhật về đơn hàng, ưu đãi và lịch bảo dưỡng sẽ hiện ở đây." /> : s.notifications.map((n) => {
-          const sem = resolveSemanticTone({ title: n.title, message: n.body, icon: n.icon, fallback: 'warning' });
+        {filtered.length === 0 ? (
+          <EmptyState
+            icon="bell"
+            title={filter === 'unread' ? 'Đã đọc hết thông báo' : 'Chưa có thông báo'}
+            body="Cập nhật về đơn hàng, báo giá, ưu đãi và lịch bảo dưỡng sẽ hiện ở đây."
+          />
+        ) : filtered.map((n) => {
+          const sem = resolveSemanticTone({ tone: n.tone, title: n.title, message: n.body, icon: n.icon, fallback: 'warning' });
           return (
             <Tap
               key={n.id}
               style={[
                 mx.notif,
-                !n.read && { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' },
+                !n.read && { backgroundColor: sem.unreadBg, borderColor: sem.border },
+                { borderLeftWidth: 4, borderLeftColor: sem.accent },
               ]}
               onPress={() => { a.readNotif(n.id); nav.open(n.link); }}
             >
-              <IconBox icon={n.icon || sem.icon} size={42} bg={sem.bg} color={sem.accent} radius={21} />
+              <IconBox icon={n.icon || sem.icon} size={42} bg={sem.bg} color={sem.accent} radius={14} />
               <View style={{ flex: 1 }}>
                 <Text style={[mx.notifTitle, !n.read && { color: C.ink }]}>{n.title}</Text>
-                <Text style={mx.notifBody}>{n.body}</Text>
+                {n.body ? <Text style={mx.notifBody}>{n.body}</Text> : null}
                 <Text style={[ui.meta, { marginTop: 4 }]}>{timeAgo(n.at)}</Text>
               </View>
               {!n.read ? <View style={[mx.dot, { backgroundColor: sem.accent }]} /> : null}

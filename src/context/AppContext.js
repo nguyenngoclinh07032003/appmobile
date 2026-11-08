@@ -4,7 +4,7 @@ import {
   getService, MAINT_MONTHS, TECH_ME, REDEEM_OPTIONS, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech,
   tierOf, lookupHrmssPurchasedDevices, comboDiscountFor, syncCatalogFromBackend,
 } from '../constants/data';
-import { MOCK_ORDERS, MOCK_DEVICES, MOCK_ADDRESSES } from '../constants/mockData';
+import { MOCK_ORDERS, MOCK_DEVICES, MOCK_ADDRESSES, MOCK_CUSTOMER_NOTIFS, MOCK_TECH_NOTIFS } from '../constants/mockData';
 export { matchJobForTech, comboDiscountFor } from '../constants/data';
 import {
   getSession, clearSession, loginAccount, registerAccount, urlRoleHint, resetPassword, changePassword, quickLoginRole, setSession, upsertBackendAccount, deleteAccountById,
@@ -211,7 +211,7 @@ const makeCustomerSlice = () => ({
   cart: [],
   devices: [],
   favorites: [],
-  notifications: [welcome()],
+  notifications: [...MOCK_CUSTOMER_NOTIFS],
   points: 0,
   lifetimePoints: 0,
   pointHistory: [],
@@ -245,7 +245,11 @@ const switchCustomerSlice = (prev, nextAccount) => {
   }
   const nextKey = customerProfileKey(nextAccount);
   if (nextKey) {
-    const loaded = profiles[nextKey] || (nextAccount.phone ? profiles[nextAccount.phone] : null) || makeCustomerSlice();
+    const rawLoaded = profiles[nextKey] || (nextAccount.phone ? profiles[nextAccount.phone] : null) || makeCustomerSlice();
+    const loaded = {
+      ...rawLoaded,
+      notifications: (rawLoaded.notifications && rawLoaded.notifications.length > 1) ? rawLoaded.notifications : [...MOCK_CUSTOMER_NOTIFS],
+    };
     profiles[nextKey] = loaded;
     return { ...loaded, customerProfiles: profiles };
   }
@@ -260,7 +264,7 @@ const makeInitial = () => ({
   customerProfiles: {},
   // Phía thợ
   role: 'customer', // 'customer' | 'tech'
-  techNotifs: [],
+  techNotifs: [...MOCK_TECH_NOTIFS],
   declined: [], // legacy — dùng declinedByTech theo mã thợ
   declinedByTech: {}, // { [techCode]: string[] }
   declineLog: [],
@@ -300,12 +304,16 @@ export function AppProvider({ children }) {
     const cleanOrders = (saved.orders && saved.orders.length > 0) ? saved.orders : MOCK_ORDERS;
     const cleanDevices = (saved.devices && saved.devices.length > 0) ? saved.devices : MOCK_DEVICES;
     const cleanAddresses = (saved.addresses && saved.addresses.length > 0) ? saved.addresses : MOCK_ADDRESSES;
+    const cleanNotifs = (saved.notifications && saved.notifications.length > 1) ? saved.notifications : MOCK_CUSTOMER_NOTIFS;
+    const cleanTechNotifs = (saved.techNotifs && saved.techNotifs.length > 0) ? saved.techNotifs : MOCK_TECH_NOTIFS;
     const baseState = {
       ...makeInitial(),
       ...saved,
       orders: cleanOrders,
       devices: cleanDevices,
       addresses: cleanAddresses,
+      notifications: cleanNotifs,
+      techNotifs: cleanTechNotifs,
       selectedAddressId: saved.selectedAddressId,
       role,
       user,
@@ -318,7 +326,11 @@ export function AppProvider({ children }) {
     if (sessKey) {
       const profiles = { ...(baseState.customerProfiles || {}) };
       if (profiles[sessKey] || (session.phone && profiles[session.phone])) {
-        const existingSlice = profiles[sessKey] || profiles[session.phone];
+        const rawSlice = profiles[sessKey] || profiles[session.phone];
+        const existingSlice = {
+          ...rawSlice,
+          notifications: (rawSlice.notifications && rawSlice.notifications.length > 1) ? rawSlice.notifications : cleanNotifs,
+        };
         profiles[sessKey] = existingSlice;
         return { ...baseState, ...existingSlice, customerProfiles: profiles };
       }
@@ -718,7 +730,7 @@ export function AppProvider({ children }) {
         devices: [...(p.devices || []), d],
         notifications: pushNotif(p, {
           icon: '📺', title: `Đã thêm ${catLabel(category)}`,
-          body: 'Thợ HRMSS sẽ nhắc bạn khi đến kỳ bảo dưỡng.', link: { tab: 'devices' },
+          body: 'Thợ HRMSS sẽ nhắc bạn khi đến kỳ bảo dưỡng.', link: { tab: 'services' },
         }),
       }));
       ui.toast('Đã lưu thiết bị');
@@ -743,7 +755,7 @@ export function AppProvider({ children }) {
             icon: '🔄',
             title: `Đã đồng bộ ${addedCount} thiết bị trên hệ thống HRMSS`,
             body: 'Hệ thống đã tự động nạp số Serial, hạn bảo hành chính hãng và chu kỳ bảo dưỡng.',
-            link: { tab: 'devices' },
+            link: { tab: 'services' },
           }),
         };
       });
@@ -2255,6 +2267,8 @@ export function AppProvider({ children }) {
         orders: [...MOCK_ORDERS],
         devices: [...MOCK_DEVICES],
         addresses: [...MOCK_ADDRESSES],
+        notifications: [...MOCK_CUSTOMER_NOTIFS],
+        techNotifs: [...MOCK_TECH_NOTIFS],
         selectedAddressId: MOCK_ADDRESSES[0].id,
         points: 120,
         lifetimePoints: 350,

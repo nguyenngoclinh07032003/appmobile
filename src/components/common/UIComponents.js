@@ -92,8 +92,8 @@ export function resolveSemanticTone({ tone, title = '', message = '', text = '',
     tone === 'danger' ||
     tone === 'error' ||
     danger === true ||
-    ['🚫', '❌', '✖️', '✖', '🗑️', '🗑', 'ban', 'x-circle', 'trash-2', 'shield-alert'].includes(ic) ||
-    /lỗi|không hợp lệ|không khớp|không thể|sai phân quyền|từ chối|đã huỷ|huỷ đơn|xoá tài khoản|vĩnh viễn|nguy hiểm|quá hạn|vi phạm|bị khoá|thất bại/i.test(combined);
+    ['🚫', '❌', '✖️', '✖', '🗑️', '🗑', '↩️', 'ban', 'x-circle', 'trash-2', 'shield-alert'].includes(ic) ||
+    /lỗi|không hợp lệ|không khớp|không thể|sai phân quyền|từ chối|đã huỷ|huỷ đơn|xoá tài khoản|vĩnh viễn|nguy hiểm|quá hạn|vi phạm|bị khoá|thất bại|trả việc|trừ \d+ điểm/i.test(combined);
 
   if (isDanger) {
     return {
@@ -112,7 +112,7 @@ export function resolveSemanticTone({ tone, title = '', message = '', text = '',
   const isSuccess =
     tone === 'success' ||
     ['✅', '✓', '🎉', '👍', '🟢', '💸', 'check', 'check-circle-2', 'party-popper', 'thumbs-up', 'shield-check'].includes(ic) ||
-    /thành công|hoàn thành|hoàn tất|đã duyệt|đã lưu|đã nhận việc|đã nhận đơn|đã xác nhận|đã gửi|đã xác thực|đã cập nhật|đã thêm|đã áp dụng|đã thanh toán|mới nhất|đã đồng bộ|đã sao chép|cảm ơn/i.test(combined);
+    /thành công|hoàn thành|hoàn tất|đã duyệt|đã đồng ý|đã lưu|đã nhận việc|đã nhận đơn|đã xác nhận|đã xác thực|đã thanh toán|mới nhất|đã đồng bộ|đã sao chép|cảm ơn|đánh giá [45]★/i.test(combined);
 
   if (isSuccess && tone !== 'warning') {
     return {
