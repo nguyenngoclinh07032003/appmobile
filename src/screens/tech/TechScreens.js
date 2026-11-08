@@ -529,29 +529,17 @@ export function TechNotifsScreen() {
             action="Về trang công việc"
             onAction={() => nav.go('tech-jobs')}
           />
-        ) : (
-          <>
-            {filtered.map((n) => (
-              <Tap key={n.id} style={[tx.notif, !n.read && tx.notifUnread]} onPress={() => { a.readTechNotif(n.id); nav.open(n.link); }}>
-                <IconBox icon={n.icon || '🔔'} size={44} bg={n.read ? '#F1F4F9' : C.primarySoft} radius={14} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[tx.notifTitle, !n.read && { color: C.ink }]}>{n.title}</Text>
-                  {n.body ? <Text style={tx.notifBody}>{n.body}</Text> : null}
-                  <Text style={[ui.meta, { marginTop: 4 }]}>{timeAgo(n.at)}</Text>
-                </View>
-                {!n.read ? <View style={tx.dot} /> : null}
-              </Tap>
-            ))}
-            <Btn
-              title="Về màn hình công việc chính"
-              icon="🏠"
-              variant="ghost"
-              small
-              style={{ marginTop: 14, alignSelf: 'center' }}
-              onPress={() => nav.go('tech-jobs')}
-            />
-          </>
-        )}
+        ) : filtered.map((n) => (
+          <Tap key={n.id} style={[tx.notif, !n.read && tx.notifUnread]} onPress={() => { a.readTechNotif(n.id); nav.open(n.link); }}>
+            <IconBox icon={n.icon || '🔔'} size={44} bg={n.read ? '#F1F4F9' : C.primarySoft} radius={14} />
+            <View style={{ flex: 1 }}>
+              <Text style={[tx.notifTitle, !n.read && { color: C.ink }]}>{n.title}</Text>
+              {n.body ? <Text style={tx.notifBody}>{n.body}</Text> : null}
+              <Text style={[ui.meta, { marginTop: 4 }]}>{timeAgo(n.at)}</Text>
+            </View>
+            {!n.read ? <View style={tx.dot} /> : null}
+          </Tap>
+        ))}
       </ScrollView>
     </View>
   );
