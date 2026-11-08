@@ -370,7 +370,7 @@ export function PersonalScreen() {
           icon="log-out"
           variant="dangerSoft"
           style={{ marginTop: 12 }}
-          onPress={() => u.confirm('Đăng xuất?', 'Bạn sẽ quay về màn đăng nhập. Đơn hàng và dữ liệu trên thiết bị vẫn được giữ.', a.logout, 'Đăng xuất', true)}
+          onPress={() => u.confirm('Thông báo', 'Bạn có muốn đăng xuất?', a.logout, 'Đồng ý', false)}
         />
         <Btn
           title="Xoá dữ liệu thiết bị"
@@ -452,7 +452,7 @@ export function PersonalScreen() {
             style={{ marginBottom: 10 }}
             onPress={() => {
               setShowAccSheet(false);
-              u.confirm('Đăng xuất?', 'Bạn sẽ quay về màn đăng nhập.', a.logout, 'Đăng xuất', true);
+              u.confirm('Thông báo', 'Bạn có muốn đăng xuất?', a.logout, 'Đồng ý', false);
             }}
           />
 

@@ -378,7 +378,7 @@ export function TechJobsScreen() {
               <JobCard
                 key={o.code}
                 o={o}
-                canAccept={!d.techLocked}
+                canAccept={true}
                 onDecline={(job) => { setReason(DECLINE_REASONS[0]); setReasonNote(''); setDeclineTarget(job); }}
               />
             ))}
@@ -714,28 +714,6 @@ export function TechAccountScreen() {
         </View>
 
         <View style={{ paddingHorizontal: 16 }}>
-          <Card style={{ marginTop: 14, borderColor: '#C7D2FE', backgroundColor: '#F8FAFF' }} onPress={() => setShowIncome(true)}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <View style={{ width: 42, height: 42, borderRadius: 13, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
-                  <AppIcon name="wallet" size={20} color={C.primary} strokeWidth={2.2} />
-                </View>
-                <View>
-                  <Text style={{ fontSize: 12, fontWeight: '700', color: C.muted }}>Ví thu nhập khả dụng</Text>
-                  <Text style={{ fontSize: 20, fontWeight: '900', color: C.primary, marginTop: 2 }}>{formatVND(availableBalance)}</Text>
-                </View>
-              </View>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <Btn title="Chi tiết" small variant="soft" onPress={() => setShowIncome(true)} />
-                <Btn title="Rút tiền" icon="landmark" small onPress={() => setShowPayout(true)} />
-              </View>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#E2E8F0' }}>
-              <Text style={ui.meta}>Thu nhập tháng này: <Text style={{ fontWeight: '800', color: C.ink }}>{formatVND(monthIncome)}</Text></Text>
-              <Text style={[ui.meta, { color: C.green, fontWeight: '700' }]}>70% công + 15% vật tư ›</Text>
-            </View>
-          </Card>
-
           <Card style={{ marginTop: 14 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={[tx.h, { marginBottom: 0 }]}>Chuyên môn</Text>
@@ -764,7 +742,6 @@ export function TechAccountScreen() {
           )}
 
           <View style={[tx.menu, { marginTop: 12 }]}>
-            <ListRow icon="wallet" iconBg={C.greenSoft} label="Ví thu nhập & Rút tiền" value={formatVND(availableBalance)} onPress={() => setShowIncome(true)} />
             <ListRow icon="briefcase" iconBg={C.primarySoft} label="Công việc của tôi" value={`${d.workingJobs.length} đang làm`} onPress={() => nav.go('tech-jobs')} />
             <ListRow icon="calendar-clock" iconBg={C.cyanSoft} label="Lịch làm việc" onPress={() => nav.go('tech-schedule')} />
             <ListRow icon="bell" iconBg={C.goldSoft} label="Thông báo" value={d.techUnread ? `${d.techUnread} mới` : ''} onPress={() => nav.go('tech-notifs')} />
@@ -803,7 +780,7 @@ export function TechAccountScreen() {
             icon="log-out"
             variant="dangerSoft"
             style={{ marginTop: 10 }}
-            onPress={() => u.confirm('Đăng xuất?', 'Bạn sẽ quay về màn đăng nhập. Đơn hàng vẫn giữ trên thiết bị.', a.logout, 'Đăng xuất', true)}
+            onPress={() => u.confirm('Thông báo', 'Bạn có muốn đăng xuất?', a.logout, 'Đồng ý', false)}
           />
         </View>
       </ScrollView>
@@ -976,7 +953,7 @@ export function TechAccountScreen() {
             style={{ marginBottom: 10 }}
             onPress={() => {
               setShowAccountInfo(false);
-              u.confirm('Đăng xuất?', 'Bạn sẽ quay về màn đăng nhập. Đơn hàng vẫn giữ trên thiết bị.', a.logout, 'Đăng xuất', true);
+              u.confirm('Thông báo', 'Bạn có muốn đăng xuất?', a.logout, 'Đồng ý', false);
             }}
           />
 

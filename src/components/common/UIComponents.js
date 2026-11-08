@@ -638,6 +638,11 @@ export function DialogHost() {
   });
   const actions = cfg.actions || [{ label: 'Đã hiểu', variant: sem.btnVariant }];
   const displayIcon = cfg.icon || sem.icon;
+  const stacked = cfg.stacked !== false && actions.length <= 2 && !cfg.rowActions;
+  const orderedActions = stacked && actions.length === 2 && (actions[0].variant === 'ghost' || actions[0].variant === 'outline')
+    ? [actions[1], actions[0]]
+    : actions;
+
   return (
     <Modal visible transparent animationType="none" onRequestClose={u.closeDialog}>
       <View style={frameBox(rect)}>
@@ -645,31 +650,40 @@ export function DialogHost() {
           <Animated.View style={[ui.backdrop, { opacity: fade }]}>
             <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={u.closeDialog} />
           </Animated.View>
-          <Animated.View style={[ui.dialog, { opacity: fade, transform: [{ scale }], borderTopWidth: 4, borderTopColor: sem.accent }]}>
-            {displayIcon ? (
-              <IconBox
-                icon={displayIcon}
-                size={58}
-                bg={sem.bg}
-                color={sem.accent}
-                radius={20}
-                style={{ alignSelf: 'center', marginBottom: 14, borderWidth: 1, borderColor: sem.border }}
-              />
-            ) : null}
+          <Animated.View style={[ui.dialog, { opacity: fade, transform: [{ scale }] }]}>
+            <View style={ui.dialogTopRow}>
+              {displayIcon ? (
+                <View style={[ui.dialogIconOuter, { backgroundColor: sem.unreadBg || '#FFFBEB' }]}>
+                  <View style={[ui.dialogIconInner, { backgroundColor: sem.bg }]}>
+                    <AppIcon icon={displayIcon} size={22} color={sem.accent} strokeWidth={2.2} />
+                  </View>
+                </View>
+              ) : <View />}
+              <Tap onPress={u.closeDialog} hitSlop={10} style={ui.dialogCloseBtn} accessibilityLabel="Đóng">
+                <AppIcon name="x" size={20} color="#475569" strokeWidth={2.2} />
+              </Tap>
+            </View>
             <Text style={ui.dialogTitle}>{cfg.title}</Text>
             {cfg.message ? <Text style={ui.dialogBody}>{cfg.message}</Text> : null}
             {cfg.content || null}
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 22 }}>
-              {actions.map((ac) => {
-                const resolvedVariant = ac.variant === 'auto' || (!ac.variant && actions.length === 1)
-                  ? sem.btnVariant
-                  : (ac.variant || 'primary');
+            <View style={[ stacked ? { flexDirection: 'column', gap: 10, marginTop: 22 } : { flexDirection: 'row', gap: 10, marginTop: 22 } ]}>
+              {orderedActions.map((ac) => {
+                const isCancelLike = ac.variant === 'ghost' || ac.variant === 'outline';
+                const resolvedVariant = ac.variant === 'auto'
+                  ? (cfg.danger ? 'danger' : 'dark')
+                  : isCancelLike && stacked
+                    ? 'outline'
+                    : (ac.variant || 'dark');
                 return (
                   <Btn
                     key={ac.label}
                     title={ac.label}
                     variant={resolvedVariant}
-                    style={{ flex: 1, minHeight: 46 }}
+                    style={[
+                      stacked ? { width: '100%', minHeight: 48, borderRadius: 12 } : { flex: 1, minHeight: 46 },
+                      isCancelLike && stacked ? { borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' } : null,
+                    ]}
+                    textStyle={isCancelLike && stacked ? { color: '#475569', fontWeight: '700' } : null}
                     onPress={() => { u.closeDialog(); ac.onPress?.(); }}
                   />
                 );
@@ -861,12 +875,16 @@ export const ui = StyleSheet.create({
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   sheetTitle: { fontSize: 18, fontWeight: '800', color: C.ink, flex: 1, letterSpacing: -0.2 },
   dialogWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  dialog: { width: '100%', maxWidth: 360, backgroundColor: '#fff', borderRadius: 24, padding: 22, ...shadow.lg },
+  dialog: { width: '100%', maxWidth: 360, backgroundColor: '#fff', borderRadius: 22, padding: 22, ...shadow.lg },
+  dialogTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 },
+  dialogIconOuter: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  dialogIconInner: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  dialogCloseBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: -2, marginRight: -4 },
   dialogPill: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, marginBottom: 12 },
   dialogDot: { width: 7, height: 7, borderRadius: 4 },
   dialogPillText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.2, textTransform: 'uppercase' },
-  dialogTitle: { fontSize: 18, fontWeight: '800', color: C.ink, textAlign: 'center' },
-  dialogBody: { fontSize: 14, color: C.ink2, textAlign: 'center', marginTop: 8, lineHeight: 21 },
+  dialogTitle: { fontSize: 18, fontWeight: '800', color: C.ink, textAlign: 'left' },
+  dialogBody: { fontSize: 14.5, color: '#475569', textAlign: 'left', marginTop: 6, lineHeight: 21 },
   toast: { position: 'absolute', alignSelf: 'center', bottom: 94, backgroundColor: 'rgba(7,26,58,0.96)', paddingLeft: 10, paddingRight: 18, paddingVertical: 9, borderRadius: 999, flexDirection: 'row', alignItems: 'center', zIndex: 100, ...shadow.lg, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.12)' },
   toastIconWrap: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   toastText: { color: '#fff', fontWeight: '700', fontSize: 13.5 },
