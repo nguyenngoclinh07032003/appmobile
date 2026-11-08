@@ -329,34 +329,20 @@ export function PersonalScreen() {
 
       <View style={{ paddingHorizontal: 16 }}>
         <Group title="Tài khoản">
-          <ListRow icon="id-card" iconBg={C.primarySoft} label="Thông tin cá nhân" sub={s.user.email || 'Tên, số điện thoại, ngày sinh, email'} onPress={() => nav.push('profile')} />
-          <ListRow icon="map-pin" iconBg={C.redSoft} label="Sổ địa chỉ" value={s.addresses.length ? `${s.addresses.length}` : 'Thêm'} onPress={() => nav.push('addresses')} />
-          <ListRow icon="gift" iconBg={C.goldSoft} label="Quyền lợi & đổi điểm" value={`${s.points} điểm`} onPress={() => nav.push('rewards')} last />
+          <ListRow icon="circle-user-round" label="Sửa thông tin cá nhân" onPress={() => nav.push('profile')} />
+          <ListRow icon="map-pin" label="Sổ địa chỉ" value={s.addresses.length ? `${s.addresses.length}` : ''} onPress={() => nav.push('addresses')} />
+          <ListRow icon="ticket" label="Quyền lợi của tôi" value={s.points ? `${s.points} điểm` : ''} onPress={() => nav.push('rewards')} />
+          <ListRow icon="award" label="Hạng thành viên" value={cur.label} onPress={() => nav.push('rewards', { tierId: cur.id })} />
+          <ListRow icon="settings" label="Quản lý tài khoản" onPress={() => setShowAccSheet(true)} last />
         </Group>
         <Group title="Hỗ trợ khách hàng">
-          <ListRow icon="shield-check" iconBg={C.greenSoft} label="Tra cứu bảo hành" onPress={() => nav.warranty(s.user.phone || '')} />
-          <ListRow icon="help-circle" iconBg={C.purpleSoft} label="Trợ giúp & câu hỏi thường gặp" onPress={() => nav.push('help')} />
-          <ListRow icon="phone-call" iconBg={C.primarySoft} label="Liên hệ hỗ trợ" value={HOTLINE} onPress={u.call} last />
+          <ListRow icon="shield-check" label="Tra cứu bảo hành" onPress={() => nav.warranty(s.user.phone || '')} />
+          <ListRow icon="headphones" label="Trợ giúp" onPress={() => nav.push('help')} />
+          <ListRow icon="message-square" label="Liên hệ hỗ trợ" value={HOTLINE} onPress={u.call} last />
         </Group>
         <Group title="Khác">
-          <ListRow
-            icon="user-check"
-            iconBg={C.primarySoft}
-            label="Tài khoản đang đăng nhập"
-            sub={`${name} · ${s.auth?.phone || phone}`}
-            right={(
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.greenSoft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 }}>
-                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.green }} />
-                  <Text style={{ fontSize: 11, fontWeight: '800', color: C.green }}>KH</Text>
-                </View>
-                <AppIcon name="chevron-right" size={18} color={C.faint} strokeWidth={2.2} />
-              </View>
-            )}
-            onPress={() => setShowAccSheet(true)}
-          />
-          <ListRow icon="scale" iconBg="#EEF2F7" label="Điều khoản ứng dụng" onPress={() => nav.push('terms')} />
-          <ListRow icon="refresh-cw" iconBg="#EEF2F7" label="Cập nhật ứng dụng" value="3.0.8" onPress={() => u.alert('Bạn đang dùng bản mới nhất', 'Phiên bản 3.0.8 (v7).', '✅')} last />
+          <ListRow icon="scale" label="Điều khoản ứng dụng" onPress={() => nav.push('terms')} />
+          <ListRow icon="refresh-cw" label="Cập nhật ứng dụng" value="3.0.8" onPress={() => u.alert('Bạn đang dùng bản mới nhất', 'Phiên bản 3.0.8 (v7).', '✅')} last />
         </Group>
         <Btn
           title="Nạp dữ liệu kịch bản Demo (Review với cô)"
@@ -507,6 +493,6 @@ const sx = StyleSheet.create({
   tierText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   tierBox: { marginTop: 18, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 14, padding: 12 },
   pStats: { flexDirection: 'row', backgroundColor: '#fff', marginHorizontal: 16, marginTop: -30, borderRadius: R.lg, paddingVertical: 14, ...shadow.md },
-  groupLabel: { fontSize: 13, fontWeight: '800', color: C.muted, marginBottom: 8, marginLeft: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
-  menuCard: { backgroundColor: '#fff', borderRadius: R.lg, overflow: 'hidden', ...shadow.sm, borderWidth: 1, borderColor: '#EEF2F7' },
+  groupLabel: { fontSize: 18, fontWeight: '700', color: C.ink, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 },
+  menuCard: { backgroundColor: '#F8FAFC', borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: '#EEF2F7' },
 });

@@ -441,13 +441,17 @@ export function SelectRow({ label, value, placeholder, onPress, icon }) {
 export function ListRow({ icon, iconBg, label, sub, value, onPress, danger, last, right }) {
   return (
     <Tap onPress={onPress} scaleTo={0.99} style={[ui.listRow, !last && ui.listDivider]}>
-      {icon ? <IconBox icon={icon} size={38} bg={iconBg || '#F1F5F9'} radius={12} /> : null}
+      {icon ? (
+        <View style={{ width: 28, alignItems: 'center', justifyContent: 'center' }}>
+          <AppIcon icon={icon} size={22} color={danger ? C.red : '#1E3A8A'} strokeWidth={1.75} />
+        </View>
+      ) : null}
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={[ui.listLabel, danger && { color: C.red }]} numberOfLines={1}>{label}</Text>
         {sub ? <Text style={ui.meta} numberOfLines={1}>{sub}</Text> : null}
       </View>
       {right || (value ? <Text style={[ui.listValue, { maxWidth: '42%' }]} numberOfLines={1}>{value}</Text> : null)}
-      {right ? null : <AppIcon name="chevron-right" size={18} color={C.faint} strokeWidth={2.2} style={{ marginLeft: 4 }} />}
+      {right ? null : <AppIcon name="chevron-right" size={18} color={C.primary} strokeWidth={2} style={{ marginLeft: 4 }} />}
     </Tap>
   );
 }
@@ -847,10 +851,10 @@ export const ui = StyleSheet.create({
   fieldErr: { color: C.red, fontSize: 12, marginTop: 6, fontWeight: '500' },
   selectRow: { minHeight: 52, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' },
   chevron: { color: C.faint, fontSize: 22, lineHeight: 24, marginLeft: 6 },
-  listRow: { minHeight: 62, paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  listDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#E8EEF5' },
-  listLabel: { fontSize: 15, color: C.ink, fontWeight: '700' },
-  listValue: { color: C.muted, fontSize: 13, fontWeight: '600' },
+  listRow: { minHeight: 56, paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 14 },
+  listDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#F1F5F9' },
+  listLabel: { fontSize: 15.5, color: C.ink, fontWeight: '500' },
+  listValue: { color: C.muted, fontSize: 13, fontWeight: '500' },
   empty: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 44 },
   emptyIcon: { width: 88, height: 88, borderRadius: 28, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', ...shadow.md, borderWidth: 1, borderColor: '#EEF2F7' },
   emptyTitle: { fontSize: 18, fontWeight: '800', color: C.ink, marginTop: 18, textAlign: 'center', letterSpacing: -0.2 },

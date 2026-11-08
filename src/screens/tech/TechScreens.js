@@ -568,12 +568,11 @@ export function TechNotifsScreen() {
               key={n.id}
               style={[
                 tx.notif,
-                !n.read && { backgroundColor: sem.unreadBg, borderColor: sem.border },
-                { borderLeftWidth: 4, borderLeftColor: sem.accent },
+                !n.read && { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' },
               ]}
               onPress={() => { a.readTechNotif(n.id); nav.open(n.link); }}
             >
-              <IconBox icon={n.icon || sem.icon} size={44} bg={sem.bg} color={sem.accent} radius={14} />
+              <IconBox icon={n.icon || sem.icon} size={42} bg={sem.bg} color={sem.accent} radius={21} />
               <View style={{ flex: 1 }}>
                 <Text style={[tx.notifTitle, !n.read && { color: C.ink }]}>{n.title}</Text>
                 {n.body ? <Text style={tx.notifBody}>{n.body}</Text> : null}
@@ -741,32 +740,26 @@ export function TechAccountScreen() {
             </Card>
           )}
 
-          <View style={[tx.menu, { marginTop: 12 }]}>
-            <ListRow icon="briefcase" iconBg={C.primarySoft} label="Công việc của tôi" value={`${d.workingJobs.length} đang làm`} onPress={() => nav.go('tech-jobs')} />
-            <ListRow icon="calendar-clock" iconBg={C.cyanSoft} label="Lịch làm việc" onPress={() => nav.go('tech-schedule')} />
-            <ListRow icon="bell" iconBg={C.goldSoft} label="Thông báo" value={d.techUnread ? `${d.techUnread} mới` : ''} onPress={() => nav.go('tech-notifs')} />
-            <ListRow icon="id-card" iconBg={C.purpleSoft} label="Hồ sơ kỹ thuật viên" sub={`${me.code} · ${me.phone}${me.dob ? ` · ${me.dob}` : ''}`} onPress={openProfile} />
-            <ListRow icon="lock" iconBg={C.orangeSoft} label="Đổi mật khẩu" onPress={() => { setCurPw(''); setNewPw(''); setNewPw2(''); setShowPw(true); }} />
-            <ListRow icon="headphones" iconBg={C.greenSoft} label="Liên hệ điều phối" value={HOTLINE} onPress={u.call} last={!s.auth} />
+          <Text style={{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }}>Tài khoản & Công việc</Text>
+          <View style={tx.menu}>
+            <ListRow icon="briefcase" label="Công việc của tôi" value={d.workingJobs.length ? `${d.workingJobs.length} đang làm` : ''} onPress={() => nav.go('tech-jobs')} />
+            <ListRow icon="calendar-clock" label="Lịch làm việc" onPress={() => nav.go('tech-schedule')} />
+            <ListRow icon="bell" label="Thông báo" value={d.techUnread ? `${d.techUnread} mới` : ''} onPress={() => nav.go('tech-notifs')} />
+            <ListRow icon="circle-user-round" label="Sửa thông tin kỹ thuật viên" onPress={openProfile} />
+            <ListRow icon="lock" label="Đổi mật khẩu" onPress={() => { setCurPw(''); setNewPw(''); setNewPw2(''); setShowPw(true); }} />
             {s.auth ? (
               <ListRow
-                icon="user-check"
-                iconBg={C.primarySoft}
-                label="Tài khoản đang đăng nhập"
-                sub={`${s.auth.name || me.name} · ${s.auth.phone || s.auth.email || me.phone}`}
-                right={(
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.greenSoft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 }}>
-                      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: C.green }} />
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: C.green }}>KTV</Text>
-                    </View>
-                    <AppIcon name="chevron-right" size={18} color={C.faint} strokeWidth={2.2} />
-                  </View>
-                )}
+                icon="settings"
+                label="Quản lý tài khoản"
                 onPress={() => setShowAccountInfo(true)}
                 last
               />
             ) : null}
+          </View>
+
+          <Text style={{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }}>Hỗ trợ kỹ thuật viên</Text>
+          <View style={tx.menu}>
+            <ListRow icon="headphones" label="Liên hệ điều phối" value={HOTLINE} onPress={u.call} last />
           </View>
           <Btn
             title="Nạp dữ liệu kịch bản Demo (Review với cô)"
@@ -2311,12 +2304,11 @@ const tx = StyleSheet.create({
   h: { fontSize: 16, fontWeight: '800', color: C.ink, marginBottom: 12, letterSpacing: -0.2 },
   reviewRow: { paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E8EEF5' },
   menu: {
-    backgroundColor: '#fff',
-    borderRadius: R.lg,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 18,
     overflow: 'hidden',
-    ...shadow.sm,
     borderWidth: 1,
-    borderColor: 'rgba(228,234,243,0.95)',
+    borderColor: '#EEF2F7',
   },
   hero: { borderRadius: R.lg, padding: 18, borderWidth: 1, borderColor: 'rgba(15,23,42,0.04)' },
   heroLabel: { fontSize: 21, fontWeight: '900', letterSpacing: -0.3 },
