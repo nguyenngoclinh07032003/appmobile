@@ -781,6 +781,7 @@ export function AppProvider({ children }) {
               name: nextUser.name ?? p.auth.name,
               phone: nextUser.phone ?? p.auth.phone,
               email: nextUser.email ?? p.auth.email,
+              dob: nextUser.dob ?? p.auth.dob,
             })
           : null;
         return { user: nextUser, ...(nextAuth ? { auth: nextAuth } : {}) };

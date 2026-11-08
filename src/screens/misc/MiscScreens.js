@@ -1328,6 +1328,7 @@ export function ProfileScreen() {
   const { s, a, d, nav, ui: u } = useApp();
   const [name, setName] = useState(s.user.name || '');
   const [phone, setPhone] = useState(s.user.phone || '');
+  const [dob, setDob] = useState(s.user.dob || s.auth?.dob || '15/08/1995');
   const [email, setEmail] = useState(s.user.email || '');
   const [err, setErr] = useState({});
   const [showPw, setShowPw] = useState(false);
@@ -1375,10 +1376,26 @@ export function ProfileScreen() {
       const phoneErr = validateVietnamesePhone(phone);
       if (phoneErr) e.phone = phoneErr;
     }
+    if (dob && dob.trim()) {
+      const match = dob.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (!match) {
+        e.dob = 'Ngày sinh theo định dạng DD/MM/YYYY (VD: 15/08/1995).';
+      } else {
+        const dNum = parseInt(match[1], 10);
+        const mNum = parseInt(match[2], 10);
+        const yNum = parseInt(match[3], 10);
+        const nowYear = new Date().getFullYear();
+        if (mNum < 1 || mNum > 12 || dNum < 1 || dNum > 31) {
+          e.dob = 'Ngày hoặc tháng sinh không hợp lệ.';
+        } else if (yNum < 1920 || yNum > nowYear - 5) {
+          e.dob = `Năm sinh không hợp lệ (1920 - ${nowYear - 5}).`;
+        }
+      }
+    }
     if (email && !/^\S+@\S+\.\S+$/.test(email)) e.email = 'Email không hợp lệ.';
     setErr(e);
     if (Object.keys(e).length) return;
-    a.updateUser({ name: name.trim(), phone, email: email.trim() });
+    a.updateUser({ name: name.trim(), phone, email: email.trim(), dob: dob.trim() });
     nav.back();
   };
   const savePw = () => {
@@ -1439,6 +1456,24 @@ export function ProfileScreen() {
             placeholder="10 chữ số (bắt đầu bằng số 0)"
             error={err.phone}
           />
+          <Field
+            label="Ngày tháng năm sinh"
+            value={dob}
+            onChangeText={(t) => {
+              const digits = t.replace(/\D/g, '').slice(0, 8);
+              let formatted = digits;
+              if (digits.length > 4) {
+                formatted = `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+              } else if (digits.length > 2) {
+                formatted = `${digits.slice(0, 2)}/${digits.slice(2)}`;
+              }
+              setDob(formatted);
+              if (err.dob) setErr((prev) => ({ ...prev, dob: '' }));
+            }}
+            keyboardType="numeric"
+            placeholder="DD/MM/YYYY (VD: 15/08/1995)"
+            error={err.dob}
+          />
           <Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" placeholder="email@example.com" error={err.email} />
           <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
             {s.auth?.emailVerified ? (
@@ -1465,7 +1500,6 @@ export function ProfileScreen() {
           </View>
         </Card>
         <Card style={{ marginTop: 12, padding: 0, overflow: 'hidden' }}>
-          <ListRow icon="📍" iconBg={C.redSoft} label="Sổ địa chỉ" value={`${s.addresses.length}`} onPress={() => nav.push('addresses')} />
           <ListRow icon="🔐" iconBg={C.primarySoft} label="Đổi mật khẩu" onPress={() => setShowPw(true)} last />
         </Card>
       </ScrollView>
