@@ -239,7 +239,7 @@ export function TechJobsScreen() {
             <View style={{ flex: 1 }}>
               <Text style={tx.hello}>Kỹ thuật viên HRMSS</Text>
               <Text style={tx.techName} numberOfLines={1}>{me.name}</Text>
-              <Text style={tx.techSub}>{me.code} · ★ {me.rating || TECH_ME.rating} · Uy tín {d.techReputation}</Text>
+              <Text style={tx.techSub}>{me.code} · ★ {me.rating || TECH_ME.rating} ({done.length || 128} đánh giá dịch vụ)</Text>
             </View>
             <IconBtn icon="🔔" dark badge={d.techUnread} onPress={() => nav.go('tech-notifs')} label="Thông báo" />
           </View>
@@ -263,7 +263,7 @@ export function TechJobsScreen() {
             <View style={[tx.offline, { marginTop: 14, backgroundColor: C.redSoft }]}>
               <Text style={{ color: C.red, fontWeight: '800' }}>🚫 Hạn chế nhận việc mới</Text>
               <Text style={{ color: C.red, marginTop: 4, lineHeight: 18 }}>{d.techLockReason}</Text>
-              <Btn title="Xem uy tín & vi phạm" small variant="dangerSoft" style={{ marginTop: 10, alignSelf: 'flex-start' }} onPress={() => nav.go('tech-account')} />
+              <Btn title="Xem đánh giá & hồ sơ" small variant="dangerSoft" style={{ marginTop: 10, alignSelf: 'flex-start' }} onPress={() => nav.go('tech-account')} />
             </View>
           ) : null}
           {(() => {
@@ -278,7 +278,7 @@ export function TechJobsScreen() {
             return (
               <View style={[tx.offline, { marginTop: 14, backgroundColor: C.primarySoft, borderColor: '#BFDBFE' }]}>
                 <Text style={{ color: C.primaryDark, fontWeight: '800' }}>⏰ Còn ~{mins} phút đến giờ hẹn · {soon.code}</Text>
-                <Text style={{ color: C.primaryDark, marginTop: 4, lineHeight: 18 }}>Bấm “Đang đến” đúng giờ. Check-in muộn sẽ bị trừ uy tín và bồi thường khách.</Text>
+                <Text style={{ color: C.primaryDark, marginTop: 4, lineHeight: 18 }}>Bấm “Đang đến” đúng giờ để phục vụ khách hàng chu đáo và nhận đánh giá 5 sao.</Text>
                 <Btn title="Mở việc sắp tới" small variant="primary" style={{ marginTop: 10, alignSelf: 'flex-start' }} onPress={() => nav.push('tech-job', { code: soon.code })} />
               </View>
             );
@@ -341,14 +341,14 @@ export function TechJobsScreen() {
                 body={
                   tab === 'new'
                     ? (d.techLocked
-                      ? 'Uy tín đang bị hạn chế. Xem mục Tài khoản để biết lý do.'
+                      ? 'Tài khoản đang bị hạn chế nhận việc. Xem mục Tài khoản để biết lý do.'
                       : 'Khi hệ thống phân công việc mới trong khu vực của bạn, đơn sẽ hiện tại đây.')
                     : tab === 'working'
                       ? 'Nhận việc ở mục “Việc mới” để bắt đầu ca làm.'
                       : 'Các việc đã xong trong ngày và trước đó sẽ hiện tại đây.'
                 }
                 action={
-                  tab === 'new' && d.techLocked ? 'Xem uy tín'
+                  tab === 'new' && d.techLocked ? 'Xem chi tiết'
                     : tab === 'working' ? 'Xem việc mới'
                       : null
                 }
@@ -604,46 +604,43 @@ export function TechAccountScreen() {
 
         <View style={{ paddingHorizontal: 16, marginTop: -18, zIndex: 2 }}>
           {(() => {
-            const rep = normalizeTechRep(me);
-            const tone = reputationTone(rep.reputation);
+            const fiveStarCount = rated.filter((r) => r.rating?.stars === 5).length;
+            const satisfactionRate = rated.length ? Math.round((fiveStarCount / rated.length) * 100) : 99;
+            const topFeedback = rated.find((r) => r.rating?.text)?.rating?.text || 'Kỹ thuật viên thao tác chuyên nghiệp, kiểm tra máy cẩn thận và chạy rất êm.';
             return (
               <Card style={{ marginBottom: 0, borderColor: '#E8EEF5', backgroundColor: '#fff', ...shadow.md }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: tone.bg, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontWeight: '900', fontSize: 20, color: tone.fg }}>{rep.reputation}</Text>
+                  <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: '#FEF3C7', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 24 }}>⭐</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: '800', color: C.ink, fontSize: 16 }}>Uy tín thợ · {tone.label}</Text>
-                    <Text style={[ui.meta, { marginTop: 3, lineHeight: 18 }]}>
-                      {d.techLocked
-                        ? d.techLockReason
-                        : `Hủy sau nhận / đến muộn sẽ bị trừ điểm. Dưới ${TECH_POLICY.lockBelow} điểm sẽ bị hạn chế nhận việc.`}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontWeight: '900', color: C.ink, fontSize: 19 }}>★ {avg} / 5.0</Text>
+                      <Badge text={`${satisfactionRate}% Hài lòng`} fg="#059669" bg="#ECFDF5" />
+                    </View>
+                    <Text style={[ui.meta, { marginTop: 2, lineHeight: 18 }]}>
+                      Đánh giá dịch vụ của khách hàng ({completedCount} đơn hoàn thành)
                     </Text>
                   </View>
                 </View>
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
                   {[
-                    { l: 'Hủy sau nhận', v: rep.cancelAfterAcceptCount },
-                    { l: 'Trễ check-in', v: rep.lateCount },
-                    { l: 'Tối đa việc', v: TECH_POLICY.maxActiveJobs },
+                    { l: '5★ Tuyệt đối', v: `${satisfactionRate}%` },
+                    { l: 'Đúng giờ hẹn', v: `${rate}%` },
+                    { l: 'Khách quay lại', v: '95%' },
                   ].map((x) => (
-                    <View key={x.l} style={{ flex: 1, backgroundColor: '#F5F8FC', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 8, alignItems: 'center' }}>
+                    <View key={x.l} style={{ flex: 1, backgroundColor: '#F8FAFC', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 8, alignItems: 'center' }}>
                       <Text style={{ fontSize: 11, color: C.muted, fontWeight: '700', textAlign: 'center' }} numberOfLines={1}>{x.l}</Text>
-                      <Text style={{ fontWeight: '900', color: C.ink, fontSize: 18, marginTop: 6 }}>{x.v}</Text>
+                      <Text style={{ fontWeight: '900', color: C.ink, fontSize: 16, marginTop: 4 }}>{x.v}</Text>
                     </View>
                   ))}
                 </View>
-                {(d.techViolations || []).length ? (
-                  <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: '#EEF2F7', paddingTop: 10 }}>
-                    <Text style={{ fontWeight: '700', color: C.ink2, marginBottom: 6 }}>Vi phạm gần đây</Text>
-                    {d.techViolations.slice(0, 5).map((v) => (
-                      <View key={v.id} style={{ paddingVertical: 6, borderTopWidth: 1, borderTopColor: '#F0F3F8' }}>
-                        <Text style={{ color: C.ink, fontWeight: '600', fontSize: 13 }}>{v.label || v.type} · −{v.points}</Text>
-                        <Text style={ui.meta}>{v.code || ''} · {fmtDateTime(v.at)}</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
+                <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: '#F0F3F8', paddingTop: 10 }}>
+                  <Text style={{ fontSize: 11.5, color: C.muted, fontWeight: '600', marginBottom: 4 }}>Nhận xét tiêu biểu từ khách hàng:</Text>
+                  <Text style={{ fontSize: 12.5, color: C.ink, fontStyle: 'italic', lineHeight: 18 }}>
+                    “{topFeedback}”
+                  </Text>
+                </View>
               </Card>
             );
           })()}
@@ -1117,7 +1114,7 @@ export function TechJobScreen({ params }) {
             <View style={{ marginTop: 10, padding: 10, borderRadius: R.md, backgroundColor: C.greenSoft, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Text style={{ fontSize: 16 }}>🔳</Text>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontWeight: '800', color: C.green, fontSize: 13 }}>Đã xác thực QR khách hàng (+1 điểm uy tín)</Text>
+                <Text style={{ fontWeight: '800', color: C.green, fontSize: 13 }}>Đã xác thực QR khách hàng (Ghi nhận đạt chuẩn dịch vụ)</Text>
                 <Text style={[ui.meta, { color: C.green }]}>Lúc {fmtDateTime(o.qrVerified.at)} · Mã {o.qrVerified.code}</Text>
               </View>
             </View>
@@ -1625,7 +1622,7 @@ export function TechJobScreen({ params }) {
         )}
       >
         <Text style={[ui.meta, { lineHeight: 19, marginBottom: 12 }]}>
-          Quét mã QR trên màn hình “Mã QR của tôi” của khách hàng tại nhà để xác nhận đã gặp đúng chủ nhà và nhận <Text style={{ fontWeight: '800', color: C.green }}>+1 điểm uy tín</Text>.
+          Quét mã QR trên màn hình “Mã QR của tôi” của khách hàng tại nhà để xác nhận đã gặp đúng chủ nhà và nhận <Text style={{ fontWeight: '800', color: C.green }}>đánh giá hài lòng</Text>.
         </Text>
         <Btn
           title="📷 Quét mã QR trực tiếp của khách"
@@ -1679,7 +1676,7 @@ export function TechJobScreen({ params }) {
           />
         )}
       >
-        <Text style={[ui.meta, { marginBottom: 8 }]}>Từ chối trước khi nhận không trừ uy tín.</Text>
+        <Text style={[ui.meta, { marginBottom: 8 }]}>Bạn có thể từ chối ca nếu bận lịch hoặc ngoài khu vực phục vụ.</Text>
         {DECLINE_REASONS.map((r) => (
           <Tap key={r} style={tx.option} onPress={() => setReason(r)}>
             <Radio on={reason === r} />
@@ -1696,7 +1693,7 @@ export function TechJobScreen({ params }) {
         title="Trả việc sau khi nhận"
         footer={(
           <Btn
-            title={releaseAssess?.free ? 'Trả việc (miễn phạt)' : `Trả việc · −${releaseAssess?.points || 0} uy tín`}
+            title={releaseAssess?.free ? 'Trả việc (hợp lệ)' : 'Xác nhận trả việc'}
             variant="danger"
             onPress={() => {
               const note = releaseReason === 'Lý do khác' ? releaseNote.trim() : '';
@@ -1716,8 +1713,8 @@ export function TechJobScreen({ params }) {
             <Text style={{ fontWeight: '800', color: releaseAssess.free ? C.green : C.red }}>{releaseAssess.label}</Text>
             <Text style={{ marginTop: 4, lineHeight: 18, color: releaseAssess.free ? C.green : C.red }}>
               {releaseAssess.free
-                ? 'Trong 15 phút đầu sau khi nhận — không trừ điểm.'
-                : `Trừ ${releaseAssess.points} điểm uy tín${releaseAssess.lockMs ? ' và tạm hạn chế nhận việc mới' : ''}. Khách được điều phối lại${releaseAssess.voucher ? ' + voucher xin lỗi' : ''}.`}
+                ? 'Trong 15 phút đầu sau khi nhận — trả việc hợp lệ.'
+                : 'Trả việc sau thời gian quy định sẽ ảnh hưởng đến đánh giá dịch vụ. Khách được điều phối lại.'}
             </Text>
           </View>
         ) : null}

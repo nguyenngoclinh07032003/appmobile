@@ -407,8 +407,7 @@ export function OrderScreen({ params }) {
               </View>
               <Text style={[ui.meta, { marginTop: 2 }]}>
                 {o.tech.code} · ★ {o.tech.rating || 5.0}
-                {o.tech.jobs != null ? ` · ${Number(o.tech.jobs).toLocaleString('vi-VN')} đơn` : ''}
-                {o.tech.reputation != null ? ` · Uy tín ${normalizeTechRep(o.tech).reputation}` : ''}
+                {o.tech.jobs != null ? ` (${Number(o.tech.jobs).toLocaleString('vi-VN')} đánh giá dịch vụ)` : ' (Đánh giá dịch vụ tốt)'}
               </Text>
               {o.lateCompensation?.tier && o.lateCompensation.tier !== 'ok' ? (
                 <Text style={[ui.meta, { color: C.orange, fontWeight: '700', marginTop: 2 }]}>
