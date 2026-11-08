@@ -229,7 +229,6 @@ export function TechJobsScreen() {
     return true;
   });
   const list = tab === 'new' ? filteredNewJobs : tab === 'working' ? working : done;
-  const todayIncome = doneToday.reduce((sum, o) => sum + income(o), 0);
 
   return (
     <View style={{ flex: 1 }}>
@@ -251,7 +250,6 @@ export function TechJobsScreen() {
             { v: d.newJobs.length, l: 'Việc mới', onPress: () => setTab('new'), on: tab === 'new' },
             { v: d.workingJobs.length, l: 'Đang làm', onPress: () => setTab('working'), on: tab === 'working' },
             { v: doneToday.length, l: 'Xong hôm nay', onPress: () => setTab('done'), on: tab === 'done' },
-            { v: todayIncome >= 1000 ? `${Math.round(todayIncome / 1000)}K` : '0', l: 'Thu hôm nay', onPress: () => nav.go('tech-account'), on: false },
           ].map((x, i) => (
             <Tap key={x.l} style={[tx.statItem, i > 0 && tx.statSplit, x.on && tx.statOn]} onPress={x.onPress}>
               <Text style={[tx.statV, x.on && { color: C.primary }]}>{x.v}</Text>
@@ -656,13 +654,12 @@ export function TechAccountScreen() {
               { i: '✅', v: completedCount, l: 'Việc hoàn thành' },
               { i: '⭐', v: avg, l: 'Đánh giá TB' },
               { i: '🤝', v: `${rate}%`, l: 'Tỉ lệ nhận việc' },
-              { i: '💰', v: formatVND(monthIncome), l: 'Thu ước tính tháng' },
             ].map((k) => (
-              <Tap key={k.l} style={tx.kpi} onPress={k.l.includes('Thu') ? () => setShowIncome(true) : undefined}>
+              <View key={k.l} style={tx.kpi}>
                 <Text style={{ fontSize: 20 }}>{k.i}</Text>
                 <Text style={tx.kpiV} numberOfLines={1}>{k.v}</Text>
                 <Text style={tx.kpiL}>{k.l}</Text>
-              </Tap>
+              </View>
             ))}
           </View>
         </View>
@@ -675,21 +672,6 @@ export function TechAccountScreen() {
             </View>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>{(me.skills || TECH_ME.skills).map((k) => <Chip key={k} label={k} />)}</View>
             <Text style={[ui.meta, { marginTop: 10 }]}>📍 Khu vực phục vụ: {me.area || TECH_ME.area}</Text>
-          </Card>
-
-          <Card style={{ marginTop: 12 }} onPress={() => setShowIncome(true)}>
-            <Text style={tx.h}>Thu nhập ước tính</Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-              <View>
-                <Text style={ui.meta}>Tháng này ({monthDone.length} việc)</Text>
-                <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(monthIncome)}</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={ui.meta}>Tổng đã hoàn thành</Text>
-                <Text style={{ fontWeight: '800', color: C.ink, fontSize: 16 }}>{formatVND(totalIncome)}</Text>
-              </View>
-            </View>
-            <Text style={[ui.meta, { marginTop: 8 }]}>Số tham khảo theo giá trị đơn đã xong (~70%). Số thực chi trả theo đối soát công ty.</Text>
           </Card>
 
           {rated.length ? (
@@ -2052,12 +2034,13 @@ const tx = StyleSheet.create({
   notifTitle: { fontSize: 14, fontWeight: '800', color: C.ink2, lineHeight: 19 },
   notifBody: { fontSize: 13, color: C.muted, lineHeight: 18, marginTop: 2 },
   dot: { width: 9, height: 9, borderRadius: 5, backgroundColor: C.primary, marginTop: 6 },
-  kpis: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10, marginHorizontal: 16, marginTop: -34 },
+  kpis: { flexDirection: 'row', gap: 10, marginHorizontal: 16, marginTop: -34 },
   kpi: {
-    width: '48.5%',
+    flex: 1,
     backgroundColor: '#fff',
     borderRadius: R.lg,
-    padding: 14,
+    padding: 12,
+    alignItems: 'center',
     ...shadow.md,
     borderWidth: 1,
     borderColor: 'rgba(228,234,243,0.95)',
