@@ -895,7 +895,6 @@ export function AppProvider({ children }) {
       let result = 'missing';
       let targetOrder = null;
       up((p) => {
-        if (!p.techOnline) { result = 'offline'; return {}; }
         const tech0 = p.techProfile || TECH_ME;
         if (isTechLocked(tech0)) { result = 'locked'; return {}; }
         const activeCount = p.orders.filter((x) => x.tech?.code === (tech0.code || TECH_ME.code) && isActiveOrder(x)).length;
@@ -922,10 +921,6 @@ export function AppProvider({ children }) {
           ...clearDeclined(p, tech0.code, code),
         };
       });
-      if (result === 'offline') {
-        ui.alert('Đang tạm nghỉ', 'Bật trực tuyến ở đầu trang Công việc để nhận việc mới.', '⏸');
-        return;
-      }
       if (result === 'locked') {
         ui.alert('Đang bị hạn chế nhận việc', techLockReason(s.techProfile) || 'Uy tín thợ đang thấp hoặc đang trong thời gian khóa.', '🚫');
         return;

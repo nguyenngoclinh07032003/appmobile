@@ -219,18 +219,6 @@ export function TechJobsScreen() {
             </View>
             <IconBtn icon="🔔" dark badge={d.techUnread} onPress={() => nav.go('tech-notifs')} label="Thông báo" />
           </View>
-          <Tap
-            style={[tx.online, (!s.techOnline || d.techLocked) && tx.onlineOff]}
-            onPress={() => { if (d.techLocked) nav.go('tech-account'); else a.setTechOnline(!s.techOnline); }}
-          >
-            <View style={[tx.onlineDot, { backgroundColor: d.techLocked ? C.red : s.techOnline ? '#22C55E' : '#94A3B8' }]} />
-            <Text style={tx.onlineText}>
-              {d.techLocked ? 'Đang bị hạn chế nhận việc' : s.techOnline ? 'Đang trực tuyến · nhận việc mới' : 'Tạm nghỉ · không nhận việc mới'}
-            </Text>
-            <View style={tx.onlineBtn}>
-              <Text style={tx.onlineBtnText}>{d.techLocked ? 'Chi tiết' : s.techOnline ? 'Tạm nghỉ' : 'Bật lại'}</Text>
-            </View>
-          </Tap>
         </View>
 
         <View style={tx.stats}>
@@ -313,15 +301,14 @@ export function TechJobsScreen() {
             </HScroll>
           ) : null}
           <View style={{ marginTop: 14 }}>
-            {tab === 'new' && (!s.techOnline || d.techLocked) ? (
+            {tab === 'new' && d.techLocked ? (
               <View style={tx.offline}>
                 <Text style={{ color: C.orange, fontWeight: '700' }}>
-                  {d.techLocked ? '🚫 Đang bị hạn chế — không nhận việc mới.' : '⏸ Đang tạm nghỉ — không nhận việc mới.'}
+                  🚫 Đang bị hạn chế — không nhận việc mới.
                 </Text>
                 <Text style={{ color: C.orange, marginTop: 4, lineHeight: 18 }}>
-                  {d.techLocked ? d.techLockReason : 'Việc bên dưới chỉ xem. Bật lại trực tuyến khi sẵn sàng nhận.'}
+                  {d.techLockReason}
                 </Text>
-                {!d.techLocked ? <Btn title="Bật trực tuyến" small variant="soft" style={{ marginTop: 10, alignSelf: 'flex-start' }} onPress={() => a.setTechOnline(true)} /> : null}
               </View>
             ) : null}
             {list.length === 0 ? (
@@ -332,23 +319,18 @@ export function TechJobsScreen() {
                   tab === 'new'
                     ? (d.techLocked
                       ? 'Uy tín đang bị hạn chế. Xem mục Tài khoản để biết lý do.'
-                      : s.techOnline
-                        ? 'Khi hệ thống giao việc trong khu vực của bạn, đơn sẽ hiện tại đây.'
-                        : 'Bạn đang tạm nghỉ. Bật trực tuyến để nhận việc mới.')
+                      : 'Khi hệ thống phân công việc mới trong khu vực của bạn, đơn sẽ hiện tại đây.')
                     : tab === 'working'
                       ? 'Nhận việc ở mục “Việc mới” để bắt đầu ca làm.'
                       : 'Các việc đã xong trong ngày và trước đó sẽ hiện tại đây.'
                 }
                 action={
                   tab === 'new' && d.techLocked ? 'Xem uy tín'
-                    : tab === 'new' && !s.techOnline ? 'Bật trực tuyến'
-                      : tab === 'working' ? 'Xem việc mới'
-                        : tab === 'done' ? null
-                          : null
+                    : tab === 'working' ? 'Xem việc mới'
+                      : null
                 }
                 onAction={() => {
                   if (tab === 'new' && d.techLocked) nav.go('tech-account');
-                  else if (tab === 'new' && !s.techOnline) a.setTechOnline(true);
                   else if (tab === 'working') setTab('new');
                 }}
               />
@@ -356,7 +338,7 @@ export function TechJobsScreen() {
               <JobCard
                 key={o.code}
                 o={o}
-                canAccept={s.techOnline && !d.techLocked}
+                canAccept={!d.techLocked}
                 onDecline={(job) => { setReason(DECLINE_REASONS[0]); setReasonNote(''); setDeclineTarget(job); }}
               />
             ))}
@@ -565,16 +547,11 @@ export function TechAccountScreen() {
               <Text style={tx.techSub}>{me.code} · {me.phone}</Text>
               <View style={{ flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                 <Badge text="Kỹ thuật viên" fg={C.navy} bg={C.gold} />
-                <Badge text={s.techOnline && !d.techLocked ? '● Trực tuyến' : d.techLocked ? '○ Hạn chế' : '○ Tạm nghỉ'} fg="#fff" bg={d.techLocked ? C.red : s.techOnline ? '#16A34A' : '#64748B'} />
+                {d.techLocked ? <Badge text="○ Hạn chế nhận việc" fg="#fff" bg={C.red} /> : null}
               </View>
             </View>
             <IconBtn icon="✏️" dark onPress={openProfile} label="Sửa hồ sơ" />
           </View>
-          <Tap style={[tx.online, (!s.techOnline || d.techLocked) && { backgroundColor: 'rgba(255,255,255,0.1)' }]} onPress={() => a.setTechOnline(!s.techOnline)}>
-            <View style={[tx.onlineDot, { backgroundColor: d.techLocked ? C.red : s.techOnline ? '#22C55E' : '#94A3B8' }]} />
-            <Text style={tx.onlineText}>{d.techLocked ? 'Đang bị hạn chế nhận việc' : s.techOnline ? 'Đang nhận việc mới' : 'Tạm nghỉ nhận việc'}</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.75)', fontWeight: '700', fontSize: 12 }}>{d.techLocked ? '!' : s.techOnline ? 'Tắt' : 'Bật'}</Text>
-          </Tap>
         </View>
 
         <View style={{ paddingHorizontal: 16, marginTop: -18, zIndex: 2 }}>
@@ -1328,7 +1305,7 @@ export function TechJobScreen({ params }) {
       {o.status === 'pending' ? (
         <View style={tx.dock}>
           <Btn title="Từ chối" variant="ghost" style={{ flex: 1 }} onPress={() => { setReason(DECLINE_REASONS[0]); setReasonNote(''); setShowDecline(true); }} />
-          <Btn title="Nhận việc" icon="👍" style={{ flex: 2 }} disabled={!s.techOnline || d.techLocked} onPress={() => a.acceptJob(o.code)} />
+          <Btn title="Nhận việc" icon="👍" style={{ flex: 2 }} disabled={d.techLocked} onPress={() => a.acceptJob(o.code)} />
         </View>
       ) : null}
       {o.status === 'quoted' && mine ? (
