@@ -1168,7 +1168,7 @@ export function CheckoutScreen({ params }) {
 
           <Btn
             title="Lưu & Chọn thiết bị này ngay"
-            icon="✅"
+            icon="✓"
             onPress={handleQuickAdd}
             style={{ marginBottom: 12 }}
           />

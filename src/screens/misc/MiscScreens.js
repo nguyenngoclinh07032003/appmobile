@@ -1562,7 +1562,7 @@ export function DeviceFormScreen({ params = {} }) {
         <Text style={mx.fl}>Lần bảo dưỡng gần nhất</Text>
         <View style={mx.chips}>{LAST_SERVICE_OPTIONS.map((o) => <Chip key={o.id} label={o.label} on={last === o.id} onPress={() => setLast(o.id)} />)}</View>
         <View style={[mx.bonus, { backgroundColor: C.primarySoft, marginTop: 20 }]}>
-          <Text style={{ color: C.primary, fontWeight: '600', lineHeight: 19 }}>💡 Khi bạn hoàn thành đơn bảo dưỡng {catLabel(category).toLowerCase()} trên app, lịch nhắc sẽ tự động cập nhật.</Text>
+          <Text style={{ color: C.primary, fontWeight: '600', lineHeight: 19 }}>Khi bạn hoàn tất đơn bảo dưỡng {catLabel(category).toLowerCase()} trên hệ thống, lịch nhắc bảo dưỡng định kỳ sẽ tự động được cập nhật.</Text>
         </View>
       </ScrollView>
       <View style={mx.dock}><Btn title="Lưu thiết bị" style={{ flex: 1 }} onPress={save} /></View>
