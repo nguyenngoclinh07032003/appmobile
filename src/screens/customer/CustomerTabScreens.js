@@ -341,6 +341,13 @@ export function PersonalScreen() {
           <ListRow icon="message-circle-more" label="Liên hệ hỗ trợ" value={HOTLINE} onPress={u.call} last />
         </Group>
         <Group title="Khác">
+          <ListRow
+            icon="moon"
+            label="Chế độ tối"
+            sub="Giao diện màn đêm dịu mắt"
+            value={s.darkMode ? 'Đang bật' : 'Đang tắt'}
+            onPress={a.toggleDarkMode}
+          />
           <ListRow icon="scale" label="Điều khoản ứng dụng" onPress={() => nav.push('terms')} />
           <ListRow icon="refresh-cw" label="Cập nhật ứng dụng" value="3.0.8" onPress={() => u.alert('Bạn đang dùng bản mới nhất', 'Phiên bản 3.0.8 (v7).', '✅')} last />
         </Group>

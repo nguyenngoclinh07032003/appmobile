@@ -4,6 +4,7 @@ import {
   getService, MAINT_MONTHS, TECH_ME, REDEEM_OPTIONS, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech,
   tierOf, lookupHrmssPurchasedDevices, comboDiscountFor, syncCatalogFromBackend, resolveDbServiceId,
 } from '../constants/data';
+import { applyTheme } from '../theme/colors';
 import { MOCK_ORDERS, MOCK_DEVICES, MOCK_ADDRESSES, MOCK_CUSTOMER_NOTIFS, MOCK_TECH_NOTIFS } from '../constants/mockData';
 export { matchJobForTech, comboDiscountFor } from '../constants/data';
 import {
@@ -256,12 +257,22 @@ const switchCustomerSlice = (prev, nextAccount) => {
   return { customerProfiles: profiles };
 };
 
+const getInitialDarkMode = () => {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      return localStorage.getItem('tho-hrmss-dark-mode') === 'true';
+    }
+  } catch (e) {}
+  return false;
+};
+
 const makeInitial = () => ({
   user: { name: '', phone: '', email: '' },
   ...makeCustomerSlice(),
   orders: [],
   userReviews: {},
   customerProfiles: {},
+  darkMode: getInitialDarkMode(),
   // Phía thợ
   role: 'customer', // 'customer' | 'tech'
   techNotifs: [...MOCK_TECH_NOTIFS],
@@ -306,9 +317,12 @@ export function AppProvider({ children }) {
     const cleanAddresses = (saved.addresses && saved.addresses.length > 0) ? saved.addresses : MOCK_ADDRESSES;
     const cleanNotifs = (saved.notifications && saved.notifications.length > 1) ? saved.notifications : MOCK_CUSTOMER_NOTIFS;
     const cleanTechNotifs = (saved.techNotifs && saved.techNotifs.length > 0) ? saved.techNotifs : MOCK_TECH_NOTIFS;
+    const initialDark = saved.darkMode != null ? saved.darkMode : getInitialDarkMode();
+    applyTheme(initialDark);
     const baseState = {
       ...makeInitial(),
       ...saved,
+      darkMode: initialDark,
       orders: cleanOrders,
       devices: cleanDevices,
       addresses: cleanAddresses,
@@ -2284,6 +2298,31 @@ export function AppProvider({ children }) {
       setStack([]);
       setTab('home');
       ui.toast('Đã xoá dữ liệu trên thiết bị');
+    },
+    toggleDarkMode: () => {
+      up((p) => {
+        const nextDark = !p.darkMode;
+        try {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('tho-hrmss-dark-mode', String(nextDark));
+          }
+        } catch (e) {}
+        applyTheme(nextDark);
+        ui.toast(nextDark ? 'Đã bật Chế độ tối' : 'Đã bật Chế độ sáng', nextDark ? '🌙' : '☀️');
+        return { darkMode: nextDark };
+      });
+    },
+    setDarkMode: (enabled) => {
+      up(() => {
+        const nextDark = Boolean(enabled);
+        try {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('tho-hrmss-dark-mode', String(nextDark));
+          }
+        } catch (e) {}
+        applyTheme(nextDark);
+        return { darkMode: nextDark };
+      });
     },
   };
 

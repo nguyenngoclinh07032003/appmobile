@@ -746,6 +746,7 @@ export function TechAccountScreen() {
             <ListRow icon="briefcase" label="Công việc của tôi" value={d.workingJobs.length ? `${d.workingJobs.length} đang làm` : ''} onPress={() => nav.go('tech-jobs')} />
             <ListRow icon="calendar-clock" label="Lịch làm việc" onPress={() => nav.go('tech-schedule')} />
             <ListRow icon="bell" label="Thông báo" value={d.techUnread ? `${d.techUnread} mới` : ''} onPress={() => nav.go('tech-notifs')} />
+            <ListRow icon="moon" label="Chế độ tối" sub="Giao diện màn đêm dịu mắt" value={s.darkMode ? 'Đang bật' : 'Đang tắt'} onPress={a.toggleDarkMode} />
             <ListRow icon="circle-user-round" label="Sửa thông tin kỹ thuật viên" onPress={openProfile} />
             <ListRow icon="lock" label="Đổi mật khẩu" onPress={() => { setCurPw(''); setNewPw(''); setNewPw2(''); setShowPw(true); }} />
             {s.auth ? (

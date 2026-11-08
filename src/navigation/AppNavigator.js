@@ -1,12 +1,81 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, StatusBar, Platform, useWindowDimensions, Animated, Easing,
+  View, Text, StyleSheet, StatusBar, Platform, useWindowDimensions, Animated, Easing, TouchableOpacity,
 } from 'react-native';
 import { C, shadow } from '../theme';
 import { useApp } from '../context';
 import { DialogHost, ToastHost, FrameCtx, AppIcon } from '../components';
 import BottomNav from './BottomNav';
 import { CUSTOMER_TABS, TECH_TABS, SCREENS, DARK_TOP, PHONE_W, BEZEL, AuthScreen } from './routes';
+
+const DARK_CSS = `
+  body.tho-dark-theme {
+    background-color: #060A12 !important;
+    color: #F8FAFC !important;
+    color-scheme: dark;
+  }
+  /* Nền trắng chuyển thành nền thẻ tối Slate 800 */
+  body.tho-dark-theme .r-backgroundColor-14lw9ot,
+  body.tho-dark-theme .r-backgroundColor-w86zdx,
+  body.tho-dark-theme .r-backgroundColor-z6hqnn,
+  body.tho-dark-theme .r-backgroundColor-o1t6rw,
+  body.tho-dark-theme .r-backgroundColor-5cs3rs {
+    background-color: #1E293B !important;
+  }
+  /* Nền trang xám nhạt chuyển thành nền tối Obsidian */
+  body.tho-dark-theme .r-backgroundColor-11j01x2,
+  body.tho-dark-theme .r-backgroundColor-1jh0li6 {
+    background-color: #0B1120 !important;
+  }
+  /* Primary soft surface */
+  body.tho-dark-theme .r-backgroundColor-1ny8bov {
+    background-color: #1E293B !important;
+  }
+  /* Chữ đen đậm chuyển sang Trắng sáng Slate 50 */
+  body.tho-dark-theme .r-color-15ijx5m {
+    color: #F8FAFC !important;
+  }
+  /* Chữ phụ xám đậm chuyển sang Slate 300 */
+  body.tho-dark-theme .r-color-dz6k1,
+  body.tho-dark-theme .r-color-1dk24ck {
+    color: #CBD5E1 !important;
+  }
+  /* Chữ xám mờ chuyển sang Slate 400 */
+  body.tho-dark-theme .r-color-1s7ct43 {
+    color: #94A3B8 !important;
+  }
+  /* Viền xám sáng chuyển sang Slate 700 */
+  body.tho-dark-theme .r-borderColor-1wr2p1e,
+  body.tho-dark-theme .r-borderColor-csitcu,
+  body.tho-dark-theme .r-borderColor-fh4lzp,
+  body.tho-dark-theme .r-borderColor-11mg6pl,
+  body.tho-dark-theme .r-borderColor-c8xr4a {
+    border-color: #334155 !important;
+  }
+  body.tho-dark-theme .r-borderTopColor-174iedc,
+  body.tho-dark-theme .r-borderTopColor-1f0fu4f,
+  body.tho-dark-theme .r-borderTopColor-1n81mqw,
+  body.tho-dark-theme .r-borderTopColor-1o94pyu {
+    border-top-color: #334155 !important;
+  }
+  body.tho-dark-theme .r-borderBottomColor-eaxd7d,
+  body.tho-dark-theme .r-borderBottomColor-3pxcvb,
+  body.tho-dark-theme .r-borderBottomColor-1kj3flp,
+  body.tho-dark-theme .r-borderBottomColor-1ns0y1y {
+    border-bottom-color: #334155 !important;
+  }
+  /* Form inputs & textareas */
+  body.tho-dark-theme input,
+  body.tho-dark-theme textarea {
+    background-color: #1E293B !important;
+    color: #F8FAFC !important;
+    border-color: #334155 !important;
+  }
+  body.tho-dark-theme input::placeholder,
+  body.tho-dark-theme textarea::placeholder {
+    color: #64748B !important;
+  }
+`;
 
 export function AnimatedScreen({ children, mode = 'stack' }) {
   const anim = useRef(new Animated.Value(0)).current;
@@ -31,6 +100,7 @@ export function AnimatedScreen({ children, mode = 'stack' }) {
 
 export function Shell() {
   const { s, nav } = useApp();
+  const isDark = Boolean(s.darkMode);
   const loggedIn = !!s.auth;
   const role = s.auth?.role || s.role;
   const tabs = role === 'tech' ? TECH_TABS : CUSTOMER_TABS;
@@ -44,10 +114,13 @@ export function Shell() {
     ? nav.stack.filter((entry) => Boolean(SCREENS[entry.name]) && (role === 'tech' ? String(entry.name).startsWith('tech') : !String(entry.name).startsWith('tech')))
     : [];
 
+  const shellBg = isDark ? '#0B1120' : C.bg;
+  const topInsetBg = isDark ? '#0B1120' : (darkTop ? C.navy : '#fff');
+
   return (
-    <View style={[st.fill, { backgroundColor: C.bg }]}>
-      <StatusBar barStyle={darkTop ? 'light-content' : 'dark-content'} backgroundColor="transparent" translucent />
-      <View style={{ height: topInset, backgroundColor: darkTop ? C.navy : '#fff' }} />
+    <View style={[st.fill, { backgroundColor: shellBg }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : (darkTop ? 'light-content' : 'dark-content')} backgroundColor="transparent" translucent />
+      <View style={{ height: topInset, backgroundColor: topInsetBg }} />
       {!loggedIn ? (
         <View style={st.fill}>
           <AuthScreen />
@@ -65,7 +138,7 @@ export function Shell() {
               if (!Screen) return null;
               const isTop = i === allowedStack.length - 1;
               return (
-                <View key={entry.key} style={[StyleSheet.absoluteFill, { backgroundColor: C.bg, display: isTop ? 'flex' : 'none' }]}>
+                <View key={entry.key} style={[StyleSheet.absoluteFill, { backgroundColor: shellBg, display: isTop ? 'flex' : 'none' }]}>
                   <AnimatedScreen mode="stack">
                     <Screen params={entry.params} />
                   </AnimatedScreen>
@@ -83,31 +156,62 @@ export function Shell() {
 }
 
 export function DesktopShowcase({ style }) {
+  const { s, a } = useApp();
+  const isDark = Boolean(s.darkMode);
   return (
     <View style={[st.side, style]}>
-      <View style={st.sidePill}>
-        <View style={st.sidePillDot} />
-        <Text style={st.sidePillText}>Dịch vụ Kỹ thuật Tại nhà Chính hãng</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <View style={[st.sidePill, isDark && { backgroundColor: 'rgba(30,41,59,0.92)', borderColor: 'rgba(51,65,85,0.8)' }]}>
+          <View style={st.sidePillDot} />
+          <Text style={[st.sidePillText, isDark && { color: '#60A5FA' }]}>Dịch vụ Kỹ thuật Tại nhà Chính hãng</Text>
+        </View>
+
+        {/* Quick Dark Mode Toggle Button */}
+        <TouchableOpacity
+          onPress={a.toggleDarkMode}
+          activeOpacity={0.8}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            paddingHorizontal: 11,
+            paddingVertical: 6,
+            borderRadius: 999,
+            backgroundColor: isDark ? '#1E293B' : 'rgba(255,255,255,0.92)',
+            borderWidth: 1,
+            borderColor: isDark ? '#334155' : 'rgba(26,95,255,0.16)',
+            cursor: 'pointer',
+            ...shadow.sm,
+          }}
+        >
+          <AppIcon icon={isDark ? 'sun' : 'moon'} size={14} color={isDark ? '#FBBF24' : '#0062E0'} strokeWidth={2.4} />
+          <Text style={{ fontSize: 11.5, fontWeight: '800', color: isDark ? '#F8FAFC' : '#0F172A' }}>
+            {isDark ? 'Giao diện Sáng' : 'Giao diện Tối'}
+          </Text>
+        </TouchableOpacity>
       </View>
-      <Text style={st.sideBrand}><Text style={{ color: C.primary }}>Thợ</Text> HRMSS</Text>
-      <Text style={st.sideText}>
+
+      <Text style={[st.sideBrand, isDark && { color: '#F8FAFC' }]}>
+        <Text style={{ color: isDark ? '#60A5FA' : C.primary }}>Thợ</Text> HRMSS
+      </Text>
+      <Text style={[st.sideText, isDark && { color: '#94A3B8' }]}>
         Đặt lịch vệ sinh, bảo dưỡng, sửa chữa và lắp đặt thiết bị điện máy tận nhà. Báo giá minh bạch, theo dõi hành trình trực tiếp và bảo hành 60 ngày.
       </Text>
 
-      <View style={st.sideCard}>
+      <View style={[st.sideCard, isDark && { backgroundColor: 'rgba(30,41,59,0.92)', borderColor: '#334155' }]}>
         {[
           { icon: 'zap', title: 'Đặt lịch nhanh chóng', sub: 'Chọn dịch vụ và khung giờ linh hoạt tại nhà' },
           { icon: 'receipt-text', title: 'Báo giá minh bạch', sub: 'Khảo sát thực tế, chỉ thực hiện khi khách duyệt' },
           { icon: 'map-pin', title: 'Theo dõi trực tuyến', sub: 'Cập nhật vị trí GPS và tiến độ công việc' },
           { icon: 'shield-check', title: 'Bảo hành 60 ngày', sub: 'Hỗ trợ kiểm tra lại miễn phí sau dịch vụ' },
         ].map((item, idx) => (
-          <View key={item.title} style={[st.sideFeature, idx > 0 && st.sideFeatureBorder]}>
-            <View style={st.sideFeatureIcon}>
-              <AppIcon icon={item.icon} size={18} color={C.primary} strokeWidth={2.2} />
+          <View key={item.title} style={[st.sideFeature, idx > 0 && (isDark ? st.sideFeatureBorderDark : st.sideFeatureBorder)]}>
+            <View style={[st.sideFeatureIcon, isDark && { backgroundColor: '#0F172A' }]}>
+              <AppIcon icon={item.icon} size={18} color={isDark ? '#60A5FA' : C.primary} strokeWidth={2.2} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={st.sideFeatureTitle}>{item.title}</Text>
-              <Text style={st.sideFeatureSub}>{item.sub}</Text>
+              <Text style={[st.sideFeatureTitle, isDark && { color: '#F8FAFC' }]}>{item.title}</Text>
+              <Text style={[st.sideFeatureSub, isDark && { color: '#94A3B8' }]}>{item.sub}</Text>
             </View>
           </View>
         ))}
@@ -118,6 +222,8 @@ export function DesktopShowcase({ style }) {
 
 export function Frame({ children }) {
   const { width, height } = useWindowDimensions();
+  const { s } = useApp();
+  const isDark = Boolean(s?.darkMode);
   const isWeb = Platform.OS === 'web';
   const desktop = isWeb && width >= 560;
 
@@ -125,9 +231,17 @@ export function Frame({ children }) {
     if (!isWeb || typeof document === 'undefined') return;
     document.title = 'Thợ HRMSS — Dịch vụ sửa chữa & bảo trì tại nhà HRMSS';
     document.body.style.margin = '0';
-    document.body.style.backgroundColor = '#DCE4F2';
+    document.body.style.backgroundColor = isDark ? '#060A12' : '#DCE4F2';
     document.body.style.overflow = 'hidden';
-    // Ẩn thanh cuộn trình duyệt thô để khung điện thoại mượt như native app
+
+    // Toggle dark mode class on body
+    if (isDark) {
+      document.body.classList.add('tho-dark-theme');
+    } else {
+      document.body.classList.remove('tho-dark-theme');
+    }
+
+    // Ẩn thanh cuộn trình duyệt thô
     if (!document.getElementById('tho-hrmss-global-css')) {
       const styleEl = document.createElement('style');
       styleEl.id = 'tho-hrmss-global-css';
@@ -138,7 +252,16 @@ export function Frame({ children }) {
       `;
       document.head.appendChild(styleEl);
     }
-  }, [isWeb]);
+
+    // Dark Mode stylesheet
+    let darkStyle = document.getElementById('tho-hrmss-dark-css');
+    if (!darkStyle) {
+      darkStyle = document.createElement('style');
+      darkStyle.id = 'tho-hrmss-dark-css';
+      document.head.appendChild(darkStyle);
+    }
+    darkStyle.textContent = isDark ? DARK_CSS : '';
+  }, [isWeb, isDark]);
 
   if (!isWeb) return <View style={st.fill}>{children}</View>;
   if (!desktop) return <View style={{ width, height, overflow: 'hidden' }}>{children}</View>;
@@ -149,19 +272,36 @@ export function Frame({ children }) {
   const top = Math.round((height - frameH) / 2);
   const rect = { left: left + BEZEL, top: top + BEZEL, width: PHONE_W - BEZEL * 2, height: frameH - BEZEL * 2 };
   const sideLeft = left - 44 - 330;
+
+  const stageStyle = isDark
+    ? { backgroundImage: 'radial-gradient(circle at 20% 20%, #151E32 0%, #0B1120 55%, #050811 100%)', backgroundColor: '#060A12' }
+    : { backgroundImage: 'radial-gradient(circle at 20% 20%, #EEF4FF 0%, #DCE4F2 55%, #CED9EC 100%)', backgroundColor: '#DCE4F2' };
+
   return (
     <FrameCtx.Provider value={rect}>
       <View
         style={[
           st.stage,
           { width, height },
-          Platform.OS === 'web' ? { backgroundImage: 'radial-gradient(circle at 20% 20%, #EEF4FF 0%, #DCE4F2 55%, #CED9EC 100%)' } : null,
+          Platform.OS === 'web' ? stageStyle : null,
         ]}
       >
         {showSide && sideLeft >= 20 ? (
           <DesktopShowcase style={{ left: sideLeft, top: Math.max(24, height / 2 - 195) }} />
         ) : null}
-        <View style={[st.phone, { position: 'absolute', left, top, height: frameH }]}>
+        <View
+          style={[
+            st.phone,
+            {
+              position: 'absolute',
+              left,
+              top,
+              height: frameH,
+              backgroundColor: isDark ? '#0B1120' : C.bg,
+              borderColor: isDark ? '#1E293B' : '#0B1324',
+            },
+          ]}
+        >
           {children}
         </View>
       </View>
@@ -192,7 +332,6 @@ const st = StyleSheet.create({
     paddingVertical: 6,
     borderWidth: 1,
     borderColor: 'rgba(26,95,255,0.16)',
-    marginBottom: 12,
   },
   sidePillDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.green },
   sidePillText: { fontSize: 11, fontWeight: '800', color: C.navy, letterSpacing: 0.2 },
@@ -218,6 +357,10 @@ const st = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#E2E8F0',
   },
+  sideFeatureBorderDark: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#334155',
+  },
   sideFeatureIcon: {
     width: 36,
     height: 36,
@@ -238,4 +381,3 @@ const st = StyleSheet.create({
     ...shadow.lg,
   },
 });
-
