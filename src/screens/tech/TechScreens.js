@@ -259,13 +259,6 @@ export function TechJobsScreen() {
         </View>
 
         <View style={{ paddingHorizontal: 16 }}>
-          {d.techLocked ? (
-            <View style={[tx.offline, { marginTop: 14, backgroundColor: C.redSoft }]}>
-              <Text style={{ color: C.red, fontWeight: '800' }}>🚫 Hạn chế nhận việc mới</Text>
-              <Text style={{ color: C.red, marginTop: 4, lineHeight: 18 }}>{d.techLockReason}</Text>
-              <Btn title="Xem đánh giá & hồ sơ" small variant="dangerSoft" style={{ marginTop: 10, alignSelf: 'flex-start' }} onPress={() => nav.go('tech-account')} />
-            </View>
-          ) : null}
           {(() => {
             const soon = working.find((job) => {
               const start = slotStartTs(job);
@@ -324,44 +317,27 @@ export function TechJobsScreen() {
             </HScroll>
           ) : null}
           <View style={{ marginTop: 14 }}>
-            {tab === 'new' && d.techLocked ? (
-              <View style={tx.offline}>
-                <Text style={{ color: C.orange, fontWeight: '700' }}>
-                  🚫 Đang bị hạn chế — không nhận việc mới.
-                </Text>
-                <Text style={{ color: C.orange, marginTop: 4, lineHeight: 18 }}>
-                  {d.techLockReason}
-                </Text>
-              </View>
-            ) : null}
             {list.length === 0 ? (
               <EmptyState
                 icon={tab === 'new' ? '📭' : tab === 'working' ? '🧰' : '🗂️'}
                 title={tab === 'new' ? 'Chưa có việc mới' : tab === 'working' ? 'Không có việc đang làm' : 'Chưa có việc hoàn thành'}
                 body={
                   tab === 'new'
-                    ? (d.techLocked
-                      ? 'Tài khoản đang bị hạn chế nhận việc. Xem mục Tài khoản để biết lý do.'
-                      : 'Khi hệ thống phân công việc mới trong khu vực của bạn, đơn sẽ hiện tại đây.')
+                    ? 'Khi hệ thống phân công việc mới trong khu vực của bạn, đơn sẽ hiện tại đây.'
                     : tab === 'working'
                       ? 'Nhận việc ở mục “Việc mới” để bắt đầu ca làm.'
                       : 'Các việc đã xong trong ngày và trước đó sẽ hiện tại đây.'
                 }
-                action={
-                  tab === 'new' && d.techLocked ? 'Xem chi tiết'
-                    : tab === 'working' ? 'Xem việc mới'
-                      : null
-                }
+                action={tab === 'working' ? 'Xem việc mới' : null}
                 onAction={() => {
-                  if (tab === 'new' && d.techLocked) nav.go('tech-account');
-                  else if (tab === 'working') setTab('new');
+                  if (tab === 'working') setTab('new');
                 }}
               />
             ) : list.map((o) => (
               <JobCard
                 key={o.code}
                 o={o}
-                canAccept={!d.techLocked}
+                canAccept={true}
                 onDecline={(job) => { setReason(DECLINE_REASONS[0]); setReasonNote(''); setDeclineTarget(job); }}
               />
             ))}
@@ -595,7 +571,6 @@ export function TechAccountScreen() {
               <Text style={tx.techSub}>{me.code} · {me.phone}</Text>
               <View style={{ flexDirection: 'row', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                 <Badge text="Kỹ thuật viên" fg={C.primary} bg="#fff" />
-                {d.techLocked ? <Badge text="○ Hạn chế nhận việc" fg="#fff" bg={C.red} /> : null}
               </View>
             </View>
             <IconBtn icon="✏️" dark onPress={openProfile} label="Sửa hồ sơ" />
@@ -1536,7 +1511,7 @@ export function TechJobScreen({ params }) {
       {o.status === 'pending' ? (
         <View style={tx.dock}>
           <Btn title="Từ chối ca" variant="ghost" style={{ flex: 1 }} onPress={() => { setReason(DECLINE_REASONS[0]); setReasonNote(''); setShowDecline(true); }} />
-          <Btn title="Tiếp nhận ca" icon="🤝" style={{ flex: 2 }} disabled={d.techLocked} onPress={() => a.acceptJob(o.code)} />
+          <Btn title="Tiếp nhận ca" icon="🤝" style={{ flex: 2 }} onPress={() => a.acceptJob(o.code)} />
         </View>
       ) : null}
       {o.status === 'quoted' && mine ? (

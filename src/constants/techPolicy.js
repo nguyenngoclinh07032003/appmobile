@@ -75,25 +75,9 @@ export const normalizeTechRep = (profile) => {
   };
 };
 
-export const isTechLocked = (profile, now = Date.now()) => {
-  const rep = normalizeTechRep(profile);
-  if (rep.lockedUntil > now) return true;
-  if (rep.reputation < TECH_POLICY.lockBelow) return true;
-  return false;
-};
+export const isTechLocked = (_profile, _now = Date.now()) => false;
 
-export const techLockReason = (profile, now = Date.now()) => {
-  const rep = normalizeTechRep(profile);
-  if (rep.lockedUntil > now) {
-    const mins = Math.ceil((rep.lockedUntil - now) / 60000);
-    if (mins >= 60) return `Tạm khóa nhận việc còn ~${Math.ceil(mins / 60)} giờ do vi phạm gần đây.`;
-    return `Tạm khóa nhận việc còn ~${mins} phút do vi phạm gần đây.`;
-  }
-  if (rep.reputation < TECH_POLICY.lockBelow) {
-    return `Điểm uy tín ${rep.reputation}/${TECH_POLICY.reputationMax} dưới ngưỡng ${TECH_POLICY.lockBelow}. Liên hệ điều phối để mở lại.`;
-  }
-  return '';
-};
+export const techLockReason = (_profile, _now = Date.now()) => '';
 
 /** Đánh giá mức phạt khi trả việc sau khi đã nhận */
 export const assessCancelAfterAccept = (order, now = Date.now()) => {

@@ -899,7 +899,6 @@ export function AppProvider({ children }) {
       let targetOrder = null;
       up((p) => {
         const tech0 = p.techProfile || TECH_ME;
-        if (isTechLocked(tech0)) { result = 'locked'; return {}; }
         const activeCount = p.orders.filter((x) => x.tech?.code === (tech0.code || TECH_ME.code) && isActiveOrder(x)).length;
         if (activeCount >= TECH_POLICY.maxActiveJobs) { result = 'busy'; return {}; }
         const o = p.orders.find((x) => x.code === code);
@@ -1789,10 +1788,6 @@ export function AppProvider({ children }) {
       ui.toast(`Đã hoàn thành · +${onTimeBonus} uy tín`, '🎉');
     },
     setTechOnline: (v) => {
-      if (v && isTechLocked(s.techProfile)) {
-        ui.alert('Chưa thể trực tuyến', techLockReason(s.techProfile) || 'Uy tín đang bị hạn chế.', '🚫');
-        return;
-      }
       up(() => ({ techOnline: v }));
       ui.toast(v ? 'Bạn đang trực tuyến' : 'Đã tạm nghỉ nhận việc', v ? '🟢' : '⏸');
     },
