@@ -308,21 +308,6 @@ export function OrderScreen({ params }) {
             </Text>
           </Card>
         ) : null}
-        {o.kind === 'followup' ? (
-          <Card style={{ marginTop: 12, backgroundColor: C.cyanSoft || '#E8F7FB', borderColor: '#B6E4F0' }}>
-            <Text style={mx.tlTitle}>Đơn tái khám / kiểm tra lại</Text>
-            <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-              Theo dõi sau đơn {o.parentCode || o.followUp?.of || '—'}.
-              {o.followUp?.reason ? ` Lý do: ${o.followUp.reason}` : ''}
-              {o.followUp?.remaining ? ` · Còn lại: ${o.followUp.remaining}` : ''}
-            </Text>
-            {(o.parentCode || o.followUp?.of) ? (
-              <Tap onPress={() => nav.push('order', { code: o.parentCode || o.followUp.of })}>
-                <Text style={[ui.link, { marginTop: 8 }]}>Xem đơn gốc ›</Text>
-              </Tap>
-            ) : null}
-          </Card>
-        ) : null}
 
         {/* ===== Báo giá chờ duyệt (khách duyệt / từ chối) ===== */}
         {o.status === 'quoted' && o.quote ? (
@@ -617,11 +602,6 @@ export function OrderScreen({ params }) {
               style={{ marginTop: 12 }}
               onPress={() => setShowCertificate(true)}
             />
-            {o.followUpCreated ? (
-              <Tap onPress={() => nav.push('order', { code: o.followUpCreated })}>
-                <Text style={[ui.link, { marginTop: 8 }]}>Xem lịch tái khám {o.followUpCreated} ›</Text>
-              </Tap>
-            ) : null}
           </Card>
         ) : null}
 

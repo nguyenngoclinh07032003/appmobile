@@ -959,20 +959,6 @@ export function TechJobScreen({ params }) {
   const [paid, setPaid] = useState(true);
   const [forceDone, setForceDone] = useState(false);
   const [safetyChecks, setSafetyChecks] = useState(() => [...SAFETY_CHECKLIST_ITEMS]);
-  const [showFollowUp, setShowFollowUp] = useState(false);
-  const [fuReason, setFuReason] = useState('Cần kiểm tra lại sau khi chạy thử');
-  const [fuRemain, setFuRemain] = useState('');
-  const [fuSlot, setFuSlot] = useState(TIME_SLOTS[2] || '14h00 - 16h00');
-  const [fuDayIdx, setFuDayIdx] = useState(1);
-  const fuDays = Array.from({ length: 7 }, (_, i) => {
-    const dt = new Date();
-    dt.setDate(dt.getDate() + i + 1); // từ ngày mai
-    return {
-      key: `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`,
-      label: i === 0 ? 'Ngày mai' : WEEKDAYS[dt.getDay()],
-      ddmm: `${String(dt.getDate()).padStart(2, '0')}/${String(dt.getMonth() + 1).padStart(2, '0')}`,
-    };
-  });
 
   if (!o) return <View style={{ flex: 1 }}><TopBar title="Không tìm thấy công việc" /></View>;
   const meta = STATUS_META[o.status];
@@ -1573,20 +1559,6 @@ export function TechJobScreen({ params }) {
           </Card>
         ) : null}
 
-        {/* Đặt lịch tái khám sau khi hoàn thành */}
-        {o.status === 'done' && mine && o.kind !== 'followup' ? (
-          <Card style={{ marginTop: 12 }}>
-            <Text style={tx.h}>🔄 Tái khám / Follow-up</Text>
-            {o.followUpCreated ? (
-              <Text style={ui.meta}>Đã tạo lịch tái khám {o.followUpCreated}.</Text>
-            ) : (
-              <>
-                <Text style={[ui.meta, { marginBottom: 10 }]}>Nếu còn hạng mục cần kiểm tra lại, tạo lịch tái khám cho khách.</Text>
-                <Btn title="Tạo lịch tái khám" icon="🔄" variant="soft" onPress={() => setShowFollowUp(true)} />
-              </>
-            )}
-          </Card>
-        ) : null}
         {o.status === 'cancelled' ? (
           <Card style={{ marginTop: 12, backgroundColor: (o.inspectionFee || 0) > 0 ? '#FEF3C7' : '#F1F5F9', borderColor: (o.inspectionFee || 0) > 0 ? '#F5D77A' : C.line }}>
             <Text style={[tx.h, { color: (o.inspectionFee || 0) > 0 ? '#92400E' : C.ink }]}>
@@ -1597,14 +1569,6 @@ export function TechJobScreen({ params }) {
                 ? `Khách huỷ sau khi thợ đã tới kiểm tra thiết bị trực tiếp tại nhà. Khách thanh toán ${formatVND(o.inspectionFee)} phí kiểm tra cho thợ.`
                 : 'Chính sách HRMSS miễn phí 100% kiểm tra tại nhà khi khách từ chối sửa chữa (0đ).'}
             </Text>
-          </Card>
-        ) : null}
-
-        {o.kind === 'followup' && o.followUp ? (
-          <Card style={{ marginTop: 12, backgroundColor: C.cyanSoft, borderColor: '#B6E4F0' }}>
-            <Text style={tx.h}>Tái khám của {o.followUp.of}</Text>
-            <Text style={tx.info}>Lý do: {o.followUp.reason}</Text>
-            {o.followUp.remaining ? <Text style={[tx.info, { marginTop: 4 }]}>Công việc còn lại: {o.followUp.remaining}</Text> : null}
           </Card>
         ) : null}
       </ScrollView>
@@ -1869,45 +1833,6 @@ export function TechJobScreen({ params }) {
           </View>
         ) : null}
         <Text style={[ui.meta, { marginTop: 12 }]}>Sau khi gửi, khách nhận thông báo hoàn thành và có thể đánh giá.</Text>
-      </Sheet>
-      <Sheet
-        visible={showFollowUp}
-        onClose={() => setShowFollowUp(false)}
-        title="Tạo lịch tái khám"
-        footer={(
-          <Btn
-            title="Xác nhận tái khám"
-            onPress={() => {
-              if (!fuReason.trim()) { u.alert('Thiếu lý do', 'Nhập lý do tái khám.', '🔄'); return; }
-              const day = fuDays[fuDayIdx] || fuDays[0];
-              const code = a.createFollowUp(o.code, {
-                reason: fuReason.trim(),
-                remaining: fuRemain.trim(),
-                dateLabel: `${day.label} (${day.ddmm})`,
-                dateKey: day.key,
-                slot: fuSlot,
-              });
-              setShowFollowUp(false);
-              if (code) nav.push('tech-job', { code });
-            }}
-          />
-        )}
-      >
-        <Field label="Lý do tái khám" value={fuReason} onChangeText={setFuReason} placeholder="VD: Kiểm tra lại sau nạp gas" style={{ marginTop: -8 }} />
-        <Field label="Công việc còn lại" multiline value={fuRemain} onChangeText={setFuRemain} placeholder="Hạng mục cần làm tiếp…" />
-        <Text style={[ui.fieldLabel, { marginTop: 8 }]}>Ngày tái khám</Text>
-        <HScroll contentContainerStyle={{ gap: 8, marginTop: 8, marginBottom: 4 }}>
-          {fuDays.map((dd, i) => (
-            <Tap key={dd.key} onPress={() => setFuDayIdx(i)} style={[tx.day, fuDayIdx === i && tx.dayOn]}>
-              <Text style={[tx.dayLabel, fuDayIdx === i && { color: 'rgba(255,255,255,0.85)' }]}>{dd.label}</Text>
-              <Text style={[tx.dayNum, fuDayIdx === i && { color: '#fff' }]}>{dd.ddmm}</Text>
-            </Tap>
-          ))}
-        </HScroll>
-        <Text style={[ui.fieldLabel, { marginTop: 8 }]}>Khung giờ</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
-          {TIME_SLOTS.map((sl) => <Chip key={sl} label={sl} on={fuSlot === sl} onPress={() => setFuSlot(sl)} />)}
-        </View>
       </Sheet>
     </View>
   );

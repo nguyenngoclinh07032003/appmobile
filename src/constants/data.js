@@ -365,7 +365,7 @@ export const TIERS = [
     terms: [
       'Cam kết phản hồi nhanh: Ưu tiên phân công thợ xác nhận lịch hẹn trong vòng 15 phút tại khu vực nội thành.',
       'Bảo vệ giá 100%: Tuyệt đối không phát sinh bất kỳ phụ phí nào ngoài bảng báo giá điện tử đã được bạn phê duyệt trên ứng dụng.',
-      'Hỗ trợ tái khám miễn phí: Thợ chủ động tạo lịch tái khám miễn phí nếu thiết bị cần theo dõi thêm sau sửa chữa.',
+      'Hỗ trợ kỹ thuật tận nhà: Kiểm tra vận hành thiết bị và hỗ trợ bảo hành tận nơi hoàn toàn miễn phí.',
     ],
   },
   {
