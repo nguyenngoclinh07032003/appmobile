@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, Animated, Easing } from 'react-native';
 import { C, R, shadow, toneOf, grad } from '../../theme';
 import {
   CATEGORIES, SERVICES, COMMITMENTS, SERVICE_TYPES, TIPS, PARTNERS, CAT_SHORT, HOTLINE, catLabel, catIcon, getService,
@@ -11,6 +11,104 @@ import {
 
 const POPULAR = ['vs-ml-1', 'vs-mg-tren', 'vs-mg-truoc', 'vs-quat-dh', 'vs-ml-am-tran', 'vs-tl-300'].map(getService);
 const COMMIT_ICON = ['clock', 'award', 'handshake', 'smile'];
+
+const PARTNER_ROWS = [
+  [
+    { name: 'NANOMAX', sub: 'Pro Audio', color: '#15803D', weight: '900' },
+    { name: 'Panasonic', color: '#0062E0', weight: '900' },
+    { name: 'SONY', color: '#0F172A', weight: '900', letterSpacing: 1.5 },
+    { name: 'Teka', color: '#DC2626', weight: '900', italic: true },
+    { name: 'beko', color: '#0284C7', weight: '900', underline: true },
+    { name: 'FUJI SMART', badge: 'F', badgeBg: '#EF4444', color: '#334155', weight: '700' },
+    { name: 'CHUNGHO', badge: '💧', badgeBg: '#0284C7', color: '#0369A1', weight: '800' },
+    { name: 'Makano', sub: 'CAO CẤP', color: '#DC2626', weight: '800' },
+  ],
+  [
+    { name: 'JBL', badge: 'JBL', badgeBg: '#EA580C', color: '#EA580C', weight: '900' },
+    { name: 'BOSS', badge: 'B', badgeBg: '#0284C7', color: '#0369A1', weight: '800' },
+    { name: 'HAWOO', badge: '❖', badgeBg: '#F97316', color: '#334155', weight: '800' },
+    { name: 'coway', color: '#00A3E0', weight: '900', size: 17 },
+    { name: 'SKYWORTH', color: '#0052CC', weight: '900', letterSpacing: 0.6 },
+    { name: 'Boston', sub: 'ACOUSTICS', badge: 'b', badgeBg: '#E11D48', color: '#1E293B', weight: '700' },
+    { name: 'LG', badge: 'LG', badgeBg: '#BE123C', color: '#BE123C', weight: '900' },
+    { name: 'Samsung', color: '#1D4ED8', weight: '900' },
+  ],
+  [
+    { name: 'Comfee', color: '#0369A1', weight: '900', italic: true, size: 17 },
+    { name: 'Nagakawa', color: '#DC2626', weight: '900', size: 16 },
+    { name: 'SUMICO', badge: 'S', badgeBg: '#DC2626', color: '#0F172A', weight: '900', letterSpacing: 0.8 },
+    { name: 'Electrolux', badge: '◧', badgeBg: '#1E3A8A', color: '#1E3A8A', weight: '800', size: 15 },
+    { name: 'Daikin', color: '#0284C7', weight: '900', italic: true, size: 16 },
+    { name: 'Toshiba', color: '#DC2626', weight: '900', size: 15 },
+    { name: 'Casper', color: '#0F172A', weight: '800', letterSpacing: 1 },
+  ],
+];
+
+function PartnerBrandItem({ item }) {
+  return (
+    <View style={st.partnerItem}>
+      {item.badge ? (
+        <View style={[st.partnerBadge, { backgroundColor: item.badgeBg || C.primary }]}>
+          <Text style={st.partnerBadgeText}>{item.badge}</Text>
+        </View>
+      ) : null}
+      <View style={{ justifyContent: 'center' }}>
+        <Text
+          style={[
+            st.partnerLogoText,
+            {
+              color: item.color || C.ink,
+              fontWeight: item.weight || '800',
+              fontSize: item.size || 15,
+              fontStyle: item.italic ? 'italic' : 'normal',
+              letterSpacing: item.letterSpacing || 0,
+              textDecorationLine: item.underline ? 'underline' : 'none',
+            },
+          ]}
+        >
+          {item.name}
+        </Text>
+        {item.sub ? <Text style={st.partnerSubText}>{item.sub}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
+function PartnerMarqueeRow({ items, direction = 'right', duration = 22000 }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  const ROW_WIDTH = items.length * 132;
+
+  useEffect(() => {
+    anim.setValue(0);
+    const loop = Animated.loop(
+      Animated.timing(anim, {
+        toValue: 1,
+        duration,
+        easing: Easing.linear,
+        useNativeDriver: false,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [anim, duration]);
+
+  const translateX = anim.interpolate({
+    inputRange: [0, 1],
+    outputRange: direction === 'right' ? [-ROW_WIDTH, 0] : [0, -ROW_WIDTH],
+  });
+
+  const repeated = [...items, ...items, ...items];
+
+  return (
+    <View style={st.marqueeRowClip}>
+      <Animated.View style={[st.marqueeTrack, { transform: [{ translateX }] }]}>
+        {repeated.map((it, idx) => (
+          <PartnerBrandItem key={`${it.name}-${idx}`} item={it} />
+        ))}
+      </Animated.View>
+    </View>
+  );
+}
 
 export default function HomeScreen() {
   const { s, a, d, nav, ui: u } = useApp();
@@ -174,9 +272,14 @@ export default function HomeScreen() {
 
       <View style={{ paddingHorizontal: 16 }}>
         {/* ---------------- Đối tác ---------------- */}
-        <SectionTitle title="Đối tác kỹ thuật" />
-        <View style={st.partners}>
-          {PARTNERS.map((p) => <View key={p} style={st.partner}><Text style={st.partnerText}>{p}</Text></View>)}
+        <View style={st.partnerHead}>
+          <View style={st.partnerAccentBar} />
+          <Text style={st.partnerHeadTitle}>Đối tác</Text>
+        </View>
+        <View style={st.partnerBoard}>
+          <PartnerMarqueeRow items={PARTNER_ROWS[0]} direction="right" duration={24000} />
+          <PartnerMarqueeRow items={PARTNER_ROWS[1]} direction="left" duration={22000} />
+          <PartnerMarqueeRow items={PARTNER_ROWS[2]} direction="right" duration={25000} />
         </View>
 
         {/* ---------------- Hotline ---------------- */}
@@ -257,6 +360,60 @@ export const st = StyleSheet.create({
   partners: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   partner: { backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: C.line },
   partnerText: { fontSize: 12, fontWeight: '800', color: C.ink2 },
+  partnerHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 24, marginBottom: 12 },
+  partnerAccentBar: { width: 4, height: 20, borderRadius: 2, backgroundColor: '#F59E0B' },
+  partnerHeadTitle: { fontSize: 19, fontWeight: '800', color: C.primary, letterSpacing: -0.3 },
+  partnerBoard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingVertical: 14,
+    gap: 14,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#EEF2F7',
+    ...shadow.sm,
+  },
+  marqueeRowClip: {
+    width: '100%',
+    overflow: 'hidden',
+    height: 36,
+    justifyContent: 'center',
+  },
+  marqueeTrack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  partnerItem: {
+    width: 132,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  partnerBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 5,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  partnerBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  partnerLogoText: {
+    lineHeight: 18,
+  },
+  partnerSubText: {
+    fontSize: 7.5,
+    fontWeight: '700',
+    color: '#64748B',
+    letterSpacing: 0.4,
+    marginTop: -1,
+  },
   hotline: { marginTop: 24, backgroundColor: C.navy, ...grad.navyCard, borderRadius: 20, padding: 16, flexDirection: 'row', alignItems: 'center', ...shadow.md },
   sheetSub: { fontSize: 14, color: C.primary, fontWeight: '700', marginBottom: 10 },
   sheetBody: { fontSize: 15, color: C.ink2, lineHeight: 23 },
