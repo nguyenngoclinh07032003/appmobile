@@ -113,9 +113,29 @@ function JobCard({ o, compact, onDecline, canAccept = true }) {
             {o.kind === 'warranty' ? '🛡 ' : ''}{o.code}
           </Text>
         </View>
-        <Text style={[tx.cardStatus, { color: meta.fg }]}>{meta.label}</Text>
+        <Text style={[tx.cardStatus, { color: meta.fg }]}>{o.status === 'pending' ? 'Được phân công' : meta.label}</Text>
       </View>
       <View style={{ padding: 14 }}>
+        {o.status === 'pending' ? (
+          <View style={{
+            marginBottom: 10,
+            padding: 10,
+            borderRadius: R.sm,
+            backgroundColor: '#F0F9FF',
+            borderWidth: 1,
+            borderColor: '#BAE6FD',
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <Text style={{ fontSize: 11.5, fontWeight: '800', color: '#0369A1' }}>🏷️ ĐIỀU PHỐI TỪ HỆ THỐNG HRMSS</Text>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: C.orange }}>⏳ Còn 14:30 tiếp nhận</Text>
+            </View>
+            <View style={{ gap: 2 }}>
+              <Text style={{ fontSize: 11.5, color: '#0284C7', fontWeight: '600' }}>✓ Đúng chuyên môn: {catLabel(svc0?.category)}</Text>
+              <Text style={{ fontSize: 11.5, color: '#0284C7', fontWeight: '600' }}>✓ Khu vực phụ trách: {o.address?.district || 'Gần vị trí thợ'}</Text>
+              <Text style={{ fontSize: 11.5, color: '#0284C7', fontWeight: '600' }}>✓ Khung giờ: {o.slot} (Lịch trống)</Text>
+            </View>
+          </View>
+        ) : null}
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
           <Media item={svc0} height={56} width={56} radius={16} />
           <View style={{ flex: 1 }}>
@@ -167,8 +187,8 @@ function JobCard({ o, compact, onDecline, canAccept = true }) {
               <Btn title="Chi tiết" small variant="soft" onPress={open} />
             ) : o.status === 'pending' ? (
               <>
-                <Btn title="Từ chối" small variant="ghost" onPress={() => (onDecline ? onDecline(o) : null)} />
-                <Btn title="Nhận việc" small disabled={!canAccept} onPress={() => a.acceptJob(o.code)} />
+                <Btn title="Từ chối ca" small variant="ghost" onPress={() => (onDecline ? onDecline(o) : null)} />
+                <Btn title="Tiếp nhận ca" icon="🤝" small disabled={!canAccept} onPress={() => a.acceptJob(o.code)} />
               </>
             ) : next ? <Btn title={next.label} small variant={next.variant || 'soft'} onPress={next.run} /> : null}
           </View>
@@ -909,6 +929,23 @@ export function TechJobScreen({ params }) {
           </Card>
         ) : null}
 
+        {o.status === 'pending' ? (
+          <Card style={{ marginTop: 12, backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ fontWeight: '800', color: '#0369A1', fontSize: 13.5 }}>📋 CA ĐƯỢC HỆ THỐNG PHÂN CÔNG</Text>
+              <Badge text="Hạn phản hồi 15p" fg={C.orange} bg={C.orangeSoft} />
+            </View>
+            <Text style={{ color: '#0C4A6E', fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>
+              Hệ thống đã khớp chuyên môn {catLabel(o.items[0]?.id ? getService(o.items[0].id)?.category : '')} và khu vực {o.address?.district || 'của bạn'}. Vui lòng xác nhận tiếp nhận ca để đưa vào lịch trình làm việc.
+            </Text>
+            <View style={{ marginTop: 8, gap: 4 }}>
+              <Text style={{ fontSize: 12, color: '#0284C7', fontWeight: '600' }}>✓ Đúng chuyên môn: {catLabel(o.items[0]?.id ? getService(o.items[0].id)?.category : '')}</Text>
+              <Text style={{ fontSize: 12, color: '#0284C7', fontWeight: '600' }}>✓ Khu vực phụ trách: {o.address?.district || 'Gần bạn'}</Text>
+              <Text style={{ fontSize: 12, color: '#0284C7', fontWeight: '600' }}>✓ Khung giờ hẹn: {o.dateLabel} · {o.slot}</Text>
+            </View>
+          </Card>
+        ) : null}
+
         {/* Lịch sử trạng thái */}
         <Card style={{ marginTop: 12 }}>
           <Text style={tx.h}>Dòng thời gian</Text>
@@ -1304,8 +1341,8 @@ export function TechJobScreen({ params }) {
       {/* ===== Thanh hành động ===== */}
       {o.status === 'pending' ? (
         <View style={tx.dock}>
-          <Btn title="Từ chối" variant="ghost" style={{ flex: 1 }} onPress={() => { setReason(DECLINE_REASONS[0]); setReasonNote(''); setShowDecline(true); }} />
-          <Btn title="Nhận việc" icon="👍" style={{ flex: 2 }} disabled={d.techLocked} onPress={() => a.acceptJob(o.code)} />
+          <Btn title="Từ chối ca" variant="ghost" style={{ flex: 1 }} onPress={() => { setReason(DECLINE_REASONS[0]); setReasonNote(''); setShowDecline(true); }} />
+          <Btn title="Tiếp nhận ca" icon="🤝" style={{ flex: 2 }} disabled={d.techLocked} onPress={() => a.acceptJob(o.code)} />
         </View>
       ) : null}
       {o.status === 'quoted' && mine ? (

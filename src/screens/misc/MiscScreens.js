@@ -336,9 +336,12 @@ export function OrderScreen({ params }) {
           <Card style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <View style={mx.techAvatar}><Text style={{ fontSize: 26 }}>👷</Text></View>
             <View style={{ flex: 1 }}>
-              <Text style={mx.tlTitle}>{o.tech.name}</Text>
-              <Text style={ui.meta}>
-                {o.tech.code} · ★ {o.tech.rating}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <Text style={mx.tlTitle}>{o.tech.name}</Text>
+                <Badge text="KTV chuyên trách" fg={C.primaryDark} bg={C.primarySoft} />
+              </View>
+              <Text style={[ui.meta, { marginTop: 2 }]}>
+                {o.tech.code} · ★ {o.tech.rating || 5.0}
                 {o.tech.jobs != null ? ` · ${Number(o.tech.jobs).toLocaleString('vi-VN')} đơn` : ''}
                 {o.tech.reputation != null ? ` · Uy tín ${normalizeTechRep(o.tech).reputation}` : ''}
               </Text>
@@ -353,9 +356,20 @@ export function OrderScreen({ params }) {
             <IconBtn icon="📞" onPress={() => Linking.openURL(`tel:${o.tech.phone || ''}`).catch(() => {})} style={{ backgroundColor: C.greenSoft }} label="Gọi thợ" />
           </Card>
         ) : active ? (
-          <View style={[mx.bonus, { backgroundColor: C.primarySoft }]}>
-            <Text style={{ color: C.primary, fontWeight: '600', lineHeight: 19 }}>👷 Đơn đang chờ thợ nhận. Bạn sẽ thấy thợ và tiến độ ngay khi có người nhận việc.</Text>
-          </View>
+          <Card style={{ marginTop: 12, backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontSize: 18 }}>⚙️</Text>
+              <Text style={{ fontWeight: '800', color: '#0369A1', fontSize: 14 }}>Hệ thống đang điều phối Kỹ thuật viên</Text>
+            </View>
+            <Text style={{ color: '#0C4A6E', marginTop: 6, fontSize: 12.5, lineHeight: 18 }}>
+              Hệ thống HRMSS đang tự động điều phối Kỹ thuật viên chuyên trách gần bạn nhất để đảm bảo có mặt đúng khung giờ {o.slot}.
+            </Text>
+            <View style={{ marginTop: 8, gap: 4 }}>
+              <Text style={{ color: '#0284C7', fontSize: 12, fontWeight: '600' }}>✓ Đúng chuyên môn kỹ thuật thiết bị</Text>
+              <Text style={{ color: '#0284C7', fontSize: 12, fontWeight: '600' }}>✓ Phân bổ thợ khu vực {o.address?.district || 'của bạn'}</Text>
+              <Text style={{ color: '#0284C7', fontSize: 12, fontWeight: '600' }}>✓ Cam kết bảo hành 60 ngày sau dịch vụ</Text>
+            </View>
+          </Card>
         ) : null}
 
         <Card style={{ marginTop: 12 }}>
