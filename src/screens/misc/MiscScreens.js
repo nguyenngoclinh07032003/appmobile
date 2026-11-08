@@ -583,12 +583,33 @@ export function OrderScreen({ params }) {
               </View>
             ) : null}
             {o.status === 'done' && !o.report?.paid && /vnpay|qr|chuyển khoản|atm|google pay|apple pay/i.test(o.payment || '') ? (
-              <View style={{ marginTop: 14, alignItems: 'center', padding: 12, borderRadius: 14, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line }}>
-                <Text style={{ fontWeight: '800', color: C.ink, marginBottom: 8 }}>Mã QR thanh toán</Text>
-                <PseudoQR value={`HRMSS|${o.code}|${orderTotal(o)}`} size={160} />
-                <Text style={[ui.meta, { marginTop: 8, textAlign: 'center', lineHeight: 18 }]}>
-                  Quét mã bằng ứng dụng Ngân hàng / Ví điện tử · Nội dung: {o.code} · {formatVND(orderTotal(o))}
+              <View style={{ marginTop: 14, alignItems: 'center', padding: 14, borderRadius: 14, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Text style={{ fontSize: 16 }}>🏦</Text>
+                  <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>Tài khoản Công ty HRMSS (VietQR)</Text>
+                </View>
+                <Text style={[ui.meta, { marginBottom: 10, textAlign: 'center', color: C.muted }]}>
+                  Chuyển khoản trực tiếp vào tài khoản Công ty để kích hoạt Bảo hành điện tử 60 ngày
                 </Text>
+                <PseudoQR value={`HRMSS|${o.code}|${orderTotal(o)}`} size={160} />
+                <View style={{ marginTop: 10, width: '100%', backgroundColor: '#fff', padding: 10, borderRadius: R.sm, borderWidth: 1, borderColor: '#E2E8F0', gap: 4 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={ui.meta}>Đơn vị thụ hưởng:</Text>
+                    <Text style={{ fontWeight: '700', color: C.ink, fontSize: 12 }}>CTY CP CÔNG NGHỆ HRMSS</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={ui.meta}>Ngân hàng:</Text>
+                    <Text style={{ fontWeight: '700', color: C.ink, fontSize: 12 }}>MBBank (Quân Đội)</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={ui.meta}>Số tài khoản:</Text>
+                    <Text style={{ fontWeight: '800', color: C.primary, fontSize: 12 }}>0908 888 999</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                    <Text style={ui.meta}>Nội dung CK:</Text>
+                    <Text style={{ fontWeight: '800', color: C.orange, fontSize: 12 }}>{o.code}</Text>
+                  </View>
+                </View>
               </View>
             ) : null}
             {o.status === 'done' && !o.report?.paid ? (
