@@ -189,7 +189,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     dateLabel: formatDateLabelFromIso(preferredIso),
     dateKey: formatDateKeyFromIso(preferredIso),
     slot: formatSlotFromIso(preferredIso),
-    payment: 'VNPay QR',
+    payment: 'Chuyển khoản VietQR (MBBank)',
     note: req.problem_description || '',
     address: {
       id: `addr-snap-${req.request_id}`,
@@ -287,7 +287,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     dateLabel: formatDateLabelFromIso(preferredIso),
     dateKey: formatDateKeyFromIso(preferredIso),
     slot: formatSlotFromIso(preferredIso),
-    payment: 'VNPay QR',
+    payment: 'Chuyển khoản VietQR (MBBank)',
     note: req.problem_description || '',
     address: {
       id: `addr-job-${job.assignment_id}`,

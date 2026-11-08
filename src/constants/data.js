@@ -285,7 +285,7 @@ export const FAQ = [
   { q: 'Tôi có thể huỷ hoặc đổi lịch không?', a: 'Khi đơn còn chờ thợ nhận, vào Chi tiết đơn → "Sửa yêu cầu" để đổi ngày/giờ, mô tả và ảnh. Huỷ miễn phí khi thợ chưa bắt đầu di chuyển (chờ nhận / đã nhận). Sau khi thợ đang đến thì không huỷ trên app — gọi hotline.' },
   { q: 'Bảo hành 60 ngày được tính thế nào?', a: 'Bảo hành bắt đầu từ lúc đơn hoàn thành. Vào Dịch vụ › Bảo hành hoặc Chi tiết đơn hàng để tra cứu và gửi yêu cầu bảo hành miễn phí.' },
   { q: 'Điểm tích luỹ dùng để làm gì?', a: 'Mỗi 10.000đ thanh toán = 1 điểm, đánh giá đơn hàng được thêm 20 điểm. Dùng điểm để đổi voucher ở mục Quyền lợi của tôi.' },
-  { q: 'Phương thức thanh toán nào được hỗ trợ?', a: 'Tiền mặt khi thợ hoàn thành, chuyển khoản, thẻ ATM, VNPay QR, thẻ quốc tế, Google Pay và Apple Pay.' },
+  { q: 'Phương thức thanh toán nào được hỗ trợ?', a: 'Quý khách có thể thanh toán bằng Chuyển khoản VietQR (MBBank) hoặc Tiền mặt trực tiếp cho thợ sau khi hoàn thành nghiệm thu.' },
 ];
 
 // Đổi điểm lấy voucher (Quyền lợi của tôi) — voucher đổi được sẽ hiện ở bước Thanh toán
@@ -433,7 +433,7 @@ export const TECHS = [
 export const PAYMENT_METHODS = [
   {
     id: 'vietqr',
-    label: 'Chuyển khoản VietQR (Công ty HRMSS)',
+    label: 'Chuyển khoản VietQR (MBBank)',
     shortLabel: 'VietQR (MBBank)',
     icon: '📲',
     desc: 'Quét mã QR thanh toán sau nghiệm thu · Kích hoạt bảo hành điện tử 60 ngày tự động',
@@ -452,22 +452,6 @@ export const PAYMENT_METHODS = [
     badgeBg: '#FFFBEB',
     badgeFg: '#D97706',
     timing: 'Thanh toán sau khi thợ hoàn thành & nghiệm thu',
-  },
-  {
-    id: 'vnpay',
-    label: 'Cổng VNPAY / Thẻ ATM & Quốc tế',
-    shortLabel: 'VNPAY / ATM / Visa',
-    icon: '💳',
-    desc: 'Thẻ ATM nội địa (Vietcombank, MB, Techcombank...), Visa/Master, MoMo, ZaloPay',
-    timing: 'Thanh toán trực tuyến khi chốt nghiệm thu',
-  },
-  {
-    id: 'vat',
-    label: 'Chuyển khoản Doanh nghiệp / Hóa đơn VAT',
-    shortLabel: 'Hóa đơn VAT',
-    icon: '🏢',
-    desc: 'Dành cho văn phòng, công ty cần xuất hóa đơn tài chính VAT 8-10% gửi qua Email',
-    timing: 'Kèm xuất hóa đơn VAT điện tử gửi qua Email',
   },
 ];
 

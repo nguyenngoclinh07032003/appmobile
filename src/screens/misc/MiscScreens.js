@@ -676,7 +676,7 @@ export function OrderScreen({ params }) {
                 </Text>
               </View>
             ) : null}
-            {o.status === 'done' && !o.report?.paid && /vnpay|qr|chuyển khoản|atm|google pay|apple pay/i.test(o.payment || '') ? (
+            {o.status === 'done' && !o.report?.paid && /vietqr|qr|chuyển khoản/i.test(o.payment || '') ? (
               <View style={{ marginTop: 14, alignItems: 'center', padding: 14, borderRadius: 14, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1' }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                   <Text style={{ fontSize: 16 }}>🏦</Text>
