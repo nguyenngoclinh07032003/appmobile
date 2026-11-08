@@ -118,9 +118,6 @@ export function NotificationsScreen() {
             {s.notifications.some((n) => !n.read) ? (
               <Tap onPress={a.readAll}><Text style={ui.link}>Đọc hết</Text></Tap>
             ) : null}
-            <Tap onPress={() => nav.go('home')} hitSlop={6} accessibilityLabel="Về trang chủ">
-              <Text style={{ fontSize: 18 }}>🏠</Text>
-            </Tap>
           </View>
         )}
       />
