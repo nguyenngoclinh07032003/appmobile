@@ -11,6 +11,7 @@ import {
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Chip, Badge, Stars, Field, Sheet, Radio,
   EmptyState, ServiceGrid, ServiceRow, Progress, Media, ListRow, PseudoQR, HScroll, ui,
+  TimeRangeSlider, minutesToSlotStr, minutesToTimeStr,
 } from '../../components';
 import { pickImage, validateVietnamesePhone, validateContactName } from '../../utils';
 import { TrackingCard, ChatCard } from '../../components/order';
@@ -153,8 +154,19 @@ export function OrderScreen({ params }) {
   const [showCertificate, setShowCertificate] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [editNote, setEditNote] = useState('');
+
+  const parseSlotToMinutes = (slotStr) => {
+    if (!slotStr) return 14 * 60;
+    const match = String(slotStr).match(/^(\d{1,2})h(\d{2})?/);
+    if (!match) return 14 * 60;
+    const h = parseInt(match[1], 10) || 14;
+    const m = parseInt(match[2] || '0', 10) || 0;
+    return h * 60 + m;
+  };
+
   const [editDayIdx, setEditDayIdx] = useState(1);
-  const [editSlot, setEditSlot] = useState(TIME_SLOTS[2]);
+  const [editMinutes, setEditMinutes] = useState(14 * 60);
+  const [editSlot, setEditSlot] = useState(() => minutesToSlotStr(14 * 60));
   const [editAtts, setEditAtts] = useState([]);
   const o = s.orders.find((x) => x.code === params.code);
   if (!o) return <View style={{ flex: 1 }}><TopBar title="Không tìm thấy đơn" /></View>;
@@ -171,14 +183,39 @@ export function OrderScreen({ params }) {
   const reorder = () => nav.push('checkout', { items: o.items.map(({ id, qty }) => ({ id, qty })) });
   const evidence = o.evidence || [];
   const editDays = nextDays(7);
-  const nowH = new Date().getHours();
-  const editSlotPassed = (sl) => editDayIdx === 0 && parseInt(sl, 10) <= nowH + 1;
+  const now = new Date();
+  const nowTotalM = now.getHours() * 60 + now.getMinutes();
+  const getMinSelectableEdit = (dIdx) => {
+    if (dIdx > 0) return 8 * 60;
+    return Math.max(8 * 60, Math.ceil((nowTotalM + 45) / 15) * 15);
+  };
+  const minAvailEdit = getMinSelectableEdit(editDayIdx);
+  const isTodayOutOfSlotsEdit = editDayIdx === 0 && minAvailEdit >= 20 * 60;
+
+  const handleEditDaySelect = (i) => {
+    setEditDayIdx(i);
+    const newMin = getMinSelectableEdit(i);
+    if (i === 0 && newMin >= 20 * 60) return;
+    const clamped = Math.min(Math.max(editMinutes, newMin), 20 * 60);
+    setEditMinutes(clamped);
+    setEditSlot(minutesToSlotStr(clamped));
+  };
+
+  const handleEditTimeChange = (newMins, newSlotStr) => {
+    setEditMinutes(newMins);
+    setEditSlot(newSlotStr);
+  };
 
   const openEdit = () => {
     const days = nextDays(7);
     const idx = Math.max(0, days.findIndex((d) => d.key === o.dateKey));
-    setEditDayIdx(idx >= 0 ? idx : 1);
-    setEditSlot(o.slot || TIME_SLOTS[2]);
+    const dIdx = idx >= 0 ? idx : 1;
+    setEditDayIdx(dIdx);
+    const mins = parseSlotToMinutes(o.slot);
+    const minAvail = getMinSelectableEdit(dIdx);
+    const clamped = Math.min(Math.max(mins, minAvail), 20 * 60);
+    setEditMinutes(clamped);
+    setEditSlot(o.slot || minutesToSlotStr(clamped));
     setEditNote(o.note || '');
     setEditAtts([...(o.attachments || [])]);
     setShowEdit(true);
@@ -191,7 +228,14 @@ export function OrderScreen({ params }) {
     setEditAtts((p) => [...p, { id: newAttId(), uri, at: Date.now() }]);
   };
   const saveEdit = () => {
-    if (editSlotPassed(editSlot)) { u.alert('Khung giờ đã qua', 'Chọn khung giờ hoặc ngày khác.', '⏰'); return; }
+    if (editDayIdx === 0 && isTodayOutOfSlotsEdit) {
+      u.alert('Hết giờ phục vụ', 'Hôm nay thợ đã kết thúc nhận ca. Quý khách vui lòng chọn Ngày mai.', '⏰');
+      return;
+    }
+    if (editDayIdx === 0 && editMinutes < minAvailEdit) {
+      u.alert('Giờ hẹn quá gần', 'Vui lòng chọn khung giờ cách hiện tại ít nhất 45 phút để thợ kịp di chuyển.', '⏰');
+      return;
+    }
     const day = editDays[editDayIdx];
     a.updatePendingRequest(o.code, {
       note: editNote,
@@ -877,24 +921,21 @@ export function OrderScreen({ params }) {
         <Text style={{ fontWeight: '800', color: C.ink, marginBottom: 8 }}>Ngày hẹn</Text>
         <HScroll contentContainerStyle={{ gap: 8, marginBottom: 10 }}>
           {editDays.map((dd, i) => (
-            <Tap key={dd.key} onPress={() => setEditDayIdx(i)} style={[mx.day, editDayIdx === i && mx.dayOn]}>
+            <Tap key={dd.key} onPress={() => handleEditDaySelect(i)} style={[mx.day, editDayIdx === i && mx.dayOn]}>
               <Text style={[mx.dayLabel, editDayIdx === i && { color: 'rgba(255,255,255,0.85)' }]}>{dd.label}</Text>
               <Text style={[mx.dayDate, editDayIdx === i && { color: '#fff' }]}>{dd.ddmm}</Text>
             </Tap>
           ))}
         </HScroll>
-        <Text style={{ fontWeight: '800', color: C.ink, marginBottom: 8 }}>Khung giờ</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-          {TIME_SLOTS.map((sl) => {
-            const off = editSlotPassed(sl);
-            const on = editSlot === sl && !off;
-            return (
-              <Tap key={sl} disabled={off} onPress={() => setEditSlot(sl)} style={[mx.slot, on && mx.slotOn, off && { opacity: 0.35 }]}>
-                <Text style={[mx.slotText, on && { color: '#fff' }]}>{sl}</Text>
-              </Tap>
-            );
-          })}
-        </View>
+        <TimeRangeSlider
+          value={editMinutes}
+          onChange={handleEditTimeChange}
+          minMinutes={minAvailEdit}
+          maxMinutes={20 * 60}
+          step={15}
+          isToday={editDayIdx === 0}
+          onSelectTomorrow={() => handleEditDaySelect(1)}
+        />
         <Field label="Mô tả tình trạng" multiline value={editNote} onChangeText={setEditNote} placeholder="Cập nhật mô tả lỗi…" style={{ marginTop: 4 }} />
         <Text style={{ fontWeight: '800', color: C.ink, marginTop: 8, marginBottom: 8 }}>Ảnh đính kèm</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>

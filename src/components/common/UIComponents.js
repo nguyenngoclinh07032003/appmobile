@@ -720,3 +720,353 @@ export const ui = StyleSheet.create({
 });
 
 export const isWeb = Platform.OS === 'web';
+
+export const minutesToTimeStr = (mins) => {
+  const m = Math.max(0, Math.floor(mins || 0));
+  const h = Math.floor(m / 60);
+  const min = m % 60;
+  return `${String(h).padStart(2, '0')}h${String(min).padStart(2, '0')}`;
+};
+
+export const minutesToSlotStr = (mins) => {
+  const m = Math.max(0, Math.floor(mins || 0));
+  const h1 = Math.floor(m / 60);
+  const min1 = m % 60;
+  const endMins = Math.min(m + 120, 22 * 60);
+  const h2 = Math.floor(endMins / 60);
+  const min2 = endMins % 60;
+  return `${String(h1).padStart(2, '0')}h${String(min1).padStart(2, '0')} - ${String(h2).padStart(2, '0')}h${String(min2).padStart(2, '0')}`;
+};
+
+export function TimeRangeSlider({
+  value,
+  onChange,
+  minMinutes = 8 * 60,
+  maxMinutes = 20 * 60,
+  step = 15,
+  isToday = false,
+  onSelectTomorrow,
+  style,
+}) {
+  const clampedVal = Math.min(Math.max(value || minMinutes, minMinutes), maxMinutes);
+  const isOutOfRange = isToday && minMinutes >= maxMinutes;
+
+  const handleChange = (newVal) => {
+    const clamped = Math.min(Math.max(newVal, minMinutes), maxMinutes);
+    const slotStr = minutesToSlotStr(clamped);
+    onChange?.(clamped, slotStr);
+  };
+
+  const handleNudge = (delta) => {
+    handleChange(clampedVal + delta);
+  };
+
+  const PRESETS = [
+    { label: '08:30', val: 8 * 60 + 30 },
+    { label: '10:00', val: 10 * 60 },
+    { label: '13:30', val: 13 * 60 + 30 },
+    { label: '15:30', val: 15 * 60 + 30 },
+    { label: '18:00', val: 18 * 60 },
+  ];
+
+  const periodLabel = clampedVal < 12 * 60 ? 'Buổi sáng' : clampedVal < 18 * 60 ? 'Buổi chiều' : 'Buổi tối';
+
+  return (
+    <View style={[trsStyles.card, style]}>
+      <View style={trsStyles.topRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={trsStyles.eyebrow}>GIỜ HẸN KỸ THUẬT VIÊN ĐẾN</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
+            <Text style={trsStyles.bigTime}>{minutesToTimeStr(clampedVal)}</Text>
+            <View style={trsStyles.periodBadge}>
+              <Text style={trsStyles.periodText}>{periodLabel}</Text>
+            </View>
+          </View>
+        </View>
+        <View style={trsStyles.slotBadge}>
+          <Text style={trsStyles.slotBadgeLabel}>Ca phục vụ:</Text>
+          <Text style={trsStyles.slotBadgeVal}>{minutesToSlotStr(clampedVal)}</Text>
+        </View>
+      </View>
+
+      {isOutOfRange ? (
+        <View style={trsStyles.closedBox}>
+          <Text style={trsStyles.closedText}>
+            Hôm nay đã quá giờ tiếp nhận phục vụ (sau 19:15). Quý khách vui lòng chọn Ngày mai hoặc các ngày tiếp theo.
+          </Text>
+          {onSelectTomorrow && (
+            <Tap style={trsStyles.tomorrowBtn} onPress={onSelectTomorrow}>
+              <Text style={trsStyles.tomorrowBtnText}>Đổi sang Ngày mai</Text>
+            </Tap>
+          )}
+        </View>
+      ) : (
+        <>
+          {/* Draggable slider container */}
+          <View style={trsStyles.trackContainer}>
+            {Platform.OS === 'web' ? (
+              <input
+                type="range"
+                min={minMinutes}
+                max={maxMinutes}
+                step={step}
+                value={clampedVal}
+                onChange={(e) => handleChange(Number(e.target.value))}
+                style={{
+                  width: '100%',
+                  height: 10,
+                  borderRadius: 5,
+                  accentColor: C.primary,
+                  cursor: 'pointer',
+                  outline: 'none',
+                  marginTop: 10,
+                  marginBottom: 6,
+                }}
+              />
+            ) : (
+              <View style={trsStyles.nativeFallbackTrack} />
+            )}
+          </View>
+
+          {/* Bound labels */}
+          <View style={trsStyles.boundsRow}>
+            <Text style={trsStyles.boundText}>{minutesToTimeStr(minMinutes)}</Text>
+            <Text style={[trsStyles.boundText, { color: C.muted }]}>Kéo thanh trượt để chỉnh giờ</Text>
+            <Text style={trsStyles.boundText}>{minutesToTimeStr(maxMinutes)}</Text>
+          </View>
+
+          {/* Nudge buttons */}
+          <View style={trsStyles.nudgeRow}>
+            <Tap
+              disabled={clampedVal <= minMinutes}
+              onPress={() => handleNudge(-step)}
+              style={[trsStyles.nudgeBtn, clampedVal <= minMinutes && trsStyles.nudgeBtnDisabled]}
+            >
+              <Text style={[trsStyles.nudgeBtnText, clampedVal <= minMinutes && { color: C.faint }]}>
+                ‹ − {step} phút
+              </Text>
+            </Tap>
+            <Tap
+              disabled={clampedVal >= maxMinutes}
+              onPress={() => handleNudge(step)}
+              style={[trsStyles.nudgeBtn, clampedVal >= maxMinutes && trsStyles.nudgeBtnDisabled]}
+            >
+              <Text style={[trsStyles.nudgeBtnText, clampedVal >= maxMinutes && { color: C.faint }]}>
+                + {step} phút ›
+              </Text>
+            </Tap>
+          </View>
+
+          {/* Milestone Presets */}
+          <View style={{ marginTop: 12 }}>
+            <Text style={trsStyles.presetsLabel}>Mốc giờ phổ biến:</Text>
+            <View style={trsStyles.presetsGrid}>
+              {PRESETS.map((p) => {
+                const isAvail = p.val >= minMinutes && p.val <= maxMinutes;
+                const isSelected = Math.abs(clampedVal - p.val) < 8;
+                return (
+                  <Tap
+                    key={p.val}
+                    disabled={!isAvail}
+                    onPress={() => handleChange(p.val)}
+                    style={[
+                      trsStyles.presetPill,
+                      isSelected && trsStyles.presetPillActive,
+                      !isAvail && trsStyles.presetPillDisabled,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        trsStyles.presetPillText,
+                        isSelected && trsStyles.presetPillTextActive,
+                        !isAvail && { color: C.faint },
+                      ]}
+                    >
+                      {minutesToTimeStr(p.val)}
+                    </Text>
+                  </Tap>
+                );
+              })}
+            </View>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
+const trsStyles = StyleSheet.create({
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: R.lg,
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    marginTop: 12,
+    marginBottom: 6,
+    ...shadow.sm,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F3F8',
+  },
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: C.primary,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  bigTime: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: C.primary,
+    letterSpacing: -0.5,
+    fontVariant: ['tabular-nums'],
+  },
+  periodBadge: {
+    backgroundColor: C.primarySoft,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  periodText: {
+    fontSize: 11,
+    color: C.primary,
+    fontWeight: '700',
+  },
+  slotBadge: {
+    alignItems: 'flex-end',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  slotBadgeLabel: {
+    fontSize: 10,
+    color: C.muted,
+    fontWeight: '600',
+  },
+  slotBadgeVal: {
+    fontSize: 12,
+    color: C.ink,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  closedBox: {
+    padding: 14,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    marginTop: 10,
+    alignItems: 'center',
+  },
+  closedText: {
+    fontSize: 13,
+    color: '#92400E',
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+  tomorrowBtn: {
+    marginTop: 10,
+    backgroundColor: C.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  tomorrowBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  trackContainer: {
+    marginTop: 6,
+    paddingHorizontal: 2,
+  },
+  nativeFallbackTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.primarySoft,
+    marginVertical: 10,
+  },
+  boundsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  boundText: {
+    fontSize: 11,
+    color: C.ink2,
+    fontWeight: '600',
+  },
+  nudgeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+  },
+  nudgeBtn: {
+    flex: 1,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1.2,
+    borderColor: '#D0DCF2',
+    backgroundColor: '#F6F9FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nudgeBtnDisabled: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#E2E8F0',
+    opacity: 0.5,
+  },
+  nudgeBtnText: {
+    fontSize: 13,
+    color: C.primary,
+    fontWeight: '700',
+  },
+  presetsLabel: {
+    fontSize: 12,
+    color: C.muted,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  presetsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  presetPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  presetPillActive: {
+    backgroundColor: C.primary,
+    borderColor: C.primary,
+  },
+  presetPillDisabled: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#F0F3F8',
+    opacity: 0.4,
+  },
+  presetPillText: {
+    fontSize: 12,
+    color: C.ink,
+    fontWeight: '600',
+  },
+  presetPillTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+});

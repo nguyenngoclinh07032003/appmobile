@@ -10,6 +10,7 @@ import { useApp, cartTotal, LAST_SERVICE_OPTIONS } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Media, Badge, Stars, Stepper, Sheet, Radio, Field,
   SelectRow, Segmented, Checkbox, EmptyState, ServiceCard, Price, Chip, ui, HScroll,
+  TimeRangeSlider, minutesToSlotStr, minutesToTimeStr,
 } from '../../components';
 import { pickImage, validateVietnamesePhone, validateStreetAddress, validateContactName } from '../../utils';
 
@@ -363,11 +364,47 @@ export function CheckoutScreen({ params }) {
   const [sentOtpHint, setSentOtpHint] = useState('');
   const [otpSending, setOtpSending] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
-  const [dayIdx, setDayIdx] = useState(1);
-  const [slot, setSlot] = useState('14h00 - 16h00');
+
   const days = nextDays(7);
-  const nowH = new Date().getHours();
-  const slotPassed = (sl) => dayIdx === 0 && parseInt(sl, 10) <= nowH + 1;
+  const now = new Date();
+  const nowH = now.getHours();
+  const nowM = now.getMinutes();
+  const nowTotalM = nowH * 60 + nowM;
+
+  const MIN_DAY_MINUTE = 8 * 60; // 08:00
+  const MAX_DAY_MINUTE = 20 * 60; // 20:00
+
+  // Đảm bảo thợ có ít nhất 45 phút chuẩn bị và di chuyển nếu đặt trong ngày hôm nay
+  const getMinSelectable = (dIdx) => {
+    if (dIdx > 0) return MIN_DAY_MINUTE;
+    return Math.max(MIN_DAY_MINUTE, Math.ceil((nowTotalM + 45) / 15) * 15);
+  };
+
+  const [dayIdx, setDayIdx] = useState(1);
+  const [timeMinutes, setTimeMinutes] = useState(() => {
+    const minM = getMinSelectable(1);
+    return Math.min(Math.max(14 * 60, minM), MAX_DAY_MINUTE);
+  });
+  const [slot, setSlot] = useState(() => minutesToSlotStr(14 * 60));
+
+  const minAvailable = getMinSelectable(dayIdx);
+  const isTodayOutOfSlots = dayIdx === 0 && minAvailable >= MAX_DAY_MINUTE;
+
+  const handleDaySelect = (i) => {
+    setDayIdx(i);
+    const newMin = getMinSelectable(i);
+    if (i === 0 && newMin >= MAX_DAY_MINUTE) {
+      return;
+    }
+    const clamped = Math.min(Math.max(timeMinutes, newMin), MAX_DAY_MINUTE);
+    setTimeMinutes(clamped);
+    setSlot(minutesToSlotStr(clamped));
+  };
+
+  const handleTimeChange = (newMins, newSlotStr) => {
+    setTimeMinutes(newMins);
+    setSlot(newSlotStr);
+  };
 
   const lines = items.map((it) => ({ ...it, svc: getService(it.id) })).filter((x) => x.svc);
 
@@ -477,7 +514,14 @@ export function CheckoutScreen({ params }) {
       });
       return;
     }
-    if (slotPassed(slot)) { u.alert('Khung giờ đã qua', 'Vui lòng chọn khung giờ khác hoặc ngày khác.', '⏰'); return; }
+    if (dayIdx === 0 && isTodayOutOfSlots) {
+      u.alert('Hết giờ phục vụ', 'Hôm nay thợ đã kết thúc nhận ca. Quý khách vui lòng chuyển sang Ngày mai.', '⏰');
+      return;
+    }
+    if (dayIdx === 0 && timeMinutes < minAvailable) {
+      u.alert('Giờ hẹn quá gần', 'Vui lòng chọn khung giờ cách hiện tại ít nhất 45 phút để thợ kịp di chuyển.', '⏰');
+      return;
+    }
 
     const code = a.placeOrder({
       items: lines.map(({ id, qty }) => ({ id, qty })),
@@ -567,23 +611,21 @@ export function CheckoutScreen({ params }) {
         <Text style={bx.sec}>Thời gian thực hiện</Text>
         <HScroll contentContainerStyle={{ gap: 8 }}>
           {days.map((dd, i) => (
-            <Tap key={dd.ddmm} onPress={() => setDayIdx(i)} style={[bx.day, dayIdx === i && bx.dayOn]}>
+            <Tap key={dd.ddmm} onPress={() => handleDaySelect(i)} style={[bx.day, dayIdx === i && bx.dayOn]}>
               <Text style={[bx.dayLabel, dayIdx === i && { color: 'rgba(255,255,255,0.8)' }]}>{dd.label}</Text>
               <Text style={[bx.dayDate, dayIdx === i && { color: '#fff' }]}>{dd.ddmm}</Text>
             </Tap>
           ))}
         </HScroll>
-        <View style={bx.slots}>
-          {TIME_SLOTS.map((sl) => {
-            const off = slotPassed(sl);
-            const on = slot === sl && !off;
-            return (
-              <Tap key={sl} disabled={off} onPress={() => setSlot(sl)} style={[bx.slot, on && bx.slotOn, off && { opacity: 0.35 }]}>
-                <Text style={[bx.slotText, on && { color: '#fff' }]}>{sl}</Text>
-              </Tap>
-            );
-          })}
-        </View>
+        <TimeRangeSlider
+          value={timeMinutes}
+          onChange={handleTimeChange}
+          minMinutes={minAvailable}
+          maxMinutes={MAX_DAY_MINUTE}
+          step={15}
+          isToday={dayIdx === 0}
+          onSelectTomorrow={() => handleDaySelect(1)}
+        />
 
         {/* Dịch vụ */}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, marginBottom: 8 }}>

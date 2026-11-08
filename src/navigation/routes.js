@@ -1,13 +1,13 @@
 import HomeScreen from '../screens/home';
 import {
-  ServicesScreen, DevicesScreen, ActivityScreen, PersonalScreen,
+  ServicesScreen, ActivityScreen, PersonalScreen,
 } from '../screens/customer';
 import {
   DetailScreen, CartScreen, CheckoutScreen, SuccessScreen, AddressesScreen, AddressFormScreen,
 } from '../screens/booking';
 import {
-  SearchScreen, NotificationsScreen, OrderScreen, RateScreen, RewardsScreen, FavoritesScreen,
-  ProfileScreen, HelpScreen, TermsScreen, QRScreen, DeviceFormScreen,
+  SearchScreen, NotificationsScreen, OrderScreen, RateScreen, RewardsScreen,
+  ProfileScreen, HelpScreen, TermsScreen, QRScreen,
 } from '../screens/misc';
 import {
   TechJobsScreen, TechScheduleScreen, TechNotifsScreen, TechAccountScreen, TechJobScreen,
