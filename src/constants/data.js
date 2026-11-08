@@ -11,35 +11,35 @@ export const CATEGORIES = [
 
 export const SERVICES = [
   // Máy lạnh
-  { id: 'vs-ml-1', dbId: 1, category: 'may-lanh', name: 'Vệ sinh máy lạnh từ 1-2.5 HP', price: 180000, oldPrice: 200000, rating: 5, sold: 'Đã bán 631,7k', reviews: 16732, icon: 'snowflake', warranty: 'BH 60 ngày' },
-  { id: 'vs-ml-am-tran', dbId: 2, category: 'may-lanh', name: 'Vệ sinh Máy lạnh Âm Trần', price: 480000, oldPrice: 600000, rating: 5, sold: 'Đã bán 230', icon: 'air-vent', warranty: 'BH 60 ngày' },
-  { id: 'gas-410-1hp', dbId: 3, category: 'may-lanh', name: 'Sạc gas R410 - R32 (Inverter) máy lạnh 1HP...', price: 850000, rating: 0, sold: 'Đã bán 104', icon: 'gauge', warranty: 'BH 60 ngày' },
-  { id: 'vs-ml-tu-dung', dbId: 4, category: 'may-lanh', name: 'Vệ sinh Máy lạnh Tủ Đứng', price: 480000, oldPrice: 600000, rating: 5, sold: 'Đã bán 20', icon: 'server', warranty: 'BH 60 ngày' },
-  { id: 'gas-410-2hp', dbId: 5, category: 'may-lanh', name: 'Sạc gas R410 - R32 (Inverter) máy lạnh 2H...', price: 1150000, rating: 0, sold: 'Đã bán 10', icon: 'gauge', warranty: 'BH 60 ngày' },
-  { id: 'gas-r22-1hp', dbId: 6, category: 'may-lanh', name: 'Sạc gas R22 (Mono) máy lạnh 1-1.5 HP', price: 700000, rating: 0, sold: 'Đã bán 8', icon: 'gauge', warranty: 'BH 60 ngày' },
-  { id: 'vs-ml-chuyen-sau', dbId: 7, category: 'may-lanh', name: 'Vệ sinh chuyên sâu máy lạnh treo tường 1-2,5 HP', price: 600000, oldPrice: 750000, rating: 0, sold: '', icon: 'snowflake', warranty: 'BH 60 ngày' },
-  { id: 'gas-r22-2hp', dbId: 8, category: 'may-lanh', name: 'Sạc gas R22 (Mono) máy lạnh 2HP-2.5HP', price: 850000, rating: 0, sold: '', icon: 'gauge', warranty: 'BH 60 ngày' },
+  { id: 'vs-ml-1', dbId: 80, category: 'may-lanh', name: 'Vệ sinh máy lạnh từ 1-2.5 HP', price: 180000, oldPrice: 200000, rating: 5, sold: 'Đã bán 631,7k', reviews: 16732, icon: 'snowflake', warranty: 'BH 60 ngày' },
+  { id: 'vs-ml-am-tran', dbId: 82, category: 'may-lanh', name: 'Vệ sinh Máy lạnh Âm Trần', price: 480000, oldPrice: 600000, rating: 5, sold: 'Đã bán 230', icon: 'air-vent', warranty: 'BH 60 ngày' },
+  { id: 'gas-410-1hp', dbId: 81, category: 'may-lanh', name: 'Sạc gas R410 - R32 (Inverter) máy lạnh 1HP...', price: 400000, rating: 0, sold: 'Đã bán 104', icon: 'gauge', warranty: 'BH 60 ngày' },
+  { id: 'vs-ml-tu-dung', dbId: 82, category: 'may-lanh', name: 'Vệ sinh Máy lạnh Tủ Đứng', price: 480000, oldPrice: 600000, rating: 5, sold: 'Đã bán 20', icon: 'server', warranty: 'BH 60 ngày' },
+  { id: 'gas-410-2hp', dbId: 81, category: 'may-lanh', name: 'Sạc gas R410 - R32 (Inverter) máy lạnh 2H...', price: 400000, rating: 0, sold: 'Đã bán 10', icon: 'gauge', warranty: 'BH 60 ngày' },
+  { id: 'gas-r22-1hp', dbId: 81, category: 'may-lanh', name: 'Sạc gas R22 (Mono) máy lạnh 1-1.5 HP', price: 400000, rating: 0, sold: 'Đã bán 8', icon: 'gauge', warranty: 'BH 60 ngày' },
+  { id: 'vs-ml-chuyen-sau', dbId: 80, category: 'may-lanh', name: 'Vệ sinh chuyên sâu máy lạnh treo tường 1-2,5 HP', price: 180000, oldPrice: 250000, rating: 0, sold: '', icon: 'snowflake', warranty: 'BH 60 ngày' },
+  { id: 'gas-r22-2hp', dbId: 81, category: 'may-lanh', name: 'Sạc gas R22 (Mono) máy lạnh 2HP-2.5HP', price: 400000, rating: 0, sold: '', icon: 'gauge', warranty: 'BH 60 ngày' },
   // Máy giặt
-  { id: 'vs-mg-tren', dbId: 9, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Cửa Trên', price: 357000, oldPrice: 420000, rating: 5, sold: 'Đã bán 8,3k', icon: 'washing-machine', warranty: 'BH 60 ngày' },
-  { id: 'vs-mg-truoc', dbId: 10, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Cửa Trước', price: 552500, oldPrice: 650000, rating: 5, sold: 'Đã bán 7,1k', icon: 'washing-machine', warranty: 'BH 60 ngày' },
-  { id: 'vs-mg-quan-ao', dbId: 11, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Quần Áo', price: 357000, oldPrice: 420000, rating: 4.9, sold: 'Đã bán 185', icon: 'shirt', warranty: 'BH 60 ngày' },
+  { id: 'vs-mg-tren', dbId: 91, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Cửa Trên', price: 300000, oldPrice: 350000, rating: 5, sold: 'Đã bán 8,3k', icon: 'washing-machine', warranty: 'BH 60 ngày' },
+  { id: 'vs-mg-truoc', dbId: 91, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Cửa Trước', price: 300000, oldPrice: 350000, rating: 5, sold: 'Đã bán 7,1k', icon: 'washing-machine', warranty: 'BH 60 ngày' },
+  { id: 'vs-mg-quan-ao', dbId: 91, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Quần Áo', price: 300000, oldPrice: 350000, rating: 4.9, sold: 'Đã bán 185', icon: 'shirt', warranty: 'BH 60 ngày' },
   // Tủ lạnh
-  { id: 'vs-tl-300', dbId: 12, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh ≤ 300 lít', price: 247500, oldPrice: 275000, rating: 0, sold: 'Đã bán 66', icon: 'refrigerator', warranty: 'BH 60 ngày' },
-  { id: 'vs-tl-side', dbId: 13, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh side-by-side', price: 450000, oldPrice: 500000, rating: 0, sold: 'Đã bán 29', icon: 'refrigerator', warranty: 'BH 60 ngày' },
-  { id: 'vs-tl-tren300', dbId: 14, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh > 300 lít', price: 315000, oldPrice: 350000, rating: 0, sold: 'Đã bán 23', icon: 'refrigerator', warranty: 'BH 60 ngày' },
+  { id: 'vs-tl-300', dbId: 86, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh ≤ 300 lít', price: 200000, oldPrice: 250000, rating: 0, sold: 'Đã bán 66', icon: 'refrigerator', warranty: 'BH 60 ngày' },
+  { id: 'vs-tl-side', dbId: 86, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh side-by-side', price: 200000, oldPrice: 250000, rating: 0, sold: 'Đã bán 29', icon: 'refrigerator', warranty: 'BH 60 ngày' },
+  { id: 'vs-tl-tren300', dbId: 86, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh > 300 lít', price: 200000, oldPrice: 250000, rating: 0, sold: 'Đã bán 23', icon: 'refrigerator', warranty: 'BH 60 ngày' },
   // Nước nóng / Bồn nước
-  { id: 'vs-bnn', dbId: 15, category: 'nuoc-nong', name: 'Vệ sinh Bình nước nóng', price: 250000, rating: 0, sold: 'Đã bán 106', icon: 'shower-head', warranty: 'BH 60 ngày' },
-  { id: 'vs-nlmt-300', dbId: 16, category: 'nuoc-nong', name: 'Vệ sinh Bình năng lượng mặt trời ≤ 300 lít', price: 700000, rating: 0, sold: 'Đã bán 26', icon: 'sun', warranty: 'BH 60 ngày' },
-  { id: 'vs-nlmt-tren300', dbId: 17, category: 'nuoc-nong', name: 'Vệ sinh Bình năng lượng mặt trời > 300 lít', price: 900000, rating: 0, sold: 'Đã bán 2', icon: 'sun', warranty: 'BH 60 ngày' },
-  { id: 'vs-bon-2500', dbId: 18, category: 'nuoc-nong', name: 'Vệ sinh bồn nước từ 2500 đến 5000 lít', price: 525000, oldPrice: 750000, rating: 0, sold: '', icon: 'droplets', warranty: 'BH 60 ngày' },
-  { id: 'vs-bon-duoi', dbId: 19, category: 'nuoc-nong', name: 'Vệ sinh bồn nước dưới 2500 lít', price: 385000, oldPrice: 550000, rating: 0, sold: '', icon: 'droplets', warranty: 'BH 60 ngày' },
+  { id: 'vs-bnn', dbId: 112, category: 'nuoc-nong', name: 'Vệ sinh Bình nước nóng', price: 200000, rating: 0, sold: 'Đã bán 106', icon: 'shower-head', warranty: 'BH 60 ngày' },
+  { id: 'vs-nlmt-300', dbId: 112, category: 'nuoc-nong', name: 'Vệ sinh Bình năng lượng mặt trời ≤ 300 lít', price: 200000, rating: 0, sold: 'Đã bán 26', icon: 'sun', warranty: 'BH 60 ngày' },
+  { id: 'vs-nlmt-tren300', dbId: 112, category: 'nuoc-nong', name: 'Vệ sinh Bình năng lượng mặt trời > 300 lít', price: 200000, rating: 0, sold: 'Đã bán 2', icon: 'sun', warranty: 'BH 60 ngày' },
+  { id: 'vs-bon-2500', dbId: 112, category: 'nuoc-nong', name: 'Vệ sinh bồn nước từ 2500 đến 5000 lít', price: 200000, rating: 0, sold: '', icon: 'droplets', warranty: 'BH 60 ngày' },
+  { id: 'vs-bon-duoi', dbId: 112, category: 'nuoc-nong', name: 'Vệ sinh bồn nước dưới 2500 lít', price: 200000, rating: 0, sold: '', icon: 'droplets', warranty: 'BH 60 ngày' },
   // Hút mùi
-  { id: 'vs-hut-mui', dbId: 20, category: 'hut-mui', name: 'Vệ sinh Máy hút mùi', price: 350000, rating: 0, sold: 'Đã bán 29', icon: 'air-vent', warranty: 'BH 60 ngày' },
+  { id: 'vs-hut-mui', dbId: 98, category: 'hut-mui', name: 'Vệ sinh Máy hút mùi', price: 200000, rating: 0, sold: 'Đã bán 29', icon: 'air-vent', warranty: 'BH 60 ngày' },
   // Quạt
-  { id: 'vs-quat-dh', dbId: 21, category: 'quat', name: 'Vệ sinh Quạt điều hòa', price: 180000, oldPrice: 200000, rating: 5, sold: 'Đã bán 329', icon: 'fan', warranty: 'BH 60 ngày' },
-  { id: 'vs-quat-dung', dbId: 22, category: 'quat', name: 'Vệ sinh Quạt đứng/treo tường', price: 150000, rating: 0, sold: 'Đã bán 184', icon: 'fan', warranty: 'BH 60 ngày' },
+  { id: 'vs-quat-dh', dbId: 103, category: 'quat', name: 'Vệ sinh Quạt điều hòa', price: 100000, oldPrice: 120000, rating: 5, sold: 'Đã bán 329', icon: 'fan', warranty: 'BH 60 ngày' },
+  { id: 'vs-quat-dung', dbId: 103, category: 'quat', name: 'Vệ sinh Quạt đứng/treo tường', price: 100000, rating: 0, sold: 'Đã bán 184', icon: 'fan', warranty: 'BH 60 ngày' },
   // Lọc không khí
-  { id: 'vs-loc-kk', dbId: 23, category: 'loc-khong-khi', name: 'Vệ sinh Máy lọc không khí', price: 250000, rating: 0, sold: 'Đã bán 16', icon: 'wind', warranty: 'BH 60 ngày' },
+  { id: 'vs-loc-kk', dbId: 109, category: 'loc-khong-khi', name: 'Vệ sinh Máy lọc không khí', price: 120000, rating: 0, sold: 'Đã bán 16', icon: 'wind', warranty: 'BH 60 ngày' },
 ];
 
 export const COMMITMENTS = [
@@ -209,13 +209,16 @@ export const noteFor = (items) => {
 // Bảng giá dịch vụ sửa chữa & bảo dưỡng định kỳ chính hãng Thợ HRMSS (Hệ thống không cung cấp lắp đặt mới).
 export const INSTALL_SERVICES = [];
 export const REPAIR_SERVICES = [
-  { id: 'sc-ml', dbId: 24, category: 'may-lanh', name: 'Kiểm tra / sửa máy lạnh không lạnh', price: 200000, rating: 0, sold: '', icon: 'snowflake', warranty: 'BH 60 ngày' },
-  { id: 'sc-mg', dbId: 25, category: 'may-giat', name: 'Kiểm tra / sửa máy giặt không vắt', price: 200000, rating: 0, sold: '', icon: 'washing-machine', warranty: 'BH 60 ngày' },
-  { id: 'sc-tl', dbId: 26, category: 'tu-lanh', name: 'Kiểm tra / sửa tủ lạnh kém lạnh', price: 200000, rating: 0, sold: '', icon: 'refrigerator', warranty: 'BH 60 ngày' },
+  { id: 'sc-ml', dbId: 79, category: 'may-lanh', name: 'Sửa chữa điều hòa / máy lạnh', price: 250000, rating: 0, sold: '', icon: 'snowflake', warranty: 'BH 60 ngày' },
+  { id: 'sc-mg', dbId: 89, category: 'may-giat', name: 'Sửa chữa máy giặt', price: 250000, rating: 0, sold: '', icon: 'washing-machine', warranty: 'BH 60 ngày' },
+  { id: 'sc-tl', dbId: 84, category: 'tu-lanh', name: 'Sửa chữa tủ lạnh', price: 250000, rating: 0, sold: '', icon: 'refrigerator', warranty: 'BH 60 ngày' },
+  { id: 'sc-bnn', dbId: 111, category: 'nuoc-nong', name: 'Sửa chữa bình nóng lạnh', price: 250000, rating: 0, sold: '', icon: 'shower-head', warranty: 'BH 60 ngày' },
+  { id: 'sc-dien', dbId: 116, category: 'all', name: 'Kiểm tra, xử lý sự cố điện', price: 150000, rating: 0, sold: '', icon: 'zap', warranty: 'BH 60 ngày' },
+  { id: 'sc-tv', dbId: 122, category: 'all', name: 'Sửa chữa tivi', price: 300000, rating: 0, sold: '', icon: 'tv', warranty: 'BH 60 ngày' },
 ];
 export const LIFETIME_SERVICES = [
-  { id: 'td-ml', dbId: 27, category: 'may-lanh', name: 'Gói bảo dưỡng trọn đời máy lạnh treo tường', price: 1200000, rating: 0, sold: '', icon: 'snowflake', warranty: 'BH 60 ngày' },
-  { id: 'td-mg', dbId: 28, category: 'may-giat', name: 'Gói bảo dưỡng trọn đời máy giặt', price: 900000, rating: 0, sold: '', icon: 'washing-machine', warranty: 'BH 60 ngày' },
+  { id: 'td-ml', dbId: 80, category: 'may-lanh', name: 'Gói bảo dưỡng trọn đời máy lạnh treo tường', price: 1200000, rating: 0, sold: '', icon: 'snowflake', warranty: 'BH 60 ngày' },
+  { id: 'td-mg', dbId: 91, category: 'may-giat', name: 'Gói bảo dưỡng trọn đời máy giặt', price: 900000, rating: 0, sold: '', icon: 'washing-machine', warranty: 'BH 60 ngày' },
 ];
 export const AREAS = [
   'An Khánh, Hà Nội', 'Hoài Đức, Hà Nội', 'Cầu Giấy, Hà Nội', 'Nam Từ Liêm, Hà Nội',
@@ -537,6 +540,16 @@ export const MATERIALS = [
 ];
 
 // Ánh xạ giữa mã App Mobile và ID trong PostgreSQL (hrmss.service & hrmss.material)
+export const resolveDbServiceId = (serviceSlugOrId) => {
+  const raw = String(serviceSlugOrId || '').trim();
+  if (/^[1-9]\d*$/.test(raw)) return Number(raw);
+  const found = getService(raw);
+  if (found?.dbId) return Number(found.dbId);
+  const slug = resolveServiceSlugFromBackend(raw);
+  const matched = getService(slug);
+  return matched?.dbId ? Number(matched.dbId) : 80;
+};
+
 export const resolveServiceSlugFromBackend = (serviceId, serviceName = '') => {
   const byId = SERVICE_BY_DB_ID[String(serviceId)];
   if (byId && (!serviceName || normalize(byId.name) === normalize(serviceName))) {
@@ -546,15 +559,34 @@ export const resolveServiceSlugFromBackend = (serviceId, serviceName = '') => {
   const byExactName = ALL_SERVICES.find((s) => normalize(s.name) === normName);
   if (byExactName) return byExactName.id;
   if (byId) return byId.id;
-  if (normName.includes('may giat cua truoc') || normName.includes('long ngang')) return 'vs-mg-truoc';
-  if (normName.includes('may giat')) return normName.includes('sua') ? 'sc-mg' : 'vs-mg-tren';
-  if (normName.includes('tu lanh')) return normName.includes('sua') ? 'sc-tl' : 'vs-tl-300';
-  if (normName.includes('hut mui')) return 'vs-hut-mui';
+
+  if (normName.includes('dieu hoa') || normName.includes('may lanh')) {
+    if (normName.includes('gas') || normName.includes('nap gas') || normName.includes('sac gas')) return 'gas-410-1hp';
+    if (normName.includes('sua') || normName.includes('chan doan') || normName.includes('kiem tra')) return 'sc-ml';
+    if (normName.includes('lap dat') || normName.includes('thao do') || normName.includes('am tran')) return 'vs-ml-am-tran';
+    return 'vs-ml-1';
+  }
+  if (normName.includes('may giat') || normName.includes('may say')) {
+    if (normName.includes('sua') || normName.includes('chan doan')) return 'sc-mg';
+    if (normName.includes('cua truoc') || normName.includes('long ngang')) return 'vs-mg-truoc';
+    return 'vs-mg-tren';
+  }
+  if (normName.includes('tu lanh') || normName.includes('tu dong') || normName.includes('tu mat') || normName.includes('thiet bi lanh')) {
+    if (normName.includes('sua') || normName.includes('chan doan')) return 'sc-tl';
+    if (normName.includes('side')) return 'vs-tl-side';
+    return 'vs-tl-300';
+  }
+  if (normName.includes('binh nong') || normName.includes('nuoc nong') || normName.includes('loc nuoc') || normName.includes('bon nuoc')) {
+    if (normName.includes('sua')) return 'sc-bnn';
+    return 'vs-bnn';
+  }
+  if (normName.includes('hut mui') || normName.includes('nha bep') || normName.includes('bep tu') || normName.includes('lo vi song') || normName.includes('may rua bat')) {
+    return 'vs-hut-mui';
+  }
   if (normName.includes('quat')) return 'vs-quat-dh';
-  if (normName.includes('loc khong khi')) return 'vs-loc-kk';
-  if (normName.includes('nuoc nong') || normName.includes('binh nong')) return 'vs-bnn';
-  if (normName.includes('nap gas') || normName.includes('sac gas')) return 'gas-410-1hp';
-  if (normName.includes('sua') || normName.includes('chay nuoc')) return 'sc-ml';
+  if (normName.includes('loc khong khi') || normName.includes('gia dung') || normName.includes('hut bui')) return 'vs-loc-kk';
+  if (normName.includes('dien') || normName.includes('su co dien') || normName.includes('day dien') || normName.includes('aptomat')) return 'sc-dien';
+  if (normName.includes('tivi') || normName.includes('tv')) return 'sc-tv';
   return 'vs-ml-1';
 };
 

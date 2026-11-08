@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { BackHandler, Linking, Platform } from 'react-native';
 import {
   getService, MAINT_MONTHS, TECH_ME, REDEEM_OPTIONS, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech,
-  tierOf, lookupHrmssPurchasedDevices, comboDiscountFor, syncCatalogFromBackend,
+  tierOf, lookupHrmssPurchasedDevices, comboDiscountFor, syncCatalogFromBackend, resolveDbServiceId,
 } from '../constants/data';
 import { MOCK_ORDERS, MOCK_DEVICES, MOCK_ADDRESSES, MOCK_CUSTOMER_NOTIFS, MOCK_TECH_NOTIFS } from '../constants/mockData';
 export { matchJobForTech, comboDiscountFor } from '../constants/data';
@@ -892,9 +892,10 @@ export function AppProvider({ children }) {
         const apiItems = [];
         (payload.items || []).forEach((it) => {
           const count = Math.max(1, Number(it.qty) || 1);
+          const dbServiceId = resolveDbServiceId(it.id);
           for (let i = 0; i < count && apiItems.length < 10; i += 1) {
             apiItems.push({
-              service_id: String(it.id),
+              service_id: dbServiceId,
               notes: payload.note ? String(payload.note).slice(0, 450) : null,
             });
           }
