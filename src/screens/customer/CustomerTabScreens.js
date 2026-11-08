@@ -299,7 +299,7 @@ export function PersonalScreen() {
           <View style={{ flex: 1 }}>
             <Text style={sx.pName} numberOfLines={1}>{name}</Text>
             <Text style={sx.pPhone}>{phone}</Text>
-            <Tap style={[sx.tier, { backgroundColor: cur.color }]} onPress={() => nav.push('rewards', { tierId: cur.id })}>
+            <Tap style={[sx.tier, { backgroundColor: C.green }]} onPress={() => nav.push('rewards', { tierId: cur.id })}>
               <Text style={sx.tierText}>{cur.label} ›</Text>
             </Tap>
           </View>
