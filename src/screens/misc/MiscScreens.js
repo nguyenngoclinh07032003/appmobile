@@ -496,7 +496,6 @@ export function OrderScreen({ params }) {
               </View>
             </View>
           ) : null}
-          {o.workerCode ? <InfoLine icon="🧑‍🔧" label="Thợ Now" value={o.workerCode} /> : null}
           {o.warrantyOf ? (
             <Tap onPress={() => nav.push('order', { code: o.warrantyOf })}><InfoLine icon="🔗" label="Bảo hành cho đơn" value={`${o.warrantyOf} ›`} link /></Tap>
           ) : null}

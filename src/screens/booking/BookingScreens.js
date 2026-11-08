@@ -352,7 +352,6 @@ export function CheckoutScreen({ params }) {
   const [items, setItems] = useState(params.items || []);
   const [note, setNote] = useState(() => noteFor((params.items || []).map((it) => ({ service: getService(it.id) }))));
   const [attachments, setAttachments] = useState([]);
-  const [workerCode, setWorkerCode] = useState('');
   const [payment, setPayment] = useState(PAYMENTS[0]);
   const [showPay, setShowPay] = useState(false);
   const [showVoucher, setShowVoucher] = useState(false);
@@ -530,7 +529,7 @@ export function CheckoutScreen({ params }) {
       comboDiscount: combo.amount,
       comboLabel: combo.label,
       goods, productDiscount, voucher: voucher ? { ...voucher } : null, voucherDiscount: vDiscount, total,
-      dateLabel: `${days[dayIdx].label} (${days[dayIdx].ddmm})`, dateKey: days[dayIdx].key, slot, payment, note, workerCode: workerCode.trim(),
+      dateLabel: `${days[dayIdx].label} (${days[dayIdx].ddmm})`, dateKey: days[dayIdx].key, slot, payment, note, workerCode: '',
       attachments, fromCart: !!params.fromCart,
     });
     if (code) nav.replace('success', { code });
@@ -698,8 +697,6 @@ export function CheckoutScreen({ params }) {
             </Tap>
           ) : null}
         </View>
-        <Field label="Mã kỹ thuật viên chỉ định (nếu có)" value={workerCode} onChangeText={setWorkerCode} placeholder="VD: HRMSS1024" autoCapitalize="characters" />
-        {workerCode.trim() ? <Text style={[ui.meta, { marginTop: -4, marginBottom: 8 }]}>Đơn sẽ được ưu tiên điều phối tới kỹ thuật viên này.</Text> : null}
 
         <SelectRow
           label="Mã giảm giá"
