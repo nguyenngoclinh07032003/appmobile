@@ -60,7 +60,7 @@ export function Btn({ title, onPress, variant = 'primary', small, style, disable
         disabled && { opacity: 0.45 },
       ]}
     >
-      {icon ? <AppIcon icon={icon} size={small ? 14 : 17} color={v.text.color} strokeWidth={2.2} style={{ marginRight: 6 }} /> : null}
+      {icon ? <AppIcon icon={icon} size={small ? 14 : 17} color={v.text.color} strokeWidth={2.2} /> : null}
       <Text style={[ui.btnText, small && ui.btnTextSm, v.text, textStyle]} numberOfLines={1}>{title}</Text>
     </TouchableOpacity>
   );
@@ -637,25 +637,31 @@ export const ui = StyleSheet.create({
     borderRadius: R.md,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     flexDirection: 'row',
+    gap: 6,
   },
   btnSm: {
     minHeight: 36,
     borderRadius: 10,
-    paddingHorizontal: 10,
+    paddingHorizontal: 11,
+    gap: 5,
   },
   btnText: {
     fontSize: 15,
+    lineHeight: 20,
     fontWeight: '800',
     letterSpacing: -0.2,
     textAlign: 'center',
+    flexShrink: 1,
   },
   btnTextSm: {
     fontSize: 12.5,
+    lineHeight: 16,
     fontWeight: '700',
     letterSpacing: -0.1,
     textAlign: 'center',
+    flexShrink: 1,
   },
   btnIcon: { fontSize: 14, marginRight: 5 },
   badge: { position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, backgroundColor: C.red, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' },
@@ -675,9 +681,9 @@ export const ui = StyleSheet.create({
   oldPrice: { color: C.faint, fontSize: 11, textDecorationLine: 'line-through', marginTop: 1 },
   cleanLine: { color: C.green, fontSize: 11, fontWeight: '700', marginTop: 4 },
   estimate: { color: C.orange, fontSize: 11, fontWeight: '700', marginTop: 4 },
-  chip: { flexDirection: 'row', alignItems: 'center', borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 14, height: 36 },
+  chip: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 14, height: 36 },
   chipOn: { backgroundColor: C.navy, borderColor: C.navy, ...shadow.sm },
-  chipText: { color: C.ink2, fontSize: 13, fontWeight: '600' },
+  chipText: { color: C.ink2, fontSize: 13, lineHeight: 18, fontWeight: '600' },
   chipTextOn: { color: '#fff', fontWeight: '700' },
   segment: { flexDirection: 'row', backgroundColor: '#E3E9F2', borderRadius: 14, padding: 4 },
   segmentItem: { flex: 1, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },

@@ -96,7 +96,7 @@ export function DetailScreen({ params }) {
               <Text style={{ fontWeight: '800', color: C.goldInk, fontSize: 13 }}>Ưu đãi Combo nhiều máy chuẩn HRMSS</Text>
               <Text style={{ color: C.ink2, fontSize: 12, marginTop: 2 }}>Đặt 2 máy giảm thêm 5% (tối đa 50K) · Đặt từ 3 máy giảm thêm 10% (tối đa 120K)</Text>
             </View>
-            <Btn title="Đặt 2 máy" small variant="gold" onPress={() => nav.push('checkout', { items: [{ id: service.id, qty: 2 }] })} />
+            <Btn title="Đặt 2 máy" small variant="gold" style={{ flexShrink: 0 }} onPress={() => nav.push('checkout', { items: [{ id: service.id, qty: 2 }] })} />
           </View>
         </View>
 
@@ -883,7 +883,7 @@ export function CheckoutScreen({ params }) {
       <Sheet visible={showVoucher} onClose={() => setShowVoucher(false)} title="Mã giảm giá">
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
           <Field value={voucherInput} onChangeText={setVoucherInput} placeholder="Nhập mã giảm giá" autoCapitalize="characters" style={{ flex: 1 }} />
-          <Btn title="Áp dụng" onPress={() => applyVoucher(voucherInput)} style={{ minHeight: 50 }} />
+          <Btn title="Áp dụng" onPress={() => applyVoucher(voucherInput)} style={{ minHeight: 52, paddingHorizontal: 18 }} />
         </View>
         <Text style={[bx.sec, { marginTop: 18 }]}>Mã có thể dùng</Text>
         {voucher ? (
@@ -1272,8 +1272,8 @@ export const bx = StyleSheet.create({
   review: { flexDirection: 'row', gap: 10, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#F0F3F8' },
   rAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
   rName: { fontSize: 14, fontWeight: '800', color: C.ink },
-  dock: { flexDirection: 'row', gap: 10, alignItems: 'center', backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line, padding: 12, paddingBottom: 14 },
-  dockCart: { height: 52, paddingHorizontal: 12, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
+  dock: { flexDirection: 'row', gap: 10, alignItems: 'center', backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
+  dockCart: { minHeight: 48, paddingHorizontal: 14, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
   dockCartText: { color: C.ink, fontWeight: '700', fontSize: 13 },
   dockCol: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
   lineName: { flex: 1, fontSize: 14, fontWeight: '700', color: C.ink, lineHeight: 19 },

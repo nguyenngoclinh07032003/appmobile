@@ -764,14 +764,14 @@ export function OrderScreen({ params }) {
 
       {(canEdit || canCancel || (o.status === 'done' && o.kind !== 'warranty') || (o.status === 'cancelled' && o.kind !== 'warranty') || (o.kind === 'warranty' && !active)) ? (
         <View style={mx.dock}>
-          {canEdit ? <Btn title="Sửa yêu cầu" variant="soft" style={{ flex: 1 }} onPress={openEdit} /> : null}
+          {canEdit ? <Btn title="Sửa yêu cầu" icon="pencil" variant="soft" style={{ flex: 1 }} onPress={openEdit} /> : null}
           {canCancel ? <Btn title="Huỷ đơn" variant="dangerSoft" style={{ flex: 1 }} onPress={handlePressCancel} /> : null}
           {o.status === 'done' && !o.report?.paid && o.kind !== 'warranty' && o.kind !== 'followup' ? (
-            <Btn title="Đã thanh toán" icon="💳" variant="soft" style={{ flex: 1 }} onPress={() => a.confirmPayment(o.code)} />
+            <Btn title="Thanh toán" icon="credit-card" variant="soft" style={{ flex: 1.15, paddingHorizontal: 10 }} onPress={() => a.confirmPayment(o.code)} />
           ) : null}
-          {o.status === 'done' && !o.rating && o.kind !== 'warranty' ? <Btn title="Đánh giá" icon="⭐" variant="gold" style={{ flex: 1 }} onPress={() => nav.push('rate', { code: o.code })} /> : null}
-          {['done', 'cancelled'].includes(o.status) && o.kind !== 'warranty' ? <Btn title="Đặt lại" style={{ flex: 1 }} onPress={reorder} /> : null}
-          {o.kind === 'warranty' && !active ? <Btn title="Liên hệ hỗ trợ" variant="soft" style={{ flex: 1 }} onPress={u.call} /> : null}
+          {o.status === 'done' && !o.rating && o.kind !== 'warranty' ? <Btn title="Đánh giá" icon="star" variant="gold" style={{ flex: 1, paddingHorizontal: 10 }} onPress={() => nav.push('rate', { code: o.code })} /> : null}
+          {['done', 'cancelled'].includes(o.status) && o.kind !== 'warranty' ? <Btn title="Đặt lại" icon="rotate-ccw" style={{ flex: 1, paddingHorizontal: 10 }} onPress={reorder} /> : null}
+          {o.kind === 'warranty' && !active ? <Btn title="Liên hệ hỗ trợ" icon="phone-call" variant="soft" style={{ flex: 1 }} onPress={u.call} /> : null}
         </View>
       ) : null}
 
@@ -892,23 +892,39 @@ export function OrderScreen({ params }) {
         <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
           <Tap
             onPress={() => setRejectMode('revise')}
-            style={[
-              mx.option,
-              { flex: 1, borderWidth: 1.5, borderRadius: R.md, paddingHorizontal: 10, borderColor: rejectMode === 'revise' ? C.primary : C.line, backgroundColor: rejectMode === 'revise' ? C.primarySoft : '#fff' },
-            ]}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              paddingVertical: 12,
+              paddingHorizontal: 10,
+              borderWidth: 1.5,
+              borderRadius: R.md,
+              borderColor: rejectMode === 'revise' ? C.primary : C.line,
+              backgroundColor: rejectMode === 'revise' ? C.primarySoft : '#fff',
+            }}
           >
             <Radio on={rejectMode === 'revise'} />
-            <Text style={{ fontSize: 13, fontWeight: '800', color: rejectMode === 'revise' ? C.primary : C.ink, flex: 1 }}>🔄 Yêu cầu báo giá lại</Text>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: rejectMode === 'revise' ? C.primary : C.ink, flex: 1 }}>Yêu cầu báo giá lại</Text>
           </Tap>
           <Tap
             onPress={() => setRejectMode('cancel')}
-            style={[
-              mx.option,
-              { flex: 1, borderWidth: 1.5, borderRadius: R.md, paddingHorizontal: 10, borderColor: rejectMode === 'cancel' ? C.red : C.line, backgroundColor: rejectMode === 'cancel' ? C.redSoft : '#fff' },
-            ]}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              paddingVertical: 12,
+              paddingHorizontal: 10,
+              borderWidth: 1.5,
+              borderRadius: R.md,
+              borderColor: rejectMode === 'cancel' ? C.red : C.line,
+              backgroundColor: rejectMode === 'cancel' ? C.redSoft : '#fff',
+            }}
           >
             <Radio on={rejectMode === 'cancel'} />
-            <Text style={{ fontSize: 13, fontWeight: '800', color: rejectMode === 'cancel' ? C.red : C.ink, flex: 1 }}>✖️ Từ chối & Huỷ đơn</Text>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: rejectMode === 'cancel' ? C.red : C.ink, flex: 1 }}>Từ chối & Huỷ đơn</Text>
           </Tap>
         </View>
         <Text style={[ui.meta, { fontSize: 13, marginBottom: 8 }]}>
@@ -1636,7 +1652,7 @@ const mx = StyleSheet.create({
   techAvatar: { width: 52, height: 52, borderRadius: 18, backgroundColor: C.goldSoft, alignItems: 'center', justifyContent: 'center' },
   sec: { fontSize: 15, fontWeight: '800', color: C.ink, marginTop: 20, marginBottom: 10 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: C.line, paddingTop: 12, marginTop: 12 },
-  dock: { flexDirection: 'row', gap: 10, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
+  dock: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
   option: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F3F8' },
   bonus: { backgroundColor: C.goldSoft, borderRadius: R.md, padding: 14, marginTop: 16 },
   pointsHero: { backgroundColor: C.navy, ...grad.navyHero, borderRadius: 22, padding: 20, overflow: 'hidden', ...shadow.md },

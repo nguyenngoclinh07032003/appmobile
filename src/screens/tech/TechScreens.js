@@ -181,20 +181,32 @@ function JobCard({ o, compact, onDecline, canAccept = true }) {
           {!compact ? <MetaLine icon="map-pin" text={o.address?.full || ''} last /> : null}
         </View>
         <View style={tx.cardFoot}>
-          <View style={{ flexDirection: 'row', gap: 8, flex: 1 }}>
-            <Btn title="Gọi" small variant="ghost" icon="phone-call" onPress={() => callPhone(o.address?.phone)} />
-            {!compact ? <Btn title="Chỉ đường" small variant="ghost" icon="compass" onPress={() => openMap(o.address?.full)} /> : null}
-          </View>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {compact ? (
-              <Btn title="Chi tiết" small variant="soft" onPress={open} />
-            ) : o.status === 'pending' ? (
-              <>
-                <Btn title="Từ chối ca" small variant="ghost" onPress={() => (onDecline ? onDecline(o) : null)} />
-                <Btn title="Tiếp nhận ca" icon="handshake" small disabled={!canAccept} onPress={() => a.acceptJob(o.code)} />
-              </>
-            ) : next ? <Btn title={next.label} icon={next.icon} small variant={next.variant || 'soft'} onPress={next.run} /> : null}
-          </View>
+          {!compact && o.status === 'pending' ? (
+            <View style={{ width: '100%', gap: 8 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Btn title="Gọi khách" small variant="ghost" icon="phone-call" style={{ flex: 1 }} onPress={() => callPhone(o.address?.phone)} />
+                <Btn title="Chỉ đường" small variant="ghost" icon="compass" style={{ flex: 1 }} onPress={() => openMap(o.address?.full)} />
+              </View>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Btn title="Từ chối ca" small variant="dangerSoft" style={{ flex: 1 }} onPress={() => (onDecline ? onDecline(o) : null)} />
+                <Btn title="Tiếp nhận ca" icon="handshake" small style={{ flex: 1.45 }} disabled={!canAccept} onPress={() => a.acceptJob(o.code)} />
+              </View>
+            </View>
+          ) : (
+            <>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Btn title="Gọi" small variant="ghost" icon="phone-call" onPress={() => callPhone(o.address?.phone)} />
+                {!compact ? <Btn title="Chỉ đường" small variant="ghost" icon="compass" onPress={() => openMap(o.address?.full)} /> : null}
+              </View>
+              <View style={{ flexDirection: 'row', gap: 8, flexShrink: 1 }}>
+                {compact ? (
+                  <Btn title="Chi tiết" small variant="soft" onPress={open} />
+                ) : next ? (
+                  <Btn title={next.label} icon={next.icon} small variant={next.variant || 'soft'} onPress={next.run} />
+                ) : null}
+              </View>
+            </>
+          )}
         </View>
       </View>
     </Card>
@@ -1421,17 +1433,19 @@ export function TechJobScreen({ params }) {
               ))}
 
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                <Tap style={[tx.addLine, { flex: 1, marginTop: 0 }]} onPress={() => setMatMode('quote')}>
-                  <Text style={{ color: C.primary, fontWeight: '700', fontSize: 13 }}>＋ Vật tư kho ({mats.length})</Text>
+                <Tap style={[tx.addLine, { flex: 1, marginTop: 0, flexDirection: 'row', gap: 5 }]} onPress={() => setMatMode('quote')}>
+                  <AppIcon name="plus" size={14} color={C.primary} strokeWidth={2.5} />
+                  <Text style={{ color: C.primary, fontWeight: '700', fontSize: 13 }}>Vật tư kho ({mats.length})</Text>
                 </Tap>
                 <Tap
                   style={[
                     tx.addLine,
-                    { flex: 1.15, marginTop: 0, borderColor: '#F59E0B', backgroundColor: showCustomFee ? '#FEF3C7' : '#FFFBEB' },
+                    { flex: 1, marginTop: 0, flexDirection: 'row', gap: 5, borderColor: '#F59E0B', backgroundColor: showCustomFee ? '#FEF3C7' : '#FFFBEB' },
                   ]}
                   onPress={() => setShowCustomFee((v) => !v)}
                 >
-                  <Text style={{ color: '#D97706', fontWeight: '700', fontSize: 13 }}>＋ Nhập phí phát sinh</Text>
+                  <AppIcon name="plus" size={14} color="#D97706" strokeWidth={2.5} />
+                  <Text style={{ color: '#D97706', fontWeight: '700', fontSize: 13 }}>Phí phát sinh</Text>
                 </Tap>
               </View>
 
@@ -1710,9 +1724,9 @@ export function TechJobScreen({ params }) {
       {o.status === 'quoted' && mine ? (
         <View style={tx.dock}>
           <Btn title="Trả việc" variant="dangerSoft" style={{ flex: 1 }} onPress={() => { setReleaseReason(RELEASE_REASONS[0]); setReleaseNote(''); setShowRelease(true); }} />
-          <View style={{ flex: 1.1 }}>
-            <Text style={ui.meta}>Chờ khách duyệt</Text>
-            <Text style={{ fontWeight: '800', color: C.ink, fontSize: 15 }}>{formatVND(o.quote?.total || 0)}</Text>
+          <View style={{ flex: 1.15, alignItems: 'center' }}>
+            <Text style={[ui.meta, { marginTop: 0 }]}>Chờ khách duyệt</Text>
+            <Text style={{ fontWeight: '800', color: C.ink, fontSize: 15, marginTop: 1 }}>{formatVND(o.quote?.total || 0)}</Text>
           </View>
           <Btn title="Nhắc" icon="send" variant="soft" style={{ flex: 1 }} onPress={() => a.remindQuote(o.code)} />
         </View>

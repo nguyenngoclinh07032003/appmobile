@@ -36,7 +36,7 @@ export default function BottomNav() {
               {badges[t.id] ? <View style={styles.navBadge}><Text style={styles.navBadgeText}>{badges[t.id]}</Text></View> : null}
             </View>
             <Text style={[styles.navLabel, on && styles.navLabelOn]}>{t.label}</Text>
-            {on ? <View style={styles.navDot} /> : null}
+            <View style={[styles.navDot, !on && styles.navDotOff]} />
           </TouchableOpacity>
         );
       })}
@@ -60,6 +60,7 @@ const styles = StyleSheet.create({
   navLabel: { fontSize: 11, color: C.muted, marginTop: 3, fontWeight: '600' },
   navLabelOn: { color: C.primary, fontWeight: '800' },
   navDot: { width: 16, height: 3, borderRadius: 2, backgroundColor: C.primary, marginTop: 3 },
+  navDotOff: { backgroundColor: 'transparent' },
   navBadge: {
     position: 'absolute',
     top: -4,

@@ -250,13 +250,13 @@ export function ActivityScreen() {
                   </View>
                 </View>
                 <View style={sx.oFoot}>
-                  <View style={{ marginBottom: 6 }}>
-                    <Text style={ui.meta}>Tổng thanh toán</Text>
-                    <Text style={[ui.price, { fontSize: 16 }]}>{o.kind === 'warranty' ? 'Miễn phí' : formatVND(o.status === 'cancelled' ? o.total : orderTotal(o))}</Text>
+                  <View style={{ flexShrink: 0 }}>
+                    <Text style={[ui.meta, { marginTop: 0 }]}>Tổng thanh toán</Text>
+                    <Text style={[ui.price, { fontSize: 16, marginTop: 2 }]}>{o.kind === 'warranty' ? 'Miễn phí' : formatVND(o.status === 'cancelled' ? o.total : orderTotal(o))}</Text>
                     {o.status === 'done' && o.report?.paid ? <Text style={[ui.meta, { color: C.green, fontWeight: '700' }]}>Đã thanh toán</Text> : null}
                     {o.status === 'done' && !o.report?.paid && o.kind !== 'warranty' ? <Text style={[ui.meta, { color: C.orange, fontWeight: '700' }]}>Chờ xác nhận TT</Text> : null}
                   </View>
-                  <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', flex: 1 }}>
+                  <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', flex: 1 }}>
                     {o.status === 'quoted' ? <Btn title="Duyệt báo giá" icon="receipt-text" small variant="gold" onPress={() => nav.push('order', { code: o.code })} /> : null}
                     {o.status === 'done' && !o.report?.paid && o.kind !== 'warranty' && o.kind !== 'followup' ? (
                       <Btn title="Thanh toán" icon="credit-card" small variant="soft" onPress={() => nav.push('order', { code: o.code })} />
@@ -496,7 +496,7 @@ const sx = StyleSheet.create({
   oCode: { fontWeight: '800', fontSize: 13 },
   oStatus: { fontWeight: '800', fontSize: 12 },
   oName: { fontSize: 15, fontWeight: '800', color: C.ink, lineHeight: 20 },
-  oFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F0F3F8' },
+  oFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F0F3F8' },
   profile: { backgroundColor: C.navy, ...grad.navyHero, padding: 16, paddingTop: 20, paddingBottom: 48, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: 'hidden' },
   blob: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.06)' },
   avatar: { width: 64, height: 64, borderRadius: 22, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
