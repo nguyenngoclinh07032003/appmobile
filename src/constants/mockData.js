@@ -191,10 +191,11 @@ export const MOCK_ORDERS = [
       recommendation: 'Thay thế sò lạnh chính hãng Samsung và xả băng bảo dưỡng hệ thống xả đá',
       booked: 150000,
       lines: [
-        { name: 'Công kiểm tra & bảo dưỡng xả đá', price: 150000, qty: 1, type: 'service' },
+        { name: 'Công kiểm tra & bảo dưỡng xả đá', price: 150000, qty: 1, type: 'labor' },
         { name: 'Sò lạnh âm tủ lạnh Inverter Samsung chính hãng', price: 280000, qty: 1, type: 'part' },
+        { name: 'Gia cố bas giữ cánh quạt bị rung lỏng', price: 50000, qty: 1, type: 'labor', isCustom: true },
       ],
-      total: 430000,
+      total: 480000,
       approved: false,
     },
     history: [
@@ -267,3 +268,4 @@ export const MOCK_ORDERS = [
     ],
   },
 ];
+

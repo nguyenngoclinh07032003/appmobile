@@ -270,8 +270,13 @@ export function OrderScreen({ params }) {
             {o.quote.recommendation ? <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 4 }]}>Đề xuất: {o.quote.recommendation}</Text> : null}
             <View style={{ marginTop: 10 }}>
               {o.quote.lines.map((l, i) => (
-                <View key={`${l.name}-${i}`} style={{ flexDirection: 'row', paddingVertical: 4, gap: 8 }}>
-                  <Text style={{ flex: 1, color: C.ink2 }} numberOfLines={2}>{l.type === 'part' ? '🔩' : '🛠'} {l.name} x{l.qty}</Text>
+                <View key={`${l.name}-${i}`} style={{ flexDirection: 'row', paddingVertical: 4, gap: 8, alignItems: 'center' }}>
+                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <Text style={{ color: C.ink2 }} numberOfLines={2}>
+                      {l.type === 'part' ? '🔩' : '🛠'} {l.name} x{l.qty}
+                    </Text>
+                    {l.isCustom ? <Badge text="Phát sinh" fg={C.orange} bg={C.orangeSoft} /> : null}
+                  </View>
                   <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(l.price * l.qty)}</Text>
                 </View>
               ))}
@@ -421,8 +426,16 @@ export function OrderScreen({ params }) {
             {o.quote.symptoms ? <Text style={[ui.meta, { marginTop: 6 }]}>Triệu chứng: {o.quote.symptoms}</Text> : null}
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>{o.quote.diagnosis}</Text>
             {o.quote.recommendation ? <Text style={[ui.meta, { marginTop: 6 }]}>Đề xuất: {o.quote.recommendation}</Text> : null}
-            {o.quote.lines.filter((l) => l.type === 'part').map((l, i) => (
-              <Text key={`${l.name}-${i}`} style={[ui.meta, { fontSize: 13 }]}>🔩 {l.name} x{l.qty} · {formatVND(l.price * l.qty)}</Text>
+            {o.quote.lines.map((l, i) => (
+              <View key={`${l.name}-${i}`} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <Text style={[ui.meta, { fontSize: 13, color: C.ink2 }]} numberOfLines={2}>
+                    {l.type === 'part' ? '🔩' : '🛠'} {l.name} x{l.qty}
+                  </Text>
+                  {l.isCustom ? <Badge text="Phát sinh" fg={C.orange} bg={C.orangeSoft} /> : null}
+                </View>
+                <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.ink }]}>{formatVND(l.price * l.qty)}</Text>
+              </View>
             ))}
             {o.quote.rejectReason ? (
               <Text style={[ui.meta, { color: o.quote.revisionRequested && o.status === 'diagnosing' ? C.orange : C.red, fontWeight: '700', marginTop: 4 }]}>

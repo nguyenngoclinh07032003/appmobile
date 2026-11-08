@@ -800,6 +800,10 @@ export function TechJobScreen({ params }) {
   const [tags, setTags] = useState(() => (o?.quote?.symptoms ? o.quote.symptoms.split(',').map((x) => x.trim()).filter(Boolean) : []));
   const [diagnosis, setDiagnosis] = useState(() => o?.quote?.diagnosis || '');
   const [recommendation, setRecommendation] = useState(() => o?.quote?.recommendation || '');
+  const [showCustomFee, setShowCustomFee] = useState(false);
+  const [customFeeName, setCustomFeeName] = useState('');
+  const [customFeePrice, setCustomFeePrice] = useState('');
+  const [customFeeType, setCustomFeeType] = useState('labor'); // 'labor' | 'part'
   const [lines, setLines] = useState(() => {
     if (o?.quote?.lines?.length) {
       return o.quote.lines.map((l, idx) => ({ ...l, key: l.matId || l.key || `q_${idx}` }));
@@ -862,6 +866,32 @@ export function TechJobScreen({ params }) {
     if (matMode === 'usage') { a.addMaterial(o.code, m); setMatMode(null); return; }
     setLines((p) => (p.some((l) => l.key === m.id) ? p.map((l) => (l.key === m.id ? { ...l, qty: l.qty + 1 } : l)) : [...p, { key: m.id, type: 'part', matId: m.id, name: m.name, unit: m.unit, qty: 1, price: m.price }]));
     setMatMode(null);
+  };
+  const handleAddCustomFee = () => {
+    const name = customFeeName.trim();
+    const priceNum = parseInt(String(customFeePrice).replace(/[^0-9]/g, ''), 10);
+    if (!name) {
+      u.alert('Thiếu nội dung', 'Vui lòng nhập tên hoặc nội dung chi phí phát sinh.', '⚠️');
+      return;
+    }
+    if (!priceNum || priceNum <= 0) {
+      u.alert('Giá không hợp lệ', 'Vui lòng nhập số tiền phát sinh lớn hơn 0đ.', '⚠️');
+      return;
+    }
+    const newFeeLine = {
+      key: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      type: customFeeType,
+      name,
+      price: priceNum,
+      qty: 1,
+      unit: customFeeType === 'labor' ? 'lần' : 'cái',
+      isCustom: true,
+    };
+    setLines((prev) => [...prev, newFeeLine]);
+    setCustomFeeName('');
+    setCustomFeePrice('');
+    setShowCustomFee(false);
+    u.toast(`Đã thêm phát sinh: ${name} (+${formatVND(priceNum)})`, '✅');
   };
   const sendQuote = () => {
     const symptoms = tags.join(', ');
@@ -1123,22 +1153,113 @@ export function TechJobScreen({ params }) {
               </View>
             </Card>
             <Card style={{ marginTop: 12 }}>
-              <Text style={tx.h}>🧾 Báo giá</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={tx.h}>🧾 Báo giá</Text>
+                <Badge
+                  text={diff > 0 ? `+${formatVND(diff)} phát sinh` : 'Đúng giá gốc'}
+                  fg={diff > 0 ? C.orange : C.green}
+                  bg={diff > 0 ? C.orangeSoft : C.greenSoft}
+                />
+              </View>
               {lines.map((l) => (
                 <View key={l.key} style={tx.lineRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: C.ink, fontWeight: '700' }} numberOfLines={2}>{l.type === 'part' ? '🔩 ' : '🛠 '}{l.name}</Text>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <Text style={{ color: C.ink, fontWeight: '700' }} numberOfLines={2}>{l.type === 'part' ? '🔩 ' : '🛠 '}{l.name}</Text>
+                      {l.isCustom ? <Badge text="Phát sinh" fg={C.orange} bg={C.orangeSoft} /> : null}
+                    </View>
                     <Text style={ui.meta}>{formatVND(l.price)}{l.unit ? ` / ${l.unit}` : ''}</Text>
                   </View>
-                  {l.type === 'part' ? (
-                    <>
+                  {l.type === 'part' || l.isCustom ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <Stepper value={l.qty} onChange={(q) => setLines((p) => p.map((x) => (x.key === l.key ? { ...x, qty: q } : x)))} />
-                      <Tap onPress={() => setLines((p) => p.filter((x) => x.key !== l.key))} hitSlop={6}><Text style={{ color: C.faint, marginLeft: 8 }}>✕</Text></Tap>
-                    </>
+                      <Tap onPress={() => setLines((p) => p.filter((x) => x.key !== l.key))} hitSlop={8} style={{ padding: 4 }}>
+                        <Text style={{ color: C.red, fontSize: 13, fontWeight: '700' }}>✕</Text>
+                      </Tap>
+                    </View>
                   ) : <Text style={{ color: C.ink2, fontWeight: '800' }}>x{l.qty}</Text>}
                 </View>
               ))}
-              <Tap style={tx.addLine} onPress={() => setMatMode('quote')}><Text style={{ color: C.primary, fontWeight: '700' }}>＋ Thêm vật tư / linh kiện</Text></Tap>
+
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                <Tap style={[tx.addLine, { flex: 1, marginTop: 0 }]} onPress={() => setMatMode('quote')}>
+                  <Text style={{ color: C.primary, fontWeight: '700', fontSize: 13 }}>＋ Vật tư kho ({mats.length})</Text>
+                </Tap>
+                <Tap
+                  style={[
+                    tx.addLine,
+                    { flex: 1.15, marginTop: 0, borderColor: '#F59E0B', backgroundColor: showCustomFee ? '#FEF3C7' : '#FFFBEB' },
+                  ]}
+                  onPress={() => setShowCustomFee((v) => !v)}
+                >
+                  <Text style={{ color: '#D97706', fontWeight: '700', fontSize: 13 }}>＋ Nhập phí phát sinh</Text>
+                </Tap>
+              </View>
+
+              {/* Form nhập chi phí phát sinh */}
+              {showCustomFee ? (
+                <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1' }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>📝 Nhập chi phí phát sinh thực tế</Text>
+                    <Tap onPress={() => setShowCustomFee(false)} hitSlop={8}><Text style={{ color: C.muted, fontWeight: '700' }}>Đóng</Text></Tap>
+                  </View>
+
+                  {/* Chọn loại: Công thợ phát sinh hay Vật tư ngoài */}
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                    <Tap
+                      style={{
+                        flex: 1,
+                        paddingVertical: 7,
+                        borderRadius: R.sm,
+                        borderWidth: 1,
+                        borderColor: customFeeType === 'labor' ? C.primary : '#E2E8F0',
+                        backgroundColor: customFeeType === 'labor' ? C.primarySoft : '#fff',
+                        alignItems: 'center',
+                      }}
+                      onPress={() => setCustomFeeType('labor')}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: customFeeType === 'labor' ? C.primary : C.muted }}>🛠 Công phát sinh</Text>
+                    </Tap>
+                    <Tap
+                      style={{
+                        flex: 1,
+                        paddingVertical: 7,
+                        borderRadius: R.sm,
+                        borderWidth: 1,
+                        borderColor: customFeeType === 'part' ? C.primary : '#E2E8F0',
+                        backgroundColor: customFeeType === 'part' ? C.primarySoft : '#fff',
+                        alignItems: 'center',
+                      }}
+                      onPress={() => setCustomFeeType('part')}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: customFeeType === 'part' ? C.primary : C.muted }}>🔩 Vật tư ngoài</Text>
+                    </Tap>
+                  </View>
+
+                  <Field
+                    label="Nội dung / Tên chi phí phát sinh"
+                    placeholder={customFeeType === 'labor' ? 'Ví dụ: Hàn vá ống đồng lổ mọt, Gia cố bas treo...' : 'Ví dụ: Dây đồng Thái Lan 2m, Cầu dao phụ Panasonic...'}
+                    value={customFeeName}
+                    onChangeText={setCustomFeeName}
+                  />
+
+                  <View style={{ marginTop: 8 }}>
+                    <Field
+                      label="Số tiền phát sinh (VNĐ)"
+                      placeholder="Ví dụ: 150000"
+                      value={customFeePrice}
+                      onChangeText={(t) => setCustomFeePrice(t.replace(/[^0-9]/g, ''))}
+                      keyboardType="numeric"
+                    />
+                  </View>
+
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                    <Btn title="Hủy" variant="ghost" small style={{ flex: 1 }} onPress={() => { setShowCustomFee(false); setCustomFeeName(''); setCustomFeePrice(''); }} />
+                    <Btn title="Thêm vào báo giá" small style={{ flex: 1.6 }} onPress={handleAddCustomFee} />
+                  </View>
+                </View>
+              ) : null}
+
               <View style={tx.totalRow}><Text style={{ color: C.muted }}>Giá khách đã đặt</Text><Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(booked)}</Text></View>
               <View style={tx.totalRow}><Text style={{ fontWeight: '800', color: C.ink, fontSize: 15 }}>Tổng báo giá</Text><Text style={[ui.price, { fontSize: 20 }]}>{formatVND(qTotal)}</Text></View>
               <View style={[tx.note, { backgroundColor: diff > 0 ? C.goldSoft : C.greenSoft }]}>
@@ -1172,9 +1293,27 @@ export function TechJobScreen({ params }) {
                   Đã gửi {fmtDateTime(o.quote.at)}
                   {o.quote.remindedAt ? ` · Nhắc lần cuối ${fmtDateTime(o.quote.remindedAt)}` : ''}
                 </Text>
-                <Btn title="Nhắc khách duyệt" icon="📨" variant="soft" small onPress={() => a.remindQuote(o.code)} />
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Btn title="Sửa báo giá / Phát sinh" icon="✏️" variant="outline" small style={{ flex: 1.15 }} onPress={() => a.reopenQuote(o.code)} />
+                  <Btn title="Nhắc khách duyệt" icon="📨" variant="soft" small style={{ flex: 1 }} onPress={() => a.remindQuote(o.code)} />
+                </View>
               </View>
             ) : null}
+          </Card>
+        ) : null}
+
+        {/* Cảnh báo / Tùy chọn phát sinh trong khi đang sửa */}
+        {o.status === 'repairing' && mine ? (
+          <Card style={{ marginTop: 12, backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={{ fontWeight: '800', color: C.goldInk, fontSize: 13.5 }}>⚠️ Phát sinh hư hỏng mới trong lúc sửa?</Text>
+                <Text style={[ui.meta, { color: C.goldInk, marginTop: 2, lineHeight: 18 }]}>
+                  Nếu cần thay thêm linh kiện hoặc tăng chi phí, mở lại báo giá để khách phê duyệt minh bạch.
+                </Text>
+              </View>
+              <Btn title="Thêm phát sinh" variant="soft" small onPress={() => a.reopenQuote(o.code)} />
+            </View>
           </Card>
         ) : null}
 

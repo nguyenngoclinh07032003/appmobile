@@ -1288,17 +1288,34 @@ export function AppProvider({ children }) {
       else ui.alert('Không cập nhật được', 'Chỉ xác nhận thanh toán khi đơn đã hoàn thành.', 'ℹ️');
     },
     dismissTip: (key) => up((p) => ({ tips: { ...(p.tips || {}), [key]: false } })),
+    reopenQuote: (code) => {
+      const now = Date.now();
+      let ok = false;
+      updateOrder(code, (o) => {
+        if (!['quoted', 'repairing'].includes(o.status)) return {};
+        ok = true;
+        const isOnSite = Boolean(o.arrivedAt || o.checkIn || o.history?.some((h) => h.status === 'diagnosing'));
+        return {
+          order: withStatus(o, isOnSite ? 'diagnosing' : 'confirmed', now, {
+            quote: o.quote ? { ...o.quote, revisionRequested: true } : null,
+          }),
+          tech: { icon: '✏️', title: `Điều chỉnh báo giá đơn ${code}`, body: 'Bạn có thể chỉnh sửa vật tư, dịch vụ và nhập chi phí phát sinh.' },
+        };
+      });
+      if (ok) ui.toast('Mở lại báo giá để điều chỉnh phát sinh', '✏️');
+    },
     // Lập chẩn đoán / báo giá:
     //  - Trước khi xuất phát (confirmed): gửi báo giá trên app, khách đồng ý thì thợ mới đi. Khách huỷ -> 0đ.
     //  - Sau khi kiểm tra tại nhà (diagnosing): gửi báo giá hiện trường. Khách huỷ -> mất phí kiểm tra 100k.
     submitQuote: (code, { diagnosis, symptoms, recommendation, lines }) => {
       const now = Date.now();
-      const qTotal = lines.reduce((sum, l) => sum + l.price * l.qty, 0);
+      const cleanLines = (lines || []).map((l) => ({ ...l, isCustom: Boolean(l.isCustom) }));
+      const qTotal = cleanLines.reduce((sum, l) => sum + l.price * l.qty, 0);
       let ok = false;
       let targetOrder = null;
       let isPreVisitQuote = false;
       updateOrder(code, (o) => {
-        if (o.status !== 'diagnosing' && o.status !== 'confirmed') return {};
+        if (!['diagnosing', 'confirmed', 'quoted', 'repairing'].includes(o.status)) return {};
         ok = true;
         targetOrder = o;
         const isPre = o.status === 'confirmed';
@@ -1308,7 +1325,7 @@ export function AppProvider({ children }) {
           diagnosis: diagnosis || (isPre ? 'Báo giá sơ bộ trước khi xuất phát' : 'Đã kiểm tra thiết bị tại nhà'),
           symptoms: symptoms || '',
           recommendation: recommendation || '',
-          lines,
+          lines: cleanLines,
           total: qTotal,
           booked,
           needsApproval: true,
@@ -1316,7 +1333,7 @@ export function AppProvider({ children }) {
           at: now,
           approved: false,
         };
-        const materials = lines.filter((l) => l.type === 'part').map((l) => ({ id: uid(), matId: l.matId, name: l.name, unit: l.unit, qty: l.qty, price: l.price }));
+        const materials = cleanLines.filter((l) => l.type === 'part').map((l) => ({ id: uid(), matId: l.matId, name: l.name, unit: l.unit, qty: l.qty, price: l.price, isCustom: Boolean(l.isCustom) }));
         const tempOrder = { ...o, quote };
         const partDisc = tierPartDiscountAmount(tempOrder);
 
