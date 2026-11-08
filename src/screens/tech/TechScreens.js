@@ -379,6 +379,26 @@ export function TechJobsScreen() {
 }
 
 // =========================================================== TAB: LỊCH LÀM VIỆC
+const slotStartMinutes = (slot) => {
+  const m = /(\d{1,2})[h:](\d{2})/.exec(String(slot || ''));
+  if (!m) return 9999;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+};
+const slotBucketFor = (slot) => {
+  if (!slot) return null;
+  if (TIME_SLOTS.includes(slot)) return slot;
+  const m = /(\d{1,2})[h:](\d{2})/.exec(String(slot));
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  if (h >= 6 && h < 10) return '08h00 - 10h00';
+  if (h >= 10 && h < 12) return '10h00 - 12h00';
+  if (h >= 12 && h < 14) return '12h00 - 14h00';
+  if (h >= 14 && h < 16) return '14h00 - 16h00';
+  if (h >= 16 && h < 18) return '16h00 - 18h00';
+  if (h >= 18 && h <= 22) return '18h00 - 20h00';
+  return null;
+};
+
 export function TechScheduleScreen() {
   const { d, nav } = useApp();
   const [day, setDay] = useState(0);
@@ -390,8 +410,10 @@ export function TechScheduleScreen() {
   // Lịch gồm việc của tôi (trừ đã huỷ) + việc mới chưa nhận
   const all = [...d.myJobs.filter((o) => o.status !== 'cancelled'), ...d.newJobs.filter((o) => !d.myJobs.includes(o))];
   const key = days[day].key;
-  const dayJobs = all.filter((o) => dateKeyOf(o) === key);
-  const others = dayJobs.filter((o) => !TIME_SLOTS.includes(o.slot));
+  const dayJobs = all
+    .filter((o) => dateKeyOf(o) === key)
+    .sort((a, b) => slotStartMinutes(a.slot) - slotStartMinutes(b.slot));
+  const others = dayJobs.filter((o) => !slotBucketFor(o.slot));
 
   return (
     <View style={{ flex: 1 }}>
@@ -434,7 +456,7 @@ export function TechScheduleScreen() {
           </View>
         ) : null}
         {dayJobs.length > 0 ? TIME_SLOTS.map((sl) => {
-          const jobs = dayJobs.filter((o) => o.slot === sl);
+          const jobs = dayJobs.filter((o) => slotBucketFor(o.slot) === sl);
           return (
             <View key={sl} style={tx.slotRow}>
               <Text style={tx.slotTime}>{sl.replace(' - ', '\n')}</Text>
@@ -519,6 +541,7 @@ export function TechAccountScreen() {
   const { s, a, d, nav, ui: u } = useApp();
   const me = s.techProfile || TECH_ME;
   const [showProfile, setShowProfile] = useState(false);
+  const [showAccountInfo, setShowAccountInfo] = useState(false);
   const [showIncome, setShowIncome] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [curPw, setCurPw] = useState('');
@@ -526,6 +549,7 @@ export function TechAccountScreen() {
   const [newPw2, setNewPw2] = useState('');
   const [name, setName] = useState(me.name || '');
   const [phone, setPhone] = useState(me.phone || '');
+  const [dob, setDob] = useState(me.dob || s.user?.dob || s.auth?.dob || '');
   const [area, setArea] = useState(me.area || TECH_ME.area);
   const [skills, setSkills] = useState(me.skills || TECH_ME.skills);
   const [showPayout, setShowPayout] = useState(false);
@@ -552,6 +576,7 @@ export function TechAccountScreen() {
   const openProfile = () => {
     setName(me.name || '');
     setPhone(me.phone || '');
+    setDob(me.dob || s.user?.dob || s.auth?.dob || '');
     setArea(me.area || TECH_ME.area);
     setSkills(me.skills?.length ? [...me.skills] : [...TECH_ME.skills]);
     setShowProfile(true);
@@ -668,9 +693,20 @@ export function TechAccountScreen() {
             <ListRow icon="🧰" iconBg={C.primarySoft} label="Công việc của tôi" value={`${d.workingJobs.length} đang làm`} onPress={() => nav.go('tech-jobs')} />
             <ListRow icon="📅" iconBg={C.cyanSoft} label="Lịch làm việc" onPress={() => nav.go('tech-schedule')} />
             <ListRow icon="🔔" iconBg={C.goldSoft} label="Thông báo" value={d.techUnread ? `${d.techUnread} mới` : ''} onPress={() => nav.go('tech-notifs')} />
-            <ListRow icon="👤" iconBg={C.purpleSoft} label="Hồ sơ kỹ thuật viên" sub={`${me.code} · ${me.phone}`} onPress={openProfile} />
+            <ListRow icon="👤" iconBg={C.purpleSoft} label="Hồ sơ kỹ thuật viên" sub={`${me.code} · ${me.phone}${me.dob ? ` · 🎂 ${me.dob}` : ''}`} onPress={openProfile} />
             <ListRow icon="🔐" iconBg={C.orangeSoft} label="Đổi mật khẩu" onPress={() => { setCurPw(''); setNewPw(''); setNewPw2(''); setShowPw(true); }} />
-            <ListRow icon="🎧" iconBg={C.greenSoft} label="Liên hệ điều phối" value={HOTLINE} onPress={u.call} last />
+            <ListRow icon="🎧" iconBg={C.greenSoft} label="Liên hệ điều phối" value={HOTLINE} onPress={u.call} last={!s.auth} />
+            {s.auth ? (
+              <ListRow
+                icon="🔑"
+                iconBg={C.goldSoft}
+                label="Tài khoản đang đăng nhập"
+                value={`${s.auth.name || me.name} · Kỹ thuật viên`}
+                sub={s.auth.phone || s.auth.email || me.phone}
+                onPress={() => setShowAccountInfo(true)}
+                last
+              />
+            ) : null}
           </View>
           <Btn
             title="🎬 Nạp dữ liệu kịch bản Demo (Review với cô)"
@@ -700,10 +736,26 @@ export function TechAccountScreen() {
               if (nameErr) { u.alert('Họ tên không hợp lệ', nameErr, '✏️'); return; }
               const phoneErr = validateVietnamesePhone(phone);
               if (phoneErr) { u.alert('SĐT không hợp lệ', phoneErr, '📞'); return; }
+              if (dob && dob.trim()) {
+                const match = dob.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                if (!match) {
+                  u.alert('Ngày sinh không hợp lệ', 'Vui lòng nhập theo định dạng DD/MM/YYYY (VD: 15/08/1995).', '🎂');
+                  return;
+                }
+                const dNum = parseInt(match[1], 10);
+                const mNum = parseInt(match[2], 10);
+                const yNum = parseInt(match[3], 10);
+                const nowYear = new Date().getFullYear();
+                if (mNum < 1 || mNum > 12 || dNum < 1 || dNum > 31 || yNum < 1920 || yNum > nowYear - 5) {
+                  u.alert('Ngày sinh không hợp lệ', `Vui lòng kiểm tra lại ngày tháng năm sinh (1920 - ${nowYear - 5}).`, '🎂');
+                  return;
+                }
+              }
               if (!skills.length) { u.alert('Thiếu chuyên môn', 'Chọn ít nhất một lĩnh vực bạn nhận việc.', '🧰'); return; }
               a.updateTechProfile({
                 name: name.trim(),
                 phone: String(phone).replace(/\D/g, ''),
+                dob: dob.trim(),
                 area: area.trim() || TECH_ME.area,
                 skills,
               });
@@ -713,7 +765,35 @@ export function TechAccountScreen() {
         )}
       >
         <Field label="Họ và tên" value={name} onChangeText={setName} placeholder="Tên thợ" />
-        <Field label="Số điện thoại" value={phone} onChangeText={setPhone} placeholder="10 chữ số" keyboardType="phone-pad" />
+        <Field
+          label="Số điện thoại"
+          value={phone}
+          onChangeText={(t) => {
+            let p = t.replace(/[^0-9]/g, '').slice(0, 10);
+            if (p.length > 0 && !p.startsWith('0')) {
+              p = '0' + p.slice(0, 9);
+            }
+            setPhone(p);
+          }}
+          placeholder="10 chữ số (bắt đầu bằng số 0)"
+          keyboardType="phone-pad"
+        />
+        <Field
+          label="Ngày tháng năm sinh"
+          value={dob}
+          onChangeText={(t) => {
+            const digits = t.replace(/\D/g, '').slice(0, 8);
+            let formatted = digits;
+            if (digits.length > 4) {
+              formatted = `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+            } else if (digits.length > 2) {
+              formatted = `${digits.slice(0, 2)}/${digits.slice(2)}`;
+            }
+            setDob(formatted);
+          }}
+          keyboardType="numeric"
+          placeholder="DD/MM/YYYY (VD: 15/08/1995)"
+        />
         <Field label="Khu vực phục vụ" value={area} onChangeText={setArea} placeholder="Quận / huyện" />
         <Text style={[ui.fieldLabel, { marginTop: 12 }]}>Chuyên môn nhận việc</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
@@ -722,6 +802,64 @@ export function TechAccountScreen() {
           ))}
         </View>
         <Text style={[ui.meta, { marginTop: 12 }]}>Mã thợ: {me.code}</Text>
+      </Sheet>
+
+      <Sheet
+        visible={showAccountInfo}
+        onClose={() => setShowAccountInfo(false)}
+        title="Tài khoản đang đăng nhập"
+        footer={(
+          <Btn
+            title="🗑️ Xoá tài khoản này"
+            variant="danger"
+            onPress={() => {
+              setShowAccountInfo(false);
+              u.confirm(
+                'Xoá vĩnh viễn tài khoản?',
+                'Tài khoản đang đăng nhập và toàn bộ thông tin cá nhân của tài khoản này sẽ bị xoá khỏi thiết bị. Bạn có chắc chắn muốn xoá không?',
+                a.deleteAccount,
+                'Xoá tài khoản',
+                true,
+              );
+            }}
+          />
+        )}
+      >
+        <View style={{ padding: 14, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, gap: 10 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={ui.meta}>Họ và tên</Text>
+            <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>{s.auth?.name || me.name || 'Kỹ thuật viên'}</Text>
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={ui.meta}>Phân quyền</Text>
+            <Badge text="Kỹ thuật viên" fg={C.primary} bg={C.primarySoft} />
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={ui.meta}>Mã kỹ thuật viên</Text>
+            <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{me.code}</Text>
+          </View>
+          {(s.auth?.phone || me.phone) ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={ui.meta}>Số điện thoại</Text>
+              <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{s.auth?.phone || me.phone}</Text>
+            </View>
+          ) : null}
+          {s.auth?.email ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={ui.meta}>Email</Text>
+              <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{s.auth.email}</Text>
+            </View>
+          ) : null}
+          {(me.dob || s.user?.dob || s.auth?.dob) ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={ui.meta}>Ngày sinh</Text>
+              <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{me.dob || s.user?.dob || s.auth?.dob}</Text>
+            </View>
+          ) : null}
+        </View>
+        <Text style={[ui.meta, { marginTop: 12, lineHeight: 18 }]}>
+          Nếu bạn không còn sử dụng tài khoản này nữa, bạn có thể nhấn nút bên dưới để xoá tài khoản khỏi ứng dụng.
+        </Text>
       </Sheet>
 
       <Sheet visible={showIncome} onClose={() => setShowIncome(false)} title="Ví thu nhập & Chiết khấu HRMSS">
@@ -1088,10 +1226,9 @@ export function TechJobScreen({ params }) {
         {/* Lịch hẹn + dịch vụ */}
         <Card style={{ marginTop: 12 }}>
           <Text style={tx.h}>Lịch hẹn & yêu cầu</Text>
-          {(o.workerCode || o.customerTierLabel) ? (
+          {o.customerTierLabel ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-              {o.workerCode ? <Badge text={`Chỉ định Thợ Now · ${o.workerCode}`} fg={C.navy} bg={C.goldSoft} /> : null}
-              {o.customerTierLabel ? <Badge text={`👑 Khách hạng ${o.customerTierLabel} · BH ${o.warrantyDays || 60} ngày`} fg={C.primary} bg={C.primarySoft} /> : null}
+              <Badge text={`👑 Khách hạng ${o.customerTierLabel} · BH ${o.warrantyDays || 60} ngày`} fg={C.primary} bg={C.primarySoft} />
             </View>
           ) : null}
           <Text style={tx.info}>📅 {o.dateLabel} · {o.slot}</Text>
@@ -1537,7 +1674,7 @@ export function TechJobScreen({ params }) {
       {mine && o.status === 'diagnosing' ? (
         <View style={{ paddingHorizontal: 16, paddingTop: 8, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line }}>
           <Tap onPress={() => { setReleaseReason(RELEASE_REASONS[0]); setReleaseNote(''); setShowRelease(true); }}>
-            <Text style={{ color: C.red, fontWeight: '700', textAlign: 'center', marginBottom: 4 }}>Không thể tiếp tục? Trả việc (phạt nặng)</Text>
+            <Text style={{ color: C.red, fontWeight: '700', textAlign: 'center', marginBottom: 4 }}>Không thể tiếp tục? Trả việc cho điều phối</Text>
           </Tap>
         </View>
       ) : null}

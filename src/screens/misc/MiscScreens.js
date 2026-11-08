@@ -629,7 +629,7 @@ export function OrderScreen({ params }) {
                 <Bill l="Phí đi lại" v="Miễn phí" green />
               </>
             )}
-            <Bill l="Hình thức" v={o.payment || 'Chuyển khoản VietQR (Công ty HRMSS)'} />
+            <Bill l="Hình thức" v={o.payment || 'Chuyển khoản VietQR'} />
             <Bill
               l="Trạng thái thu"
               v={o.status === 'cancelled' ? ((o.inspectionFee || 0) > 0 ? 'Cần thanh toán phí KT' : 'Đã huỷ (0đ)') : o.report?.paid ? 'Đã thanh toán' : o.status === 'done' ? 'Chờ xác nhận' : 'Chưa thanh toán'}
@@ -655,16 +655,16 @@ export function OrderScreen({ params }) {
               <View style={{ marginTop: 14, alignItems: 'center', padding: 14, borderRadius: 14, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1' }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                   <Text style={{ fontSize: 16 }}>🏦</Text>
-                  <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>Tài khoản Công ty HRMSS (VietQR)</Text>
+                  <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>Chuyển khoản nhanh VietQR 24/7</Text>
                 </View>
                 <Text style={[ui.meta, { marginBottom: 10, textAlign: 'center', color: C.muted }]}>
-                  Chuyển khoản trực tiếp vào tài khoản Công ty để kích hoạt Bảo hành điện tử 60 ngày
+                  Quét mã VietQR để thanh toán dịch vụ và kích hoạt Bảo hành điện tử 60 ngày
                 </Text>
                 <PseudoQR value={`HRMSS|${o.code}|${orderTotal(o)}`} size={160} />
                 <View style={{ marginTop: 10, width: '100%', backgroundColor: '#fff', padding: 10, borderRadius: R.sm, borderWidth: 1, borderColor: '#E2E8F0', gap: 4 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={ui.meta}>Đơn vị thụ hưởng:</Text>
-                    <Text style={{ fontWeight: '700', color: C.ink, fontSize: 12 }}>CTY CP CÔNG NGHỆ HRMSS</Text>
+                    <Text style={ui.meta}>Chủ tài khoản:</Text>
+                    <Text style={{ fontWeight: '700', color: C.ink, fontSize: 12 }}>DỊCH VỤ KỸ THUẬT HRMSS</Text>
                   </View>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                     <Text style={ui.meta}>Ngân hàng:</Text>

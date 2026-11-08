@@ -179,6 +179,8 @@ const mergeTechProfile = (prev, account) => {
   return {
     name: account.name || same?.name || TECH_ME.name,
     phone: account.phone || same?.phone || TECH_ME.phone,
+    email: account.email || same?.email || '',
+    dob: account.dob || same?.dob || '',
     code,
     rating: same?.rating ?? TECH_ME.rating,
     jobs: same?.jobs ?? 0,
@@ -904,9 +906,6 @@ export function AppProvider({ children }) {
         if (activeCount >= TECH_POLICY.maxActiveJobs) { result = 'busy'; return {}; }
         const o = p.orders.find((x) => x.code === code);
         if (!o || o.status !== 'pending') { result = 'bad'; return {}; }
-        const want = String(o.workerCode || '').trim().toUpperCase();
-        const my = String(tech0.code || '').toUpperCase();
-        if (want && want !== my) { result = 'not_assigned'; return {}; }
         const tech = { ...normalizeTechRep(tech0), ...tech0 };
         const now = Date.now();
         result = 'ok';
@@ -924,16 +923,8 @@ export function AppProvider({ children }) {
           ...clearDeclined(p, tech0.code, code),
         };
       });
-      if (result === 'locked') {
-        ui.alert('Đang bị hạn chế nhận việc', techLockReason(s.techProfile) || 'Uy tín thợ đang thấp hoặc đang trong thời gian khóa.', '🚫');
-        return;
-      }
       if (result === 'busy') {
         ui.alert('Đã đủ việc đang làm', `Bạn đang giữ tối đa ${TECH_POLICY.maxActiveJobs} việc. Hoàn thành hoặc trả việc trước khi nhận thêm.`, '🧰');
-        return;
-      }
-      if (result === 'not_assigned') {
-        ui.alert('Việc đã chỉ định thợ khác', 'Khách đã chọn mã Thợ Now khác. Bạn không thể nhận việc này.', '🧑‍🔧');
         return;
       }
       if (result === 'ok') {
@@ -1022,10 +1013,10 @@ export function AppProvider({ children }) {
             link: { name: 'order', params: { code } },
           }),
           techNotifs: pushTech(p, {
-            icon: assess.free ? '↩️' : '⚠️',
-            title: assess.free ? `Đã trả việc ${code}` : `Trả việc · −${assess.points} uy tín · ${code}`,
-            body: assess.label + (assess.lockMs ? ' · tạm hạn chế nhận việc mới.' : ''),
-            link: { name: 'tech-account' },
+            icon: '↩️',
+            title: `Đã trả việc · ${code}`,
+            body: `${assess.label} · Hệ thống đã chuyển đơn cho điều phối viên.`,
+            link: { name: 'tech-jobs' },
           }),
         };
       });
@@ -1033,14 +1024,7 @@ export function AppProvider({ children }) {
         ui.alert('Không trả việc được', outcome?.error || 'Thử lại sau.', 'ℹ️');
         return outcome;
       }
-      if (outcome.assess.free) ui.toast('Đã trả việc (miễn phạt)', '↩️');
-      else {
-        ui.alert(
-          `Đã trừ ${outcome.assess.points} điểm uy tín`,
-          `${outcome.assess.label}. ${outcome.locked ? (outcome.lockReason || 'Bạn tạm thời bị hạn chế nhận việc mới.') : 'Hạn chế hủy sát giờ để giữ uy tín.'}`,
-          '⚠️',
-        );
-      }
+      ui.toast('Đã trả việc cho điều phối', '↩️');
       return outcome;
     },
     // Nhắc khách duyệt báo giá đang chờ
@@ -1071,6 +1055,8 @@ export function AppProvider({ children }) {
             ...p.user,
             name: patch.name != null ? patch.name : p.user.name,
             phone: patch.phone != null ? patch.phone : p.user.phone,
+            dob: patch.dob != null ? patch.dob : p.user.dob,
+            email: patch.email != null ? patch.email : p.user.email,
           },
         };
       });
@@ -1091,7 +1077,7 @@ export function AppProvider({ children }) {
         ok = true;
         const start = slotStartTs(o);
         if (start != null && now > start + TECH_POLICY.lateGraceMin * 60000) {
-          lateHint = `Bạn đã quá giờ hẹn ~${Math.floor((now - start) / 60000)} phút. Check-in muộn sẽ bị trừ uy tín.`;
+          lateHint = `Bạn đã quá giờ hẹn ~${Math.floor((now - start) / 60000)} phút. Vui lòng liên hệ khách hàng và di chuyển khẩn trương.`;
         }
         const destLat = o.address?.lat ?? 21.036778;
         const destLng = o.address?.lng ?? 105.782374;
@@ -1244,7 +1230,7 @@ export function AppProvider({ children }) {
           ...(late.tier !== 'ok' ? {
             techNotifs: pushTech(p, {
               icon: '⏰',
-              title: `Check-in muộn · −${late.points} uy tín · ${code}`,
+              title: `Check-in muộn ${late.minutesLate} phút · ${code}`,
               body: late.label,
               link: { name: 'tech-account' },
             }),
@@ -1268,8 +1254,8 @@ export function AppProvider({ children }) {
       }
       if (lateInfo && lateInfo.tier !== 'ok') {
         ui.alert(
-          `Check-in muộn · −${lateInfo.points} uy tín`,
-          `${lateInfo.label}. Khách được bồi thường theo chính sách đúng giờ.`,
+          `Check-in muộn ${lateInfo.minutesLate} phút`,
+          `${lateInfo.label}. Khách được áp dụng ưu đãi theo chính sách đúng giờ.`,
           '⏰',
         );
       } else ui.toast('Đã check-in GPS tại nhà khách', '📍');
@@ -1625,63 +1611,6 @@ export function AppProvider({ children }) {
       }));
       ui.toast('Đã lưu ghi chú sửa chữa', '📝');
     },
-    // Tạo lịch tái khám / follow-up sau nghiệm thu
-    createFollowUp: (code, { reason, remaining, dateLabel, dateKey, slot }) => {
-      const now = Date.now();
-      let created = null;
-      up((p) => {
-        const o = p.orders.find((x) => x.code === code);
-        if (!o || o.status !== 'done') return {};
-        const fuCode = `FU${String(now).slice(-6)}`;
-        created = fuCode;
-        const follow = {
-          ...o,
-          code: fuCode,
-          kind: 'followup',
-          parentCode: code,
-          status: 'confirmed',
-          tech: o.tech,
-          quote: null,
-          progress: [],
-          materials: [],
-          evidence: [],
-          repairNotes: [],
-          report: null,
-          rating: null,
-          followUp: { reason, remaining, of: code },
-          note: `Tái khám cho ${code}. ${remaining || ''}`.trim(),
-          dateLabel,
-          dateKey,
-          slot,
-          history: [{ status: 'confirmed', at: now }],
-          createdAt: now,
-          goods: 0,
-          productDiscount: 0,
-          voucherDiscount: 0,
-          total: 0,
-        };
-        return {
-          orders: [
-            follow,
-            ...p.orders.map((x) => (x.code === code ? { ...x, followUpCreated: fuCode } : x)),
-          ],
-          notifications: pushNotif(p, {
-            icon: '🔄',
-            title: `Đã hẹn tái khám · ${fuCode}`,
-            body: `${dateLabel} · ${slot}. ${reason || ''}`.trim(),
-            link: { name: 'order', params: { code: fuCode } },
-          }),
-          techNotifs: pushTech(p, {
-            icon: '🔄',
-            title: `Tái khám ${fuCode}`,
-            body: `${dateLabel} · ${slot} · ${o.address?.area || ''}`,
-            link: { name: 'tech-job', params: { code: fuCode } },
-          }),
-        };
-      });
-      if (created) ui.toast('Đã tạo lịch tái khám', '🔄');
-      return created;
-    },
     // Khách sửa yêu cầu khi đơn còn chờ thợ nhận
     updatePendingRequest: (code, patch) => {
       let ok = false;
@@ -1786,7 +1715,7 @@ export function AppProvider({ children }) {
             : 'Đã bàn giao thiết bị cho khách hàng và kích hoạt bảo hành điện tử',
         }).catch(() => {});
       }
-      ui.toast(`Đã hoàn thành · +${onTimeBonus} uy tín`, '🎉');
+      ui.toast('Đã hoàn thành công việc & gửi biên bản nghiệm thu', '🎉');
     },
     setTechOnline: (v) => {
       up(() => ({ techOnline: v }));
@@ -2310,8 +2239,6 @@ export function AppProvider({ children }) {
       .filter((o) => {
         if (o.status !== 'pending') return false;
         if (declinedFor(s, myCode).includes(o.code)) return false;
-        const want = String(o.workerCode || '').trim().toUpperCase();
-        if (want && want !== String(myCode).toUpperCase()) return false;
         return true;
       })
       .sort((a, b) => {
