@@ -868,9 +868,36 @@ export function CheckoutScreen({ params }) {
         <Field label="Mã Thợ Now (nếu có)" value={workerCode} onChangeText={setWorkerCode} placeholder="VD: HRMSS1024 — chỉ thợ này nhận được" autoCapitalize="characters" />
         {workerCode.trim() ? <Text style={[ui.meta, { marginTop: -4, marginBottom: 8 }]}>Việc sẽ ưu tiên / chỉ hiện cho thợ có mã khớp.</Text> : null}
 
-        <SelectRow label="Mã giảm giá" icon="🎟️" value={voucher ? `${voucher.code} · -${formatVND(vDiscount)}` : ''} placeholder={`Chọn hoặc nhập mã (${allVouchers.length} mã)`} onPress={() => setShowVoucher(true)} />
+        <SelectRow
+          label="Mã giảm giá"
+          icon="🎟️"
+          value={voucher ? `${voucher.code} · -${formatVND(vDiscount)}` : ''}
+          placeholder={`Chọn hoặc nhập mã (${allVouchers.length} mã)`}
+          onPress={() => setShowVoucher(true)}
+        />
         {voucher && !vDiscount ? <Text style={ui.fieldErr}>Mã {voucher.code} chưa đủ điều kiện với đơn hiện tại.</Text> : null}
-        {voucher ? <Tap onPress={() => { setVoucher(null); setVoucherInput(''); }}><Text style={[ui.fieldErr, { fontWeight: '700' }]}>Bỏ mã {voucher.code}</Text></Tap> : null}
+        {voucher ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: R.md, paddingHorizontal: 12, paddingVertical: 8, marginTop: 4, marginBottom: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={{ fontSize: 14 }}>🎟️</Text>
+              <Text style={{ fontSize: 13, color: '#166534', fontWeight: '700' }}>
+                Đang dùng: {voucher.code} (-{formatVND(vDiscount)})
+              </Text>
+            </View>
+            <Tap
+              onPress={() => {
+                const oldCode = voucher.code;
+                setVoucher(null);
+                setVoucherInput('');
+                u.toast(`Đã huỷ mã ${oldCode}`);
+              }}
+              hitSlop={8}
+              style={{ backgroundColor: '#FEE2E2', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}
+            >
+              <Text style={{ color: C.red, fontWeight: '700', fontSize: 12 }}>✕ Huỷ mã</Text>
+            </Tap>
+          </View>
+        ) : null}
         <SelectRow label="Phương thức thanh toán" icon="💳" value={payment} onPress={() => setShowPay(true)} />
 
         <Card style={{ marginTop: 18 }}>
@@ -974,18 +1001,63 @@ export function CheckoutScreen({ params }) {
           <Btn title="Áp dụng" onPress={() => applyVoucher(voucherInput)} style={{ minHeight: 50 }} />
         </View>
         <Text style={[bx.sec, { marginTop: 18 }]}>Mã có thể dùng</Text>
+        {voucher ? (
+          <Tap
+            onPress={() => {
+              const oldCode = voucher.code;
+              setVoucher(null);
+              setVoucherInput('');
+              setShowVoucher(false);
+              u.toast(`Đã huỷ mã ${oldCode}`);
+            }}
+            style={{
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              padding: 12, borderRadius: R.md, borderWidth: 1.5, borderColor: '#FCA5A5',
+              backgroundColor: '#FEF2F2', marginBottom: 10,
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontSize: 16 }}>🚫</Text>
+              <Text style={{ fontWeight: '700', color: C.red, fontSize: 13 }}>
+                Không sử dụng mã giảm giá (Huỷ mã {voucher.code})
+              </Text>
+            </View>
+            <Text style={{ color: C.red, fontWeight: '800', fontSize: 12.5 }}>✕ Bỏ chọn</Text>
+          </Tap>
+        ) : null}
         {allVouchers.map((v) => {
           const ok = !v.min || subtotal >= v.min;
+          const isSelected = voucher?.code === v.code;
           return (
-            <Tap key={v.code} style={[bx.voucher, !ok && { opacity: 0.5 }]} onPress={() => applyVoucher(v.code)}>
+            <Tap
+              key={v.code}
+              style={[
+                bx.voucher,
+                !ok && { opacity: 0.5 },
+                isSelected && { borderColor: C.primary, backgroundColor: C.primarySoft, borderWidth: 1.5 },
+              ]}
+              onPress={() => {
+                if (isSelected) {
+                  setVoucher(null);
+                  setVoucherInput('');
+                  setShowVoucher(false);
+                  u.toast(`Đã huỷ mã ${v.code}`);
+                } else {
+                  applyVoucher(v.code);
+                }
+              }}
+            >
               <View style={[bx.vLeft, v.wallet && { backgroundColor: C.gold }]}><Text style={{ fontSize: 22 }}>{v.wallet ? '🎁' : '🎟️'}</Text></View>
               <View style={{ flex: 1, padding: 12 }}>
-                <Text style={{ fontWeight: '800', color: C.ink }}>{v.code}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontWeight: '800', color: C.ink }}>{v.code}</Text>
+                  {isSelected ? <Badge text="Đang chọn" fg="#fff" bg={C.primary} style={{ paddingHorizontal: 5, paddingVertical: 1 }} /> : null}
+                </View>
                 <Text style={ui.meta}>{v.label}</Text>
                 {v.wallet ? <Text style={[ui.meta, { color: C.goldInk, fontWeight: '700' }]}>Ví của bạn</Text> : null}
                 {!ok ? <Text style={[ui.meta, { color: C.red }]}>Cần thêm {formatVND(v.min - subtotal)}</Text> : null}
               </View>
-              <View style={{ paddingRight: 12 }}><Radio on={voucher?.code === v.code} /></View>
+              <View style={{ paddingRight: 12 }}><Radio on={isSelected} /></View>
             </Tap>
           );
         })}
