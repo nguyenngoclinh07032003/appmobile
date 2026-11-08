@@ -3,7 +3,7 @@ import { View, Text, ScrollView, StyleSheet, Image } from 'react-native';
 import { C, R, shadow } from '../../theme';
 import {
   getService, formatVND, discountOf, isEstimate, isClean, durationText, featureFor, stepsFor, videoFor,
-  REVIEWS_BY_ID, COMMITMENTS, ALL_SERVICES, TIME_SLOTS, VOUCHERS, PAYMENTS, AREAS, noteFor, voucherDiscount,
+  REVIEWS_BY_ID, COMMITMENTS, ALL_SERVICES, TIME_SLOTS, VOUCHERS, PAYMENTS, PAYMENT_METHODS, AREAS, noteFor, voucherDiscount,
   catLabel, catIcon, MATERIALS, SITE_CONDITIONS, tierOf, comboDiscountFor, CATEGORIES,
 } from '../../constants/data';
 import { useApp, cartTotal, LAST_SERVICE_OPTIONS } from '../../context';
@@ -25,7 +25,7 @@ const nextDays = (n) => Array.from({ length: n }, (_, i) => {
 });
 const COMMIT_ICON = ['⏰', '🏅', '🤝', '😊'];
 
-// =========================================================== CHI TIẾT DỊCH VỤ
+// CHI TIẾT DỊCH VỤ
 export function DetailScreen({ params }) {
   const { s, a, d, nav } = useApp();
   const service = getService(params.id);
@@ -898,7 +898,18 @@ export function CheckoutScreen({ params }) {
             </Tap>
           </View>
         ) : null}
-        <SelectRow label="Phương thức thanh toán" icon="💳" value={payment} onPress={() => setShowPay(true)} />
+        <SelectRow
+          label="Phương thức thanh toán"
+          icon="💳"
+          value={payment}
+          onPress={() => setShowPay(true)}
+        />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F0FDF4', padding: 8, borderRadius: R.md, borderWidth: 1, borderColor: '#DCFCE7', marginTop: -4, marginBottom: 8 }}>
+          <Text style={{ fontSize: 13 }}>🛡️</Text>
+          <Text style={{ fontSize: 11.5, color: '#166534', fontWeight: '600', flex: 1, lineHeight: 16 }}>
+            Cam kết 0đ trả trước · Chỉ thanh toán sau khi thợ hoàn tất và kiểm tra máy chạy êm ái.
+          </Text>
+        </View>
 
         <Card style={{ marginTop: 18 }}>
           <Text style={bx.h}>Chi tiết thanh toán</Text>
@@ -987,13 +998,62 @@ export function CheckoutScreen({ params }) {
       </Sheet>
 
       <Sheet visible={showPay} onClose={() => setShowPay(false)} title="Phương thức thanh toán">
-        {PAYMENTS.map((p) => (
-          <Tap key={p} style={bx.option} onPress={() => { setPayment(p); setShowPay(false); }}>
-            <Radio on={payment === p} />
-            <Text style={bx.optionText}>{p}</Text>
-          </Tap>
-        ))}
-        <Text style={[ui.meta, { marginTop: 12, lineHeight: 18 }]}>Nếu đơn chưa thanh toán online, Thợ HRMSS sẽ thu tiền mặt khi hoàn thành.</Text>
+        <View style={{ marginBottom: 12 }}>
+          <Text style={[ui.meta, { lineHeight: 18 }]}>
+            Chọn hình thức thanh toán bạn mong muốn. Tiền chỉ được thu sau khi thợ hoàn thành sửa chữa & nghiệm thu máy chạy tốt.
+          </Text>
+        </View>
+
+        <View style={{ gap: 10 }}>
+          {PAYMENT_METHODS.map((pm) => {
+            const on = payment === pm.label;
+            return (
+              <Tap
+                key={pm.id}
+                onPress={() => {
+                  setPayment(pm.label);
+                  setShowPay(false);
+                  u.toast(`Đã chọn: ${pm.shortLabel || pm.label}`);
+                }}
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12,
+                  borderRadius: R.md, borderWidth: 1.5, borderColor: on ? C.primary : C.line,
+                  backgroundColor: on ? '#F6FAFF' : '#fff',
+                }}
+              >
+                <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: on ? C.primarySoft : '#F1F5F9', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontSize: 22 }}>{pm.icon}</Text>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <Text style={{ fontWeight: '800', fontSize: 13.5, color: on ? C.primary : C.ink }}>
+                      {pm.label}
+                    </Text>
+                    {pm.badge ? (
+                      <Badge text={pm.badge} fg={pm.badgeFg || '#fff'} bg={pm.badgeBg || C.primary} style={{ paddingHorizontal: 6, paddingVertical: 1 }} />
+                    ) : null}
+                  </View>
+                  <Text style={[ui.meta, { fontSize: 11.5, marginTop: 3, lineHeight: 16 }]}>
+                    {pm.desc}
+                  </Text>
+                  <Text style={{ fontSize: 11, color: C.green, fontWeight: '700', marginTop: 3 }}>
+                    ✓ {pm.timing}
+                  </Text>
+                </View>
+
+                <Radio on={on} />
+              </Tap>
+            );
+          })}
+        </View>
+
+        <View style={{ marginTop: 14, padding: 10, borderRadius: R.md, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#DCFCE7', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 16 }}>🛡️</Text>
+          <Text style={{ flex: 1, fontSize: 11.5, color: '#166534', lineHeight: 16, fontWeight: '600' }}>
+            Cam kết an tâm: 0đ trả trước. Khách hàng chỉ thanh toán khi đã nghiệm thu hài lòng và thợ ký biên bản hoàn tất.
+          </Text>
+        </View>
       </Sheet>
       <Sheet visible={showVoucher} onClose={() => setShowVoucher(false)} title="Mã giảm giá">
         <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>

@@ -430,7 +430,48 @@ export const TECHS = [
   { name: 'Lê Quốc Cường', code: 'HRMSS3318', rating: 4.9, jobs: 1520 },
 ];
 
-export const PAYMENTS = ['Thanh toán khi nhận hàng', 'Chuyển khoản ngân hàng', 'Qua thẻ ATM (có Internet Banking)', 'VNPay QR', 'Qua thẻ quốc tế', 'Google Pay', 'Apple Pay'];
+export const PAYMENT_METHODS = [
+  {
+    id: 'vietqr',
+    label: 'Chuyển khoản VietQR (Công ty HRMSS)',
+    shortLabel: 'VietQR (MBBank)',
+    icon: '📲',
+    desc: 'Quét mã QR thanh toán sau nghiệm thu · Kích hoạt bảo hành điện tử 60 ngày tự động',
+    badge: 'Khuyên dùng',
+    badgeBg: '#ECFDF5',
+    badgeFg: '#059669',
+    timing: 'Thanh toán sau khi thợ hoàn thành & nghiệm thu',
+  },
+  {
+    id: 'cash',
+    label: 'Tiền mặt cho thợ tại nhà',
+    shortLabel: 'Tiền mặt tại nhà',
+    icon: '💵',
+    desc: 'Trả tiền mặt trực tiếp cho thợ sau khi kiểm tra thiết bị chạy tốt & ký nghiệm thu',
+    badge: 'Phổ biến',
+    badgeBg: '#FFFBEB',
+    badgeFg: '#D97706',
+    timing: 'Thanh toán sau khi thợ hoàn thành & nghiệm thu',
+  },
+  {
+    id: 'vnpay',
+    label: 'Cổng VNPAY / Thẻ ATM & Quốc tế',
+    shortLabel: 'VNPAY / ATM / Visa',
+    icon: '💳',
+    desc: 'Thẻ ATM nội địa (Vietcombank, MB, Techcombank...), Visa/Master, MoMo, ZaloPay',
+    timing: 'Thanh toán trực tuyến khi chốt nghiệm thu',
+  },
+  {
+    id: 'vat',
+    label: 'Chuyển khoản Doanh nghiệp / Hóa đơn VAT',
+    shortLabel: 'Hóa đơn VAT',
+    icon: '🏢',
+    desc: 'Dành cho văn phòng, công ty cần xuất hóa đơn tài chính VAT 8-10% gửi qua Email',
+    timing: 'Kèm xuất hóa đơn VAT điện tử gửi qua Email',
+  },
+];
+
+export const PAYMENTS = PAYMENT_METHODS.map((p) => p.label);
 export const PARTNERS = ['Panasonic', 'SONY', 'LG', 'Samsung', 'Coway', 'SKYWORTH', 'Nagakawa', 'Sumico', 'Electrolux'];
 export const HOTLINE = '1900 232 461';
 export const POPULAR_SEARCHES = ['Vệ sinh máy lạnh', 'Sạc gas', 'Máy giặt', 'Tủ lạnh', 'Sửa chữa', 'Bình nước nóng'];
