@@ -358,13 +358,6 @@ export function PersonalScreen() {
           style={{ marginTop: 12 }}
           onPress={() => u.confirm('Thông báo', 'Bạn có muốn đăng xuất?', a.logout, 'Đồng ý', false)}
         />
-        <Btn
-          title="Xoá dữ liệu thiết bị"
-          icon="trash-2"
-          variant="ghost"
-          style={{ marginTop: 10 }}
-          onPress={() => u.confirm('Xoá toàn bộ dữ liệu?', 'Giỏ hàng, đơn, địa chỉ, thiết bị trên trình duyệt này sẽ bị xoá. Tài khoản đăng ký vẫn giữ.', a.wipeLocalData, 'Xoá', true)}
-        />
       </View>
 
       <Sheet
