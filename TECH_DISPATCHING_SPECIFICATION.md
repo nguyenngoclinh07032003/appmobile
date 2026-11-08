@@ -343,3 +343,49 @@ Thợ từ chối đơn kèm lý do.
 3. **Khu vực không còn thợ khả dụng:**
    - Tự động nâng bán kính tìm kiếm $R_{max}$ từ $7\text{ km} \rightarrow 12\text{ km}$.
    - Nếu vẫn không có: Bắn thông báo Socket/Notification lên Dashboard của **Admin Web** (Trưởng trạm kỹ thuật) để gán tay hoặc gọi điện dời lịch hẹn với khách hàng.
+
+---
+
+## 8. ĐẶC TẢ GIAO DIỆN MOBILE APP (UI/UX SPECIFICATION)
+
+Để đồng bộ với giải thuật backend, phía giao diện ứng dụng di động (Mobile App) được thiết kế theo đúng chuẩn tác phong Kỹ thuật viên Doanh nghiệp (Field Service) thay vì tài xế công nghệ (Ride-hailing):
+
+### 8.1. Phân hệ Thợ (Technician App)
+
+#### A. Thẻ việc mới được phân công (Assigned Job Card)
+- **Tiêu đề:** `VIỆC ĐƯỢC PHÂN CÔNG` (kèm đồng hồ đếm ngược `⏳ Còn 14:30`).
+- **Khung giờ hẹn:** Hiển thị rõ khung giờ hẹn trước của khách (vd: `14h00 - 16h00 Hôm nay`).
+- **Hộp nhãn lý do phân công (Dispatch Transparency Tags):**
+  - `✓ Đúng chuyên môn: [Tên chuyên môn]` (vd: Điện Lạnh).
+  - `✓ Khu vực phụ trách: [Tên khu vực]` (vd: Bình Thạnh).
+  - `✓ Lịch hẹn trống: [Khung giờ]` (Tránh xung đột ca làm).
+- **Hành động:**
+  - Nút chính `[ TIẾP NHẬN CA ]` (Variant primary).
+  - Nút phụ `[ Từ chối ]` (Mở modal chọn lý do công việc: *Xe hỏng / Ca trước phát sinh / Nghỉ đột xuất*).
+
+#### B. Tab "Lịch làm việc" (Work Schedule Timeline)
+- Hiển thị công việc theo từng khung giờ hẹn trong ngày (Timeline Slot 2 tiếng).
+- Thể hiện trạng thái trực quan: `Đã hoàn thành` | `Đang thực hiện` | `Ca tiếp theo`.
+
+#### C. Chỉ số năng suất lao động (Workload & KPI)
+- Thay vì hiển thị "Thu nhập cuốc xe kiểu Grab", giao diện thể hiện:
+  - `Số ca hoàn thành trong ngày:` (vd: 2/4 ca).
+  - `Tỷ lệ hoàn thành đúng hẹn (On-time Rate):` $\ge 98\%$.
+  - `Điểm đánh giá chất lượng:` 4.9★.
+
+### 8.2. Phân hệ Khách hàng (Customer App)
+
+#### A. Màn hình chờ điều phối (Dispatching Progress)
+- **Tiêu đề:** `ĐANG ĐIỀU PHỐI KỸ THUẬT VIÊN CHUYÊN TRÁCH...`
+- **Thông điệp:** *"Hệ thống đang lựa chọn kỹ thuật viên đúng chuyên môn và gần bạn nhất để đảm bảo chất lượng dịch vụ và đúng giờ hẹn."*
+- **Cam kết dịch vụ:**
+  - `[✓]` Đúng chuyên môn kỹ thuật thiết bị.
+  - `[✓]` Cam kết có mặt đúng khung giờ đã chọn.
+  - `[✓]` Bảo hành dịch vụ 60 ngày.
+
+#### B. Thẻ kỹ thuật viên đã tiếp nhận (Assigned Tech Card)
+- Ảnh đại diện, họ tên, mã nhân viên (vd: `THO-042`).
+- Chuyên môn kỹ thuật & Đánh giá sao (`★ 4.9`).
+- Nút liên hệ: `[ Gọi điện ]` & `[ Nhắn tin trực tiếp ]`.
+- Thời gian dự kiến xuất phát và có mặt tại nhà khách hàng.
+
