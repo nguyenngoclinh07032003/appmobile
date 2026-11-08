@@ -689,10 +689,16 @@ export function TechAccountScreen() {
             <ListRow icon="🎧" iconBg={C.greenSoft} label="Liên hệ điều phối" value={HOTLINE} onPress={u.call} last />
           </View>
           <Btn
+            title="🎬 Nạp dữ liệu kịch bản Demo (Review với cô)"
+            variant="soft"
+            style={{ marginTop: 18 }}
+            onPress={a.loadMockData}
+          />
+          <Btn
             title="Đăng xuất tài khoản Thợ"
             icon="🚪"
             variant="dangerSoft"
-            style={{ marginTop: 18 }}
+            style={{ marginTop: 10 }}
             onPress={() => u.confirm('Đăng xuất?', 'Bạn sẽ quay về màn đăng nhập. Đơn hàng vẫn giữ trên thiết bị.', a.logout, 'Đăng xuất', true)}
           />
         </View>

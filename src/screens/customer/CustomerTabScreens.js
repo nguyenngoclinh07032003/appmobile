@@ -448,9 +448,15 @@ export function PersonalScreen() {
           <ListRow icon="⬆️" iconBg="#EEF2F7" label="Cập nhật ứng dụng" value="3.0.8" onPress={() => u.alert('Bạn đang dùng bản mới nhất', 'Phiên bản 3.0.8 (v7).', '✅')} last />
         </Group>
         <Btn
+          title="🎬 Nạp dữ liệu kịch bản Demo (Review với cô)"
+          variant="soft"
+          style={{ marginTop: 24 }}
+          onPress={a.loadMockData}
+        />
+        <Btn
           title="Đăng xuất"
           variant="dangerSoft"
-          style={{ marginTop: 24 }}
+          style={{ marginTop: 12 }}
           onPress={() => u.confirm('Đăng xuất?', 'Bạn sẽ quay về màn đăng nhập. Đơn hàng và dữ liệu trên thiết bị vẫn được giữ.', a.logout, 'Đăng xuất', true)}
         />
         <Btn

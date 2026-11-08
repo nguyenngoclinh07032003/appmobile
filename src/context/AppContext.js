@@ -4,6 +4,7 @@ import {
   getService, MAINT_MONTHS, TECH_ME, REDEEM_OPTIONS, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech,
   tierOf, lookupHrmssPurchasedDevices, comboDiscountFor, syncCatalogFromBackend,
 } from '../constants/data';
+import { MOCK_ORDERS, MOCK_DEVICES, MOCK_ADDRESSES } from '../constants/mockData';
 export { matchJobForTech, comboDiscountFor } from '../constants/data';
 import {
   getSession, clearSession, loginAccount, registerAccount, urlRoleHint, resetPassword, changePassword, quickLoginRole, setSession, upsertBackendAccount,
@@ -286,9 +287,9 @@ export function AppProvider({ children }) {
     const user = session
       ? { name: session.name || '', phone: session.phone || '', email: session.email || '' }
       : (saved.user || { name: '', phone: '', email: '' });
-    const cleanOrders = (saved.orders || []);
-    const cleanDevices = (saved.devices || []);
-    const cleanAddresses = (saved.addresses || []);
+    const cleanOrders = (saved.orders && saved.orders.length > 0) ? saved.orders : MOCK_ORDERS;
+    const cleanDevices = (saved.devices && saved.devices.length > 0) ? saved.devices : MOCK_DEVICES;
+    const cleanAddresses = (saved.addresses && saved.addresses.length > 0) ? saved.addresses : MOCK_ADDRESSES;
     const baseState = {
       ...makeInitial(),
       ...saved,
@@ -2173,6 +2174,17 @@ export function AppProvider({ children }) {
       setStack([]);
       setTab('home');
       ui.toast('Đã đăng xuất');
+    },
+    loadMockData: () => {
+      up(() => ({
+        orders: [...MOCK_ORDERS],
+        devices: [...MOCK_DEVICES],
+        addresses: [...MOCK_ADDRESSES],
+        selectedAddressId: MOCK_ADDRESSES[0].id,
+        points: 120,
+        lifetimePoints: 350,
+      }));
+      ui.toast('Đã nạp bộ dữ liệu kịch bản Demo (Review với cô)!', '🎬');
     },
     wipeLocalData: () => {
       hrmssApi.logout();
