@@ -332,13 +332,13 @@ export function PersonalScreen() {
           <ListRow icon="circle-user-round" label="Sửa thông tin cá nhân" onPress={() => nav.push('profile')} />
           <ListRow icon="map-pin" label="Sổ địa chỉ" value={s.addresses.length ? `${s.addresses.length}` : ''} onPress={() => nav.push('addresses')} />
           <ListRow icon="ticket" label="Quyền lợi của tôi" value={s.points ? `${s.points} điểm` : ''} onPress={() => nav.push('rewards')} />
-          <ListRow icon="award" label="Hạng thành viên" value={cur.label} onPress={() => nav.push('rewards', { tierId: cur.id })} />
+          <ListRow icon="trophy" label="Hạng thành viên" value={cur.label} onPress={() => nav.push('rewards', { tierId: cur.id })} />
           <ListRow icon="settings" label="Quản lý tài khoản" onPress={() => setShowAccSheet(true)} last />
         </Group>
         <Group title="Hỗ trợ khách hàng">
           <ListRow icon="shield-check" label="Tra cứu bảo hành" onPress={() => nav.warranty(s.user.phone || '')} />
           <ListRow icon="headphones" label="Trợ giúp" onPress={() => nav.push('help')} />
-          <ListRow icon="message-square" label="Liên hệ hỗ trợ" value={HOTLINE} onPress={u.call} last />
+          <ListRow icon="message-circle-more" label="Liên hệ hỗ trợ" value={HOTLINE} onPress={u.call} last />
         </Group>
         <Group title="Khác">
           <ListRow icon="scale" label="Điều khoản ứng dụng" onPress={() => nav.push('terms')} />
