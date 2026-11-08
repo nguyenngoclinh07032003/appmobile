@@ -35,26 +35,33 @@ const sameDay = (ts, key) => {
 const slotHour = (slot) => parseInt(slot, 10) || 0;
 const callPhone = (phone) => Linking.openURL(`tel:${(phone || '').replace(/\s/g, '')}`).catch(() => {});
 const openMap = (addr) => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr || '')}`).catch(() => {});
-// Tách bạch thu nhập của Thợ chuẩn HRMSS: 70% phí nhân công + 15% hoa hồng linh kiện/vật tư (85% vật tư nộp hoàn kho)
+// Tách bạch thu nhập của Thợ chuẩn HRMSS: 70% phí nhân công + 15% hoa hồng vật tư kho + 100% hoàn trả vật tư phát sinh mua ngoài
 const techIncomeBreakdown = (o) => {
   if (!o || o.kind === 'warranty' || o.kind === 'followup') {
-    return { laborGross: 0, partsGross: 0, laborShare: 0, partCommission: 0, warehouseReturn: 0, total: 0 };
+    return { laborGross: 0, partsGross: 0, laborShare: 0, partCommission: 0, customPartsReimbursement: 0, warehouseReturn: 0, total: 0 };
   }
-  const partsGross = (o.quote?.lines || [])
-    .filter((l) => l.type === 'part')
+  const parts = (o.quote?.lines || []).filter((l) => l.type === 'part');
+  const customPartsReimbursement = parts
+    .filter((l) => l.isCustom)
     .reduce((sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 0), 0);
+  const warehousePartsGross = parts
+    .filter((l) => !l.isCustom)
+    .reduce((sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 0), 0);
+  const partsGross = customPartsReimbursement + warehousePartsGross;
+
   const gross = o.quote?.approved ? o.quote.total : bookedValue(o);
   const laborGross = Math.max(0, gross - partsGross);
   const laborShare = Math.round(laborGross * 0.7);
-  const partCommission = Math.round(partsGross * 0.15);
-  const warehouseReturn = Math.max(0, partsGross - partCommission);
+  const partCommission = Math.round(warehousePartsGross * 0.15);
+  const warehouseReturn = Math.max(0, warehousePartsGross - partCommission);
   return {
     laborGross,
     partsGross,
     laborShare,
     partCommission,
+    customPartsReimbursement,
     warehouseReturn,
-    total: laborShare + partCommission,
+    total: laborShare + partCommission + customPartsReimbursement,
   };
 };
 const income = (o) => techIncomeBreakdown(o).total;
@@ -740,12 +747,12 @@ export function TechAccountScreen() {
 
       <Sheet visible={showIncome} onClose={() => setShowIncome(false)} title="Chi tiết thu nhập & chiết khấu HRMSS">
         <View style={tx.incomeHead}>
-          <Text style={ui.meta}>Thực nhận tháng này (70% công + 15% vật tư)</Text>
+          <Text style={ui.meta}>Thực nhận tháng này (Công 70% + Hoa hồng VT 15% + Hoàn trả 100% linh kiện ngoài)</Text>
           <Text style={[ui.price, { fontSize: 22 }]}>{formatVND(monthIncome)}</Text>
         </View>
         <View style={{ padding: 10, borderRadius: R.md, backgroundColor: C.primarySoft, marginTop: 10 }}>
           <Text style={{ fontSize: 12, color: C.primary, fontWeight: '700', lineHeight: 18 }}>
-            💡 Chính sách HRMSS: Thợ hưởng 70% phí dịch vụ nhân công + 15% phụ cấp vật tư/linh kiện chính hãng (85% giá trị vật tư đối soát hoàn kho).
+            💡 Chính sách HRMSS: Thợ hưởng 70% phí nhân công + 15% phụ cấp vật tư kho + 100% hoàn tiền linh kiện phát sinh mua ngoài (rút về ATM tức thì).
           </Text>
         </View>
         {monthDone.length === 0 ? (
@@ -759,7 +766,8 @@ export function TechAccountScreen() {
                 <Text style={ui.meta}>{o.code} · {fmtDateTime(o.doneAt)}</Text>
                 <Text style={{ fontSize: 11, color: C.ink2, marginTop: 2 }}>
                   Công (70%): +{formatVND(br.laborShare)}
-                  {br.partsGross > 0 ? ` · Hoa hồng VT (15%): +${formatVND(br.partCommission)} (Hoàn kho: ${formatVND(br.warehouseReturn)})` : ''}
+                  {br.partCommission > 0 ? ` · Hoa hồng VT kho (15%): +${formatVND(br.partCommission)}` : ''}
+                  {br.customPartsReimbursement > 0 ? ` · Hoàn tiền linh kiện ngoài: +${formatVND(br.customPartsReimbursement)}` : ''}
                 </Text>
               </View>
               <Text style={{ fontWeight: '800', color: C.green }}>+{formatVND(br.total)}</Text>
