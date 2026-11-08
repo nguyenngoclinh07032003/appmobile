@@ -1399,8 +1399,49 @@ export function ProfileScreen() {
           <View style={mx.bigAvatar}><Text style={{ fontSize: 38, fontWeight: '900', color: C.navy }}>{(name || 'K').trim().charAt(0).toUpperCase()}</Text></View>
         </View>
         <Card>
-          <Field label="Họ và tên" value={name} onChangeText={setName} placeholder="Nguyễn Văn A" error={err.name} style={{ marginTop: -8 }} />
-          <Field label="Số điện thoại" value={phone} onChangeText={(t) => setPhone(t.replace(/[^0-9]/g, '').slice(0, 10))} keyboardType="phone-pad" placeholder="10 chữ số" error={err.phone} />
+          <Field
+            label="Họ và tên"
+            value={name}
+            onChangeText={(t) => {
+              setName(t);
+              if (err.name) setErr((prev) => ({ ...prev, name: '' }));
+            }}
+            onBlur={() => {
+              if (name.trim()) {
+                const nameErr = validateContactName(name);
+                if (nameErr) setErr((prev) => ({ ...prev, name: nameErr }));
+              }
+            }}
+            placeholder="Nguyễn Văn A"
+            error={err.name}
+            style={{ marginTop: -8 }}
+          />
+          <Field
+            label="Số điện thoại"
+            value={phone}
+            onChangeText={(t) => {
+              let p = t.replace(/[^0-9]/g, '').slice(0, 10);
+              if (p.length > 0 && !p.startsWith('0')) {
+                p = '0' + p.slice(0, 9);
+              }
+              setPhone(p);
+              if (p.length === 10) {
+                const phoneErr = validateVietnamesePhone(p);
+                setErr((prev) => ({ ...prev, phone: phoneErr }));
+              } else if (err.phone) {
+                setErr((prev) => ({ ...prev, phone: '' }));
+              }
+            }}
+            onBlur={() => {
+              if (phone) {
+                const phoneErr = validateVietnamesePhone(phone);
+                if (phoneErr) setErr((prev) => ({ ...prev, phone: phoneErr }));
+              }
+            }}
+            keyboardType="phone-pad"
+            placeholder="10 chữ số (bắt đầu bằng số 0)"
+            error={err.phone}
+          />
           <Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" placeholder="email@example.com" error={err.email} />
           <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
             {s.auth?.emailVerified ? (

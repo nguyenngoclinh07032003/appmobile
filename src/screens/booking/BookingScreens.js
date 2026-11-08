@@ -1166,6 +1166,12 @@ export function AddressFormScreen({ params }) {
               setName(t);
               if (err.name) setErr((prev) => ({ ...prev, name: '' }));
             }}
+            onBlur={() => {
+              if (name.trim()) {
+                const nameErr = validateContactName(name);
+                if (nameErr) setErr((prev) => ({ ...prev, name: nameErr }));
+              }
+            }}
             placeholder="Tên người liên hệ (VD: Nguyễn Văn An)"
             error={err.name}
           />
@@ -1173,9 +1179,23 @@ export function AddressFormScreen({ params }) {
             label="Số điện thoại"
             value={phone}
             onChangeText={(t) => {
-              const p = t.replace(/[^0-9]/g, '').slice(0, 10);
+              let p = t.replace(/[^0-9]/g, '').slice(0, 10);
+              if (p.length > 0 && !p.startsWith('0')) {
+                p = '0' + p.slice(0, 9);
+              }
               setPhone(p);
-              if (err.phone) setErr((prev) => ({ ...prev, phone: '' }));
+              if (p.length === 10) {
+                const phoneErr = validateVietnamesePhone(p);
+                setErr((prev) => ({ ...prev, phone: phoneErr }));
+              } else if (err.phone) {
+                setErr((prev) => ({ ...prev, phone: '' }));
+              }
+            }}
+            onBlur={() => {
+              if (phone) {
+                const phoneErr = validateVietnamesePhone(phone);
+                if (phoneErr) setErr((prev) => ({ ...prev, phone: phoneErr }));
+              }
             }}
             keyboardType="phone-pad"
             placeholder="10 chữ số (bắt đầu bằng 03, 05, 07, 08, 09)"
@@ -1191,6 +1211,12 @@ export function AddressFormScreen({ params }) {
             onChangeText={(t) => {
               setStreet(t);
               if (err.street) setErr((prev) => ({ ...prev, street: '' }));
+            }}
+            onBlur={() => {
+              if (street.trim()) {
+                const streetErr = validateStreetAddress(street);
+                if (streetErr) setErr((prev) => ({ ...prev, street: streetErr }));
+              }
             }}
             placeholder="VD: Số 12 ngõ 45 hoặc 128 Trần Duy Hưng"
             error={err.street}
