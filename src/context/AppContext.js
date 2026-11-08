@@ -925,7 +925,6 @@ export function AppProvider({ children }) {
       let targetOrder = null;
       up((p) => {
         const tech0 = p.techProfile || TECH_ME;
-        if (isTechLocked(tech0)) { result = 'locked'; return {}; }
         const activeCount = p.orders.filter((x) => x.tech?.code === (tech0.code || TECH_ME.code) && isActiveOrder(x)).length;
         if (activeCount >= TECH_POLICY.maxActiveJobs) { result = 'busy'; return {}; }
         const o = p.orders.find((x) => x.code === code);
@@ -947,10 +946,6 @@ export function AppProvider({ children }) {
           ...clearDeclined(p, tech0.code, code),
         };
       });
-      if (result === 'locked') {
-        ui.alert('Tài khoản đang tạm khóa nhận việc', 'Tài khoản kỹ thuật viên của bạn đang tạm khóa nhận đơn mới do vi phạm SLA. Vui lòng hoàn thành tốt các đơn hiện tại.', '🔒');
-        return;
-      }
       if (result === 'busy') {
         ui.alert('Đã đủ việc đang làm', `Bạn đang giữ tối đa ${TECH_POLICY.maxActiveJobs} việc. Hoàn thành hoặc trả việc trước khi nhận thêm.`, '🧰');
         return;
@@ -2094,7 +2089,7 @@ export function AppProvider({ children }) {
       if (!cancelCheck.allowed) {
         ui.alert(
           'Không thể huỷ đơn',
-          cancelCheck.reason || `Không thể huỷ đơn khi còn dưới 1 tiếng trước giờ hẹn với thợ. Vui lòng gọi Hotline ${HOTLINE}.`,
+          cancelCheck.reason || 'Không thể huỷ đơn khi còn dưới 1 tiếng trước giờ hẹn với thợ. Vui lòng gọi Hotline 1900 6868.',
           '⚠️'
         );
         return false;
@@ -2103,20 +2098,9 @@ export function AppProvider({ children }) {
         const o = p.orders.find((x) => x.code === code);
         if (!o || !['pending', 'confirmed'].includes(o.status)) return {};
         const refund = o?.voucher?.wallet ? [o.voucher, ...p.myVouchers] : p.myVouchers;
-        const ownerPhone = o.customerPhone || o.address?.phone;
-        const ownerSlice = ownerPhone && p.customerProfiles?.[ownerPhone] ? p.customerProfiles[ownerPhone] : null;
         return {
           orders: p.orders.map((x) => (x.code === code ? { ...x, status: 'cancelled', cancelReason: reason, history: [...x.history, { status: 'cancelled', at: now }] } : x)),
           myVouchers: refund,
-          ...(ownerSlice ? {
-            customerProfiles: {
-              ...(p.customerProfiles || {}),
-              [ownerPhone]: {
-                ...ownerSlice,
-                myVouchers: o?.voucher?.wallet ? [o.voucher, ...(ownerSlice.myVouchers || [])] : (ownerSlice.myVouchers || []),
-              },
-            },
-          } : {}),
           notifications: pushNotif(p, { icon: '✖️', title: `Đã huỷ đơn ${code}`, body: reason || 'Bạn đã huỷ đơn.', link: { name: 'order', params: { code } } }),
           techNotifs: pushTech(p, { icon: '✖️', title: `Khách đã huỷ đơn ${code}`, body: reason || '', link: { name: 'tech-job', params: { code } } }),
         };
@@ -2135,7 +2119,7 @@ export function AppProvider({ children }) {
       up((p) => {
         const userReviews = { ...p.userReviews };
         o.items.forEach((it) => { userReviews[it.id] = [review, ...(userReviews[it.id] || [])]; });
-        const nextOrders = p.orders.map((x) => (x.code === code ? { ...x, rating: { stars, text, at: now } } : x));
+        const nextOrders = p.orders.map((x) => (x.code === code ? { ...x, rating: { stars, text } } : x));
         let techProfile = p.techProfile;
         if (techProfile && o.tech?.code === techProfile.code) {
           const rated = nextOrders.filter((x) => x.tech?.code === techProfile.code && x.rating);
@@ -2144,25 +2128,12 @@ export function AppProvider({ children }) {
             : stars;
           techProfile = { ...techProfile, rating: avg };
         }
-        const ownerPhone = o.customerPhone || o.address?.phone;
-        const ownerSlice = ownerPhone && p.customerProfiles?.[ownerPhone] ? p.customerProfiles[ownerPhone] : null;
         return {
           orders: nextOrders,
           userReviews,
           points: p.points + 20,
           lifetimePoints: p.lifetimePoints + 20,
           pointHistory: [ptEntry, ...(p.pointHistory || [])],
-          ...(ownerSlice ? {
-            customerProfiles: {
-              ...(p.customerProfiles || {}),
-              [ownerPhone]: {
-                ...ownerSlice,
-                points: (ownerSlice.points || 0) + 20,
-                lifetimePoints: (ownerSlice.lifetimePoints || 0) + 20,
-                pointHistory: [ptEntry, ...(ownerSlice.pointHistory || [])],
-              },
-            },
-          } : {}),
           techProfile,
           techNotifs: pushTech(p, { icon: '⭐', title: `Khách đánh giá ${stars}★ · ${code}`, body: text || 'Không có nhận xét.', link: { name: 'tech-job', params: { code } } }),
         };

@@ -525,25 +525,9 @@ export function CheckoutScreen({ params }) {
       return;
     }
 
-    const targetCat = lines[0]?.svc?.category || 'may-lanh';
-    const matchedDev = (pendingDeviceId && (s.devices || []).find((dv) => dv.id === pendingDeviceId))
-      || (s.devices || []).find((dv) => dv.category === targetCat)
-      || null;
-    const orderDevice = matchedDev
-      ? {
-          id: matchedDev.id,
-          name: matchedDev.name,
-          category: matchedDev.category || targetCat,
-          brand: matchedDev.brand,
-          model: matchedDev.model,
-          room: matchedDev.room,
-          serial: matchedDev.serial,
-        }
-      : { category: targetCat };
-
     const code = a.placeOrder({
       items: lines.map(({ id, qty }) => ({ id, qty })),
-      device: orderDevice,
+      device: { category: lines[0]?.svc?.category || 'may-lanh' },
       siteCondition: selectedSite,
       comboDiscount: combo.amount,
       comboLabel: combo.label,
@@ -551,10 +535,7 @@ export function CheckoutScreen({ params }) {
       dateLabel: `${days[dayIdx].label} (${days[dayIdx].ddmm})`, dateKey: days[dayIdx].key, slot, payment, note, workerCode: '',
       attachments, fromCart: !!params.fromCart,
     });
-    if (code) {
-      if (pendingDeviceId) setPendingDeviceId(null);
-      nav.replace('success', { code });
-    }
+    if (code) nav.replace('success', { code });
   };
 
   if (!lines.length) {
