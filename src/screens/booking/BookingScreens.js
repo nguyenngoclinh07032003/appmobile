@@ -398,6 +398,20 @@ export function CheckoutScreen({ params }) {
   const [newRoom, setNewRoom] = useState('Phòng khách');
   const [newLast, setNewLast] = useState('unknown');
 
+  // Sheet thêm dịch vụ khác trực tiếp vào đơn đặt lịch
+  const [showAddServiceSheet, setShowAddServiceSheet] = useState(false);
+  const [svcSearch, setSvcSearch] = useState('');
+  const [selectedSvcCat, setSelectedSvcCat] = useState('all');
+
+  const availableServices = (ALL_SERVICES || []).filter((svc) => {
+    if (selectedSvcCat !== 'all' && svc.category !== selectedSvcCat) return false;
+    if (svcSearch.trim()) {
+      const q = svcSearch.trim().toLowerCase();
+      return (svc.name || '').toLowerCase().includes(q) || (svc.category || '').toLowerCase().includes(q);
+    }
+    return true;
+  });
+
   const [siteConditionId, setSiteConditionId] = useState(SITE_CONDITIONS[0].id);
   const selectedSite = SITE_CONDITIONS.find((sc) => sc.id === siteConditionId) || SITE_CONDITIONS[0];
   const curTier = tierOf(s.lifetimePoints || 0).cur;
@@ -667,7 +681,12 @@ export function CheckoutScreen({ params }) {
         </View>
 
         {/* Dịch vụ */}
-        <Text style={bx.sec}>🧰  Dịch vụ ({lines.length})</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, marginBottom: 8 }}>
+          <Text style={[bx.sec, { marginTop: 0, marginBottom: 0 }]}>🧰  Dịch vụ ({lines.length})</Text>
+          <Tap onPress={() => setShowAddServiceSheet(true)}>
+            <Text style={ui.link}>＋ Thêm dịch vụ</Text>
+          </Tap>
+        </View>
         {lines.map((x) => (
           <Card key={x.id} style={{ flexDirection: 'row', gap: 12, marginBottom: 10, padding: 12, alignItems: 'center' }}>
             <Media item={x.svc} height={56} width={56} radius={12} />
@@ -684,6 +703,19 @@ export function CheckoutScreen({ params }) {
             </View>
           </Card>
         ))}
+
+        <Tap
+          onPress={() => setShowAddServiceSheet(true)}
+          style={{
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+            paddingVertical: 10, paddingHorizontal: 14, borderRadius: R.md,
+            borderWidth: 1.5, borderColor: C.primary, borderStyle: 'dashed',
+            backgroundColor: C.primarySoft, marginBottom: 14,
+          }}
+        >
+          <Text style={{ fontSize: 16, color: C.primary, fontWeight: '800' }}>＋</Text>
+          <Text style={{ fontSize: 13, color: C.primary, fontWeight: '700' }}>Chọn thêm dịch vụ khác vào đơn này</Text>
+        </Tap>
 
         <Field label="Mô tả tình trạng thiết bị" multiline value={note} onChangeText={setNote} placeholder="VD: Máy lạnh chảy nước, kém lạnh…" />
 
@@ -1023,6 +1055,108 @@ export function CheckoutScreen({ params }) {
           >
             <Text style={[ui.link, { fontSize: 13 }]}>Mở biểu mẫu chi tiết đầy đủ ›</Text>
           </Tap>
+        </ScrollView>
+      </Sheet>
+
+      {/* Sheet Thêm dịch vụ khác vào đơn đặt lịch */}
+      <Sheet visible={showAddServiceSheet} onClose={() => setShowAddServiceSheet(false)} title="Thêm dịch vụ vào đơn">
+        <ScrollView style={{ maxHeight: 520 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <Text style={[ui.meta, { marginBottom: 10 }]}>
+            Chọn thêm các dịch vụ vệ sinh, bảo dưỡng, nạp gas để thợ xử lý trọn gói cùng lúc (áp dụng ưu đãi combo giảm tới 10%).
+          </Text>
+
+          {/* Tìm kiếm */}
+          <Field
+            value={svcSearch}
+            onChangeText={setSvcSearch}
+            placeholder="🔍 Tìm tên dịch vụ (VD: Sạc gas, Vệ sinh...)"
+            style={{ marginBottom: 10 }}
+          />
+
+          {/* Phân loại danh mục */}
+          <HScroll contentContainerStyle={{ gap: 6, marginBottom: 12 }}>
+            <Chip
+              label="Tất cả"
+              on={selectedSvcCat === 'all'}
+              onPress={() => setSelectedSvcCat('all')}
+            />
+            {CATEGORIES.map((c) => (
+              <Chip
+                key={c.id}
+                label={`${c.icon} ${c.label}`}
+                on={selectedSvcCat === c.id}
+                onPress={() => setSelectedSvcCat(c.id)}
+              />
+            ))}
+          </HScroll>
+
+          {/* Danh sách dịch vụ khả dụng */}
+          <View style={{ gap: 10 }}>
+            {availableServices.length === 0 ? (
+              <Text style={[ui.meta, { textAlign: 'center', paddingVertical: 20 }]}>Không tìm thấy dịch vụ phù hợp.</Text>
+            ) : (
+              availableServices.map((svc) => {
+                const existing = items.find((it) => it.id === svc.id);
+                const curQty = existing?.qty || 0;
+                return (
+                  <Card
+                    key={svc.id}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12,
+                      borderColor: curQty > 0 ? C.primary : C.line,
+                      backgroundColor: curQty > 0 ? '#F6FAFF' : '#fff',
+                    }}
+                  >
+                    <Media item={svc} height={48} width={48} radius={10} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: '800', fontSize: 13, color: C.ink }} numberOfLines={2}>
+                        {svc.name}
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                        <Text style={[ui.price, { fontSize: 13 }]}>{formatVND(svc.price)}</Text>
+                        {svc.warranty ? (
+                          <Badge text={svc.warranty} fg={C.primary} bg={C.primarySoft} style={{ paddingHorizontal: 5, paddingVertical: 1 }} />
+                        ) : null}
+                      </View>
+                    </View>
+
+                    {curQty > 0 ? (
+                      <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                        <Stepper
+                          value={curQty}
+                          onChange={(q) => {
+                            if (q <= 0) {
+                              setItems((p) => p.filter((it) => it.id !== svc.id));
+                            } else {
+                              setItems((p) => p.map((it) => (it.id === svc.id ? { ...it, qty: q } : it)));
+                            }
+                          }}
+                        />
+                        <Text style={{ fontSize: 10.5, color: C.green, fontWeight: '700' }}>✓ Đã chọn ({curQty})</Text>
+                      </View>
+                    ) : (
+                      <Btn
+                        title="＋ Thêm"
+                        variant="soft"
+                        small
+                        onPress={() => {
+                          setItems((p) => [...p, { id: svc.id, qty: 1 }]);
+                          u.toast(`Đã thêm ${svc.name}`, '✅');
+                        }}
+                      />
+                    )}
+                  </Card>
+                );
+              })
+            )}
+          </View>
+
+          <Btn
+            title={`Xong (${lines.length} dịch vụ · ${formatVND(total)})`}
+            icon="✓"
+            onPress={() => setShowAddServiceSheet(false)}
+            style={{ marginTop: 16, marginBottom: 12 }}
+          />
         </ScrollView>
       </Sheet>
     </View>
