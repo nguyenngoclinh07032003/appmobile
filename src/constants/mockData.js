@@ -5,6 +5,11 @@ const pad = (n) => String(n).padStart(2, '0');
 const d = new Date();
 const todayKey = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const todayLabel = `Hôm nay (${pad(d.getDate())}/${pad(d.getMonth() + 1)})`;
+const curH = d.getHours();
+const slotH1 = Math.min(20, Math.max(8, curH));
+const slotH2 = Math.min(22, slotH1 + 2);
+const activeSlot1 = `${pad(slotH1)}h00 - ${pad(slotH2)}h00`;
+const activeSlot2 = `${pad(Math.max(8, slotH1 - 1))}h30 - ${pad(Math.min(22, slotH1 + 1))}h30`;
 
 export const MOCK_ADDRESSES = [
   {
@@ -81,7 +86,7 @@ export const MOCK_ORDERS = [
     createdAt: now - 15 * 60 * 1000,
     dateKey: todayKey,
     dateLabel: todayLabel,
-    slot: '14h00 - 16h00',
+    slot: activeSlot1,
     items: [{ id: 'vs-ml-1', qty: 1 }],
     payment: 'Chuyển khoản VietQR',
     address: {
@@ -115,7 +120,7 @@ export const MOCK_ORDERS = [
     travelStartedAt: now - 10 * 60 * 1000,
     dateKey: todayKey,
     dateLabel: todayLabel,
-    slot: '10h00 - 12h00',
+    slot: activeSlot2,
     items: [{ id: 'vs-mg-truoc', qty: 1 }],
     payment: 'Tiền mặt cho thợ tại nhà',
     address: {
@@ -298,28 +303,28 @@ export const MOCK_CUSTOMER_NOTIFS = [
     read: false,
     tone: 'warning',
     icon: '🧾',
-    title: 'Báo giá kiểm tra tại nhà cho đơn HRM261108-03',
-    body: 'Tổng 480.000đ (Thay rơ-le khởi động & cảm biến nhiệt tủ lạnh Samsung). Vui lòng duyệt để thợ thực hiện.',
+    title: 'Báo giá chính thức từ Văn phòng · HRM261108-03',
+    body: 'Văn phòng HRMSS đã gửi báo giá 480.000đ (Thay rơ-le khởi động & cảm biến nhiệt tủ lạnh Samsung). Vui lòng mở đơn để xác nhận.',
     link: { name: 'order', params: { code: 'HRM261108-03' } },
   },
   {
     id: 'notif-cust-2',
-    at: now - 10 * 60 * 1000,
+    at: now - 15 * 60 * 1000,
     read: false,
     tone: 'warning',
     icon: '🛵',
     title: 'Thợ đang đến · HRM261108-02',
-    body: 'Thợ Hoàng Văn Thọ đang di chuyển tới địa chỉ của bạn. Mở đơn để theo dõi GPS trực tiếp.',
+    body: 'KTV Hoàng Văn Thọ đang di chuyển tới địa chỉ của bạn. Mở đơn để theo dõi GPS trực tiếp.',
     link: { name: 'order', params: { code: 'HRM261108-02' } },
   },
   {
     id: 'notif-cust-3',
     at: now - 2 * 60 * 60 * 1000,
-    read: false,
+    read: true,
     tone: 'success',
     icon: '✅',
     title: 'Đơn HRM261108-04 đã hoàn thành',
-    body: 'Bạn nhận được +75 điểm và Phiếu bảo hành điện tử BH-HRM261108-04 (90 ngày).',
+    body: 'Bạn nhận được +75 điểm và Phiếu bảo hành điện tử BH-HRM261108-04 (60 ngày).',
     link: { name: 'order', params: { code: 'HRM261108-04' } },
   },
   {
@@ -328,8 +333,8 @@ export const MOCK_CUSTOMER_NOTIFS = [
     read: true,
     tone: 'danger',
     icon: '⚠️',
-    title: 'Thiết bị quá hạn bảo dưỡng định kỳ',
-    body: 'Máy lạnh Daikin Inverter 1.5 HP (Phòng khách) đã quá hạn bảo dưỡng 30 ngày. Đặt lịch vệ sinh ngay.',
+    title: 'Thiết bị đến chu kỳ bảo dưỡng định kỳ',
+    body: 'Máy lạnh Daikin Inverter 1.5 HP (Phòng khách) đã đến chu kỳ bảo dưỡng 6 tháng. Đặt lịch vệ sinh ngay.',
     link: { tab: 'services' },
   },
   {
@@ -352,7 +357,7 @@ export const MOCK_TECH_NOTIFS = [
     tone: 'warning',
     icon: '🆕',
     title: 'Việc mới HRM261108-01 · Vệ sinh máy lạnh từ 1–2.5 HP',
-    body: `${todayLabel} · 14h00 - 16h00 · Máy lạnh Daikin · Bình Thạnh, TP.HCM`,
+    body: `${todayLabel} · ${activeSlot1} · Máy lạnh Daikin · Bình Thạnh, TP.HCM`,
     link: { name: 'tech-job', params: { code: 'HRM261108-01' } },
   },
   {
@@ -368,7 +373,7 @@ export const MOCK_TECH_NOTIFS = [
   {
     id: 'notif-tech-3',
     at: now - 60 * 60 * 1000,
-    read: false,
+    read: true,
     tone: 'success',
     icon: '✅',
     title: 'Khách xác nhận đã thanh toán · HRM261108-04',

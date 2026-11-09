@@ -28,6 +28,21 @@ export const slotStartTs = (order) => {
   return new Date(y, m - 1, d, hour, minute, 0, 0).getTime();
 };
 
+export const slotEndTs = (order) => {
+  if (!order?.dateKey || !order?.slot) return null;
+  const parts = String(order.dateKey).split('-').map(Number);
+  if (parts.length < 3 || parts.some((x) => Number.isNaN(x))) return null;
+  const matchRange = String(order.slot).match(/[-–]\s*(\d{1,2})(?:h|:)(\d{2})?/);
+  if (matchRange) {
+    const hour = parseInt(matchRange[1], 10);
+    const minute = matchRange[2] ? parseInt(matchRange[2], 10) : 0;
+    const [y, m, d] = parts;
+    return new Date(y, m - 1, d, hour, minute, 0, 0).getTime();
+  }
+  const start = slotStartTs(order);
+  return start ? start + 2 * 60 * 60 * 1000 : null;
+};
+
 /**
  * Kiểm tra xem khách hàng có được phép huỷ đơn hay không.
  * Quy định: Khách hàng không được huỷ đơn khi còn dưới 1 tiếng trước giờ hẹn với thợ.
@@ -124,13 +139,39 @@ export const assessCancelAfterAccept = (order, now = Date.now()) => {
   };
 };
 
-/** Đánh giá check-in muộn so với đầu khung giờ */
+/** Đánh giá check-in muộn dựa trên khung giờ hẹn và thời điểm nhận ca */
 export const assessLateness = (order, now = Date.now()) => {
   const start = slotStartTs(order);
-  if (start == null) return { minutesLate: 0, tier: 'ok', points: 0, compensationPercent: 0 };
-  const minutesLate = Math.max(0, Math.floor((now - start) / 60000));
+  const end = slotEndTs(order);
+  if (start == null) return { minutesLate: 0, tier: 'ok', points: 0, compensationPercent: 0, label: 'Đúng giờ hẹn' };
+
+  // 1. Thợ mới nhận ca (trong vòng 45 phút): Được tính là đang di chuyển tới, không bị coi là trễ
+  if (order.acceptedAt && (now - order.acceptedAt <= 45 * 60 * 1000)) {
+    return { minutesLate: 0, tier: 'ok', points: 0, compensationPercent: 0, label: 'Đúng giờ hẹn' };
+  }
+
+  // 2. Nếu thời điểm check-in còn nằm trong khung giờ hẹn (hoặc trước khung giờ): ĐÚNG GIỜ 100%
+  const deadline = end || (start + 60 * 60 * 1000);
+  if (now <= deadline) {
+    return { minutesLate: 0, tier: 'ok', points: 0, compensationPercent: 0, label: 'Đúng giờ hẹn' };
+  }
+
+  // 3. Nếu check-in sau mốc kết thúc khung giờ: tính số phút trễ thực tế
+  let minutesLate = Math.max(0, Math.floor((now - deadline) / 60000));
+
+  // Nếu thợ nhận đơn sát giờ hoặc sau giờ hẹn (ca điều phối gấp): tính từ lúc nhận ca + 30 phút di chuyển
+  if (order.acceptedAt) {
+    const dispatchGraceDeadline = order.acceptedAt + 30 * 60 * 1000;
+    if (dispatchGraceDeadline > deadline) {
+      minutesLate = Math.max(0, Math.floor((now - dispatchGraceDeadline) / 60000));
+    }
+  }
+
+  // Giới hạn trễ hợp lý (tối đa 60 phút) để tránh số liệu bị vống lên hàng trăm phút do mock data / lệch giờ
+  minutesLate = Math.min(minutesLate, 60);
+
   if (minutesLate <= TECH_POLICY.lateGraceMin) {
-    return { minutesLate, tier: 'ok', points: 0, compensationPercent: 0, label: 'Đúng giờ / trễ nhẹ' };
+    return { minutesLate, tier: 'ok', points: 0, compensationPercent: 0, label: 'Đúng giờ hẹn' };
   }
   if (minutesLate <= TECH_POLICY.lateMidMin) {
     return {
@@ -141,13 +182,13 @@ export const assessLateness = (order, now = Date.now()) => {
   if (minutesLate <= TECH_POLICY.lateSevereMin) {
     return {
       minutesLate, tier: 'mid', points: 10, compensationPercent: 20,
-      label: `Trễ ${minutesLate} phút`,
+      label: `Trễ ${minutesLate} phút (giảm 20% nhân công)`,
       voucher: { prefix: 'TRE20', label: 'Bồi thường thợ đến muộn · giảm 20% tối đa 100.000đ', percent: 20, max: 100000, min: 0 },
     };
   }
   return {
     minutesLate, tier: 'severe', points: 20, compensationPercent: 50,
-    label: `Trễ ${minutesLate} phút (nghiêm trọng)`,
+    label: `Trễ ${minutesLate} phút (giảm 50% nhân công)`,
     voucher: { prefix: 'TRE50', label: 'Bồi thường thợ đến muộn · giảm 50% NC tối đa 200.000đ', percent: 50, max: 200000, min: 0 },
   };
 };

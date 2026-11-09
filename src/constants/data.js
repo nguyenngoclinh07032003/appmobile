@@ -76,6 +76,14 @@ export const PROCESS_STEPS = [
 
 export const formatVND = (n) => Number(n || 0).toLocaleString('vi-VN') + 'đ';
 
+export const formatNumberInput = (val) => {
+  if (val == null) return '';
+  const clean = String(val).replace(/[^0-9]/g, '');
+  if (!clean) return '';
+  const normalized = clean.replace(/^0+(?=\d)/, '');
+  return normalized.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+};
+
 export const serviceKind = (item) => {
   const id = item?.id || '';
   if (id.startsWith('ld-')) return 'install';
@@ -404,12 +412,13 @@ export const tierOf = (lifetimePoints) => {
 };
 
 export const ORDER_STEPS = [
-  { key: 'pending', label: 'Đã đặt lịch', desc: 'Đơn đã gửi, chờ thợ nhận' },
+  { key: 'pending', label: 'Đã đặt lịch', desc: 'Đơn đã gửi, chờ điều phối thợ' },
   { key: 'confirmed', label: 'Thợ đã nhận đơn', desc: 'Thợ sẽ gọi cho bạn trước khi đến' },
   { key: 'onway', label: 'Thợ đang đến', desc: 'Thợ đang di chuyển tới địa chỉ của bạn' },
   { key: 'diagnosing', label: 'Kiểm tra thiết bị', desc: 'Thợ kiểm tra và lập chẩn đoán' },
-  { key: 'quoted', label: 'Chờ duyệt báo giá', desc: 'Bạn cần đồng ý báo giá để thợ bắt đầu' },
+  { key: 'quoted', label: 'Chờ duyệt báo giá', desc: 'Văn phòng đã gửi báo giá, chờ bạn duyệt' },
   { key: 'repairing', label: 'Đang thực hiện', desc: 'Thợ đang sửa chữa / vệ sinh' },
+  { key: 'pending_review', label: 'Chờ nghiệm thu', desc: 'Văn phòng HRMSS đang đối soát biên bản nghiệm thu' },
   { key: 'done', label: 'Hoàn thành', desc: 'Dịch vụ đã hoàn tất và nghiệm thu' },
 ];
 // Timeline thợ gọn hơn (gộp báo giá vào bước kiểm tra)
@@ -418,11 +427,15 @@ export const TECH_ORDER_STEPS = ORDER_STEPS.filter((s) => s.key !== 'quoted').ma
 ));
 export const stepIndexOf = (status) => {
   if (status === 'quoted') return ORDER_STEPS.findIndex((x) => x.key === 'quoted');
+  if (status === 'warranty_pending') return 0;
+  if (status === 'out_of_warranty') return ORDER_STEPS.findIndex((x) => x.key === 'diagnosing');
   return ORDER_STEPS.findIndex((x) => x.key === status);
 };
 /** Index bước trên timeline thợ (không có bước quoted riêng) */
 export const techStepIndexOf = (status) => {
   if (status === 'quoted') return TECH_ORDER_STEPS.findIndex((x) => x.key === 'diagnosing');
+  if (status === 'warranty_pending') return 0;
+  if (status === 'out_of_warranty') return TECH_ORDER_STEPS.findIndex((x) => x.key === 'diagnosing');
   const i = TECH_ORDER_STEPS.findIndex((x) => x.key === status);
   return i;
 };
@@ -494,15 +507,18 @@ export const TECH_ME = {
 };
 
 // Trạng thái đơn đầy đủ (khách ↔ thợ)
-export const STATUS_FLOW = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'done'];
+export const STATUS_FLOW = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'pending_review', 'done'];
 export const STATUS_DESC = {
   pending: 'Đơn đã gửi, đang chờ thợ nhận',
   confirmed: 'Thợ sẽ gọi cho bạn trước khi đến',
   onway: 'Thợ đang di chuyển tới địa chỉ của bạn',
   diagnosing: 'Thợ đang kiểm tra thiết bị và lập báo giá',
-  quoted: 'Có báo giá chờ bạn duyệt — mở đơn để đồng ý hoặc từ chối',
+  quoted: 'Văn phòng đã gửi báo giá — mở đơn để đồng ý hoặc từ chối',
   repairing: 'Thợ đang thực hiện dịch vụ',
-  done: 'Dịch vụ đã hoàn tất. Kiểm tra biên lai và đánh giá thợ.',
+  pending_review: 'KTV đã gửi biên bản. Văn phòng HRMSS đang đối soát kiểm tra nghiệm thu (WF2).',
+  warranty_pending: 'Văn phòng HRMSS đang thẩm định hồ sơ bảo hành theo lịch sử cũ (WF4).',
+  out_of_warranty: 'Thiết bị lỗi do ngoại lực/người dùng. Đã chuyển sang báo giá dịch vụ có phí.',
+  done: 'Văn phòng đã duyệt nghiệm thu & dịch vụ hoàn tất. Cảm ơn bạn!',
   cancelled: 'Đơn đã huỷ',
 };
 // Copy hướng thợ (thao tác hiện trường) — khác với STATUS_DESC phía khách
@@ -513,7 +529,10 @@ export const TECH_STATUS_DESC = {
   diagnosing: 'Kiểm tra thiết bị, ghi chẩn đoán và gửi báo giá trước khi làm.',
   quoted: 'Đã gửi báo giá. Chờ khách duyệt trên app để tiếp tục.',
   repairing: 'Đang làm việc — cập nhật tiến độ, vật tư và ảnh minh chứng.',
-  done: 'Đã hoàn thành và gửi biên bản cho khách.',
+  pending_review: 'Đã nộp biên bản. Chờ Văn phòng HRMSS duyệt kết quả nghiệm thu (WF2).',
+  warranty_pending: 'Đơn bảo hành mới — chờ Văn phòng thẩm định hồ sơ gốc (WF4).',
+  out_of_warranty: 'Đã xác định ngoài phạm vi bảo hành — chuyển sang báo giá có phí.',
+  done: 'Văn phòng đã duyệt nghiệm thu hoàn tất biên bản cho khách.',
   cancelled: 'Việc đã kết thúc / bị huỷ.',
 };
 

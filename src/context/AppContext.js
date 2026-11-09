@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { BackHandler, Linking, Platform, useColorScheme } from 'react-native';
-import { getThemeColors } from '../theme';
+import { BackHandler, Linking, Platform } from 'react-native';
 import {
   getService, MAINT_MONTHS, TECH_ME, REDEEM_OPTIONS, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech,
   tierOf, lookupHrmssPurchasedDevices, comboDiscountFor, syncCatalogFromBackend, resolveDbServiceId,
@@ -38,8 +37,9 @@ const pad = (n) => String(n).padStart(2, '0');
 export const fmtDate = (ts) => { const d = new Date(ts); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`; };
 export const fmtDateTime = (ts) => { const d = new Date(ts); return `${pad(d.getHours())}:${pad(d.getMinutes())} · ${pad(d.getDate())}/${pad(d.getMonth() + 1)}`; };
 export const timeAgo = (ts) => {
-  const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60) return 'Vừa xong';
+  if (!ts) return '';
+  const s = Math.floor((Date.now() - Number(ts)) / 1000);
+  if (s <= 60) return 'Vừa xong';
   if (s < 3600) return `${Math.floor(s / 60)} phút trước`;
   if (s < 86400) return `${Math.floor(s / 3600)} giờ trước`;
   return fmtDate(ts);
@@ -71,7 +71,7 @@ export const LAST_SERVICE_OPTIONS = [
 ];
 
 export const cartTotal = (items) => items.reduce((sum, it) => sum + (getService(it.id)?.price || 0) * it.qty, 0);
-export const ACTIVE_STATUSES = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing'];
+export const ACTIVE_STATUSES = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'pending_review', 'warranty_pending', 'out_of_warranty'];
 export const isActiveOrder = (o) => ACTIVE_STATUSES.includes(o.status);
 // Giá trị dịch vụ khách đã đặt (sau giảm giá dịch vụ + combo, trước voucher)
 export const bookedValue = (o) => (
@@ -273,7 +273,6 @@ const makeInitial = () => ({
   techProfile: null,
   payoutHistory: [],
   tips: { customerHome: true, techJobs: true }, // gợi ý lần đầu
-  themeMode: 'system', // 'light' | 'dark' | 'system'
 });
 
 const storage = {
@@ -357,25 +356,6 @@ export function AppProvider({ children }) {
     }
     return next;
   });
-
-  const systemScheme = useColorScheme();
-  const themeMode = s.themeMode || 'system';
-  const isDark = themeMode === 'dark' || (themeMode === 'system' && systemScheme === 'dark');
-  const colors = getThemeColors(isDark);
-
-  useEffect(() => {
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      try {
-        if (document.documentElement) {
-          document.documentElement.style.backgroundColor = colors.bg;
-          document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-        }
-        if (document.body) {
-          document.body.style.backgroundColor = colors.bg;
-        }
-      } catch (e) { /* ignore */ }
-    }
-  }, [isDark, colors.bg]);
   // Chống vòng lặp sync 2 tab: merge từ storage ≠ payload đã ghi → save lại → tab kia merge lại…
   const lastWritten = useRef('');
   const skipSaveOnce = useRef(false);
@@ -1247,19 +1227,17 @@ export function AppProvider({ children }) {
             })
             : x)),
           notifications: pushNotif(p, {
-            icon: late.tier === 'ok' ? '🔍' : '⏰',
-            title: late.tier === 'ok' ? `Thợ đã đến · ${code}` : `Thợ đến muộn ${late.minutesLate} phút · ${code}`,
+            icon: late.tier === 'ok' ? '📍' : '⏰',
+            title: late.tier === 'ok' ? `Thợ đã đến điểm hẹn · ${code}` : `Thợ đến muộn ${late.minutesLate} phút · ${code}`,
             body,
             link: { name: 'order', params: { code } },
           }),
-          ...(late.tier !== 'ok' ? {
-            techNotifs: pushTech(p, {
-              icon: '⏰',
-              title: `Check-in muộn ${late.minutesLate} phút · ${code}`,
-              body: late.label,
-              link: { name: 'tech-account' },
-            }),
-          } : {}),
+          techNotifs: pushTech(p, {
+            icon: late.tier === 'ok' ? '📍' : '⏰',
+            title: late.tier === 'ok' ? `Check-in đúng giờ · ${code}` : `Check-in muộn ${late.minutesLate} phút · ${code}`,
+            body: late.tier === 'ok' ? 'Đã xác thực vị trí GPS tại nhà khách. Bắt đầu kiểm tra thiết bị.' : late.label,
+            link: { name: late.tier === 'ok' ? 'tech-job' : 'tech-account', params: { code } },
+          }),
         };
       });
       if (!ok) { ui.alert('Không check-in được', 'Chỉ check-in khi đang ở trạng thái “Đang đến”.', 'ℹ️'); return; }
@@ -1323,7 +1301,7 @@ export function AppProvider({ children }) {
       let ok = false;
       let targetTotal = 0;
       updateOrder(code, (o) => {
-        if (!['done', 'repairing', 'quoted'].includes(o.status)) return {};
+        if (!['done', 'repairing', 'quoted', 'pending_review'].includes(o.status)) return {};
         ok = true;
         targetTotal = orderTotal(o);
         const isQR = mode === 'webhook' || isQRPayment(o);
@@ -1718,7 +1696,7 @@ export function AppProvider({ children }) {
       if (res.ok) ui.toast('Đã đặt lại mật khẩu. Hãy đăng nhập lại.', '🔐');
       return res;
     },
-    // Biên bản hoàn thành → đơn hoàn tất, cộng điểm cho khách, cập nhật lịch bảo dưỡng đúng thiết bị (Ghi vào hrmss.repair_visit, technician_assignment, service_request)
+    // Biên bản hoàn thành → chuyển sang Chờ văn phòng duyệt nghiệm thu (WF2)
     completeJob: (code, { summary, paid, safetyChecklist, customerSignature }) => {
       const now = Date.now();
       const o0 = s.orders.find((x) => x.code === code);
@@ -1749,8 +1727,8 @@ export function AppProvider({ children }) {
           ? (o.report?.paidBy || null)
           : (finalPaid ? 'tech' : null);
         return {
-          order: withStatus(o, 'done', now, {
-            doneAt: now,
+          order: withStatus(o, 'pending_review', now, {
+            pendingReviewAt: now,
             report: {
               ...(o.report || {}),
               summary,
@@ -1765,13 +1743,16 @@ export function AppProvider({ children }) {
             },
           }),
           customer: {
-            icon: qrOrder && !alreadyPaidByCustomer ? '🏦' : '✅',
-            title: qrOrder && !alreadyPaidByCustomer
-              ? `Đơn ${code} hoàn thành · Vui lòng quét mã VietQR`
-              : `Đơn ${code} đã hoàn thành`,
-            body: qrOrder && !alreadyPaidByCustomer
-              ? `Thợ đã bàn giao nghiệm thu (không thu tiền mặt). Vui lòng mở đơn để quét mã VietQR ${formatVND(total)} và nhận +${earned} điểm!`
-              : (earned ? `Bạn nhận được +${earned} điểm và Phiếu bảo hành điện tử. Đánh giá để nhận thêm 20 điểm!` : 'Cảm ơn bạn đã sử dụng dịch vụ.'),
+            icon: '🏢',
+            title: `Đơn ${code} đang chờ Văn phòng nghiệm thu (WF2)`,
+            body: `Kỹ thuật viên đã nộp biên bản & hình ảnh sau làm việc. Văn phòng HRMSS đang đối soát kiểm tra chất lượng.`,
+            link: { name: 'order', params: { code } },
+          },
+          tech: {
+            icon: '⏳',
+            title: `Đã nộp biên bản · Chờ Văn phòng nghiệm thu (WF2)`,
+            body: `Biên bản đã chuyển đến Văn phòng HRMSS để đối soát và xác nhận hoàn tất.`,
+            link: { name: 'tech-job', params: { code } },
           },
           extra: {
             devices: updateDevList(p.devices),
@@ -1805,7 +1786,173 @@ export function AppProvider({ children }) {
             : 'Đã bàn giao thiết bị cho khách hàng và kích hoạt bảo hành điện tử',
         }).catch(() => {});
       }
-      ui.toast('Đã hoàn thành công việc & gửi biên bản nghiệm thu', '🎉');
+      ui.toast('Đã nộp biên bản · Đang chờ Văn phòng nghiệm thu', '🏢');
+      // Tự động mô phỏng Văn phòng nghiệm thu sau 3.5 giây phục vụ demo
+      setTimeout(() => {
+        const cur = s.orders.find((x) => x.code === code);
+        if (cur && cur.status === 'pending_review') {
+          updateOrder(code, (o) => {
+            const qrOrder = isQRPayment(o);
+            const alreadyPaid = Boolean(o.report?.paid);
+            const tot = orderTotal(o);
+            const earn = o.kind !== 'warranty' ? Math.max(1, Math.floor(tot / 10000)) : 0;
+            return {
+              order: withStatus(o, 'done', Date.now(), {
+                doneAt: Date.now(),
+                officeApproved: true,
+                officeApprovedAt: Date.now(),
+                report: {
+                  ...(o.report || {}),
+                  officeApproved: true,
+                  officeApprovedAt: Date.now(),
+                },
+              }),
+              customer: {
+                icon: qrOrder && !alreadyPaid ? '🏦' : '✅',
+                title: qrOrder && !alreadyPaid
+                  ? `Văn phòng đã nghiệm thu đơn ${code} · Quét mã VietQR`
+                  : `Văn phòng đã nghiệm thu đơn ${code}`,
+                body: qrOrder && !alreadyPaid
+                  ? `Văn phòng HRMSS đã duyệt biên bản đạt chuẩn! Mời bạn mở đơn quét mã VietQR ${formatVND(tot)} để kích hoạt bảo hành 60 ngày.`
+                  : (earn ? `Văn phòng HRMSS đã duyệt nghiệm thu. Bạn nhận được +${earn} điểm & Phiếu bảo hành 60 ngày!` : 'Cảm ơn bạn đã tin tưởng dịch vụ Thợ HRMSS.'),
+                link: { name: 'order', params: { code } },
+              },
+              tech: {
+                icon: '🎉',
+                title: `Văn phòng đã duyệt nghiệm thu đơn ${code}`,
+                body: `Biên bản đạt chuẩn chất lượng HRMSS. Ca sửa chữa đã hoàn tất!`,
+                link: { name: 'tech-job', params: { code } },
+              },
+            };
+          });
+          ui.toast('🏢 Văn phòng HRMSS: Đã phê duyệt nghiệm thu kết quả!', '✅', 'success');
+        }
+      }, 3500);
+    },
+    // Văn phòng duyệt nghiệm thu thủ công (nút bấm demo tức thì trên giao diện)
+    officeApproveCompletion: (code) => {
+      const o0 = s.orders.find((x) => x.code === code);
+      if (!o0 || o0.status !== 'pending_review') return false;
+      const now = Date.now();
+      const qrOrder = isQRPayment(o0);
+      const alreadyPaid = Boolean(o0.report?.paid);
+      const tot = orderTotal(o0);
+      const earn = o0.kind !== 'warranty' ? Math.max(1, Math.floor(tot / 10000)) : 0;
+      updateOrder(code, (o) => ({
+        order: withStatus(o, 'done', now, {
+          doneAt: now,
+          officeApproved: true,
+          officeApprovedAt: now,
+          report: {
+            ...(o.report || {}),
+            officeApproved: true,
+            officeApprovedAt: now,
+          },
+        }),
+        customer: {
+          icon: qrOrder && !alreadyPaid ? '🏦' : '✅',
+          title: qrOrder && !alreadyPaid
+            ? `Văn phòng đã nghiệm thu đơn ${code} · Quét mã VietQR`
+            : `Văn phòng đã nghiệm thu đơn ${code}`,
+          body: qrOrder && !alreadyPaid
+            ? `Văn phòng HRMSS đã duyệt biên bản đạt chuẩn! Mời bạn mở đơn quét mã VietQR ${formatVND(tot)} để kích hoạt bảo hành 60 ngày.`
+            : (earn ? `Văn phòng HRMSS đã duyệt nghiệm thu. Bạn nhận được +${earn} điểm & Phiếu bảo hành 60 ngày!` : 'Cảm ơn bạn đã tin tưởng dịch vụ Thợ HRMSS.'),
+          link: { name: 'order', params: { code } },
+        },
+        tech: {
+          icon: '🎉',
+          title: `Văn phòng đã duyệt nghiệm thu đơn ${code}`,
+          body: `Biên bản đạt chuẩn chất lượng HRMSS. Ca sửa chữa đã hoàn tất!`,
+          link: { name: 'tech-job', params: { code } },
+        },
+      }));
+      ui.toast('🏢 Văn phòng HRMSS: Đã phê duyệt nghiệm thu kết quả!', '✅', 'success');
+      return true;
+    },
+    // Văn phòng thẩm định duyệt hồ sơ bảo hành (WF4)
+    officeApproveWarranty: (code) => {
+      const o0 = s.orders.find((x) => x.code === code);
+      if (!o0 || o0.status !== 'warranty_pending') return false;
+      const now = Date.now();
+      updateOrder(code, (o) => ({
+        order: withStatus(o, 'pending', now, {
+          warrantyApproved: true,
+          warrantyApprovedAt: now,
+        }),
+        customer: {
+          icon: '🛡️',
+          title: `Văn phòng đã duyệt bảo hành ${code}`,
+          body: `Hồ sơ hợp lệ theo bảo hành 60 ngày. Quản lý đang điều phối KTV tiếp nhận (WF4).`,
+          link: { name: 'order', params: { code } },
+        },
+        tech: {
+          icon: '🛡️',
+          title: `Việc bảo hành mới ${code}`,
+          body: `Văn phòng đã duyệt bảo hành cho đơn ${o.warrantyOf || ''} · ${o.address?.area || ''}`,
+          link: { name: 'tech-job', params: { code } },
+        },
+      }));
+      ui.toast('🏢 Văn phòng HRMSS: Đã thẩm định hồ sơ bảo hành hợp lệ', '🛡️', 'success');
+      return true;
+    },
+    // Thợ từ chối bảo hành tại nhà do lỗi ngoại lực/người dùng → chuyển sang báo giá có phí (WF4)
+    rejectWarrantyAsOutOfWarranty: (code, reason) => {
+      const o0 = s.orders.find((x) => x.code === code);
+      if (!o0) return false;
+      const now = Date.now();
+      const r = reason || 'Hư hỏng do rơi vỡ/ngoại lực tác động, không thuộc phạm vi bảo hành 60 ngày.';
+      updateOrder(code, (o) => ({
+        order: withStatus(o, 'diagnosing', now, {
+          outOfWarranty: true,
+          outOfWarrantyReason: r,
+          kind: 'repair',
+          payment: 'Tiền mặt / VietQR',
+        }),
+        customer: {
+          icon: '⚠️',
+          title: `Thiết bị ngoài phạm vi bảo hành · ${code}`,
+          body: `${r} Kỹ thuật viên sẽ lập báo giá sửa chữa chính thức cho bạn (WF4).`,
+          link: { name: 'order', params: { code } },
+        },
+        tech: {
+          icon: '📋',
+          title: `Chuyển sang sửa chữa có phí · ${code}`,
+          body: `Đã xác nhận ngoài phạm vi bảo hành. Vui lòng lập báo giá linh kiện/vật tư thay thế.`,
+          link: { name: 'tech-job', params: { code } },
+        },
+      }));
+      ui.toast('Đã ghi nhận ngoài bảo hành · Chuyển sang báo giá', '📋');
+      return true;
+    },
+    // Yêu cầu hẹn tái khám khi chưa hoàn thành sửa chữa (WF2)
+    requestFollowUp: (code, reason) => {
+      const now = Date.now();
+      const o0 = s.orders.find((x) => x.code === code);
+      if (!o0) return false;
+      const r = reason || 'Chờ linh kiện phụ tùng từ kho điều phối';
+      updateOrder(code, (o) => ({
+        order: {
+          ...o,
+          followUpRequested: true,
+          followUpReason: r,
+          followUpAt: now,
+          history: [...o.history, { status: 'repairing', at: now, note: `Yêu cầu hẹn tái khám: ${r} (WF2)` }],
+        },
+        customer: {
+          icon: '📅',
+          title: `Hẹn lịch tái khám đơn ${code} (WF2)`,
+          body: `KTV đã ghi nhận: "${r}". Quản lý đang xếp lịch hẹn tiếp theo cho bạn.`,
+          link: { name: 'order', params: { code } },
+        },
+        tech: {
+          icon: '📅',
+          title: `Đã lưu yêu cầu tái khám đơn ${code}`,
+          body: `Lý do: ${r}. Quản lý kỹ thuật HRMSS đã nhận được thông tin để điều phối.`,
+          link: { name: 'tech-job', params: { code } },
+        },
+      }));
+      ui.toast('Đã ghi nhận yêu cầu hẹn tái khám (WF2)', '📅', 'success');
+      return true;
     },
     setTechOnline: (v) => {
       up(() => ({ techOnline: v }));
@@ -1813,6 +1960,10 @@ export function AppProvider({ children }) {
     },
     readTechNotif: (id) => up((p) => ({ techNotifs: p.techNotifs.map((n) => (n.id === id ? { ...n, read: true } : n)) })),
     readAllTech: () => up((p) => ({ techNotifs: p.techNotifs.map((n) => ({ ...n, read: true })) })),
+    clearAllTechNotifs: () => {
+      up(() => ({ techNotifs: [] }));
+      ui.toast('Đã dọn sạch thông báo');
+    },
     // Đăng nhập / Đăng ký — phân quyền & tách biệt dữ liệu theo tài khoản
     applyAuth: (account, link) => {
       up((p) => ({
@@ -2213,8 +2364,8 @@ export function AppProvider({ children }) {
         note: note || 'Yêu cầu bảo hành',
         workerCode: '',
         address: o.address,
-        status: 'pending',
-        history: [{ status: 'pending', at: now }],
+        status: 'warranty_pending',
+        history: [{ status: 'warranty_pending', at: now }],
         createdAt: now,
         tech: null,
         rating: null,
@@ -2222,9 +2373,39 @@ export function AppProvider({ children }) {
       };
       up((p) => ({
         orders: [order, ...p.orders],
-        notifications: pushNotif(p, { icon: '🛡️', title: `Đã gửi yêu cầu bảo hành ${newCode}`, body: `Cho đơn ${code}. Thợ sẽ liên hệ trong 24 giờ.`, link: { name: 'order', params: { code: newCode } } }),
-        techNotifs: pushTech(p, { icon: '🛡️', title: `Việc bảo hành ${newCode}`, body: `Bảo hành cho đơn ${code} · ${o.address?.area || ''}`, link: { name: 'tech-job', params: { code: newCode } } }),
+        notifications: pushNotif(p, {
+          icon: '🛡️',
+          title: `Đã gửi yêu cầu bảo hành ${newCode}`,
+          body: `Văn phòng HRMSS đang đối soát hồ sơ theo lịch sử đơn ${code} (WF4).`,
+          link: { name: 'order', params: { code: newCode } },
+        }),
       }));
+      ui.toast('Đã gửi yêu cầu bảo hành · Chờ Văn phòng thẩm định', '🛡️');
+      // Tự động mô phỏng Văn phòng duyệt bảo hành sau 3.5 giây phục vụ demo
+      setTimeout(() => {
+        const cur = s.orders.find((x) => x.code === newCode);
+        if (cur && cur.status === 'warranty_pending') {
+          updateOrder(newCode, (o, p) => ({
+            order: withStatus(o, 'pending', Date.now(), {
+              warrantyApproved: true,
+              warrantyApprovedAt: Date.now(),
+            }),
+            customer: {
+              icon: '🛡️',
+              title: `Văn phòng đã duyệt bảo hành ${newCode}`,
+              body: `Hồ sơ bảo hành hợp lệ! Quản lý kỹ thuật đang điều phối KTV tiếp nhận (WF4).`,
+              link: { name: 'order', params: { code: newCode } },
+            },
+            tech: {
+              icon: '🛡️',
+              title: `Việc bảo hành mới ${newCode}`,
+              body: `Văn phòng đã duyệt bảo hành cho đơn ${code} · ${o.address?.area || ''}`,
+              link: { name: 'tech-job', params: { code: newCode } },
+            },
+          }));
+          ui.toast('🏢 Văn phòng HRMSS: Đã phê duyệt hồ sơ bảo hành', '🛡️', 'success');
+        }
+      }, 3500);
       return newCode;
     },
 
@@ -2249,6 +2430,10 @@ export function AppProvider({ children }) {
     // Thông báo
     readNotif: (id) => up((p) => ({ notifications: p.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)) })),
     readAll: () => up((p) => ({ notifications: p.notifications.map((n) => ({ ...n, read: true })) })),
+    clearAllNotifs: () => {
+      up(() => ({ notifications: [] }));
+      ui.toast('Đã dọn sạch thông báo');
+    },
 
     // Tìm kiếm
     addSearch: (q) => { const t = q.trim(); if (!t) return; up((p) => ({ searches: [t, ...p.searches.filter((x) => x !== t)].slice(0, 8) })); },
@@ -2306,13 +2491,6 @@ export function AppProvider({ children }) {
       setTab('home');
       ui.toast('Đã xoá dữ liệu trên thiết bị');
     },
-    setThemeMode: (mode) => {
-      up(() => ({ themeMode: mode }));
-      ui.toast(
-        mode === 'dark' ? 'Đã bật chế độ Tối' : mode === 'light' ? 'Đã chuyển sang chế độ Sáng' : 'Đã đặt giao diện theo hệ thống',
-        mode === 'dark' ? '🌙' : mode === 'light' ? '☀️' : '⚙️'
-      );
-    },
   };
 
   const myCode = s.techProfile?.code || TECH_ME.code;
@@ -2358,7 +2536,6 @@ export function AppProvider({ children }) {
 
   const value = {
     s: viewS, a, nav, ui, d: derived,
-    isDark, colors, themeMode, setThemeMode: a.setThemeMode,
     svc, setSvc, actFilter, setActFilter, warrantyQuery, setWarrantyQuery, warrantyNonce,
     pendingVoucher, setPendingVoucher, pendingDeviceId, setPendingDeviceId,
   };

@@ -8,7 +8,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Image, Linking } from 'react-native';
 import { C, R, shadow, STATUS_META, toneOf, grad } from '../../theme';
 import {
-  getService, formatVND, catIcon, catLabel, TECH_ME, MATERIALS, DIAG_TAGS, TIME_SLOTS, TECH_STATUS_DESC, TECH_ORDER_STEPS, techStepIndexOf, HOTLINE,
+  getService, formatVND, formatNumberInput, catIcon, catLabel, TECH_ME, MATERIALS, DIAG_TAGS, TIME_SLOTS, TECH_STATUS_DESC, TECH_ORDER_STEPS, techStepIndexOf, HOTLINE,
   SAFETY_CHECKLIST_ITEMS,
 } from '../../constants/data';
 import {
@@ -108,7 +108,7 @@ function JobCard({ o, compact, onDecline, canAccept = true }) {
   const { s, a, nav } = useApp();
   const next = useNextAction()(o);
   const svc0 = getService(o.items[0]?.id);
-  const meta = STATUS_META[o.status];
+  const meta = STATUS_META[o.status] || STATUS_META.pending;
   const open = () => nav.push('tech-job', { code: o.code });
   const who = `${o.address?.gender === 'Nữ' ? 'Chị' : 'Anh'} ${o.address?.name} · ${o.address?.phone}`;
   const match = o.status === 'pending' ? matchJobForTech(o, s.techProfile || TECH_ME) : null;
@@ -536,9 +536,12 @@ export function TechNotifsScreen() {
           }
         }}
         right={(
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             {list.some((n) => !n.read) ? (
               <Tap onPress={a.readAllTech}><Text style={ui.link}>Đọc hết</Text></Tap>
+            ) : null}
+            {list.length > 0 ? (
+              <Tap onPress={a.clearAllTechNotifs}><Text style={[ui.link, { color: C.muted }]}>Dọn sạch</Text></Tap>
             ) : null}
           </View>
         )}
@@ -590,11 +593,10 @@ export function TechNotifsScreen() {
 
 // =========================================================== TAB: TÀI KHOẢN THỢ
 export function TechAccountScreen() {
-  const { s, a, d, nav, ui: u, isDark, colors, themeMode, setThemeMode } = useApp();
+  const { s, a, d, nav, ui: u } = useApp();
   const me = s.techProfile || TECH_ME;
   const [showProfile, setShowProfile] = useState(false);
   const [showAccountInfo, setShowAccountInfo] = useState(false);
-  const [showThemeSheet, setShowThemeSheet] = useState(false);
   const [showIncome, setShowIncome] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [curPw, setCurPw] = useState('');
@@ -742,17 +744,11 @@ export function TechAccountScreen() {
             </Card>
           )}
 
-          <Text style={[{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }, isDark && { color: colors?.ink }]}>Tài khoản & Công việc</Text>
-          <View style={[tx.menu, isDark && { backgroundColor: colors?.card, borderColor: colors?.line }]}>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }}>Tài khoản & Công việc</Text>
+          <View style={tx.menu}>
             <ListRow icon="briefcase" label="Công việc của tôi" value={d.workingJobs.length ? `${d.workingJobs.length} đang làm` : ''} onPress={() => nav.go('tech-jobs')} />
             <ListRow icon="calendar-clock" label="Lịch làm việc" onPress={() => nav.go('tech-schedule')} />
             <ListRow icon="bell" label="Thông báo" value={d.techUnread ? `${d.techUnread} mới` : ''} onPress={() => nav.go('tech-notifs')} />
-            <ListRow
-              icon={themeMode === 'dark' ? 'moon' : themeMode === 'light' ? 'sun' : 'laptop'}
-              label="Giao diện hiển thị"
-              value={themeMode === 'dark' ? 'Tối' : themeMode === 'light' ? 'Sáng' : 'Tự động (Hệ thống)'}
-              onPress={() => setShowThemeSheet(true)}
-            />
             <ListRow icon="circle-user-round" label="Sửa thông tin kỹ thuật viên" onPress={openProfile} />
             <ListRow icon="lock" label="Đổi mật khẩu" onPress={() => { setCurPw(''); setNewPw(''); setNewPw2(''); setShowPw(true); }} />
             {s.auth ? (
@@ -765,8 +761,8 @@ export function TechAccountScreen() {
             ) : null}
           </View>
 
-          <Text style={[{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }, isDark && { color: colors?.ink }]}>Hỗ trợ kỹ thuật viên</Text>
-          <View style={[tx.menu, isDark && { backgroundColor: colors?.card, borderColor: colors?.line }]}>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }}>Hỗ trợ kỹ thuật viên</Text>
+          <View style={tx.menu}>
             <ListRow icon="headphones" label="Liên hệ điều phối" value={HOTLINE} onPress={u.call} last />
           </View>
           <Btn
@@ -785,74 +781,6 @@ export function TechAccountScreen() {
           />
         </View>
       </ScrollView>
-
-      <Sheet
-        visible={showThemeSheet}
-        onClose={() => setShowThemeSheet(false)}
-        title="Chọn giao diện hiển thị"
-      >
-        <View style={{ paddingVertical: 8, gap: 10 }}>
-          {[
-            { id: 'system', label: 'Tự động (Theo hệ thống)', desc: 'Tự đổi theo cài đặt Sáng/Tối của điện thoại', icon: 'laptop' },
-            { id: 'light', label: 'Giao diện Sáng (Light)', desc: 'Tiêu chuẩn rõ ràng, sắc nét cho ban ngày', icon: 'sun' },
-            { id: 'dark', label: 'Giao diện Tối (Dark)', desc: 'Obsidian Slate sang trọng, bảo vệ mắt & tiết kiệm pin', icon: 'moon' },
-          ].map((item) => {
-            const active = themeMode === item.id;
-            return (
-              <Tap
-                key={item.id}
-                onPress={() => {
-                  setThemeMode(item.id);
-                  setShowThemeSheet(false);
-                }}
-                style={[
-                  {
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    padding: 14,
-                    borderRadius: 16,
-                    borderWidth: 1.5,
-                    borderColor: active ? (colors?.primary || C.primary) : (colors?.line || C.line),
-                    backgroundColor: active ? (colors?.primarySoft || C.primarySoft) : (colors?.cardElevated || '#F8FAFC'),
-                    gap: 12,
-                  },
-                ]}
-              >
-                <View
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 12,
-                    backgroundColor: active ? (colors?.primary || C.primary) : (colors?.card || '#fff'),
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <AppIcon
-                    icon={item.icon}
-                    size={20}
-                    color={active ? '#fff' : (colors?.primary || C.primary)}
-                    strokeWidth={2.2}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: active ? (colors?.primary || C.primary) : (colors?.ink || C.ink) }}>
-                    {item.label}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: colors?.muted || C.muted, marginTop: 2 }}>
-                    {item.desc}
-                  </Text>
-                </View>
-                {active ? (
-                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: colors?.primary || C.primary, alignItems: 'center', justifyContent: 'center' }}>
-                    <AppIcon name="check" size={13} color="#fff" strokeWidth={3} />
-                  </View>
-                ) : null}
-              </Tap>
-            );
-          })}
-        </View>
-      </Sheet>
 
       <Sheet
         visible={showProfile}
@@ -1056,7 +984,7 @@ export function TechAccountScreen() {
           variant="primary"
           style={{ marginTop: 10 }}
           onPress={() => {
-            setPayoutAmount(String(availableBalance > 0 ? availableBalance : 500000));
+            setPayoutAmount(formatNumberInput(availableBalance > 0 ? availableBalance : 500000));
             setShowPayout(true);
           }}
         />
@@ -1131,8 +1059,8 @@ export function TechAccountScreen() {
         <Field
           label="Số tiền muốn rút (VNĐ)"
           value={payoutAmount}
-          onChangeText={(t) => setPayoutAmount(t.replace(/[^0-9]/g, ''))}
-          placeholder="Ví dụ: 500000"
+          onChangeText={(t) => setPayoutAmount(formatNumberInput(t))}
+          placeholder="Ví dụ: 500.000"
           keyboardType="numeric"
         />
         <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
@@ -1140,14 +1068,14 @@ export function TechAccountScreen() {
             <Tap
               key={v}
               style={{ flex: 1, paddingVertical: 6, borderRadius: R.sm, borderWidth: 1, borderColor: C.line, alignItems: 'center', backgroundColor: '#F8FAFC' }}
-              onPress={() => setPayoutAmount(String(v))}
+              onPress={() => setPayoutAmount(formatNumberInput(v))}
             >
               <Text style={{ fontSize: 12, fontWeight: '700', color: C.ink2 }}>{formatVND(v)}</Text>
             </Tap>
           ))}
           <Tap
             style={{ flex: 1, paddingVertical: 6, borderRadius: R.sm, borderWidth: 1, borderColor: C.primary, alignItems: 'center', backgroundColor: C.primarySoft }}
-            onPress={() => setPayoutAmount(String(availableBalance > 0 ? availableBalance : 500000))}
+            onPress={() => setPayoutAmount(formatNumberInput(availableBalance > 0 ? availableBalance : 500000))}
           >
             <Text style={{ fontSize: 12, fontWeight: '700', color: C.primary }}>Tất cả</Text>
           </Tap>
@@ -1233,7 +1161,7 @@ export function TechJobScreen({ params }) {
   const [safetyChecks, setSafetyChecks] = useState(() => [...SAFETY_CHECKLIST_ITEMS]);
 
   if (!o) return <View style={{ flex: 1 }}><TopBar title="Không tìm thấy công việc" /></View>;
-  const meta = STATUS_META[o.status];
+  const meta = STATUS_META[o.status] || STATUS_META.pending;
   const step = techStepIndexOf(o.status);
   const next = nextActionFor(o, a, nav);
   const mine = o.tech?.code === (s.techProfile?.code || TECH_ME.code);
@@ -1346,6 +1274,31 @@ export function TechJobScreen({ params }) {
             ) : o.arrivedAt ? (
               <Text style={[ui.meta, { color: C.green, fontWeight: '700', marginTop: 6 }]}>Đúng chính sách giờ hẹn</Text>
             ) : null}
+          </Card>
+        ) : null}
+
+        {/* ===== Chờ Văn phòng nghiệm thu (WF2) ===== */}
+        {o.status === 'pending_review' ? (
+          <Card style={{ marginTop: 12, backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ fontWeight: '800', color: '#6D28D9', fontSize: 13.5 }}>🏢 CHỜ VĂN PHÒNG NGHIỆM THU (WF2)</Text>
+              <Tap onPress={() => a.officeApproveCompletion(o.code)} style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: '#EDE9FE' }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#6D28D9' }}>⚡ Duyệt ngay (Demo)</Text>
+              </Tap>
+            </View>
+            <Text style={{ color: '#4C1D95', fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>
+              Bạn đã nộp biên bản và hình ảnh hiện trường. Hệ thống đang chuyển đến Văn phòng HRMSS để đối soát biên bản nghiệm thu trước khi chốt đơn.
+            </Text>
+          </Card>
+        ) : null}
+
+        {/* ===== Đã gửi yêu cầu tái khám (WF2) ===== */}
+        {o.followUpRequested ? (
+          <Card style={{ marginTop: 12, backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }}>
+            <Text style={{ fontWeight: '800', color: '#1D4ED8', fontSize: 13.5 }}>📅 ĐÃ GỬI YÊU CẦU HẸN TÁI KHÁM (WF2)</Text>
+            <Text style={{ color: '#1E3A8A', fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>
+              Lý do: <Text style={{ fontWeight: '700' }}>{o.followUpReason || 'Chờ linh kiện phụ tùng'}</Text>. Quản lý kỹ thuật HRMSS đang lên lịch hẹn tái khám tiếp theo.
+            </Text>
           </Card>
         ) : null}
 
@@ -1531,6 +1484,35 @@ export function TechJobScreen({ params }) {
         {/* ===== Chẩn đoán & báo giá ===== */}
         {(o.status === 'diagnosing' || (o.status === 'confirmed' && showPreQuote)) && mine ? (
           <>
+            {o.kind === 'warranty' ? (
+              <Card style={{ marginTop: 12, backgroundColor: '#FEF2F2', borderColor: '#FECACA' }}>
+                <Text style={[tx.h, { color: '#B91C1C', marginBottom: 4 }]}>🛡️ Thẩm định bảo hành tại chỗ (WF4)</Text>
+                <Text style={{ color: '#7F1D1D', fontSize: 13, lineHeight: 19 }}>
+                  Theo quy trình WF4: Nếu thiết bị bị rơi vỡ, chập cháy điện ngoài hoặc tác động của bên thứ 3, KTV bấm từ chối bảo hành để chuyển sang Báo giá sửa có phí.
+                </Text>
+                <View style={{ marginTop: 10 }}>
+                  <Btn
+                    title="Từ chối bảo hành (Do lỗi người dùng) → Báo giá có phí"
+                    variant="dangerSoft"
+                    onPress={() => {
+                      u.dialog({
+                        icon: '⚠️',
+                        title: 'Xác nhận ngoài bảo hành?',
+                        message: 'Thiết bị hư hỏng do tác động bên ngoài hoặc lỗi người dùng. Đơn sẽ chuyển sang luồng Sửa chữa có phí (WF4).',
+                        actions: [
+                          { label: 'Huỷ', variant: 'ghost' },
+                          {
+                            label: 'Xác nhận chuyển',
+                            variant: 'danger',
+                            onPress: () => a.rejectWarrantyAsOutOfWarranty(o.code, 'Thiết bị rơi vỡ/hư hỏng do ngoại lực bên ngoài'),
+                          },
+                        ],
+                      });
+                    }}
+                  />
+                </View>
+              </Card>
+            ) : null}
             {o.quote?.revisionRequested ? (
               <Card style={{ marginTop: 12, backgroundColor: '#FFFBEB', borderColor: '#F5D77A' }}>
                 <Text style={[tx.h, { color: C.goldInk, marginBottom: 4 }]}>🔄 Khách yêu cầu điều chỉnh báo giá</Text>
@@ -1672,9 +1654,9 @@ export function TechJobScreen({ params }) {
                   <View style={{ marginTop: 8 }}>
                     <Field
                       label="Số tiền phát sinh (VNĐ)"
-                      placeholder="Ví dụ: 150000"
+                      placeholder="Ví dụ: 150.000"
                       value={customFeePrice}
-                      onChangeText={(t) => setCustomFeePrice(t.replace(/[^0-9]/g, ''))}
+                      onChangeText={(t) => setCustomFeePrice(formatNumberInput(t))}
                       keyboardType="numeric"
                     />
                   </View>
@@ -1934,10 +1916,37 @@ export function TechJobScreen({ params }) {
           <Btn title={diff > 0 ? 'Gửi báo giá cho khách' : 'Xác nhận & bắt đầu'} style={{ flex: 2 }} onPress={sendQuote} />
         </View>
       ) : null}
+      {mine && o.status === 'pending_review' ? (
+        <View style={tx.dock}>
+          <Btn title="⚡ Văn phòng duyệt ngay (Demo WF2)" icon="check-check" style={{ flex: 1 }} onPress={() => a.officeApproveCompletion(o.code)} />
+        </View>
+      ) : null}
       {mine && o.status === 'repairing' ? (
         <View style={tx.dock}>
-          <Btn title="Trả việc" variant="dangerSoft" style={{ flex: 1 }} onPress={() => { setReleaseReason(RELEASE_REASONS[0]); setReleaseNote(''); setShowRelease(true); }} />
-          <Btn title="Hoàn thành" icon="check-circle-2" style={{ flex: 2 }} onPress={openComplete} />
+          <Btn
+            title="Hẹn tái khám"
+            variant="soft"
+            style={{ flex: 1 }}
+            onPress={() => {
+              u.dialog({
+                icon: '📅',
+                title: 'Yêu cầu hẹn tái khám (WF2)',
+                message: 'Chưa thể hoàn thành ca trong hôm nay? Chọn lý do để Quản lý kỹ thuật HRMSS xếp lịch quay lại.',
+                actions: [
+                  { label: 'Đóng', variant: 'ghost' },
+                  {
+                    label: 'Chờ linh kiện kho',
+                    onPress: () => a.requestFollowUp(o.code, 'Chờ linh kiện phụ tùng từ kho điều phối'),
+                  },
+                  {
+                    label: 'Hết giờ toà nhà',
+                    onPress: () => a.requestFollowUp(o.code, 'Hết giờ làm việc của toà nhà / Hẹn ngày mai tiếp tục'),
+                  },
+                ],
+              });
+            }}
+          />
+          <Btn title="Hoàn thành" icon="check-circle-2" style={{ flex: 1.6 }} onPress={openComplete} />
         </View>
       ) : null}
       {!editable && o.status !== 'done' && o.status !== 'cancelled' ? (

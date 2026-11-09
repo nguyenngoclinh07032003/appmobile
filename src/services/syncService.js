@@ -85,8 +85,17 @@ export const mapBackendStatusToAppStatus = (requestStatus, visitStatus, hasAppro
   }
   if (st === 'DIAGNOSED_PENDING_QUOTATION') return 'quoted';
   if (st === 'READY_FOR_REPAIR') return 'repairing';
-  if (['PENDING_REVIEW', 'READY_FOR_ACCEPTANCE', 'PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE', 'COMPLETED'].includes(st)) {
+  if (['PENDING_REVIEW', 'READY_FOR_ACCEPTANCE'].includes(st)) {
+    return 'pending_review';
+  }
+  if (['PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE', 'COMPLETED'].includes(st)) {
     return 'done';
+  }
+  if (['WARRANTY_PENDING', 'UNDER_WARRANTY'].includes(st)) {
+    return 'warranty_pending';
+  }
+  if (st === 'OUT_OF_WARRANTY') {
+    return 'out_of_warranty';
   }
   if (st.startsWith('CANCELLED')) return 'cancelled';
   return 'pending';
@@ -236,9 +245,11 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
   const hasPendingQuote = (job.quotations || []).some((q) => q.quotation_status === 'SENT');
   const quote = mapBackendQuotationToAppQuote(job.quotations || [], job.diagnoses || [], goods, req.problem_description);
   const isEnded = job.assignment_status === 'ENDED';
-  const status = isEnded && !req.request_status?.startsWith('CANCELLED')
-    ? 'done'
-    : mapBackendStatusToAppStatus(req.request_status, visit.visit_status, quote?.approved, hasPendingQuote);
+  const status = (req.request_status === 'PENDING_REVIEW' || req.request_status === 'READY_FOR_ACCEPTANCE')
+    ? 'pending_review'
+    : (isEnded && !req.request_status?.startsWith('CANCELLED')
+      ? 'done'
+      : mapBackendStatusToAppStatus(req.request_status, visit.visit_status, quote?.approved, hasPendingQuote));
 
   const cancelHistory = (req.timeline || req.status_history || []).find((h) => String(h.new_status || '').toUpperCase().startsWith('CANCELLED'));
   const hasFeeInHistory = cancelHistory && /(?=.*phí kiểm tra)(?!.*miễn phí)/i.test(cancelHistory.reason || '') && /100[.,]?000/i.test(cancelHistory.reason || '');

@@ -124,9 +124,12 @@ export function NotificationsScreen() {
           else nav.go('home');
         }}
         right={(
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             {list.some((n) => !n.read) ? (
               <Tap onPress={a.readAll}><Text style={ui.link}>Đọc hết</Text></Tap>
+            ) : null}
+            {list.length > 0 ? (
+              <Tap onPress={a.clearAllNotifs}><Text style={[ui.link, { color: C.muted }]}>Dọn sạch</Text></Tap>
             ) : null}
           </View>
         )}
@@ -205,7 +208,7 @@ export function OrderScreen({ params }) {
   const [editAtts, setEditAtts] = useState([]);
   const o = s.orders.find((x) => x.code === params.code);
   if (!o) return <View style={{ flex: 1 }}><TopBar title="Không tìm thấy đơn" /></View>;
-  const meta = STATUS_META[o.status];
+  const meta = STATUS_META[o.status] || STATUS_META.pending;
   const curIdx = o.status === 'cancelled' ? -1 : stepIndexOf(o.status);
   const at = (k) => [...o.history].reverse().find((h) => h.status === k)?.at;
   const winfo = warrantyInfo(o, s.orders, s.lifetimePoints);
@@ -339,6 +342,46 @@ export function OrderScreen({ params }) {
             <Text style={mx.tlTitle}>Đang điều phối lại thợ</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
               Thợ trước đã trả việc. Hệ thống đang điều phối thợ khác; kiểm tra thông báo để nhận voucher xin lỗi (nếu có).
+            </Text>
+          </Card>
+        ) : null}
+
+        {/* ===== Chờ Văn phòng nghiệm thu (WF2) ===== */}
+        {o.status === 'pending_review' ? (
+          <Card style={{ marginTop: 12, backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={[mx.tlTitle, { color: '#6D28D9' }]}>🏢 Văn phòng đang đối soát nghiệm thu (WF2)</Text>
+              <Tap onPress={() => a.officeApproveCompletion(o.code)} style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: '#EDE9FE' }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#6D28D9' }}>⚡ Duyệt ngay (Demo)</Text>
+              </Tap>
+            </View>
+            <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
+              Kỹ thuật viên đã gửi biên bản & hình ảnh sau làm việc. Bộ phận kiểm soát chất lượng (QA) của Văn phòng HRMSS đang đối soát kiểm tra trước khi bàn giao thanh toán.
+            </Text>
+          </Card>
+        ) : null}
+
+        {/* ===== Chờ Văn phòng thẩm định bảo hành (WF4) ===== */}
+        {o.status === 'warranty_pending' ? (
+          <Card style={{ marginTop: 12, backgroundColor: '#FDF4FF', borderColor: '#F5D0FE' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={[mx.tlTitle, { color: '#A21CAF' }]}>🛡️ Văn phòng đang thẩm định bảo hành (WF4)</Text>
+              <Tap onPress={() => a.officeApproveWarranty(o.code)} style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: '#FAE8FF' }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#A21CAF' }}>⚡ Duyệt ngay (Demo)</Text>
+              </Tap>
+            </View>
+            <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
+              Yêu cầu bảo hành đã được gửi. Văn phòng HRMSS đang đối chiếu lỗi với nhật ký sửa chữa gốc và thời hạn bảo hành 60 ngày.
+            </Text>
+          </Card>
+        ) : null}
+
+        {/* ===== Yêu cầu hẹn tái khám (WF2) ===== */}
+        {o.followUpRequested ? (
+          <Card style={{ marginTop: 12, backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }}>
+            <Text style={[mx.tlTitle, { color: '#1D4ED8' }]}>📅 KTV đã hẹn lịch tái khám (WF2)</Text>
+            <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
+              Lý do: <Text style={{ fontWeight: '700' }}>{o.followUpReason || 'Chờ linh kiện phụ tùng'}</Text>. Quản lý kỹ thuật đang điều phối lịch hẹn quay lại sớm nhất.
             </Text>
           </Card>
         ) : null}

@@ -6,8 +6,7 @@ import { AppIcon } from '../components';
 import { CUSTOMER_TABS, TECH_TABS } from './routes';
 
 export default function BottomNav() {
-  const { s, nav, d, isDark, colors } = useApp();
-  const themeColors = colors || C;
+  const { s, nav, d } = useApp();
   const role = s.auth?.role || s.role;
   const tabs = role === 'tech' ? TECH_TABS : CUSTOMER_TABS;
   const badges = role === 'tech'
@@ -15,13 +14,7 @@ export default function BottomNav() {
     : { activity: d.activeOrders.length };
 
   return (
-    <View style={[
-      styles.nav,
-      isDark && {
-        backgroundColor: themeColors.card,
-        borderTopColor: themeColors.line,
-      },
-    ]}>
+    <View style={styles.nav}>
       {tabs.map((t) => {
         const on = nav.tab === t.id;
         return (
@@ -33,31 +26,17 @@ export default function BottomNav() {
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
           >
-            <View style={[
-              styles.navIcon,
-              on && [styles.navIconOn, isDark && { backgroundColor: themeColors.primarySoft }],
-            ]}>
+            <View style={[styles.navIcon, on && styles.navIconOn]}>
               <AppIcon
                 icon={t.icon}
                 size={20}
-                color={on ? themeColors.primary : themeColors.muted}
+                color={on ? C.primary : C.muted}
                 strokeWidth={on ? 2.4 : 1.9}
               />
-              {badges[t.id] ? (
-                <View style={[styles.navBadge, isDark && { borderColor: themeColors.card }]}>
-                  <Text style={styles.navBadgeText}>{badges[t.id]}</Text>
-                </View>
-              ) : null}
+              {badges[t.id] ? <View style={styles.navBadge}><Text style={styles.navBadgeText}>{badges[t.id]}</Text></View> : null}
             </View>
-            <Text style={[
-              styles.navLabel,
-              isDark && { color: themeColors.muted },
-              on && [styles.navLabelOn, { color: themeColors.primary }],
-            ]}>{t.label}</Text>
-            <View style={[
-              styles.navDot,
-              { backgroundColor: on ? themeColors.primary : 'transparent' },
-            ]} />
+            <Text style={[styles.navLabel, on && styles.navLabelOn]}>{t.label}</Text>
+            <View style={[styles.navDot, !on && styles.navDotOff]} />
           </TouchableOpacity>
         );
       })}
