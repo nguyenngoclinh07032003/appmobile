@@ -346,11 +346,11 @@ export function OrderScreen({ params }) {
           </Card>
         ) : null}
 
-        {/* ===== Chờ Văn phòng nghiệm thu (WF2) ===== */}
+        {/* ===== Chờ Văn phòng nghiệm thu ===== */}
         {o.status === 'pending_review' ? (
           <Card style={{ marginTop: 12, backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={[mx.tlTitle, { color: '#6D28D9' }]}>🏢 Văn phòng đang đối soát nghiệm thu (WF2)</Text>
+              <Text style={[mx.tlTitle, { color: '#6D28D9' }]}>🏢 Văn phòng đang đối soát nghiệm thu</Text>
               <Tap onPress={() => a.officeApproveCompletion(o.code)} style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: '#EDE9FE' }}>
                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#6D28D9' }}>⚡ Duyệt ngay (Demo)</Text>
               </Tap>
@@ -361,11 +361,11 @@ export function OrderScreen({ params }) {
           </Card>
         ) : null}
 
-        {/* ===== Chờ Văn phòng thẩm định bảo hành (WF4) ===== */}
+        {/* ===== Chờ Văn phòng thẩm định bảo hành ===== */}
         {o.status === 'warranty_pending' ? (
           <Card style={{ marginTop: 12, backgroundColor: '#FDF4FF', borderColor: '#F5D0FE' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={[mx.tlTitle, { color: '#A21CAF' }]}>🛡️ Văn phòng đang thẩm định bảo hành (WF4)</Text>
+              <Text style={[mx.tlTitle, { color: '#A21CAF' }]}>🛡️ Văn phòng đang thẩm định bảo hành</Text>
               <Tap onPress={() => a.officeApproveWarranty(o.code)} style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: '#FAE8FF' }}>
                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#A21CAF' }}>⚡ Duyệt ngay (Demo)</Text>
               </Tap>
@@ -376,10 +376,10 @@ export function OrderScreen({ params }) {
           </Card>
         ) : null}
 
-        {/* ===== Yêu cầu hẹn tái khám (WF2) ===== */}
+        {/* ===== Yêu cầu hẹn tái khám ===== */}
         {o.followUpRequested ? (
           <Card style={{ marginTop: 12, backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }}>
-            <Text style={[mx.tlTitle, { color: '#1D4ED8' }]}>📅 KTV đã hẹn lịch tái khám (WF2)</Text>
+            <Text style={[mx.tlTitle, { color: '#1D4ED8' }]}>📅 KTV đã hẹn lịch tái khám</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
               Lý do: <Text style={{ fontWeight: '700' }}>{o.followUpReason || 'Chờ linh kiện phụ tùng'}</Text>. Quản lý kỹ thuật đang điều phối lịch hẹn quay lại sớm nhất.
             </Text>

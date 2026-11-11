@@ -1706,7 +1706,7 @@ export function AppProvider({ children }) {
       if (res.ok) ui.toast('Đã đặt lại mật khẩu. Hãy đăng nhập lại.', '🔐');
       return res;
     },
-    // Biên bản hoàn thành → chuyển sang Chờ văn phòng duyệt nghiệm thu (WF2)
+    // Biên bản hoàn thành → chuyển sang Chờ văn phòng duyệt nghiệm thu
     completeJob: (code, { summary, paid, safetyChecklist, customerSignature }) => {
       const now = Date.now();
       const o0 = s.orders.find((x) => x.code === code);
@@ -1754,13 +1754,13 @@ export function AppProvider({ children }) {
           }),
           customer: {
             icon: '🏢',
-            title: `Đơn ${code} đang chờ Văn phòng nghiệm thu (WF2)`,
+            title: `Đơn ${code} đang chờ Văn phòng nghiệm thu`,
             body: `Kỹ thuật viên đã nộp biên bản & hình ảnh sau làm việc. Văn phòng Minh Đức đang đối soát kiểm tra chất lượng.`,
             link: { name: 'order', params: { code } },
           },
           tech: {
             icon: '⏳',
-            title: `Đã nộp biên bản · Chờ Văn phòng nghiệm thu (WF2)`,
+            title: `Đã nộp biên bản · Chờ Văn phòng nghiệm thu`,
             body: `Biên bản đã chuyển đến Văn phòng Minh Đức để đối soát và xác nhận hoàn tất.`,
             link: { name: 'tech-job', params: { code } },
           },
@@ -1879,7 +1879,7 @@ export function AppProvider({ children }) {
       ui.toast('🏢 Văn phòng Minh Đức: Đã phê duyệt nghiệm thu kết quả!', '✅', 'success');
       return true;
     },
-    // Văn phòng thẩm định duyệt hồ sơ bảo hành (WF4)
+    // Văn phòng thẩm định duyệt hồ sơ bảo hành
     officeApproveWarranty: (code) => {
       const o0 = s.orders.find((x) => x.code === code);
       if (!o0 || o0.status !== 'warranty_pending') return false;
@@ -1892,7 +1892,7 @@ export function AppProvider({ children }) {
         customer: {
           icon: '🛡️',
           title: `Văn phòng đã duyệt bảo hành ${code}`,
-          body: `Hồ sơ hợp lệ theo bảo hành 60 ngày. Quản lý đang điều phối KTV tiếp nhận (WF4).`,
+          body: `Hồ sơ hợp lệ theo bảo hành 60 ngày. Quản lý đang điều phối KTV tiếp nhận.`,
           link: { name: 'order', params: { code } },
         },
         tech: {
@@ -1905,7 +1905,7 @@ export function AppProvider({ children }) {
       ui.toast('🏢 Văn phòng Minh Đức: Đã thẩm định hồ sơ bảo hành hợp lệ', '🛡️', 'success');
       return true;
     },
-    // Thợ từ chối bảo hành tại nhà do lỗi ngoại lực/người dùng → chuyển sang báo giá có phí (WF4)
+    // Thợ từ chối bảo hành tại nhà do lỗi ngoại lực/người dùng → chuyển sang báo giá có phí
     rejectWarrantyAsOutOfWarranty: (code, reason) => {
       const o0 = s.orders.find((x) => x.code === code);
       if (!o0) return false;
@@ -1921,7 +1921,7 @@ export function AppProvider({ children }) {
         customer: {
           icon: '⚠️',
           title: `Thiết bị ngoài phạm vi bảo hành · ${code}`,
-          body: `${r} Kỹ thuật viên sẽ lập báo giá sửa chữa chính thức cho bạn (WF4).`,
+          body: `${r} Kỹ thuật viên sẽ lập báo giá sửa chữa chính thức cho bạn.`,
           link: { name: 'order', params: { code } },
         },
         tech: {
@@ -1934,7 +1934,7 @@ export function AppProvider({ children }) {
       ui.toast('Đã ghi nhận ngoài bảo hành · Chuyển sang báo giá', '📋');
       return true;
     },
-    // Yêu cầu hẹn tái khám khi chưa hoàn thành sửa chữa (WF2)
+    // Yêu cầu hẹn tái khám khi chưa hoàn thành sửa chữa
     requestFollowUp: (code, reason) => {
       const now = Date.now();
       const o0 = s.orders.find((x) => x.code === code);
@@ -1946,11 +1946,11 @@ export function AppProvider({ children }) {
           followUpRequested: true,
           followUpReason: r,
           followUpAt: now,
-          history: [...o.history, { status: 'repairing', at: now, note: `Yêu cầu hẹn tái khám: ${r} (WF2)` }],
+          history: [...o.history, { status: 'repairing', at: now, note: `Yêu cầu hẹn tái khám: ${r}` }],
         },
         customer: {
           icon: '📅',
-          title: `Hẹn lịch tái khám đơn ${code} (WF2)`,
+          title: `Hẹn lịch tái khám đơn ${code}`,
           body: `KTV đã ghi nhận: "${r}". Quản lý đang xếp lịch hẹn tiếp theo cho bạn.`,
           link: { name: 'order', params: { code } },
         },
@@ -1961,7 +1961,7 @@ export function AppProvider({ children }) {
           link: { name: 'tech-job', params: { code } },
         },
       }));
-      ui.toast('Đã ghi nhận yêu cầu hẹn tái khám (WF2)', '📅', 'success');
+      ui.toast('Đã ghi nhận yêu cầu hẹn tái khám', '📅', 'success');
       return true;
     },
     setTechOnline: (v) => {
@@ -2386,7 +2386,7 @@ export function AppProvider({ children }) {
         notifications: pushNotif(p, {
           icon: '🛡️',
           title: `Đã gửi yêu cầu bảo hành ${newCode}`,
-          body: `Văn phòng Minh Đức đang đối soát hồ sơ theo lịch sử đơn ${code} (WF4).`,
+          body: `Văn phòng Minh Đức đang đối soát hồ sơ theo lịch sử đơn ${code}.`,
           link: { name: 'order', params: { code: newCode } },
         }),
       }));
@@ -2403,7 +2403,7 @@ export function AppProvider({ children }) {
             customer: {
               icon: '🛡️',
               title: `Văn phòng đã duyệt bảo hành ${newCode}`,
-              body: `Hồ sơ bảo hành hợp lệ! Quản lý kỹ thuật đang điều phối KTV tiếp nhận (WF4).`,
+              body: `Hồ sơ bảo hành hợp lệ! Quản lý kỹ thuật đang điều phối KTV tiếp nhận.`,
               link: { name: 'order', params: { code: newCode } },
             },
             tech: {

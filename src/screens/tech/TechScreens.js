@@ -1277,11 +1277,11 @@ export function TechJobScreen({ params }) {
           </Card>
         ) : null}
 
-        {/* ===== Chờ Văn phòng nghiệm thu (WF2) ===== */}
+        {/* ===== Chờ Văn phòng nghiệm thu ===== */}
         {o.status === 'pending_review' ? (
           <Card style={{ marginTop: 12, backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ fontWeight: '800', color: '#6D28D9', fontSize: 13.5 }}>🏢 CHỜ VĂN PHÒNG NGHIỆM THU (WF2)</Text>
+              <Text style={{ fontWeight: '800', color: '#6D28D9', fontSize: 13.5 }}>🏢 CHỜ VĂN PHÒNG NGHIỆM THU</Text>
               <Tap onPress={() => a.officeApproveCompletion(o.code)} style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: '#EDE9FE' }}>
                 <Text style={{ fontSize: 11, fontWeight: '700', color: '#6D28D9' }}>⚡ Duyệt ngay (Demo)</Text>
               </Tap>
@@ -1292,10 +1292,10 @@ export function TechJobScreen({ params }) {
           </Card>
         ) : null}
 
-        {/* ===== Đã gửi yêu cầu tái khám (WF2) ===== */}
+        {/* ===== Đã gửi yêu cầu tái khám ===== */}
         {o.followUpRequested ? (
           <Card style={{ marginTop: 12, backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }}>
-            <Text style={{ fontWeight: '800', color: '#1D4ED8', fontSize: 13.5 }}>📅 ĐÃ GỬI YÊU CẦU HẸN TÁI KHÁM (WF2)</Text>
+            <Text style={{ fontWeight: '800', color: '#1D4ED8', fontSize: 13.5 }}>📅 ĐÃ GỬI YÊU CẦU HẸN TÁI KHÁM</Text>
             <Text style={{ color: '#1E3A8A', fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>
               Lý do: <Text style={{ fontWeight: '700' }}>{o.followUpReason || 'Chờ linh kiện phụ tùng'}</Text>. Quản lý kỹ thuật Minh Đức đang lên lịch hẹn tái khám tiếp theo.
             </Text>
@@ -1486,9 +1486,9 @@ export function TechJobScreen({ params }) {
           <>
             {o.kind === 'warranty' ? (
               <Card style={{ marginTop: 12, backgroundColor: '#FEF2F2', borderColor: '#FECACA' }}>
-                <Text style={[tx.h, { color: '#B91C1C', marginBottom: 4 }]}>🛡️ Thẩm định bảo hành tại chỗ (WF4)</Text>
+                <Text style={[tx.h, { color: '#B91C1C', marginBottom: 4 }]}>🛡️ Thẩm định bảo hành tại chỗ</Text>
                 <Text style={{ color: '#7F1D1D', fontSize: 13, lineHeight: 19 }}>
-                  Theo quy trình WF4: Nếu thiết bị bị rơi vỡ, chập cháy điện ngoài hoặc tác động của bên thứ 3, KTV bấm từ chối bảo hành để chuyển sang Báo giá sửa có phí.
+                  Nếu thiết bị bị rơi vỡ, chập cháy nguồn điện ngoài hoặc tác động của bên thứ 3, KTV bấm từ chối bảo hành để chuyển sang Báo giá sửa có phí.
                 </Text>
                 <View style={{ marginTop: 10 }}>
                   <Btn
@@ -1498,7 +1498,7 @@ export function TechJobScreen({ params }) {
                       u.dialog({
                         icon: '⚠️',
                         title: 'Xác nhận ngoài bảo hành?',
-                        message: 'Thiết bị hư hỏng do tác động bên ngoài hoặc lỗi người dùng. Đơn sẽ chuyển sang luồng Sửa chữa có phí (WF4).',
+                        message: 'Thiết bị hư hỏng do tác động bên ngoài hoặc lỗi người dùng. Đơn sẽ chuyển sang luồng Sửa chữa có phí.',
                         actions: [
                           { label: 'Huỷ', variant: 'ghost' },
                           {
@@ -1918,7 +1918,7 @@ export function TechJobScreen({ params }) {
       ) : null}
       {mine && o.status === 'pending_review' ? (
         <View style={tx.dock}>
-          <Btn title="⚡ Văn phòng duyệt ngay (Demo WF2)" icon="check-check" style={{ flex: 1 }} onPress={() => a.officeApproveCompletion(o.code)} />
+          <Btn title="⚡ Văn phòng duyệt ngay (Demo)" icon="check-check" style={{ flex: 1 }} onPress={() => a.officeApproveCompletion(o.code)} />
         </View>
       ) : null}
       {mine && o.status === 'repairing' ? (
@@ -1930,7 +1930,7 @@ export function TechJobScreen({ params }) {
             onPress={() => {
               u.dialog({
                 icon: '📅',
-                title: 'Yêu cầu hẹn tái khám (WF2)',
+                title: 'Yêu cầu hẹn tái khám',
                 message: 'Chưa thể hoàn thành ca trong hôm nay? Chọn lý do để Quản lý kỹ thuật Minh Đức xếp lịch quay lại.',
                 actions: [
                   { label: 'Đóng', variant: 'ghost' },
