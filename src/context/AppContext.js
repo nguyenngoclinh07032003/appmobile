@@ -1,15 +1,20 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { BackHandler, Linking, Platform } from 'react-native';
 import {
-  getService, MAINT_MONTHS, TECH_ME, REDEEM_OPTIONS, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech,
-  tierOf, lookupHrmssPurchasedDevices, comboDiscountFor, syncCatalogFromBackend, resolveDbServiceId,
+  getService, TECH_ME, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech, CATEGORIES, SERVICES,
+  tierOf, comboDiscountFor, syncCatalogFromBackend, syncPolicyFromBackend, resolveDbServiceId,
 } from '../constants/data';
-import { MOCK_ORDERS, MOCK_DEVICES, MOCK_ADDRESSES, MOCK_CUSTOMER_NOTIFS, MOCK_TECH_NOTIFS, MOCK_POINT_HISTORY } from '../constants/mockData';
 export { matchJobForTech, comboDiscountFor } from '../constants/data';
 import {
-  getSession, clearSession, loginAccount, registerAccount, urlRoleHint, resetPassword, changePassword, quickLoginRole, setSession, upsertBackendAccount, deleteAccountById,
+  getSession, clearSession, urlRoleHint, setSession, upsertBackendAccount, deleteAccountById,
 } from '../services/authService';
 import { hrmssApi, authTokens } from '../services/api';
+import { API_BASE_URL } from '../constants/config';
+
+// Lỗi mạng: ghi rõ địa chỉ server app đang gọi (sai địa chỉ / server tắt thì nhìn là thấy).
+const networkError = (res) => (res?.code === 'TIMEOUT'
+  ? `Máy chủ ${API_BASE_URL} phản hồi quá lâu. Kiểm tra mạng rồi thử lại.`
+  : `Không kết nối được máy chủ ${API_BASE_URL}. Kiểm tra mạng rồi thử lại.`);
 import {
   mapBackendAddressToApp,
   mapBackendCustomerRequestToOrder,
@@ -18,6 +23,11 @@ import {
   mergeBackendOrdersWithLocal,
   buildPreferredTimeIso,
   resolveDbMaterialId,
+  mapBackendNotification,
+  mapWalletVoucher,
+  mapPublicVoucher,
+  mapRedeemOption,
+  mapPointHistory,
 } from '../services/syncService';
 import {
   TECH_POLICY, normalizeTechRep, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
@@ -46,29 +56,6 @@ export const timeAgo = (ts) => {
 };
 const addMonths = (ts, m) => { const d = new Date(ts); d.setMonth(d.getMonth() + m); return d.getTime(); };
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-
-// Tình trạng bảo dưỡng của 1 thiết bị — dùng ở Trang chủ + Thiết bị
-export const deviceStatus = (d) => {
-  const months = MAINT_MONTHS[d.category] || 6;
-  if (!d.lastService) {
-    return { level: 'due', short: 'Nên bảo dưỡng', label: 'Chưa có lịch sử bảo dưỡng', progress: 1, months };
-  }
-  const next = addMonths(d.lastService, months);
-  const total = next - d.lastService;
-  const left = next - Date.now();
-  const days = Math.ceil(left / DAY);
-  const progress = Math.min(1, Math.max(0, 1 - left / total));
-  if (days <= 0) return { level: 'overdue', short: 'Quá hạn', label: `Quá hạn ${-days} ngày`, progress: 1, next, months };
-  if (days <= 30) return { level: 'soon', short: 'Sắp đến hạn', label: `Còn ${days} ngày đến hạn`, progress, next, months };
-  return { level: 'ok', short: 'Tốt', label: `Lần tới: ${fmtDate(next)}`, progress, next, months };
-};
-
-export const LAST_SERVICE_OPTIONS = [
-  { id: 'unknown', label: 'Chưa rõ', ago: null },
-  { id: '1m', label: '1 tháng trước', ago: 1 },
-  { id: '4m', label: '4 tháng trước', ago: 4 },
-  { id: '7m', label: 'Hơn 6 tháng', ago: 7 },
-];
 
 export const cartTotal = (items) => items.reduce((sum, it) => sum + (getService(it.id)?.price || 0) * it.qty, 0);
 export const ACTIVE_STATUSES = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'pending_review', 'warranty_pending', 'out_of_warranty'];
@@ -173,12 +160,6 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
 // State ban đầu + lưu trữ (localStorage trên web)
 // ---------------------------------------------------------------------------
 const KEY = 'tho-hrmss-state-v2';
-const welcome = () => ({
-  id: uid(), at: Date.now(), read: false, icon: '🎉',
-  title: 'Chào mừng bạn đến với Thợ Minh Đức',
-  body: 'Nhập mã THO20 để được giảm 20.000đ cho đơn từ 150.000đ.',
-  link: { name: 'rewards' },
-});
 // Hồ sơ thợ: giữ khu vực/chuyên môn đã lưu, cập nhật tên/SĐT từ tài khoản đăng nhập
 const mergeTechProfile = (prev, account) => {
   const code = account.techCode || prev?.code || TECH_ME.code;
@@ -203,19 +184,18 @@ const mergeTechProfile = (prev, account) => {
 };
 
 const CUSTOMER_SLICE_KEYS = [
-  'addresses', 'selectedAddressId', 'cart', 'devices', 'favorites',
+  'addresses', 'selectedAddressId', 'cart', 'favorites',
   'notifications', 'points', 'lifetimePoints', 'pointHistory', 'myVouchers', 'searches',
 ];
 const makeCustomerSlice = () => ({
   addresses: [],
   selectedAddressId: null,
   cart: [],
-  devices: [],
   favorites: [],
-  notifications: [...MOCK_CUSTOMER_NOTIFS],
-  points: 120,
-  lifetimePoints: 350,
-  pointHistory: [...MOCK_POINT_HISTORY],
+  notifications: [],
+  points: 0,
+  lifetimePoints: 0,
+  pointHistory: [],
   myVouchers: [],
   searches: [],
 });
@@ -249,10 +229,10 @@ const switchCustomerSlice = (prev, nextAccount) => {
     const rawLoaded = profiles[nextKey] || (nextAccount.phone ? profiles[nextAccount.phone] : null) || makeCustomerSlice();
     const loaded = {
       ...rawLoaded,
-      notifications: (rawLoaded.notifications && rawLoaded.notifications.length > 1) ? rawLoaded.notifications : [...MOCK_CUSTOMER_NOTIFS],
-      points: (rawLoaded.points != null) ? rawLoaded.points : 120,
-      lifetimePoints: (rawLoaded.lifetimePoints != null) ? rawLoaded.lifetimePoints : 350,
-      pointHistory: (rawLoaded.pointHistory && rawLoaded.pointHistory.length > 0) ? rawLoaded.pointHistory : [...MOCK_POINT_HISTORY],
+      notifications: rawLoaded.notifications || [],
+      points: rawLoaded.points ?? 0,
+      lifetimePoints: rawLoaded.lifetimePoints ?? 0,
+      pointHistory: rawLoaded.pointHistory || [],
     };
     profiles[nextKey] = loaded;
     return { ...loaded, customerProfiles: profiles };
@@ -268,7 +248,12 @@ const makeInitial = () => ({
   customerProfiles: {},
   // Phía thợ
   role: 'customer', // 'customer' | 'tech'
-  techNotifs: [...MOCK_TECH_NOTIFS],
+  techNotifs: [],
+  // Dữ liệu chung tải từ backend: mã công khai, lựa chọn đổi điểm, chính sách hệ thống, đánh giá theo dịch vụ.
+  publicVouchers: [],
+  redeemOptions: [],
+  policy: null,
+  serviceReviews: {},
   declined: [], // legacy — dùng declinedByTech theo mã thợ
   declinedByTech: {}, // { [techCode]: string[] }
   declineLog: [],
@@ -305,23 +290,24 @@ export function AppProvider({ children }) {
     const user = session
       ? { name: session.name || '', phone: session.phone || '', email: session.email || '' }
       : (saved.user || { name: '', phone: '', email: '' });
-    const cleanOrders = (saved.orders && saved.orders.length > 0) ? saved.orders : MOCK_ORDERS;
-    const cleanDevices = (saved.devices && saved.devices.length > 0) ? saved.devices : MOCK_DEVICES;
-    const cleanAddresses = (saved.addresses && saved.addresses.length > 0) ? saved.addresses : MOCK_ADDRESSES;
-    const cleanNotifs = (saved.notifications && saved.notifications.length > 1) ? saved.notifications : MOCK_CUSTOMER_NOTIFS;
-    const cleanTechNotifs = (saved.techNotifs && saved.techNotifs.length > 0) ? saved.techNotifs : MOCK_TECH_NOTIFS;
-    const cleanPointHistory = (saved.pointHistory && saved.pointHistory.length > 0) ? saved.pointHistory : [...MOCK_POINT_HISTORY];
+    // Bỏ dữ liệu mẫu đã lưu từ bản app cũ (đơn/địa chỉ/thông báo không có id backend, thiết bị giả).
+    const fromBackend = (list, idKey) => (Array.isArray(list) ? list.filter((x) => x && x[idKey] != null) : []);
+    const cleanOrders = (saved.orders || []).filter((o) => o && (o.dbRequestId != null || o.localOnly));
+    const cleanAddresses = fromBackend(saved.addresses, 'dbAddressId');
+    const cleanNotifs = fromBackend(saved.notifications, 'dbNotificationId');
+    const cleanTechNotifs = fromBackend(saved.techNotifs, 'dbNotificationId');
+    const { devices: _legacyDevices, ...savedRest } = saved;
     const baseState = {
       ...makeInitial(),
-      ...saved,
+      ...savedRest,
       orders: cleanOrders,
-      devices: cleanDevices,
       addresses: cleanAddresses,
       notifications: cleanNotifs,
       techNotifs: cleanTechNotifs,
-      pointHistory: cleanPointHistory,
-      points: saved.points != null ? saved.points : 120,
-      lifetimePoints: saved.lifetimePoints != null ? saved.lifetimePoints : 350,
+      pointHistory: (saved.pointHistory || []).filter((h) => String(h?.id || '').startsWith('pt-db-')),
+      myVouchers: (saved.myVouchers || []).filter((v) => v?.customerVoucherId != null),
+      points: saved.points ?? 0,
+      lifetimePoints: saved.lifetimePoints ?? 0,
       selectedAddressId: saved.selectedAddressId,
       role,
       user,
@@ -337,11 +323,14 @@ export function AppProvider({ children }) {
         const rawSlice = profiles[sessKey] || profiles[session.phone];
         const existingSlice = {
           ...rawSlice,
-          notifications: (rawSlice.notifications && rawSlice.notifications.length > 1) ? rawSlice.notifications : cleanNotifs,
-          pointHistory: (rawSlice.pointHistory && rawSlice.pointHistory.length > 0) ? rawSlice.pointHistory : [...MOCK_POINT_HISTORY],
-          points: rawSlice.points != null ? rawSlice.points : 120,
-          lifetimePoints: rawSlice.lifetimePoints != null ? rawSlice.lifetimePoints : 350,
+          notifications: fromBackend(rawSlice.notifications, 'dbNotificationId'),
+          pointHistory: (rawSlice.pointHistory || []).filter((h) => String(h?.id || '').startsWith('pt-db-')),
+          addresses: fromBackend(rawSlice.addresses, 'dbAddressId'),
+          myVouchers: (rawSlice.myVouchers || []).filter((v) => v?.customerVoucherId != null),
+          points: rawSlice.points ?? 0,
+          lifetimePoints: rawSlice.lifetimePoints ?? 0,
         };
+        delete existingSlice.devices;
         profiles[sessKey] = existingSlice;
         return { ...baseState, ...existingSlice, customerProfiles: profiles };
       }
@@ -453,11 +442,10 @@ export function AppProvider({ children }) {
   const [tab, setTab] = useState(() => (s.auth?.role === 'tech' || s.role === 'tech' ? 'tech-jobs' : 'home'));
   const [stack, setStack] = useState([]); // màn hình phủ lên trên tab: [{ name, params, key }]
   // category: danh mục của tab Bảo dưỡng; kindCat: bộ lọc danh mục cho tab Lắp đặt / Sửa chữa / Trọn đời ('all' = tất cả)
-  const [svc, setSvc] = useState({ tab: 'bao-duong', category: 'may-lanh', kindCat: 'all', sort: 'popular' });
+  const [svc, setSvc] = useState({ tab: 'bao-duong', category: null, kindCat: 'all', sort: 'popular' });
   // Mã voucher được chọn ở "Quyền lợi" → tự áp dụng khi mở màn Xác nhận đặt lịch
   const [pendingVoucher, setPendingVoucher] = useState(null);
   // Thiết bị được chọn từ màn "Thiết bị của tôi" → tự gắn vào đơn khi đặt lịch
-  const [pendingDeviceId, setPendingDeviceId] = useState(null);
   const [actFilter, setActFilter] = useState('active');
   const [warrantyQuery, setWarrantyQuery] = useState('');
   const [warrantyNonce, setWarrantyNonce] = useState(0);
@@ -475,8 +463,7 @@ export function AppProvider({ children }) {
     }),
     reset: () => setStack([]),
     go: (t) => { setStack([]); setTab(t); },
-    services: (serviceTab, category, deviceId = null) => {
-      if (deviceId) setPendingDeviceId(deviceId);
+    services: (serviceTab, category) => {
       setSvc((p) => {
         const t = serviceTab || p.tab;
         if (t === 'bao-duong') return { ...p, tab: t, category: category || p.category };
@@ -598,25 +585,58 @@ export function AppProvider({ children }) {
   });
   const address = s.addresses.find((a) => a.id === s.selectedAddressId) || s.addresses.find((a) => a.isDefault) || s.addresses[0] || null;
 
-  // Đồng bộ trực tiếp Sổ địa chỉ, Đơn hàng, Công việc Thợ và Danh mục Vật tư từ PostgreSQL trên VPS
+  // Đồng bộ toàn bộ dữ liệu app từ backend: danh mục, chính sách, vật tư; khách: hồ sơ, địa chỉ, đơn, thông báo,
+  // điểm, ví voucher; thợ: việc, hồ sơ, đánh giá, thông báo. App không còn dữ liệu mẫu: lỗi mạng thì giữ dữ liệu đã có.
+  const okItems = (res) => (res?.ok && Array.isArray(res.data?.items) ? res.data.items : null);
   const syncFromBackend = async (overrideAccount = null) => {
     try {
-      const svcRes = await hrmssApi.getServices();
+      const [catRes, svcRes, cfgRes, matRes] = await Promise.all([
+        hrmssApi.getServiceCategories(),
+        hrmssApi.getServices(),
+        hrmssApi.getPublicConfig(),
+        hrmssApi.getPublicMaterials(),
+      ]);
+      const catItems = catRes.ok ? (Array.isArray(catRes.data?.items) ? catRes.data.items : (Array.isArray(catRes.data) ? catRes.data : null)) : null;
+      if (catItems) syncCatalogFromBackend({ categories: catItems });
       if (svcRes.ok && Array.isArray(svcRes.items)) {
         syncCatalogFromBackend({ services: svcRes.items });
+        // Giỏ hàng / yêu thích của bản cũ có mã dịch vụ mẫu: bỏ những món không còn trong danh mục.
+        up((p) => ({
+          cart: (p.cart || []).filter((it) => getService(it.id) && !getService(it.id).hidden),
+          favorites: (p.favorites || []).filter((id) => getService(id) && !getService(id).hidden),
+          catalogVersion: Date.now(),
+        }));
+        setSvc((p) => (p.category && CATEGORIES.some((c) => c.id === p.category) ? p : { ...p, category: (CATEGORIES.find((c) => SERVICES.some((x) => x.category === c.id)) || CATEGORIES[0])?.id || null }));
       }
-    } catch (e) { /* bỏ qua nếu mất mạng */ }
+      if (matRes.ok && Array.isArray(matRes.data?.items)) syncCatalogFromBackend({ materials: matRes.data.items });
+      if (cfgRes.ok && cfgRes.data) {
+        syncPolicyFromBackend(cfgRes.data);
+        const tech = cfgRes.data.technician || {};
+        const late = (cfgRes.data.lateness?.tiers || []).reduce((m, t) => ({ ...m, [t.tier]: t.max_minutes }), {});
+        if (tech.max_active_jobs != null) TECH_POLICY.maxActiveJobs = Number(tech.max_active_jobs);
+        if (tech.free_release_minutes != null) TECH_POLICY.freeCancelMs = Number(tech.free_release_minutes) * 60000;
+        if (tech.near_slot_minutes != null) TECH_POLICY.nearSlotMs = Number(tech.near_slot_minutes) * 60000;
+        if (late.ok != null) TECH_POLICY.lateGraceMin = Number(late.ok);
+        if (late.soft != null) TECH_POLICY.lateMidMin = Number(late.soft);
+        if (late.mid != null) TECH_POLICY.lateSevereMin = Number(late.mid);
+        up(() => ({ policy: cfgRes.data }));
+      }
+    } catch (e) { /* mất mạng: giữ dữ liệu cũ */ }
 
     const acc = overrideAccount || s.auth;
     if (!acc || !authTokens.get()) return;
 
     if (acc.role === 'customer') {
       try {
-        const [meRes, addrRes, reqRes, verRes] = await Promise.all([
+        const [meRes, addrRes, reqRes, verRes, notifRes, loyaltyRes, walletRes, catalogRes] = await Promise.all([
           hrmssApi.getMe(),
           hrmssApi.getCustomerAddresses(),
           hrmssApi.getCustomerRequests('ALL'),
           hrmssApi.getEmailVerificationStatus(),
+          hrmssApi.getNotifications(),
+          hrmssApi.getLoyalty(),
+          hrmssApi.getVoucherWallet('AVAILABLE'),
+          hrmssApi.getVoucherCatalog(),
         ]);
         const serverProfile = (meRes.ok && meRes.data?.profile) ? meRes.data.profile : null;
         const serverAccount = (meRes.ok && meRes.data?.account) ? meRes.data.account : null;
@@ -624,15 +644,26 @@ export function AppProvider({ children }) {
         const serverPhone = serverProfile?.phone || '';
         const serverEmail = serverAccount?.email || acc.email;
 
-        const remoteAddrs = (addrRes.ok && Array.isArray(addrRes.data?.items))
-          ? addrRes.data.items.map(mapBackendAddressToApp).filter(Boolean)
-          : null;
-        const remoteOrders = (reqRes.ok && Array.isArray(reqRes.data?.items))
-          ? reqRes.data.items.map((r) => mapBackendCustomerRequestToOrder(r, serverPhone || acc.phone)).filter(Boolean)
+        const remoteAddrs = okItems(addrRes) ? addrRes.data.items.map(mapBackendAddressToApp).filter(Boolean) : null;
+        // Thông tin thợ thật của các đơn đã có thợ (tên, SĐT, điểm): GET /customer/requests/:id/tracking.
+        const rawRequests = okItems(reqRes);
+        if (rawRequests) {
+          const needTech = rawRequests.filter((r) => r.request_status !== 'RECEIVED' && !String(r.request_status || '').startsWith('CANCELLED')).slice(0, 20);
+          const trackings = await Promise.all(needTech.map((r) => hrmssApi.getRequestTracking(r.request_id).catch(() => null)));
+          needTech.forEach((r, i) => {
+            const t = trackings[i];
+            if (t?.ok && t.data?.technician) r.technician = t.data.technician;
+          });
+        }
+        const remoteOrders = rawRequests
+          ? rawRequests.map((r) => mapBackendCustomerRequestToOrder(r, serverPhone || acc.phone)).filter(Boolean)
           : null;
         const remoteEmailVerified = verRes.ok && verRes.data
           ? Boolean(verRes.data.email_verified)
           : null;
+        const loyalty = loyaltyRes.ok ? loyaltyRes.data : null;
+        const wallet = okItems(walletRes);
+        const catalog = catalogRes.ok ? catalogRes.data : null;
 
         up((p) => {
           const nextAddresses = remoteAddrs !== null ? remoteAddrs : p.addresses;
@@ -644,8 +675,7 @@ export function AppProvider({ children }) {
             ? remoteOrders.map((o) => ({ ...o, customerAccountId: acc.id || o.customerAccountId || null }))
             : null;
           const nextOrders = remoteWithAcc ? mergeBackendOrdersWithLocal(p.orders, remoteWithAcc) : p.orders;
-          const doneCount = nextOrders.filter((o) => o.status === 'done' && isOrderOfCustomer(o, serverPhone || acc.phone, acc.id)).length;
-          const minPts = doneCount * 45;
+          const notifItems = okItems(notifRes);
           const nextAuth = p.auth
             ? upsertBackendAccount({
                 ...p.auth,
@@ -666,23 +696,48 @@ export function AppProvider({ children }) {
             addresses: nextAddresses,
             selectedAddressId: nextSelectedId,
             orders: nextOrders,
-            points: Math.max(p.points || 0, minPts),
-            lifetimePoints: Math.max(p.lifetimePoints || 0, minPts),
+            ...(notifItems ? {
+              notifications: notifItems
+                .map((n) => mapBackendNotification(n, nextOrders, 'order'))
+                .filter((n) => n && (!p.notifClearedAt || n.at > p.notifClearedAt)),
+            } : {}),
+            ...(loyalty ? {
+              points: Number(loyalty.points) || 0,
+              lifetimePoints: Number(loyalty.lifetime_points) || 0,
+              pointHistory: (loyalty.history || []).map(mapPointHistory).filter(Boolean),
+            } : {}),
+            ...(wallet ? { myVouchers: wallet.map(mapWalletVoucher).filter(Boolean) } : {}),
+            ...(catalog ? {
+              publicVouchers: (catalog.public_vouchers || []).map(mapPublicVoucher).filter(Boolean),
+              redeemOptions: (catalog.redeem_options || []).map(mapRedeemOption).filter(Boolean),
+            } : {}),
           };
         });
       } catch (e) { /* bỏ qua */ }
     } else if (acc.role === 'tech') {
       try {
-        const [jobsRes, openRes, matRes] = await Promise.all([
+        const [jobsRes, openRes, techMatRes, notifRes, profRes, reviewRes] = await Promise.all([
           hrmssApi.getTechnicianJobs('ALL'),
           hrmssApi.getTechnicianOpenRequests(),
           hrmssApi.getTechnicianMaterials(),
+          hrmssApi.getNotifications(),
+          hrmssApi.getTechnicianProfile(),
+          hrmssApi.getTechnicianReviews(),
         ]);
-        if (matRes.ok && Array.isArray(matRes.data?.items)) {
-          syncCatalogFromBackend({ materials: matRes.data.items });
-        }
+        if (okItems(techMatRes)) syncCatalogFromBackend({ materials: techMatRes.data.items });
+        const summary = reviewRes.ok ? reviewRes.data?.summary : null;
         up((p) => {
-          const techProf = p.techProfile || mergeTechProfile(null, acc);
+          const base = p.techProfile || mergeTechProfile(null, acc);
+          const techProf = {
+            ...base,
+            ...(profRes.ok ? { area: profRes.data?.work_area || '' } : {}),
+            ...(summary ? {
+              rating: summary.rating_average,
+              ratingCount: summary.rating_count,
+              satisfactionPercent: summary.satisfaction_percent,
+            } : {}),
+            reviews: reviewRes.ok ? (reviewRes.data?.items || []) : (base.reviews || []),
+          };
           const assignedOrders = (jobsRes.ok && Array.isArray(jobsRes.data?.items))
             ? jobsRes.data.items.map((j) => mapBackendTechJobToOrder(j, techProf)).filter(Boolean)
             : [];
@@ -695,16 +750,46 @@ export function AppProvider({ children }) {
           const remoteOrders = [...assignedOrders, ...openOrders];
           const nextOrders = mergeBackendOrdersWithLocal(p.orders, remoteOrders);
           const completedJobsCount = assignedOrders.filter((o) => o.status === 'done').length;
+          const notifItems = okItems(notifRes);
           return {
             orders: nextOrders,
-            techProfile: {
-              ...techProf,
-              jobs: Math.max(techProf.jobs || 0, completedJobsCount),
-            },
+            techProfile: { ...techProf, jobs: completedJobsCount },
+            ...(notifItems ? {
+              techNotifs: notifItems
+                .map((n) => mapBackendNotification(n, nextOrders, 'tech-job'))
+                .filter((n) => n && (!p.techNotifClearedAt || n.at > p.techNotifClearedAt)),
+            } : {}),
           };
         });
       } catch (e) { /* bỏ qua */ }
     }
+  };
+
+  // Mô tả + các bước thực hiện chuẩn của một dịch vụ (màn chi tiết dịch vụ).
+  const loadServiceDetail = async (serviceDbId) => {
+    if (!serviceDbId) return null;
+    const [det, proc] = await Promise.all([
+      hrmssApi.getServiceDetail(serviceDbId).catch(() => null),
+      hrmssApi.getServiceProcedure(serviceDbId).catch(() => null),
+    ]);
+    if (!det?.ok && !proc?.ok) return null;
+    const info = {
+      description: det?.ok ? (det.data?.service?.description || '') : '',
+      bookingCount: det?.ok ? (det.data?.service?.booking_count ?? null) : null,
+      steps: proc?.ok ? (proc.data?.steps || []) : null,
+      at: Date.now(),
+    };
+    up((p) => ({ serviceDetails: { ...(p.serviceDetails || {}), [serviceDbId]: info } }));
+    return info;
+  };
+
+  // Điểm + nhận xét của khách cho một dịch vụ (màn chi tiết dịch vụ). Lưu theo dbId để không gọi lại liên tục.
+  const loadServiceReviews = async (serviceDbId) => {
+    if (!serviceDbId) return null;
+    const res = await hrmssApi.getServiceReviews(serviceDbId, { limit: 5 }).catch(() => null);
+    if (!res?.ok) return null;
+    up((p) => ({ serviceReviews: { ...(p.serviceReviews || {}), [serviceDbId]: { ...res.data, at: Date.now() } } }));
+    return res.data;
   };
 
   useEffect(() => {
@@ -713,6 +798,8 @@ export function AppProvider({ children }) {
 
   const a = {
     syncFromBackend,
+    loadServiceReviews,
+    loadServiceDetail,
     // Giỏ hàng
     addToCart: (id, qty = 1, silent = false) => {
       up((p) => {
@@ -731,51 +818,6 @@ export function AppProvider({ children }) {
       const on = s.favorites.includes(id);
       up((p) => ({ favorites: on ? p.favorites.filter((x) => x !== id) : [id, ...p.favorites] }));
       ui.toast(on ? 'Đã bỏ khỏi yêu thích' : 'Đã thêm vào yêu thích', on ? '♡' : '♥');
-    },
-
-    // Thiết bị
-    addDevice: ({ category, brand, room, lastAgo }) => {
-      const lastService = lastAgo ? addMonths(Date.now(), -lastAgo) : null;
-      const d = { id: uid(), category, brand: (brand || '').trim(), room: (room || '').trim(), lastService, createdAt: Date.now() };
-      up((p) => ({
-        devices: [...(p.devices || []), d],
-        notifications: pushNotif(p, {
-          icon: '📺', title: `Đã thêm ${catLabel(category)}`,
-          body: 'Thợ Minh Đức sẽ nhắc bạn khi đến kỳ bảo dưỡng.', link: { tab: 'services' },
-        }),
-      }));
-      ui.toast('Đã lưu thiết bị');
-      return d;
-    },
-    updateDevice: (id, patch) => up((p) => ({ devices: p.devices.map((d) => (d.id === id ? { ...d, ...patch } : d)) })),
-    removeDevice: (id) => { up((p) => ({ devices: p.devices.filter((d) => d.id !== id) })); ui.toast('Đã xoá thiết bị'); },
-    syncHrmssDevices: () => {
-      const phone = s.auth?.phone || s.user?.phone || address?.phone || '';
-      const found = lookupHrmssPurchasedDevices(phone);
-      let addedCount = 0;
-      up((p) => {
-        const existingSerials = new Set((p.devices || []).map((dv) => dv.serial).filter(Boolean));
-        const toAdd = found
-          .filter((item) => !existingSerials.has(item.serial))
-          .map((item) => ({ ...item, id: uid(), createdAt: Date.now() }));
-        addedCount = toAdd.length;
-        if (!addedCount) return {};
-        return {
-          devices: [...toAdd, ...(p.devices || [])],
-          notifications: pushNotif(p, {
-            icon: '🔄',
-            title: `Đã đồng bộ ${addedCount} thiết bị trên hệ thống Minh Đức`,
-            body: 'Hệ thống đã tự động nạp số Serial, hạn bảo hành chính hãng và chu kỳ bảo dưỡng.',
-            link: { tab: 'services' },
-          }),
-        };
-      });
-      if (addedCount > 0) {
-        ui.toast(`Đã đồng bộ ${addedCount} thiết bị Minh Đức`, '🔄');
-      } else {
-        ui.toast('Tất cả thiết bị Minh Đức đã được đồng bộ', '✓');
-      }
-      return addedCount;
     },
 
     // Địa chỉ + hồ sơ (Ghi trực tiếp vào bảng hrmss.service_address trên PostgreSQL)
@@ -1107,6 +1149,15 @@ export function AppProvider({ children }) {
           },
         };
       });
+      if (authTokens.get()) {
+        if (patch.area !== undefined) hrmssApi.updateTechnicianWorkArea(patch.area || null).catch(() => {});
+        if (patch.name || patch.phone !== undefined) {
+          hrmssApi.updateProfile({
+            ...(patch.name ? { full_name: patch.name } : {}),
+            ...(patch.phone !== undefined ? { phone: patch.phone || null } : {}),
+          }).catch(() => {});
+        }
+      }
       ui.toast('Đã cập nhật hồ sơ thợ');
     },
     startTravel: (code) => {
@@ -1695,16 +1746,33 @@ export function AppProvider({ children }) {
       if (ok) ui.toast('Đã cập nhật yêu cầu', '✏️');
       else ui.alert('Không sửa được', 'Chỉ sửa được khi đơn còn chờ thợ nhận.', 'ℹ️');
     },
-    changePassword: (payload) => {
-      if (!s.auth?.id) return { ok: false, error: 'Chưa đăng nhập.' };
-      const res = changePassword({ accountId: s.auth.id, ...payload });
-      if (res.ok) ui.toast('Đã đổi mật khẩu', '🔐');
-      return res;
+    // Mật khẩu: backend kiểm tra (8-64 ký tự). Lỗi trả { ok:false, error }.
+    changePassword: async ({ currentPassword, newPassword }) => {
+      if (!s.auth?.id || !authTokens.get()) return { ok: false, error: 'Chưa đăng nhập.' };
+      if (String(newPassword || '').length < 8) return { ok: false, error: 'Mật khẩu mới phải có từ 8 đến 64 ký tự.' };
+      const res = await hrmssApi.changePassword({ currentPassword, newPassword });
+      if (!res.ok) {
+        return { ok: false, error: res.code === 'INVALID_CURRENT_PASSWORD' || res.status === 401 ? 'Mật khẩu hiện tại không đúng.' : (res.message || 'Không đổi được mật khẩu.') };
+      }
+      ui.toast('Đã đổi mật khẩu', '🔐');
+      return { ok: true };
     },
-    resetPassword: (payload) => {
-      const res = resetPassword(payload);
-      if (res.ok) ui.toast('Đã đặt lại mật khẩu. Hãy đăng nhập lại.', '🔐');
-      return res;
+    // Quên mật khẩu bước 1: backend gửi mã OTP 6 số tới email của tài khoản (hiệu lực 10 phút).
+    requestPasswordReset: async ({ identifier }) => {
+      const id = String(identifier || '').trim();
+      if (!id) return { ok: false, error: 'Vui lòng nhập email hoặc tên đăng nhập.' };
+      const res = await hrmssApi.forgotPassword(id);
+      if (!res.ok) return { ok: false, error: res.status > 0 ? (res.message || 'Không gửi được mã.') : 'Không kết nối được máy chủ.' };
+      return { ok: true };
+    },
+    // Bước 2: đặt mật khẩu mới bằng mã OTP.
+    resetPassword: async ({ identifier, otp, newPassword }) => {
+      if (!/^\d{6}$/.test(String(otp || '').trim())) return { ok: false, error: 'Mã xác nhận gồm đúng 6 chữ số.' };
+      if (String(newPassword || '').length < 8) return { ok: false, error: 'Mật khẩu mới phải có từ 8 đến 64 ký tự.' };
+      const res = await hrmssApi.resetPassword({ identifier: String(identifier || '').trim(), otp, newPassword });
+      if (!res.ok) return { ok: false, error: res.status > 0 ? (res.message || 'Mã không đúng hoặc đã hết hạn.') : 'Không kết nối được máy chủ.' };
+      ui.toast('Đã đặt lại mật khẩu. Hãy đăng nhập lại.', '🔐');
+      return { ok: true };
     },
     // Biên bản hoàn thành → chuyển sang Chờ văn phòng duyệt nghiệm thu
     completeJob: (code, { summary, paid, safetyChecklist, customerSignature }) => {
@@ -1718,11 +1786,6 @@ export function AppProvider({ children }) {
       const earned = o0.kind !== 'warranty' ? Math.max(1, Math.floor(total / 10000)) : 0;
       const ptEntry = earned ? { id: uid(), title: `Hoàn thành đơn ${code}`, delta: earned, at: now, orderCode: code } : null;
       const cats = new Set(o0.items.map((it) => getService(it.id)?.category));
-      const targetDeviceId = o0.device?.id || null;
-      const updateDevList = (devs = []) => devs.map((dv) => {
-        if (targetDeviceId) return dv.id === targetDeviceId ? { ...dv, lastService: now } : dv;
-        return cats.has(dv.category) ? { ...dv, lastService: now } : dv;
-      });
       const onTimeBonus = !o0.lateCompensation || o0.lateCompensation.tier === 'soft' ? 2 : 1;
       updateOrder(code, (o, p) => {
         const boosted = applyTechBonus(p.techProfile || TECH_ME, onTimeBonus);
@@ -1765,7 +1828,6 @@ export function AppProvider({ children }) {
             link: { name: 'tech-job', params: { code } },
           },
           extra: {
-            devices: updateDevList(p.devices),
             points: p.points + earned,
             lifetimePoints: p.lifetimePoints + earned,
             pointHistory: ptEntry ? [ptEntry, ...(p.pointHistory || [])] : (p.pointHistory || []),
@@ -1775,7 +1837,6 @@ export function AppProvider({ children }) {
             },
           },
           customerProfilePatch: (prof) => ({
-            devices: updateDevList(prof.devices || []),
             points: (prof.points || 0) + earned,
             lifetimePoints: (prof.lifetimePoints || 0) + earned,
             pointHistory: ptEntry ? [ptEntry, ...(prof.pointHistory || [])] : (prof.pointHistory || []),
@@ -1968,10 +2029,19 @@ export function AppProvider({ children }) {
       up(() => ({ techOnline: v }));
       ui.toast(v ? 'Bạn đang trực tuyến' : 'Đã tạm nghỉ nhận việc', v ? '🟢' : '⏸');
     },
-    readTechNotif: (id) => up((p) => ({ techNotifs: p.techNotifs.map((n) => (n.id === id ? { ...n, read: true } : n)) })),
-    readAllTech: () => up((p) => ({ techNotifs: p.techNotifs.map((n) => ({ ...n, read: true })) })),
+    readTechNotif: (id) => {
+      const n = (s.techNotifs || []).find((x) => x.id === id);
+      if (n?.dbNotificationId && !n.read) hrmssApi.markNotificationRead(n.dbNotificationId).catch(() => {});
+      up((p) => ({ techNotifs: p.techNotifs.map((x) => (x.id === id ? { ...x, read: true } : x)) }));
+    },
+    readAllTech: () => {
+      hrmssApi.markAllNotificationsRead().catch(() => {});
+      up((p) => ({ techNotifs: p.techNotifs.map((n) => ({ ...n, read: true })) }));
+    },
     clearAllTechNotifs: () => {
-      up(() => ({ techNotifs: [] }));
+      // Backend không xóa thông báo: đánh dấu đã đọc và ẩn các thông báo tới thời điểm này.
+      hrmssApi.markAllNotificationsRead().catch(() => {});
+      up(() => ({ techNotifs: [], techNotifClearedAt: Date.now() }));
       ui.toast('Đã dọn sạch thông báo');
     },
     // Đăng nhập / Đăng ký — phân quyền & tách biệt dữ liệu theo tài khoản
@@ -2023,17 +2093,21 @@ export function AppProvider({ children }) {
             }
           } catch (meErr) {}
           backendAccount.username = beRes.data.account?.username || '';
-          if (isTech) backendAccount.techCode = TECH_ME.code;
+          if (isTech) backendAccount.techCode = backendAccount.username || backendAccount.id;
           backendAccount = upsertBackendAccount(backendAccount);
-        } else if (beRes.status === 400 || beRes.status === 401) {
-          return { ok: false, error: beRes.message || 'Tài khoản hoặc mật khẩu không chính xác.' };
+        } else {
+          return {
+            ok: false,
+            error: beRes.status > 0
+              ? (beRes.message || 'Tài khoản hoặc mật khẩu không chính xác.')
+              : networkError(beRes),
+          };
         }
       } catch (e) {
-        // Tiếp tục fallback nếu offline hoặc mạng lỗi
+        return { ok: false, error: networkError() };
       }
 
-      const res = backendAccount ? { ok: true, account: backendAccount } : loginAccount(payload);
-      if (!res.ok) return res;
+      const res = { ok: true, account: backendAccount };
       up((p) => ({
         ...switchCustomerSlice(p, res.account),
         auth: res.account,
@@ -2102,19 +2176,16 @@ export function AppProvider({ children }) {
             phone: cleanPhone,
             email: cleanEmail,
             emailVerified: false,
-            ...(isTech ? { techCode: TECH_ME.code } : {}),
+            ...(isTech ? { techCode: cleanUsername } : {}),
           });
         }
       } catch (e) {
-        // Fallback nếu hoàn toàn mất mạng
+        return { ok: false, error: networkError() };
       }
-
-      const res = backendAccount
-        ? { ok: true, account: backendAccount }
-        : registerAccount({ ...payload, username: cleanUsername, phone: cleanPhone });
-      if (!res.ok) {
-        return { ok: false, error: res.error };
+      if (!backendAccount) {
+        return { ok: false, error: networkError() };
       }
+      const res = { ok: true, account: backendAccount };
       up((p) => ({
         ...switchCustomerSlice(p, res.account),
         auth: res.account,
@@ -2132,59 +2203,6 @@ export function AppProvider({ children }) {
       await syncFromBackend(res.account);
       ui.toast(res.account.role === 'tech' ? 'Tạo tài khoản Thợ thành công' : 'Tạo tài khoản thành công', '🎉');
       return res;
-    },
-    quickLogin: async (role, link) => {
-      const demoId = role === 'tech' ? 'tech01' : 'customer01';
-      let acc = null;
-      try {
-        const beRes = await hrmssApi.login({ identifier: demoId, password: 'MatKhauManh@123' });
-        if (beRes.ok && beRes.data) {
-          const isTech = role === 'tech';
-          let name = isTech ? 'Hoàng Văn Thọ' : 'Bùi Trung Hiếu';
-          let phone = isTech ? '0945678901' : '0978901234';
-          let email = beRes.data.account?.email || '';
-          try {
-            const meRes = await hrmssApi.getMe();
-            if (meRes.ok && meRes.data) {
-              name = meRes.data.profile?.full_name || name;
-              phone = meRes.data.profile?.phone || phone;
-              email = meRes.data.account?.email || email;
-            }
-          } catch (meErr) {}
-          acc = upsertBackendAccount({
-            id: `be-${beRes.data.user_id || beRes.data.account?.user_id}`,
-            role: isTech ? 'tech' : 'customer',
-            username: demoId,
-            name,
-            phone,
-            email,
-            emailVerified: true,
-            ...(isTech ? { techCode: TECH_ME.code } : {}),
-          });
-        }
-      } catch (e) {}
-
-      if (!acc) {
-        const res = quickLoginRole(role);
-        if (!res?.ok) return res;
-        acc = res.account;
-      }
-      up((p) => ({
-        ...switchCustomerSlice(p, acc),
-        auth: acc,
-        role: acc.role,
-        user: {
-          name: acc.name || '',
-          phone: acc.phone || '',
-          email: acc.email || '',
-        },
-        techProfile: acc.role === 'tech' ? mergeTechProfile(p.techProfile, acc) : p.techProfile,
-      }));
-      setStack(link ? [{ name: link.name, params: link.params || {}, key: uid() }] : []);
-      setTab(acc.role === 'tech' ? 'tech-jobs' : 'home');
-      await syncFromBackend(acc);
-      ui.toast(acc.role === 'tech' ? `Đã vào chế độ Thợ (${acc.name})` : `Đã vào chế độ Khách (${acc.name})`, acc.role === 'tech' ? '👷' : '🏠');
-      return { ok: true, account: acc };
     },
     sendEmailOtp: async () => {
       const targetEmail = s.user?.email || s.auth?.email || '';
@@ -2213,30 +2231,17 @@ export function AppProvider({ children }) {
         }
         return { ok: false, error: res.message || 'Không thể gửi mã OTP. Vui lòng thử lại.' };
       }
-      const localOtp = String(Math.floor(100000 + Math.random() * 900000));
-      up((p) => ({
-        pendingEmailOtp: localOtp,
-        notifications: pushNotif(p, {
-          icon: '📧',
-          title: `Mã OTP xác thực Email: ${localOtp}`,
-          body: `Mã xác thực cho ${targetEmail} là ${localOtp} (hiệu lực 5 phút).`,
-        }),
-      }));
-      ui.toast(`Đã gửi OTP tới ${targetEmail} (Mã: ${localOtp})`, '📧');
-      return { ok: true, otpCode: localOtp, email: targetEmail };
+      return { ok: false, error: 'Vui lòng đăng nhập lại để nhận mã xác thực email.' };
     },
     verifyEmailOtp: async (otpInput) => {
       const cleanOtp = String(otpInput || '').replace(/\D/g, '').trim();
       if (cleanOtp.length !== 6) {
         return { ok: false, error: 'Vui lòng nhập đủ 6 chữ số của mã xác thực OTP.' };
       }
-      if (authTokens.get()) {
-        const res = await hrmssApi.verifyEmailOtp(cleanOtp);
-        if (!res.ok) {
-          return { ok: false, error: res.message || 'Mã xác thực OTP không chính xác.' };
-        }
-      } else if (s.pendingEmailOtp && cleanOtp !== s.pendingEmailOtp) {
-        return { ok: false, error: 'Mã xác thực OTP không chính xác.' };
+      if (!authTokens.get()) return { ok: false, error: 'Vui lòng đăng nhập lại để xác thực email.' };
+      const res = await hrmssApi.verifyEmailOtp(cleanOtp);
+      if (!res.ok) {
+        return { ok: false, error: res.message || 'Mã xác thực OTP không chính xác.' };
       }
       up((p) => {
         const nextAuth = p.auth ? upsertBackendAccount({ ...p.auth, emailVerified: true }) : p.auth;
@@ -2420,28 +2425,38 @@ export function AppProvider({ children }) {
     },
 
     // Điểm thưởng
-    redeem: (optId) => {
-      const opt = REDEEM_OPTIONS.find((x) => x.id === optId);
+    redeem: async (optId) => {
+      const opt = (s.redeemOptions || []).find((x) => x.id === String(optId));
       if (!opt) return false;
       if (s.points < opt.cost) { ui.alert('Chưa đủ điểm', `Bạn cần ${opt.cost} điểm, hiện có ${s.points} điểm. Hoàn thành đơn hoặc đánh giá để tích thêm điểm.`, '🎯'); return false; }
-      const { prefix, ...rest } = opt.voucher;
-      const v = { ...rest, code: `${prefix}${Math.random().toString(36).slice(2, 6).toUpperCase()}`, wallet: true };
-      const ptEntry = { id: uid(), title: `Đổi ${opt.title} (${v.code})`, delta: -opt.cost, at: Date.now() };
+      const res = await hrmssApi.redeemVoucher(opt.id);
+      if (!res.ok) {
+        ui.alert('Chưa đổi được điểm', res.code === 'INSUFFICIENT_POINTS' ? 'Số điểm hiện có không đủ để đổi ưu đãi này.' : (res.message || 'Vui lòng thử lại.'), '🎯');
+        return false;
+      }
+      const v = mapWalletVoucher(res.data?.voucher);
       up((p) => ({
-        points: p.points - opt.cost,
-        pointHistory: [ptEntry, ...(p.pointHistory || [])],
-        myVouchers: [v, ...p.myVouchers],
-        notifications: pushNotif(p, { icon: '🎁', title: 'Đổi điểm thành công', body: `Mã ${v.code} đã vào ví voucher, dùng ở bước thanh toán.`, link: { name: 'rewards' } }),
+        points: res.data?.points ?? p.points,
+        myVouchers: v ? [v, ...p.myVouchers.filter((x) => x.code !== v.code)] : p.myVouchers,
       }));
-      ui.toast(`Đã nhận voucher ${v.code}`, '🎁');
+      ui.toast(v ? `Đã nhận voucher ${v.code}` : 'Đổi điểm thành công', '🎁');
+      syncFromBackend();
       return true;
     },
 
     // Thông báo
-    readNotif: (id) => up((p) => ({ notifications: p.notifications.map((n) => (n.id === id ? { ...n, read: true } : n)) })),
-    readAll: () => up((p) => ({ notifications: p.notifications.map((n) => ({ ...n, read: true })) })),
+    readNotif: (id) => {
+      const n = s.notifications.find((x) => x.id === id);
+      if (n?.dbNotificationId && !n.read) hrmssApi.markNotificationRead(n.dbNotificationId).catch(() => {});
+      up((p) => ({ notifications: p.notifications.map((x) => (x.id === id ? { ...x, read: true } : x)) }));
+    },
+    readAll: () => {
+      hrmssApi.markAllNotificationsRead().catch(() => {});
+      up((p) => ({ notifications: p.notifications.map((n) => ({ ...n, read: true })) }));
+    },
     clearAllNotifs: () => {
-      up(() => ({ notifications: [] }));
+      hrmssApi.markAllNotificationsRead().catch(() => {});
+      up(() => ({ notifications: [], notifClearedAt: Date.now() }));
       ui.toast('Đã dọn sạch thông báo');
     },
 
@@ -2479,20 +2494,6 @@ export function AppProvider({ children }) {
       setTab('home');
       ui.toast('Đã xoá tài khoản thành công', '🗑️');
     },
-    loadMockData: () => {
-      up(() => ({
-        orders: [...MOCK_ORDERS],
-        devices: [...MOCK_DEVICES],
-        addresses: [...MOCK_ADDRESSES],
-        notifications: [...MOCK_CUSTOMER_NOTIFS],
-        techNotifs: [...MOCK_TECH_NOTIFS],
-        selectedAddressId: MOCK_ADDRESSES[0].id,
-        points: 120,
-        lifetimePoints: 350,
-        pointHistory: [...MOCK_POINT_HISTORY],
-      }));
-      ui.toast('Đã nạp bộ dữ liệu kịch bản Demo (Review với cô)!', '🎬');
-    },
     wipeLocalData: () => {
       hrmssApi.logout();
       clearSession();
@@ -2520,7 +2521,6 @@ export function AppProvider({ children }) {
     cartCount: s.cart.reduce((sum, it) => sum + it.qty, 0),
     unread: s.notifications.filter((n) => !n.read).length,
     activeOrders: visibleCustomerOrders.filter(isActiveOrder),
-    dueDevices: s.devices.filter((d) => deviceStatus(d).level !== 'ok'),
     // Phía thợ
     techUnread: (s.techNotifs || []).filter((n) => !n.read).length,
     newJobs: s.orders
@@ -2548,7 +2548,7 @@ export function AppProvider({ children }) {
   const value = {
     s: viewS, a, nav, ui, d: derived,
     svc, setSvc, actFilter, setActFilter, warrantyQuery, setWarrantyQuery, warrantyNonce,
-    pendingVoucher, setPendingVoucher, pendingDeviceId, setPendingDeviceId,
+    pendingVoucher, setPendingVoucher,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

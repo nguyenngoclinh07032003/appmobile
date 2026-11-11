@@ -1,9 +1,28 @@
 import {
   getService,
   TECH_ME,
+  MATERIALS,
   resolveServiceSlugFromBackend,
   resolveDbMaterialId,
+  ensureServiceFromOrderItem,
 } from '../constants/data';
+
+// Tên hiển thị khi đơn đã có thợ nhưng chưa tải được thông tin thợ (GET /customer/requests/:id/tracking).
+const ASSIGNED_TECH_PLACEHOLDER = 'Thợ được phân công';
+// Phương thức thanh toán khách chọn khi đặt (service_request.preferred_payment_method) -> nhãn trên app.
+const PAYMENT_LABELS = {
+  CASH: 'Tiền mặt',
+  BANK_TRANSFER: 'Chuyển khoản VietQR',
+  CARD_ATM: 'Thẻ ATM',
+  VNPAY: 'VNPAY',
+  CARD_INTERNATIONAL: 'Thẻ quốc tế',
+  GOOGLE_PAY: 'Google Pay',
+  APPLE_PAY: 'Apple Pay',
+  PAYOS: 'PayOS',
+};
+export const paymentLabelOf = (method) => PAYMENT_LABELS[String(method || '').toUpperCase()] || 'Tiền mặt';
+const materialPriceOf = (materialId) => MATERIALS.find((m) => m.dbId === Number(materialId))?.price ?? 0;
+const ts = (iso) => (iso ? new Date(iso).getTime() : Date.now());
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -102,18 +121,16 @@ export const mapBackendStatusToAppStatus = (requestStatus, visitStatus, hasAppro
 };
 
 export const mapBackendItemsToAppItems = (rawItems = []) => {
-  if (!Array.isArray(rawItems) || rawItems.length === 0) {
-    return [{ id: 'vs-ml-1', qty: 1, price: 180000 }];
-  }
+  if (!Array.isArray(rawItems) || rawItems.length === 0) return [];
   return rawItems.map((it) => {
     const slug = resolveServiceSlugFromBackend(it.service_id, it.service_name || it.service_name_snapshot);
-    const svc = getService(slug);
-    const price = Number(it.selected_price) || svc?.price || 180000;
+    const svc = getService(slug) || ensureServiceFromOrderItem(it);
+    const price = Number(it.selected_price) || svc?.price || 0;
     return {
       id: slug,
       dbRequestServiceId: it.request_service_id || null,
-      dbServiceId: it.service_id || svc?.dbId || 1,
-      name: it.service_name || it.service_name_snapshot || svc?.name || 'Dịch vụ Minh Đức',
+      dbServiceId: it.service_id || svc?.dbId || null,
+      name: it.service_name || it.service_name_snapshot || svc?.name || 'Dịch vụ',
       qty: 1,
       price,
     };
@@ -151,6 +168,8 @@ export const mapBackendQuotationToAppQuote = (quotations = [], diagnoses = [], g
 
 export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = '') => {
   if (!req) return null;
+  const techInfo = req.technician || null;
+  const techName = techInfo?.full_name || ASSIGNED_TECH_PLACEHOLDER;
   const items = mapBackendItemsToAppItems(req.items || []);
   const goods = items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.qty) || 1), 0);
   const visits = req.visits || [];
@@ -198,7 +217,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     dateLabel: formatDateLabelFromIso(preferredIso),
     dateKey: formatDateKeyFromIso(preferredIso),
     slot: formatSlotFromIso(preferredIso),
-    payment: 'Chuyển khoản VietQR (MBBank)',
+    payment: paymentLabelOf(req.preferred_payment_method),
     note: req.problem_description || '',
     address: {
       id: `addr-snap-${req.request_id}`,
@@ -212,21 +231,23 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     createdAt,
     doneAt,
     tech: status === 'pending' ? null : {
-      name: TECH_ME.name,
-      code: TECH_ME.code,
-      phone: TECH_ME.phone,
-      rating: 5.0,
+      name: techName,
+      code: techInfo?.technician_id != null ? String(techInfo.technician_id) : '',
+      phone: techInfo?.phone || '',
+      rating: techInfo?.rating_average ?? null,
+      ratingCount: techInfo?.rating_count ?? 0,
+      avatar: techInfo?.avatar_url || null,
     },
     quote,
     materials: (quote?.lines || [])
       .filter((l) => l.type === 'part')
-      .map((l, idx) => ({ id: `mat-${req.request_id}-${idx}`, matId: l.matId || 'm-gas-r32', name: l.name, unit: l.unit, qty: l.qty, price: l.price })),
+      .map((l, idx) => ({ id: `mat-${req.request_id}-${idx}`, matId: l.matId || null, name: l.name, unit: l.unit, qty: l.qty, price: l.price })),
     report: isDone ? {
-      summary: latestVisit?.work_performed || 'Đã hoàn thành sửa chữa & bảo dưỡng thiết bị chuẩn kỹ thuật Minh Đức.',
+      summary: latestVisit?.work_performed || '',
       paid: req.request_status === 'COMPLETED',
       at: doneAt,
-      tech: TECH_ME.name,
-      techCode: TECH_ME.code,
+      tech: techName,
+      techCode: techInfo?.technician_id != null ? String(techInfo.technician_id) : '',
       warrantyCertificateCode: `BH-${req.request_code}`,
     } : null,
     rating: req.review ? {
@@ -262,7 +283,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     name: techProfile?.name || TECH_ME.name,
     code: techProfile?.code || TECH_ME.code,
     phone: techProfile?.phone || TECH_ME.phone,
-    rating: techProfile?.rating || 5.0,
+    rating: techProfile?.rating ?? null,
   };
 
   const materialsFromUsages = (job.material_usages || []).map((mu, idx) => ({
@@ -272,7 +293,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     name: mu.material_name || `Vật tư #${mu.material_id}`,
     unit: mu.unit_of_measure || 'cái',
     qty: Number(mu.used_quantity) || 1,
-    price: 250000,
+    price: materialPriceOf(mu.material_id),
   }));
 
   const isDone = status === 'done';
@@ -298,7 +319,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     dateLabel: formatDateLabelFromIso(preferredIso),
     dateKey: formatDateKeyFromIso(preferredIso),
     slot: formatSlotFromIso(preferredIso),
-    payment: 'Chuyển khoản VietQR (MBBank)',
+    payment: paymentLabelOf(req.preferred_payment_method),
     note: req.problem_description || '',
     address: {
       id: `addr-job-${job.assignment_id}`,
@@ -317,7 +338,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
       ? materialsFromUsages
       : (quote?.lines || []).filter((l) => l.type === 'part').map((l, idx) => ({
           id: `qmat-${job.assignment_id}-${idx}`,
-          matId: l.matId || 'm-gas-r32',
+          matId: l.matId || null,
           name: l.name,
           unit: l.unit,
           qty: l.qty,
@@ -329,7 +350,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
       at: d.recorded_at ? new Date(d.recorded_at).getTime() : createdAt,
     })),
     report: isDone ? {
-      summary: visit.work_performed || 'Đã hoàn thành công việc sửa chữa & bảo dưỡng.',
+      summary: visit.work_performed || '',
       paid: req.request_status === 'COMPLETED',
       at: doneAt,
       tech: myTech.name,
@@ -363,7 +384,7 @@ export const mapBackendOpenRequestToOrder = (req) => {
     dateLabel: formatDateLabelFromIso(preferredIso),
     dateKey: formatDateKeyFromIso(preferredIso),
     slot: formatSlotFromIso(preferredIso),
-    payment: 'Chuyển khoản VietQR (Công ty Minh Đức)',
+    payment: paymentLabelOf(req.preferred_payment_method),
     note: req.problem_description || '',
     address: {
       id: `addr-open-${req.request_id}`,
@@ -423,5 +444,62 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
   });
   return [...byKey.values()].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 };
+
+// Thông báo backend (GET /notifications) -> dạng thông báo của app. Link mở đơn theo request_id nếu app có đơn đó.
+export const mapBackendNotification = (n, orders = [], linkName = 'order') => {
+  if (!n) return null;
+  const order = n.request_id != null ? orders.find((o) => String(o.dbRequestId) === String(n.request_id)) : null;
+  return {
+    id: `notif-db-${n.notification_id}`,
+    dbNotificationId: n.notification_id,
+    at: ts(n.created_at),
+    read: Boolean(n.is_read),
+    icon: n.icon || '🔔',
+    type: n.type || null,
+    title: n.title || '',
+    body: n.body || '',
+    ...(order ? { link: { name: linkName, params: { code: order.code } } } : {}),
+  };
+};
+
+// Mẫu voucher backend (voucher_id, label, discount_amount, discount_percent, ...) -> dạng voucher app dùng để tính giảm giá.
+const voucherFields = (v) => ({
+  label: v?.label || '',
+  ...(v?.discount_amount != null ? { discount: Number(v.discount_amount) } : {}),
+  ...(v?.discount_percent != null ? { percent: Number(v.discount_percent) } : {}),
+  ...(v?.max_discount_amount != null ? { max: Number(v.max_discount_amount) } : {}),
+  ...(v?.min_order_amount != null ? { min: Number(v.min_order_amount) } : {}),
+});
+
+// Voucher trong ví của khách (GET /customer/vouchers).
+export const mapWalletVoucher = (w) => (w ? {
+  ...voucherFields(w.voucher),
+  code: w.code,
+  wallet: true,
+  status: w.status,
+  customerVoucherId: w.customer_voucher_id,
+  expiresAt: w.expires_at ? ts(w.expires_at) : null,
+} : null);
+
+// Mã công khai khách nhập tay (GET /customer/vouchers/catalog -> public_vouchers).
+export const mapPublicVoucher = (v) => (v?.code ? { ...voucherFields(v), code: v.code, public: true } : null);
+
+// Lựa chọn đổi điểm (catalog -> redeem_options): id = voucher_id gửi lên POST /customer/vouchers/redeem.
+export const mapRedeemOption = (v) => (v ? {
+  id: String(v.voucher_id),
+  cost: Number(v.point_cost) || 0,
+  title: v.label || '',
+  validDays: v.valid_days ?? null,
+  voucher: voucherFields(v),
+} : null);
+
+// Sổ điểm (GET /customer/loyalty -> history[]).
+export const mapPointHistory = (h) => (h ? {
+  id: `pt-db-${h.point_transaction_id}`,
+  title: h.title || '',
+  delta: Number(h.points_delta) || 0,
+  at: ts(h.created_at),
+  type: h.reason_type ? String(h.reason_type).toLowerCase() : null,
+} : null);
 
 export { resolveDbMaterialId };

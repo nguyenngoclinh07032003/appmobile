@@ -5,6 +5,13 @@
     "version": "3.0.8",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "platforms": ["ios", "android", "web"]
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "plugins": [
+      "expo-secure-store"
+    ]
   }
 }

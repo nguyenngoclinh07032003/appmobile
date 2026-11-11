@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Image } from 'react-native';
 import { C, R, shadow } from '../../theme';
 import {
   getService, formatVND, discountOf, isEstimate, isClean, durationText, featureFor, stepsFor, videoFor,
-  REVIEWS_BY_ID, COMMITMENTS, ALL_SERVICES, TIME_SLOTS, VOUCHERS, PAYMENTS, PAYMENT_METHODS, AREAS, noteFor, voucherDiscount,
+  COMMITMENTS, ALL_SERVICES, TIME_SLOTS, PAYMENTS, PAYMENT_METHODS, AREAS, noteFor, voucherDiscount,
   catLabel, catIcon, MATERIALS, SITE_CONDITIONS, tierOf, comboDiscountFor, CATEGORIES,
 } from '../../constants/data';
-import { useApp, cartTotal, LAST_SERVICE_OPTIONS } from '../../context';
+import { useApp, cartTotal, fmtDate } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Media, Badge, Stars, Stepper, Sheet, Radio, Field,
   SelectRow, Segmented, Checkbox, EmptyState, ServiceCard, Price, Chip, ui, HScroll, AppIcon,
@@ -33,14 +33,30 @@ export function DetailScreen({ params }) {
   const [more, setMore] = useState(false);
   const [showVideo, setShowVideo] = useState(false);
   const [showMatPrice, setShowMatPrice] = useState(false);
+  useEffect(() => {
+    if (!service?.dbId) return;
+    a.loadServiceReviews(service.dbId);
+    a.loadServiceDetail(service.dbId);
+  }, [service?.dbId]);
   if (!service) return <View style={{ flex: 1 }}><TopBar title="Không tìm thấy" /></View>;
   const curTier = tierOf(s.lifetimePoints || 0).cur;
   const catMaterials = MATERIALS.filter((m) => m.category === service.category || m.category === 'all');
   const discount = discountOf(service);
-  const reviews = [...(s.userReviews[service.id] || []), ...(REVIEWS_BY_ID[service.id] || []).map((r) => ({ ...r, stars: 5 }))];
+  const reviewData = (s.serviceReviews || {})[service.dbId] || null;
+  const ratingAvg = reviewData?.summary?.rating_average ?? null;
+  const ratingCount = reviewData?.summary?.rating_count || 0;
+  const reviews = (reviewData?.items || []).map((r) => ({
+    name: r.customer_display_name || 'Khách hàng',
+    stars: r.rating,
+    date: r.created_at ? fmtDate(new Date(r.created_at).getTime()) : '',
+    text: r.review_text || '',
+  }));
   const related = ALL_SERVICES.filter((x) => x.category === service.category && x.id !== service.id).slice(0, 6);
   const video = videoFor(service);
-  const steps = stepsFor(service);
+  // Mô tả + các bước chuẩn lấy từ backend; chưa tải được thì dùng mô tả chung theo loại dịch vụ.
+  const detail = (s.serviceDetails || {})[service.dbId] || null;
+  const steps = detail?.steps?.length ? detail.steps.map((x) => ({ title: x.title, items: x.items || [] })) : stepsFor(service);
+  const description = detail?.description || featureFor(service);
   const inCart = s.cart.find((c) => c.id === service.id)?.qty || 0;
 
   return (
@@ -64,15 +80,13 @@ export function DetailScreen({ params }) {
           </View>
           <Text style={bx.name}>{service.name}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
-            <Stars value={Math.round(service.rating || 5)} size={13} />
+            {ratingAvg != null ? <Stars value={Math.round(ratingAvg)} size={13} /> : null}
             <Text style={ui.meta}>
-              {service.reviews ? `${service.rating} · ${Number(service.reviews).toLocaleString('vi-VN')} đánh giá` : service.rating ? `${service.rating}` : 'Chưa có đánh giá'}
-              {service.sold ? ` · ${service.sold}` : ''}
+              {ratingCount ? `${ratingAvg} · ${ratingCount.toLocaleString('vi-VN')} đánh giá` : 'Chưa có đánh giá'}
             </Text>
           </View>
           <View style={bx.priceRow}>
             <Text style={bx.price}>{formatVND(service.price)}</Text>
-            {service.oldPrice ? <Text style={bx.old}>{formatVND(service.oldPrice)}</Text> : null}
             {discount > 0 ? <View style={bx.off}><Text style={bx.offText}>-{discount}%</Text></View> : null}
           </View>
 
@@ -116,7 +130,7 @@ export function DetailScreen({ params }) {
           </Card>
           <Card style={{ marginTop: 12 }}>
             <Text style={bx.h}>Mô tả dịch vụ</Text>
-            <Text style={bx.p} numberOfLines={more ? undefined : 4}>{featureFor(service)}</Text>
+            <Text style={bx.p} numberOfLines={more ? undefined : 4}>{description}</Text>
             <Tap onPress={() => setMore(!more)}><Text style={[ui.link, { marginTop: 8 }]}>{more ? 'Thu gọn ▲' : 'Xem thêm ▼'}</Text></Tap>
           </Card>
 
@@ -164,11 +178,11 @@ export function DetailScreen({ params }) {
           <Card style={{ marginTop: 12 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={bx.h}>Đánh giá khách hàng</Text>
-              {service.reviews ? <Text style={[ui.meta, { fontWeight: '700' }]}>★ {service.rating}/5</Text> : null}
+              {ratingCount ? <Text style={[ui.meta, { fontWeight: '700' }]}>★ {ratingAvg}/5</Text> : null}
             </View>
             {reviews.length === 0 ? <Text style={bx.p}>Chưa có nhận xét. Hãy là người đầu tiên đánh giá sau khi dùng dịch vụ!</Text> : reviews.slice(0, 5).map((r, i) => (
               <View key={`${r.name}-${i}`} style={bx.review}>
-                <View style={bx.rAvatar}><Text style={{ color: C.primary, fontWeight: '800' }}>{r.name.replace('Chị ', '').charAt(0)}</Text></View>
+                <View style={bx.rAvatar}><Text style={{ color: C.primary, fontWeight: '800' }}>{r.name.charAt(0)}</Text></View>
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Text style={bx.rName}>{r.name}</Text>
@@ -350,7 +364,7 @@ export function CartScreen() {
 // =========================================================== THANH TOÁN
 export function CheckoutScreen({ params }) {
   const {
-    s, a, d, nav, ui: u, pendingVoucher, setPendingVoucher, pendingDeviceId, setPendingDeviceId,
+    s, a, d, nav, ui: u, pendingVoucher, setPendingVoucher,
   } = useApp();
   const [items, setItems] = useState(params.items || []);
   const [note, setNote] = useState(() => noteFor((params.items || []).map((it) => ({ service: getService(it.id) }))));
@@ -442,7 +456,7 @@ export function CheckoutScreen({ params }) {
   const subtotal = Math.max(0, goods - productDiscount - combo.amount);
   const vDiscount = voucherDiscount(voucher, subtotal);
   const total = Math.max(0, subtotal - vDiscount);
-  const allVouchers = [...s.myVouchers, ...VOUCHERS];
+  const allVouchers = [...(s.myVouchers || []), ...(s.publicVouchers || [])];
 
   // Tự áp dụng mã đã chọn từ màn "Quyền lợi của tôi"
   React.useEffect(() => {
@@ -461,7 +475,7 @@ export function CheckoutScreen({ params }) {
 
   const applyVoucher = (code) => {
     const v = allVouchers.find((x) => x.code === code.trim().toUpperCase());
-    if (!v) { u.alert('Mã không hợp lệ', 'Thử THO20, MINHDUC10 hoặc voucher đã đổi bằng điểm.', '🎟️'); return; }
+    if (!v) { u.alert('Mã không hợp lệ', 'Kiểm tra lại mã, hoặc chọn voucher trong ví / mã ưu đãi đang mở ở mục Quyền lợi.', '🎟️'); return; }
     if (v.min && subtotal < v.min) { u.alert('Chưa đủ điều kiện', `${v.code} áp dụng cho đơn từ ${formatVND(v.min)}. Đơn hiện tại ${formatVND(subtotal)}.`, '🎟️'); return; }
     setVoucher(v); setVoucherInput(v.code); setShowVoucher(false);
     u.toast(`Đã áp dụng ${v.code}`, '🎟️');
@@ -527,7 +541,7 @@ export function CheckoutScreen({ params }) {
 
     const code = a.placeOrder({
       items: lines.map(({ id, qty }) => ({ id, qty })),
-      device: { category: lines[0]?.svc?.category || 'may-lanh' },
+      device: { category: lines[0]?.svc?.category || null },
       siteCondition: selectedSite,
       comboDiscount: combo.amount,
       comboLabel: combo.label,

@@ -533,7 +533,7 @@ export function ServiceCard({ item, style }) {
       <View style={{ padding: 11, flex: 1 }}>
         <Text numberOfLines={2} style={ui.sCardName}>{item.name}</Text>
         <Text numberOfLines={1} style={ui.meta}>
-          {item.rating ? `★ ${item.rating}` : '✦ Mới'}{item.sold ? ` · ${item.sold.replace('Đã bán ', '')} đã đặt` : ''}
+          {' '}
         </Text>
         {isEstimate(item) ? <Text style={ui.estimate}>Giá tham khảo</Text> : isClean(item) ? <Text style={ui.cleanLine}>Bao sạch · {durationText(item.id)}</Text> : <Text style={ui.cleanLine}> </Text>}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginTop: 6 }}>

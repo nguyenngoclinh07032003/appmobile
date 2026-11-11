@@ -39,7 +39,12 @@ export const CAT_TONE = {
   'loc-khong-khi': { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
 };
 
-export const toneOf = (cat) => CAT_TONE[cat] || CAT_TONE['may-lanh'];
+export const toneOf = (cat) => {
+  if (CAT_TONE[cat]) return CAT_TONE[cat];
+  const tones = Object.values(CAT_TONE);
+  const n = Number(String(cat || '').replace(/\D/g, '')) || 0;
+  return tones[n % tones.length];
+};
 
 export const STATUS_META = {
   pending: { label: 'Chờ nhận việc', fg: '#B45309', bg: '#FEF3C7' },

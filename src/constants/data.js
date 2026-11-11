@@ -1,46 +1,10 @@
-// Dữ liệu dịch vụ, giá niêm yết, lượt bán và đánh giá trên hệ thống Thợ Minh Đức
-export const CATEGORIES = [
-  { id: 'may-lanh', label: 'Máy lạnh', icon: 'snowflake' },
-  { id: 'may-giat', label: 'Máy giặt/sấy', icon: 'washing-machine' },
-  { id: 'tu-lanh', label: 'Tủ lạnh', icon: 'refrigerator' },
-  { id: 'nuoc-nong', label: 'Máy nước nóng/Bồn nước', icon: 'shower-head' },
-  { id: 'hut-mui', label: 'Máy hút mùi/khói', icon: 'air-vent' },
-  { id: 'quat', label: 'Quạt điều hòa/nước', icon: 'fan' },
-  { id: 'loc-khong-khi', label: 'Máy lọc không khí', icon: 'wind' },
-];
+// Danh mục dịch vụ của app (giá được ghi đè bằng giá backend khi đồng bộ; điểm đánh giá lấy từ API, không lưu ở đây)
+// Danh mục dịch vụ: nạp từ backend (GET /service-categories) bằng syncCatalogFromBackend. id = "c<category_id>".
+export const CATEGORIES = [];
 
-export const SERVICES = [
-  // Máy lạnh
-  { id: 'vs-ml-1', dbId: 80, category: 'may-lanh', name: 'Vệ sinh máy lạnh từ 1-2.5 HP', price: 180000, oldPrice: 200000, rating: 5, sold: 'Đã bán 631,7k', reviews: 16732, icon: 'snowflake', warranty: 'BH 60 ngày' },
-  { id: 'vs-ml-am-tran', dbId: 82, category: 'may-lanh', name: 'Vệ sinh Máy lạnh Âm Trần', price: 480000, oldPrice: 600000, rating: 5, sold: 'Đã bán 230', icon: 'air-vent', warranty: 'BH 60 ngày' },
-  { id: 'gas-410-1hp', dbId: 81, category: 'may-lanh', name: 'Sạc gas R410 - R32 (Inverter) máy lạnh 1HP...', price: 400000, rating: 0, sold: 'Đã bán 104', icon: 'gauge', warranty: 'BH 60 ngày' },
-  { id: 'vs-ml-tu-dung', dbId: 82, category: 'may-lanh', name: 'Vệ sinh Máy lạnh Tủ Đứng', price: 480000, oldPrice: 600000, rating: 5, sold: 'Đã bán 20', icon: 'server', warranty: 'BH 60 ngày' },
-  { id: 'gas-410-2hp', dbId: 81, category: 'may-lanh', name: 'Sạc gas R410 - R32 (Inverter) máy lạnh 2H...', price: 400000, rating: 0, sold: 'Đã bán 10', icon: 'gauge', warranty: 'BH 60 ngày' },
-  { id: 'gas-r22-1hp', dbId: 81, category: 'may-lanh', name: 'Sạc gas R22 (Mono) máy lạnh 1-1.5 HP', price: 400000, rating: 0, sold: 'Đã bán 8', icon: 'gauge', warranty: 'BH 60 ngày' },
-  { id: 'vs-ml-chuyen-sau', dbId: 80, category: 'may-lanh', name: 'Vệ sinh chuyên sâu máy lạnh treo tường 1-2,5 HP', price: 180000, oldPrice: 250000, rating: 0, sold: '', icon: 'snowflake', warranty: 'BH 60 ngày' },
-  { id: 'gas-r22-2hp', dbId: 81, category: 'may-lanh', name: 'Sạc gas R22 (Mono) máy lạnh 2HP-2.5HP', price: 400000, rating: 0, sold: '', icon: 'gauge', warranty: 'BH 60 ngày' },
-  // Máy giặt
-  { id: 'vs-mg-tren', dbId: 91, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Cửa Trên', price: 300000, oldPrice: 350000, rating: 5, sold: 'Đã bán 8,3k', icon: 'washing-machine', warranty: 'BH 60 ngày' },
-  { id: 'vs-mg-truoc', dbId: 91, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Cửa Trước', price: 300000, oldPrice: 350000, rating: 5, sold: 'Đã bán 7,1k', icon: 'washing-machine', warranty: 'BH 60 ngày' },
-  { id: 'vs-mg-quan-ao', dbId: 91, category: 'may-giat', name: 'Dịch Vụ Vệ Sinh Máy Giặt Quần Áo', price: 300000, oldPrice: 350000, rating: 4.9, sold: 'Đã bán 185', icon: 'shirt', warranty: 'BH 60 ngày' },
-  // Tủ lạnh
-  { id: 'vs-tl-300', dbId: 86, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh ≤ 300 lít', price: 200000, oldPrice: 250000, rating: 0, sold: 'Đã bán 66', icon: 'refrigerator', warranty: 'BH 60 ngày' },
-  { id: 'vs-tl-side', dbId: 86, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh side-by-side', price: 200000, oldPrice: 250000, rating: 0, sold: 'Đã bán 29', icon: 'refrigerator', warranty: 'BH 60 ngày' },
-  { id: 'vs-tl-tren300', dbId: 86, category: 'tu-lanh', name: 'Vệ sinh Tủ lạnh > 300 lít', price: 200000, oldPrice: 250000, rating: 0, sold: 'Đã bán 23', icon: 'refrigerator', warranty: 'BH 60 ngày' },
-  // Nước nóng / Bồn nước
-  { id: 'vs-bnn', dbId: 112, category: 'nuoc-nong', name: 'Vệ sinh Bình nước nóng', price: 200000, rating: 0, sold: 'Đã bán 106', icon: 'shower-head', warranty: 'BH 60 ngày' },
-  { id: 'vs-nlmt-300', dbId: 112, category: 'nuoc-nong', name: 'Vệ sinh Bình năng lượng mặt trời ≤ 300 lít', price: 200000, rating: 0, sold: 'Đã bán 26', icon: 'sun', warranty: 'BH 60 ngày' },
-  { id: 'vs-nlmt-tren300', dbId: 112, category: 'nuoc-nong', name: 'Vệ sinh Bình năng lượng mặt trời > 300 lít', price: 200000, rating: 0, sold: 'Đã bán 2', icon: 'sun', warranty: 'BH 60 ngày' },
-  { id: 'vs-bon-2500', dbId: 112, category: 'nuoc-nong', name: 'Vệ sinh bồn nước từ 2500 đến 5000 lít', price: 200000, rating: 0, sold: '', icon: 'droplets', warranty: 'BH 60 ngày' },
-  { id: 'vs-bon-duoi', dbId: 112, category: 'nuoc-nong', name: 'Vệ sinh bồn nước dưới 2500 lít', price: 200000, rating: 0, sold: '', icon: 'droplets', warranty: 'BH 60 ngày' },
-  // Hút mùi
-  { id: 'vs-hut-mui', dbId: 98, category: 'hut-mui', name: 'Vệ sinh Máy hút mùi', price: 200000, rating: 0, sold: 'Đã bán 29', icon: 'air-vent', warranty: 'BH 60 ngày' },
-  // Quạt
-  { id: 'vs-quat-dh', dbId: 103, category: 'quat', name: 'Vệ sinh Quạt điều hòa', price: 100000, oldPrice: 120000, rating: 5, sold: 'Đã bán 329', icon: 'fan', warranty: 'BH 60 ngày' },
-  { id: 'vs-quat-dung', dbId: 103, category: 'quat', name: 'Vệ sinh Quạt đứng/treo tường', price: 100000, rating: 0, sold: 'Đã bán 184', icon: 'fan', warranty: 'BH 60 ngày' },
-  // Lọc không khí
-  { id: 'vs-loc-kk', dbId: 109, category: 'loc-khong-khi', name: 'Vệ sinh Máy lọc không khí', price: 120000, rating: 0, sold: 'Đã bán 16', icon: 'wind', warranty: 'BH 60 ngày' },
-];
+// Dịch vụ: nạp từ backend (GET /customer/services). id = "s<service_id>", dbId = service_id.
+// SERVICES = tab Bảo dưỡng (vệ sinh, nạp gas), REPAIR_SERVICES = tab Sửa chữa, LIFETIME_SERVICES = tab Trọn đời.
+export const SERVICES = [];
 
 export const COMMITMENTS = [
   {
@@ -85,6 +49,7 @@ export const formatNumberInput = (val) => {
 };
 
 export const serviceKind = (item) => {
+  if (item?.kind) return item.kind;
   const id = item?.id || '';
   if (id.startsWith('ld-')) return 'install';
   if (id.startsWith('sc-')) return 'repair';
@@ -197,13 +162,6 @@ export const videoFor = (item) => {
   };
 };
 
-export const REVIEWS_BY_ID = {
-  'vs-ml-1': [
-    { name: 'Chị Vân', date: '10/04/2026' },
-    { name: 'Đỗ Minh Châu', date: '10/04/2026' },
-  ],
-};
-
 export const noteFor = (items) => {
   const kinds = [...new Set((items || []).map((it) => serviceKind(it.service)))];
   if (kinds.length !== 1) return '';
@@ -216,51 +174,29 @@ export const noteFor = (items) => {
 
 // Bảng giá dịch vụ sửa chữa & bảo dưỡng định kỳ chính hãng Thợ Minh Đức (Hệ thống không cung cấp lắp đặt mới).
 export const INSTALL_SERVICES = [];
-export const REPAIR_SERVICES = [
-  { id: 'sc-ml', dbId: 79, category: 'may-lanh', name: 'Sửa chữa điều hòa / máy lạnh', price: 250000, rating: 0, sold: '', icon: 'snowflake', warranty: 'BH 60 ngày' },
-  { id: 'sc-mg', dbId: 89, category: 'may-giat', name: 'Sửa chữa máy giặt', price: 250000, rating: 0, sold: '', icon: 'washing-machine', warranty: 'BH 60 ngày' },
-  { id: 'sc-tl', dbId: 84, category: 'tu-lanh', name: 'Sửa chữa tủ lạnh', price: 250000, rating: 0, sold: '', icon: 'refrigerator', warranty: 'BH 60 ngày' },
-  { id: 'sc-bnn', dbId: 111, category: 'nuoc-nong', name: 'Sửa chữa bình nóng lạnh', price: 250000, rating: 0, sold: '', icon: 'shower-head', warranty: 'BH 60 ngày' },
-  { id: 'sc-dien', dbId: 116, category: 'all', name: 'Kiểm tra, xử lý sự cố điện', price: 150000, rating: 0, sold: '', icon: 'zap', warranty: 'BH 60 ngày' },
-  { id: 'sc-tv', dbId: 122, category: 'all', name: 'Sửa chữa tivi', price: 300000, rating: 0, sold: '', icon: 'tv', warranty: 'BH 60 ngày' },
-];
-export const LIFETIME_SERVICES = [
-  { id: 'td-ml', dbId: 80, category: 'may-lanh', name: 'Gói bảo dưỡng trọn đời máy lạnh treo tường', price: 1200000, rating: 0, sold: '', icon: 'snowflake', warranty: 'BH 60 ngày' },
-  { id: 'td-mg', dbId: 91, category: 'may-giat', name: 'Gói bảo dưỡng trọn đời máy giặt', price: 900000, rating: 0, sold: '', icon: 'washing-machine', warranty: 'BH 60 ngày' },
-];
+export const REPAIR_SERVICES = [];
+export const LIFETIME_SERVICES = [];
 export const AREAS = [
   'An Khánh, Hà Nội', 'Hoài Đức, Hà Nội', 'Cầu Giấy, Hà Nội', 'Nam Từ Liêm, Hà Nội',
   'Thanh Xuân, Hà Nội', 'Quận 1, TP. Hồ Chí Minh', 'Quận 3, TP. Hồ Chí Minh', 'Thủ Đức, TP. Hồ Chí Minh',
 ];
 export const TIME_SLOTS = ['08h00 - 10h00', '10h00 - 12h00', '12h00 - 14h00', '14h00 - 16h00', '16h00 - 18h00', '18h00 - 20h00'];
-export const VOUCHERS = [
-  { code: 'THO20', label: 'Giảm 20.000đ cho đơn từ 150.000đ', discount: 20000, min: 150000 },
-  { code: 'MINHDUC10', label: 'Giảm 10% tối đa 50.000đ', percent: 10, max: 50000 },
-];
 export const imgFor = (id) => `https://picsum.photos/seed/${id}/400/300`;
-
 
 // ---------------------------------------------------------------------------
 // Dữ liệu dùng chung cho bản giao diện mới (liên kết giữa các chức năng)
 // ---------------------------------------------------------------------------
-export const ALL_SERVICES = [...SERVICES, ...REPAIR_SERVICES, ...LIFETIME_SERVICES];
-const SERVICE_MAP = Object.fromEntries(ALL_SERVICES.map((s) => [s.id, s]));
-const SERVICE_BY_DB_ID = Object.fromEntries(ALL_SERVICES.map((s) => [String(s.dbId), s]));
+export const ALL_SERVICES = [];
+const SERVICE_MAP = {};
+const SERVICE_BY_DB_ID = {};
 
 export const getService = (id) => {
   if (id == null) return undefined;
   return SERVICE_MAP[id] || SERVICE_BY_DB_ID[String(id)];
 };
 
-export const CAT_SHORT = {
-  'may-lanh': 'Máy lạnh',
-  'may-giat': 'Máy giặt',
-  'tu-lanh': 'Tủ lạnh',
-  'nuoc-nong': 'Nước nóng',
-  'hut-mui': 'Hút mùi',
-  quat: 'Quạt',
-  'loc-khong-khi': 'Lọc khí',
-};
+// Tên ngắn của danh mục (điền khi đồng bộ danh mục từ backend).
+export const CAT_SHORT = {};
 export const catLabel = (id) => CATEGORIES.find((c) => c.id === id)?.label || CAT_SHORT[id] || 'Thiết bị';
 export const catIcon = (id) => CATEGORIES.find((c) => c.id === id)?.icon || 'wrench';
 
@@ -278,15 +214,15 @@ export const SERVICE_TYPES = [
 
 export const TIPS = [
   {
-    id: 'tip-1', title: '5 cách dùng tủ lạnh giúp tăng tuổi thọ máy', views: '10,2K lượt xem', icon: 'refrigerator', category: 'tu-lanh', serviceId: 'vs-tl-300',
+    id: 'tip-1', title: '5 cách dùng tủ lạnh giúp tăng tuổi thọ máy', icon: 'refrigerator', category: 'tu-lanh', keyword: 'tu lanh',
     body: '1. Không để thức ăn còn nóng vào tủ.\n2. Đặt tủ cách tường ít nhất 10 cm để dàn nóng tản nhiệt.\n3. Không chất đầy quá 3/4 dung tích.\n4. Kiểm tra gioăng cửa định kỳ, gioăng hở làm tủ chạy liên tục.\n5. Vệ sinh tủ 6 tháng/lần để khử mùi và giữ dàn lạnh sạch.',
   },
   {
-    id: 'tip-2', title: 'Máy lạnh kém mát? 3 dấu hiệu cần vệ sinh ngay', views: '8,4K lượt xem', icon: 'snowflake', category: 'may-lanh', serviceId: 'vs-ml-1',
+    id: 'tip-2', title: 'Máy lạnh kém mát? 3 dấu hiệu cần vệ sinh ngay', icon: 'snowflake', category: 'may-lanh', keyword: 'may lanh',
     body: '• Gió thổi ra yếu hoặc có mùi hôi.\n• Dàn lạnh chảy nước, đọng sương.\n• Tiền điện tăng bất thường dù dùng như cũ.\n\nNếu gặp một trong các dấu hiệu trên, hãy đặt lịch vệ sinh để máy mát nhanh và tiết kiệm điện hơn.',
   },
   {
-    id: 'tip-3', title: 'Vì sao máy giặt có mùi hôi và cách xử lý', views: '6,1K lượt xem', icon: 'washing-machine', category: 'may-giat', serviceId: 'vs-mg-tren',
+    id: 'tip-3', title: 'Vì sao máy giặt có mùi hôi và cách xử lý', icon: 'washing-machine', category: 'may-giat', keyword: 'may giat',
     body: 'Cặn bột giặt và nước tồn đọng trong lồng là nơi vi khuẩn phát triển. Hãy mở cửa máy sau khi giặt, vệ sinh khay bột hàng tháng và vệ sinh lồng giặt chuyên sâu 6 tháng/lần.',
   },
 ];
@@ -297,13 +233,6 @@ export const FAQ = [
   { q: 'Bảo hành 60 ngày được tính thế nào?', a: 'Bảo hành bắt đầu từ lúc đơn hoàn thành. Vào Dịch vụ › Bảo hành hoặc Chi tiết đơn hàng để tra cứu và gửi yêu cầu bảo hành miễn phí.' },
   { q: 'Điểm tích luỹ dùng để làm gì?', a: 'Mỗi 10.000đ thanh toán = 1 điểm, đánh giá đơn hàng được thêm 20 điểm. Dùng điểm để đổi voucher ở mục Quyền lợi của tôi.' },
   { q: 'Phương thức thanh toán nào được hỗ trợ?', a: 'Quý khách có thể thanh toán bằng Chuyển khoản VietQR (MBBank) hoặc Tiền mặt trực tiếp cho thợ sau khi hoàn thành nghiệm thu.' },
-];
-
-// Đổi điểm lấy voucher (Quyền lợi của tôi) — voucher đổi được sẽ hiện ở bước Thanh toán
-export const REDEEM_OPTIONS = [
-  { id: 'r-20k', cost: 100, title: 'Voucher giảm 20.000đ', voucher: { prefix: 'DIEM20K', label: 'Giảm 20.000đ (đổi điểm)', discount: 20000 } },
-  { id: 'r-50k', cost: 250, title: 'Voucher giảm 50.000đ', voucher: { prefix: 'DIEM50K', label: 'Giảm 50.000đ (đổi điểm)', discount: 50000 } },
-  { id: 'r-15p', cost: 500, title: 'Voucher giảm 15% tối đa 100.000đ', voucher: { prefix: 'DIEM15', label: 'Giảm 15% tối đa 100.000đ (đổi điểm)', percent: 15, max: 100000 } },
 ];
 
 export const TIERS = [
@@ -319,7 +248,7 @@ export const TIERS = [
     warrantyDays: 60,
     partDiscountPercent: 0,
     benefits: [
-      '🎁 Tặng ngay mã giảm 10% (MINHDUC10) cho đơn đặt lịch đầu tiên',
+      '🎁 Dùng mã ưu đãi công khai đang mở (mục Ưu đãi) cho đơn đặt lịch',
       '💰 Tích luỹ 1 điểm cho mỗi 10.000đ thanh toán dịch vụ hoàn tất',
       '⭐ Thưởng thêm +20 điểm mỗi khi gửi đánh giá chất lượng thợ sau nghiệm thu',
       '🛡️ Bảo hành tiêu chuẩn 60 ngày cho dịch vụ vệ sinh, nạp gas & sửa chữa',
@@ -440,12 +369,6 @@ export const techStepIndexOf = (status) => {
   return i;
 };
 
-export const TECHS = [
-  { name: 'Hoàng Văn Thọ', code: 'MD1024', rating: 5.0, jobs: 1250 },
-  { name: 'Đặng Quang Minh', code: 'MD2071', rating: 5.0, jobs: 860 },
-  { name: 'Lê Quốc Cường', code: 'MD3318', rating: 4.9, jobs: 1520 },
-];
-
 export const PAYMENT_METHODS = [
   {
     id: 'vietqr',
@@ -501,10 +424,8 @@ export const voucherDiscount = (voucher, subtotal) => {
 //   Thợ → Hệ thống: chẩn đoán, tiến độ sửa chữa, vật tư sử dụng, ảnh minh chứng, biên bản hoàn thành
 //   Hệ thống → Thợ: việc được giao, địa chỉ & liên hệ khách, lịch làm việc, báo giá, thông báo
 // ---------------------------------------------------------------------------
-export const TECH_ME = {
-  name: 'Hoàng Văn Thọ', code: 'MD1024', rating: 5.0, jobs: 1, phone: '0945678901',
-  area: 'Cầu Giấy, Nam Từ Liêm, Ba Đình, Hoài Đức', skills: ['Máy lạnh', 'Máy giặt', 'Tủ lạnh', 'Nạp gas'],
-};
+// Hồ sơ thợ khi chưa tải được từ backend: để trống, không dùng tên/SĐT giả.
+export const TECH_ME = { name: '', code: '', rating: null, jobs: 0, phone: '', area: '', skills: [] };
 
 // Trạng thái đơn đầy đủ (khách ↔ thợ)
 export const STATUS_FLOW = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'pending_review', 'done'];
@@ -536,119 +457,122 @@ export const TECH_STATUS_DESC = {
   cancelled: 'Việc đã kết thúc / bị huỷ.',
 };
 
-// Vật tư / linh kiện thợ dùng khi lập báo giá (đồng bộ 1-1 với bảng hrmss.material 1..18)
-export const MATERIALS = [
-  { id: 'm-gas-r32', dbId: 1, name: 'Gas R32', unit: 'kg', price: 250000, category: 'may-lanh' },
-  { id: 'm-gas-r410', dbId: 2, name: 'Gas R410A', unit: 'kg', price: 280000, category: 'may-lanh' },
-  { id: 'm-gas-r22', dbId: 3, name: 'Gas R22', unit: 'kg', price: 220000, category: 'may-lanh' },
-  { id: 'm-tu-ml', dbId: 4, name: 'Tụ điện block máy lạnh', unit: 'cái', price: 350000, category: 'may-lanh' },
-  { id: 'm-ong-dong', dbId: 5, name: 'Ống đồng + bảo ôn', unit: 'm', price: 180000, category: 'may-lanh' },
-  { id: 'm-ong-nuoc', dbId: 6, name: 'Ống thoát nước', unit: 'm', price: 20000, category: 'may-lanh' },
-  { id: 'm-van-xa', dbId: 7, name: 'Van xả máy giặt', unit: 'cái', price: 220000, category: 'may-giat' },
-  { id: 'm-curoa', dbId: 8, name: 'Dây curoa máy giặt', unit: 'sợi', price: 180000, category: 'may-giat' },
-  { id: 'm-bom-xa', dbId: 9, name: 'Bơm xả máy giặt cửa trước', unit: 'cái', price: 450000, category: 'may-giat' },
-  { id: 'm-gioang-tl', dbId: 10, name: 'Gioăng cửa tủ lạnh', unit: 'bộ', price: 350000, category: 'tu-lanh' },
-  { id: 'm-role-tl', dbId: 11, name: 'Rơ-le khởi động tủ lạnh', unit: 'cái', price: 120000, category: 'tu-lanh' },
-  { id: 'm-sensor-tl', dbId: 12, name: 'Cảm biến nhiệt tủ lạnh', unit: 'cái', price: 160000, category: 'tu-lanh' },
-  { id: 'm-thanh-nhiet', dbId: 13, name: 'Thanh nhiệt bình nóng lạnh', unit: 'cái', price: 280000, category: 'nuoc-nong' },
-  { id: 'm-magie', dbId: 14, name: 'Thanh magie chống cặn', unit: 'cái', price: 150000, category: 'nuoc-nong' },
-  { id: 'm-loc-hm', dbId: 15, name: 'Lưới lọc máy hút mùi', unit: 'tấm', price: 190000, category: 'hut-mui' },
-  { id: 'm-loc-hepa', dbId: 16, name: 'Màng lọc HEPA', unit: 'tấm', price: 450000, category: 'loc-khong-khi' },
-  { id: 'm-hoa-chat', dbId: 17, name: 'Dung dịch vệ sinh chuyên dụng', unit: 'chai', price: 60000, category: 'all' },
-  { id: 'm-day-dien', dbId: 18, name: 'Dây điện + CB', unit: 'bộ', price: 120000, category: 'all' },
-];
+// Vật tư / linh kiện: nạp từ backend khi đồng bộ (syncCatalogFromBackend), không lưu giá cứng trong app.
+export const MATERIALS = [];
 
-// Ánh xạ giữa mã App Mobile và ID trong PostgreSQL (hrmss.service & hrmss.material)
+// Ánh xạ giữa mã App Mobile ("s<service_id>") và service_id trong PostgreSQL.
 export const resolveDbServiceId = (serviceSlugOrId) => {
   const raw = String(serviceSlugOrId || '').trim();
   if (/^[1-9]\d*$/.test(raw)) return Number(raw);
-  const found = getService(raw);
-  if (found?.dbId) return Number(found.dbId);
-  const slug = resolveServiceSlugFromBackend(raw);
-  const matched = getService(slug);
-  return matched?.dbId ? Number(matched.dbId) : 80;
+  const m = /^s([1-9]\d*)$/.exec(raw);
+  if (m) return Number(m[1]);
+  return getService(raw)?.dbId ?? null;
 };
 
 export const resolveServiceSlugFromBackend = (serviceId, serviceName = '') => {
-  const byId = SERVICE_BY_DB_ID[String(serviceId)];
-  if (byId && (!serviceName || normalize(byId.name) === normalize(serviceName))) {
-    return byId.id;
-  }
-  const normName = normalize(serviceName);
-  const byExactName = ALL_SERVICES.find((s) => normalize(s.name) === normName);
-  if (byExactName) return byExactName.id;
-  if (byId) return byId.id;
-
-  if (normName.includes('dieu hoa') || normName.includes('may lanh')) {
-    if (normName.includes('gas') || normName.includes('nap gas') || normName.includes('sac gas')) return 'gas-410-1hp';
-    if (normName.includes('sua') || normName.includes('chan doan') || normName.includes('kiem tra')) return 'sc-ml';
-    if (normName.includes('lap dat') || normName.includes('thao do') || normName.includes('am tran')) return 'vs-ml-am-tran';
-    return 'vs-ml-1';
-  }
-  if (normName.includes('may giat') || normName.includes('may say')) {
-    if (normName.includes('sua') || normName.includes('chan doan')) return 'sc-mg';
-    if (normName.includes('cua truoc') || normName.includes('long ngang')) return 'vs-mg-truoc';
-    return 'vs-mg-tren';
-  }
-  if (normName.includes('tu lanh') || normName.includes('tu dong') || normName.includes('tu mat') || normName.includes('thiet bi lanh')) {
-    if (normName.includes('sua') || normName.includes('chan doan')) return 'sc-tl';
-    if (normName.includes('side')) return 'vs-tl-side';
-    return 'vs-tl-300';
-  }
-  if (normName.includes('binh nong') || normName.includes('nuoc nong') || normName.includes('loc nuoc') || normName.includes('bon nuoc')) {
-    if (normName.includes('sua')) return 'sc-bnn';
-    return 'vs-bnn';
-  }
-  if (normName.includes('hut mui') || normName.includes('nha bep') || normName.includes('bep tu') || normName.includes('lo vi song') || normName.includes('may rua bat')) {
-    return 'vs-hut-mui';
-  }
-  if (normName.includes('quat')) return 'vs-quat-dh';
-  if (normName.includes('loc khong khi') || normName.includes('gia dung') || normName.includes('hut bui')) return 'vs-loc-kk';
-  if (normName.includes('dien') || normName.includes('su co dien') || normName.includes('day dien') || normName.includes('aptomat')) return 'sc-dien';
-  if (normName.includes('tivi') || normName.includes('tv')) return 'sc-tv';
-  return 'vs-ml-1';
+  if (serviceId != null && /^[1-9]\d*$/.test(String(serviceId))) return serviceKey(serviceId);
+  const byName = ALL_SERVICES.find((x) => normalize(x.name) === normalize(serviceName));
+  return byName ? byName.id : null;
 };
 
 export const resolveDbMaterialId = (matIdOrSlug, matName = '') => {
   const raw = String(matIdOrSlug || '').trim();
   if (/^[1-9]\d*$/.test(raw)) return raw;
   const found = MATERIALS.find((m) => m.id === raw || normalize(m.name) === normalize(matName));
-  return found?.dbId ? String(found.dbId) : '1';
+  return found?.dbId ? String(found.dbId) : null;
 };
 
-export const syncCatalogFromBackend = ({ services = [], materials = [] } = {}) => {
-  if (Array.isArray(services) && services.length > 0) {
-    services.forEach((dbSvc) => {
-      const slug = resolveServiceSlugFromBackend(dbSvc.service_id, dbSvc.service_name);
-      const localSvc = SERVICE_MAP[slug];
-      if (localSvc) {
-        localSvc.dbId = Number(dbSvc.service_id) || localSvc.dbId;
-        if (dbSvc.base_price != null && Number(dbSvc.base_price) > 0) {
-          localSvc.price = Number(dbSvc.base_price);
-        }
-        SERVICE_BY_DB_ID[String(dbSvc.service_id)] = localSvc;
-      }
+// Cập nhật ngưỡng điểm, số ngày bảo hành, % giảm vật tư của từng hạng theo backend (GET /config/public -> loyalty.tiers).
+export const syncPolicyFromBackend = (config) => {
+  const tiers = config?.loyalty?.tiers;
+  if (!Array.isArray(tiers)) return;
+  tiers.forEach((t) => {
+    const local = TIERS.find((x) => x.id === t.tier_code);
+    if (!local) return;
+    if (t.min_lifetime_points != null) local.min = Number(t.min_lifetime_points);
+    if (t.warranty_days != null) local.warrantyDays = Number(t.warranty_days);
+    if (t.part_discount_percent != null) local.partDiscountPercent = Number(t.part_discount_percent);
+    if (t.tier_name) local.label = t.tier_name;
+  });
+  TIERS.sort((x, y) => x.min - y.min);
+};
+
+// Suy loại dịch vụ từ tên (backend không có cột loại): sửa chữa / lắp đặt / gói định kỳ / nạp gas / vệ sinh.
+export const kindFromName = (name) => {
+  const n = normalize(name);
+  if (/sua|chan doan|kiem tra|xu ly su co|thay /.test(n)) return 'repair';
+  if (/lap dat|thao lap|di chuyen may/.test(n)) return 'install';
+  if (/tron doi|dinh ky|goi bao duong/.test(n)) return 'lifetime';
+  if (/gas/.test(n)) return 'gas';
+  return 'clean';
+};
+const categoryKey = (categoryId) => `c${categoryId}`;
+const serviceKey = (serviceId) => `s${serviceId}`;
+const replaceAll = (arr, items) => { arr.splice(0, arr.length, ...items); };
+
+// Dịch vụ có trong đơn cũ nhưng không còn trong danh mục đang mở (đã ẩn): thêm vào bảng tra cứu, không hiện trên danh sách.
+export const ensureServiceFromOrderItem = (it) => {
+  const id = Number(it?.service_id);
+  if (!id) return null;
+  const key = serviceKey(id);
+  if (SERVICE_MAP[key]) return SERVICE_MAP[key];
+  const name = it.service_name || it.service_name_snapshot || 'Dịch vụ';
+  const svc = { id: key, dbId: id, category: it.category_id ? categoryKey(it.category_id) : 'all', name, price: Number(it.selected_price) || 0, kind: kindFromName(name), icon: 'wrench', warranty: 'BH 60 ngày', hidden: true };
+  SERVICE_MAP[key] = svc;
+  SERVICE_BY_DB_ID[String(id)] = svc;
+  return svc;
+};
+
+export const syncCatalogFromBackend = ({ categories = null, services = null, materials = [] } = {}) => {
+  if (Array.isArray(categories)) {
+    const cats = categories
+      .filter((c) => c && c.is_active !== false)
+      .map((c) => ({ id: categoryKey(c.category_id), dbId: Number(c.category_id), label: c.category_name, icon: c.icon || c.type_icon || 'wrench' }));
+    replaceAll(CATEGORIES, cats);
+    Object.keys(CAT_SHORT).forEach((k) => { delete CAT_SHORT[k]; });
+    cats.forEach((c) => { CAT_SHORT[c.id] = c.label; });
+  }
+  if (Array.isArray(services)) {
+    const items = services.filter(Boolean).map((r) => {
+      const name = r.service_name || 'Dịch vụ';
+      return {
+        id: serviceKey(r.service_id),
+        dbId: Number(r.service_id),
+        category: categoryKey(r.category_id),
+        name,
+        price: Number(r.base_price) || 0,
+        kind: kindFromName(name),
+        icon: r.category_icon || r.category_type_icon || 'wrench',
+        warranty: 'BH 60 ngày',
+      };
     });
+    replaceAll(SERVICES, items.filter((x) => x.kind === 'clean' || x.kind === 'gas'));
+    replaceAll(REPAIR_SERVICES, items.filter((x) => x.kind === 'repair' || x.kind === 'install'));
+    replaceAll(LIFETIME_SERVICES, items.filter((x) => x.kind === 'lifetime'));
+    replaceAll(ALL_SERVICES, [...SERVICES, ...REPAIR_SERVICES, ...LIFETIME_SERVICES]);
+    Object.keys(SERVICE_MAP).forEach((k) => { if (!SERVICE_MAP[k].hidden) delete SERVICE_MAP[k]; });
+    Object.keys(SERVICE_BY_DB_ID).forEach((k) => { if (!SERVICE_BY_DB_ID[k].hidden) delete SERVICE_BY_DB_ID[k]; });
+    ALL_SERVICES.forEach((x) => { SERVICE_MAP[x.id] = x; SERVICE_BY_DB_ID[String(x.dbId)] = x; });
   }
   if (Array.isArray(materials) && materials.length > 0) {
-    materials.forEach((dbMat, idx) => {
-      const matIdNum = Number(dbMat.material_id) || idx + 1;
-      const byDbId = MATERIALS.find((m) => m.dbId === matIdNum || normalize(m.name) === normalize(dbMat.material_name));
-      if (byDbId) {
-        byDbId.dbId = matIdNum;
-        if (dbMat.material_name) byDbId.name = dbMat.material_name;
-        if (dbMat.unit_of_measure) byDbId.unit = dbMat.unit_of_measure;
-      } else {
-        MATERIALS.push({
-          id: `m-db-${matIdNum}`,
-          dbId: matIdNum,
-          name: dbMat.material_name || `Vật tư #${matIdNum}`,
-          unit: dbMat.unit_of_measure || 'cái',
-          price: 150000,
-          category: 'all',
-        });
-      }
+    materials.forEach((dbMat) => {
+      const matIdNum = Number(dbMat.material_id);
+      if (!matIdNum) return;
+      const price = dbMat.unit_price == null ? null : Number(dbMat.unit_price);
+      const existing = MATERIALS.find((m) => m.dbId === matIdNum);
+      const next = {
+        id: `m-db-${matIdNum}`,
+        dbId: matIdNum,
+        name: dbMat.material_name || existing?.name || `Vật tư #${matIdNum}`,
+        unit: dbMat.unit_of_measure || existing?.unit || 'cái',
+        // Văn phòng chưa niêm yết giá -> 0 (thợ tự nhập giá khi lập báo giá)
+        price: price != null ? price : (existing?.price ?? 0),
+        category: 'all', // backend không gắn vật tư với danh mục
+      };
+      if (existing) Object.assign(existing, next);
+      else MATERIALS.push(next);
     });
+    MATERIALS.sort((x, y) => x.dbId - y.dbId);
   }
 };
 
@@ -692,7 +616,7 @@ export const matchJobForTech = (order, techProfile) => {
     if (k === 'repair' || k === 'install') neededSkills.add('Sửa chữa');
   });
   const neededArr = [...neededSkills];
-  const skillMatch = neededArr.length === 0 || neededArr.some((sk) => skills.includes(normalize(sk)));
+  const skillMatch = neededArr.length === 0 || skills.length === 0 || neededArr.some((sk) => skills.includes(normalize(sk)));
 
   const orderAddrNorm = normalize(`${order?.address?.area || ''} ${order?.address?.full || ''}`);
   const areaMatch = areaTokens.length === 0 || areaTokens.some((tok) => orderAddrNorm.includes(tok));
@@ -742,44 +666,3 @@ export const comboDiscountFor = (items = []) => {
   return { qty: totalQty, percent: 10, amount, label: `Combo ${totalQty} thiết bị (-10%)` };
 };
 
-// Danh sách thiết bị trên hệ thống Minh Đức tra cứu theo SĐT khách hàng
-export const lookupHrmssPurchasedDevices = (phone = '') => {
-  const digits = String(phone || '').replace(/\D/g, '').slice(-4) || '9180';
-  const now = Date.now();
-  const DAY_MS = 86400000;
-  return [
-    {
-      category: 'may-lanh',
-      brand: 'Daikin Inverter 1.5 HP ATKF35XVMV',
-      room: 'Phòng ngủ',
-      serial: `DK-${digits}-01`,
-      hrmssInvoice: `HD-MINHDUC-${digits}1`,
-      purchasedAt: now - 210 * DAY_MS,
-      warrantyUntil: now + 520 * DAY_MS,
-      lastService: now - 195 * DAY_MS, // đã đến kỳ bảo dưỡng 6 tháng
-      hrmssPurchased: true,
-    },
-    {
-      category: 'may-giat',
-      brand: 'LG AI DD Inverter 10 kg FV1410S4P',
-      room: 'Phòng tắm',
-      serial: `LG-${digits}-02`,
-      hrmssInvoice: `HD-MINHDUC-${digits}2`,
-      purchasedAt: now - 160 * DAY_MS,
-      warrantyUntil: now + 570 * DAY_MS,
-      lastService: now - 155 * DAY_MS, // sắp đến kỳ bảo dưỡng
-      hrmssPurchased: true,
-    },
-    {
-      category: 'tu-lanh',
-      brand: 'Panasonic Inverter 322L NR-BC360QKVN',
-      room: 'Bếp',
-      serial: `PA-${digits}-03`,
-      hrmssInvoice: `HD-MINHDUC-${digits}3`,
-      purchasedAt: now - 90 * DAY_MS,
-      warrantyUntil: now + 640 * DAY_MS,
-      lastService: now - 60 * DAY_MS,
-      hrmssPurchased: true,
-    },
-  ];
-};

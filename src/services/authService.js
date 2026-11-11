@@ -2,15 +2,9 @@
 // - accounts: localStorage (dùng chung mọi tab / thiết bị trình duyệt)
 // - session: sessionStorage (mỗi tab một phiên — Khách và Thợ có thể mở song song)
 
-import { TECH_ME } from '../constants/data';
-
 const ACCOUNTS_KEY = 'tho-hrmss-accounts-v1';
 const SESSION_KEY = 'tho-hrmss-session-v1';
 
-const encode = (pw) => {
-  try { return btoa(unescape(encodeURIComponent(`hrmss:${pw}`))); } catch (e) { return `hrmss:${pw}`; }
-};
-const matchPw = (account, pw) => account.password === encode(pw);
 
 const readJson = (store, key) => {
   try {
@@ -29,36 +23,10 @@ const removeKey = (store, key) => {
 const ls = () => (typeof localStorage !== 'undefined' ? localStorage : null);
 const ss = () => (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
 
-// Tài khoản khởi tạo demo offline (tuyệt đối không lưu mật khẩu thật của CSDL vào mã nguồn Client)
-const STARTER_ACCOUNTS = [
-  {
-    id: 'acc-cus-1',
-    role: 'customer',
-    username: 'khach01',
-    name: 'Nguyễn Minh Anh',
-    phone: '0901234567',
-    email: 'khach@minhduc.vn',
-    emailVerified: true,
-    password: encode('123456'),
-    createdAt: Date.now() - 86400000 * 30,
-  },
-  {
-    id: 'acc-tech-1',
-    role: 'tech',
-    username: 'tho01',
-    name: TECH_ME.name,
-    phone: TECH_ME.phone,
-    email: 'tho@minhduc.vn',
-    emailVerified: true,
-    password: encode('123456'),
-    techCode: TECH_ME.code,
-    createdAt: Date.now() - 86400000 * 90,
-  },
-];
-
 // Chỉ cho phép lưu các trường hiển thị công khai vào localStorage, loại bỏ hoàn toàn token/password/permissions
 const sanitizeStoredAccount = (acc) => {
-  if (!acc) return null;
+  // Chỉ giữ tài khoản đăng nhập qua backend (id "be-<user_id>"); tài khoản mẫu offline của bản cũ bị bỏ.
+  if (!acc || !String(acc.id || "").startsWith("be-")) return null;
   return {
     id: String(acc.id || ''),
     role: acc.role === 'tech' ? 'tech' : 'customer',
@@ -68,7 +36,6 @@ const sanitizeStoredAccount = (acc) => {
     email: String(acc.email || ''),
     emailVerified: Boolean(acc.emailVerified),
     ...(acc.techCode ? { techCode: String(acc.techCode) } : {}),
-    ...(acc.password ? { password: acc.password } : {}),
     createdAt: acc.createdAt || Date.now(),
   };
 };
@@ -79,8 +46,8 @@ function loadAccounts() {
     // Tự động làm sạch các trường nhạy cảm (backendToken, permissions) nếu phiên cũ lỡ lưu
     return data.accounts.map(sanitizeStoredAccount).filter(Boolean);
   }
-  writeJson(ls(), ACCOUNTS_KEY, { accounts: STARTER_ACCOUNTS });
-  return STARTER_ACCOUNTS.map((a) => ({ ...a }));
+  // Không còn tài khoản mẫu: chỉ lưu tài khoản đã đăng nhập qua backend (không lưu mật khẩu).
+  return [];
 }
 
 function saveAccounts(accounts) {
@@ -177,152 +144,6 @@ export function setSession(accountId) {
   writeJson(ss(), SESSION_KEY, { accountId, loggedAt: Date.now() });
 }
 
-export function registerAccount({ role, name, username, phone, email, password }) {
-  const r = role === 'tech' ? 'tech' : 'customer';
-  const rawPhone = String(phone || '').replace(/\D/g, '');
-  const p = rawPhone.length === 10 ? rawPhone : '';
-  const n = String(name || '').trim();
-  const u = String(username || '').trim();
-  const e = String(email || '').trim();
-  const pw = String(password || '');
-
-  if (!['customer', 'tech'].includes(r)) return { ok: false, error: 'Vai trò không hợp lệ.' };
-  if (n.length < 2) return { ok: false, error: 'Vui lòng nhập họ tên (ít nhất 2 ký tự).' };
-  if (!e && !u && rawPhone.length !== 10) {
-    return { ok: false, error: 'Vui lòng nhập Email hoặc Tên đăng nhập.' };
-  }
-  if (pw.length < 6) return { ok: false, error: 'Mật khẩu phải có ít nhất 6 ký tự.' };
-
-  const accounts = loadAccounts();
-  if (u && accounts.some((a) => a.username && a.username.toLowerCase() === u.toLowerCase())) {
-    return { ok: false, error: 'Tên đăng nhập (Username) này đã được sử dụng.' };
-  }
-  if (e && accounts.some((a) => a.email && a.email.toLowerCase() === e.toLowerCase() && a.role === r)) {
-    return { ok: false, error: `Email này đã được sử dụng cho tài khoản ${r === 'tech' ? 'Thợ' : 'Khách hàng'}.` };
-  }
-
-  const account = {
-    id: `acc-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
-    role: r,
-    username: u,
-    name: n,
-    phone: p,
-    email: e,
-    emailVerified: false,
-    password: encode(pw),
-    createdAt: Date.now(),
-  };
-  saveAccounts([...accounts, account]);
-  setSession(account.id);
-  const { password: _pw, ...safe } = account;
-  return { ok: true, account: safe };
-}
-
-export function loginAccount({ role, identifier, phone, password }) {
-  const rawInput = String(identifier || phone || '').trim();
-  const pw = String(password || '');
-
-  if (!rawInput) {
-    return { ok: false, error: 'Vui lòng nhập Email, Tên đăng nhập hoặc Số điện thoại.' };
-  }
-
-  const isEmail = rawInput.includes('@');
-  const isAllDigits = /^\d+$/.test(rawInput.replace(/\s+/g, ''));
-  let cleanPhone = '';
-
-  if (isEmail) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(rawInput)) {
-      return { ok: false, error: 'Địa chỉ Email không đúng định dạng.' };
-    }
-  } else if (isAllDigits) {
-    cleanPhone = rawInput.replace(/\D/g, '');
-    if (cleanPhone.length !== 10) {
-      return { ok: false, error: 'Số điện thoại phải có đúng 10 chữ số.' };
-    }
-  }
-
-  if (!pw) return { ok: false, error: 'Vui lòng nhập mật khẩu.' };
-
-  const accounts = loadAccounts();
-  const lower = rawInput.toLowerCase();
-  const matchFn = (a, checkRole = true) => {
-    if (checkRole && role && a.role !== role) return false;
-    if (isEmail) return Boolean(a.email && a.email.toLowerCase() === lower);
-    if (isAllDigits) return a.phone === cleanPhone;
-    return Boolean(
-      (a.username && a.username.toLowerCase() === lower)
-      || (a.email && a.email.toLowerCase() === lower)
-      || a.phone === rawInput,
-    );
-  };
-  const account = accounts.find((a) => matchFn(a, true)) || accounts.find((a) => matchFn(a, false));
-
-  if (!account) {
-    return {
-      ok: false,
-      error: 'Tài khoản không tồn tại. Hãy kiểm tra lại Email / Username hoặc đăng ký mới.',
-    };
-  }
-
-  if (!matchPw(account, pw)) return { ok: false, error: 'Mật khẩu không đúng. Vui lòng thử lại.' };
-
-  setSession(account.id);
-  const { password: _pw, ...safe } = account;
-  return { ok: true, account: safe };
-}
-
-// Quên & đặt lại mật khẩu theo Username, SĐT hoặc Email
-export function resetPassword({ role, identifier, phone, newPassword }) {
-  const raw = String(identifier || phone || '').trim();
-  const pw = String(newPassword || '');
-
-  if (!raw) return { ok: false, error: 'Vui lòng nhập Email, Username hoặc Số điện thoại đã đăng ký.' };
-  if (pw.length < 6) return { ok: false, error: 'Mật khẩu mới phải có ít nhất 6 ký tự.' };
-
-  const isEmail = raw.includes('@');
-  const isAllDigits = /^\d+$/.test(raw.replace(/\s+/g, ''));
-  const cleanPhone = isAllDigits ? raw.replace(/\D/g, '') : '';
-  const lower = raw.toLowerCase();
-
-  if (isAllDigits && cleanPhone.length !== 10) {
-    return { ok: false, error: 'Số điện thoại phải có đúng 10 chữ số.' };
-  }
-
-  const accounts = loadAccounts();
-  const idx = accounts.findIndex((a) => {
-    if (role && a.role !== role) return false;
-    if (isEmail) return a.email && a.email.toLowerCase() === lower;
-    if (isAllDigits) return a.phone === cleanPhone;
-    return Boolean(a.username && a.username.toLowerCase() === lower);
-  });
-
-  if (idx < 0) {
-    return {
-      ok: false,
-      error: 'Không tìm thấy tài khoản phù hợp.',
-    };
-  }
-  const next = accounts.map((a, i) => (i === idx ? { ...a, password: encode(pw) } : a));
-  saveAccounts(next);
-  return { ok: true };
-}
-
-// Đổi mật khẩu khi đã đăng nhập
-export function changePassword({ accountId, currentPassword, newPassword }) {
-  const cur = String(currentPassword || '');
-  const pw = String(newPassword || '');
-  if (!cur) return { ok: false, error: 'Vui lòng nhập mật khẩu hiện tại.' };
-  if (pw.length < 6) return { ok: false, error: 'Mật khẩu mới phải có ít nhất 6 ký tự.' };
-  const accounts = loadAccounts();
-  const idx = accounts.findIndex((a) => a.id === accountId);
-  if (idx < 0) return { ok: false, error: 'Phiên đăng nhập không hợp lệ.' };
-  if (!matchPw(accounts[idx], cur)) return { ok: false, error: 'Mật khẩu hiện tại không đúng.' };
-  const next = accounts.map((a, i) => (i === idx ? { ...a, password: encode(pw) } : a));
-  saveAccounts(next);
-  return { ok: true };
-}
-
 export function urlRoleHint() {
   try {
     if (typeof window === 'undefined') return null;
@@ -331,16 +152,3 @@ export function urlRoleHint() {
   } catch (e) { return null; }
 }
 
-// Đăng nhập nhanh theo vai trò đã lưu trên thiết bị
-export function quickLoginRole(role) {
-  const r = role === 'tech' ? 'tech' : 'customer';
-  const accounts = loadAccounts();
-  let acc = accounts.find((a) => a.role === r);
-  if (!acc) {
-    acc = STARTER_ACCOUNTS.find((a) => a.role === r) || STARTER_ACCOUNTS[0];
-    saveAccounts([...accounts, acc]);
-  }
-  setSession(acc.id);
-  const { password: _pw, ...safe } = acc;
-  return { ok: true, account: safe };
-}

@@ -13,8 +13,13 @@ export const API_ENDPOINTS = {
   local5173: "http://localhost:5173/api/v1",
 };
 
-// Đặt toàn bộ kết nối của App sang VPS Cloud
-export const API_BASE_URL = API_ENDPOINTS.cloud;
+// Mặc định: VPS Cloud. Chạy với backend trên máy thì đặt biến môi trường khi khởi động Expo, ví dụ
+//   EXPO_PUBLIC_API_URL=http://localhost:5000/api/v1 npx expo start --web
+// (Expo nhúng sẵn biến EXPO_PUBLIC_* lúc build.)
+const ENV_API_URL = process.env.EXPO_PUBLIC_API_URL || '';
+// true = đang trỏ tới backend tự chọn: không tự chuyển sang server thật khi lỗi mạng.
+export const API_URL_OVERRIDDEN = Boolean(ENV_API_URL);
+export const API_BASE_URL = ENV_API_URL || API_ENDPOINTS.cloud;
 
 export const APP_CONFIG = {
   apiBaseUrl: API_BASE_URL,

@@ -427,6 +427,11 @@ export function AppIcon({
       />
     );
   }
+  // Tên icon dạng chữ (vd. "house-plug" từ backend) chưa có trong bảng: hiện icon mặc định, không in chữ ra màn hình.
+  if (/^[a-z0-9-]+$/i.test(key)) {
+    const Fallback = LUCIDE_ICON_MAP.wrench;
+    if (Fallback) return <Fallback size={size} color={color} strokeWidth={strokeWidth} style={style} />;
+  }
   return <Text style={[{ fontSize: size * 0.85, color }, style]}>{key}</Text>;
 }
 

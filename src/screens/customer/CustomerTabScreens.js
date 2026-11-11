@@ -5,7 +5,7 @@ import {
   CATEGORIES, SERVICES, INSTALL_SERVICES, REPAIR_SERVICES, LIFETIME_SERVICES, SERVICE_TYPES, CAT_SHORT,
   formatVND, getService, catLabel, catIcon, tierOf, HOTLINE,
 } from '../../constants/data';
-import { useApp, deviceStatus, warrantyInfo, fmtDate, isActiveOrder, orderTotal } from '../../context';
+import { useApp, warrantyInfo, fmtDate, isActiveOrder, orderTotal } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, PageHead, Pills, Segmented, ServiceGrid, EmptyState, Field, Badge,
   StatusChip, Progress, Media, ListRow, Sheet, ui, HScroll, AppIcon,
@@ -45,15 +45,14 @@ export function ServicesScreen() {
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
           {svc.tab === 'bao-duong' ? (
             <HScroll contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 14, gap: 10 }}>
-              {CATEGORIES.map((c) => {
+              {/* Chỉ danh mục có dịch vụ bảo dưỡng (danh mục backend có thể chỉ có dịch vụ sửa chữa) */}
+              {CATEGORIES.filter((c) => SERVICES.some((x) => x.category === c.id)).map((c) => {
                 const on = svc.category === c.id;
                 const tone = toneOf(c.id);
-                const owned = s.devices.some((dv) => dv.category === c.id);
                 return (
                   <Tap key={c.id} onPress={() => setSvc((p) => ({ ...p, category: c.id }))} style={[sx.catTile, on && { borderColor: tone.fg, backgroundColor: tone.bg }]}>
                     <AppIcon icon={c.icon} size={24} color={on ? tone.fg : C.ink2} strokeWidth={2} />
                     <Text style={[sx.catTileText, on && { color: tone.fg }]}>{CAT_SHORT[c.id]}</Text>
-                    {owned ? <View style={[sx.ownedDot, { backgroundColor: tone.fg }]} /> : null}
                   </Tap>
                 );
               })}
@@ -345,17 +344,10 @@ export function PersonalScreen() {
           <ListRow icon="refresh-cw" label="Cập nhật ứng dụng" value="3.0.8" onPress={() => u.alert('Bạn đang dùng bản mới nhất', 'Phiên bản 3.0.8 (v7).', '✅')} last />
         </Group>
         <Btn
-          title="Nạp dữ liệu kịch bản Demo (Review với cô)"
-          icon="clapperboard"
-          variant="soft"
-          style={{ marginTop: 24 }}
-          onPress={a.loadMockData}
-        />
-        <Btn
           title="Đăng xuất"
           icon="log-out"
           variant="dangerSoft"
-          style={{ marginTop: 12 }}
+          style={{ marginTop: 24 }}
           onPress={() => u.confirm('Thông báo', 'Bạn có muốn đăng xuất?', a.logout, 'Đồng ý', false)}
         />
       </View>

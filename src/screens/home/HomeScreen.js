@@ -2,14 +2,15 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Animated, Easing } from 'react-native';
 import { C, R, shadow, toneOf, grad } from '../../theme';
 import {
-  CATEGORIES, SERVICES, COMMITMENTS, SERVICE_TYPES, TIPS, PARTNERS, CAT_SHORT, HOTLINE, catLabel, catIcon, getService,
+  CATEGORIES, SERVICES, ALL_SERVICES, COMMITMENTS, SERVICE_TYPES, TIPS, PARTNERS, CAT_SHORT, HOTLINE, catLabel, catIcon, getService, formatVND, normalize,
 } from '../../constants/data';
-import { useApp, deviceStatus } from '../../context';
+import { useApp } from '../../context';
 import {
   Tap, IconBtn, IconBox, Card, SectionTitle, ServiceCard, Sheet, Btn, StatusChip, Media, Badge, ui, HScroll, AppIcon,
 } from '../../components';
 
-const POPULAR = ['vs-ml-1', 'vs-mg-tren', 'vs-mg-truoc', 'vs-quat-dh', 'vs-ml-am-tran', 'vs-tl-300'].map(getService);
+// Dịch vụ nổi bật: 6 dịch vụ đầu của danh mục backend (danh mục nạp sau khi mở app nên lấy lúc vẽ màn hình).
+const popularServices = () => SERVICES.slice(0, 6);
 const COMMIT_ICON = ['clock', 'award', 'handshake', 'smile'];
 
 const PARTNER_ROWS = [
@@ -114,6 +115,8 @@ export default function HomeScreen() {
   const { s, a, d, nav, ui: u } = useApp();
   const [commit, setCommit] = useState(null);
   const [tip, setTip] = useState(null);
+  // Mẹo -> dịch vụ liên quan trong danh mục backend (tìm theo từ khóa trong tên, không viết cứng mã dịch vụ).
+  const tipService = tip ? ALL_SERVICES.find((x) => normalize(x.name).includes(tip.keyword)) : null;
   const firstName = (s.user.name || d.address?.name || '').trim().split(' ').pop();
   const active = d.activeOrders[0];
   const activeSvc = active ? getService(active.items[0]?.id) : null;
@@ -204,12 +207,13 @@ export default function HomeScreen() {
         </View>
 
         {/* ---------------- Danh mục thiết bị ---------------- */}
-        <SectionTitle title="Bảo dưỡng theo thiết bị" action="Tất cả" onAction={() => nav.services('bao-duong')} />
+        <SectionTitle title="Danh mục dịch vụ" action="Tất cả" onAction={() => nav.services('bao-duong')} />
         <View style={st.cats}>
           {CATEGORIES.map((c) => {
             const tone = toneOf(c.id);
             return (
-              <Tap key={c.id} style={st.cat} onPress={() => nav.services('bao-duong', c.id)}>
+              // Danh mục chỉ có dịch vụ sửa chữa thì mở tab Sửa chữa, lọc theo danh mục đó.
+              <Tap key={c.id} style={st.cat} onPress={() => (SERVICES.some((x) => x.category === c.id) ? nav.services('bao-duong', c.id) : nav.services('sua-chua', c.id))}>
                 <View style={[st.catIcon, { backgroundColor: tone.bg }]}><AppIcon icon={c.icon} size={24} color={tone.fg} strokeWidth={2} /></View>
                 <Text style={st.catLabel} numberOfLines={1}>{CAT_SHORT[c.id]}</Text>
               </Tap>
@@ -226,8 +230,9 @@ export default function HomeScreen() {
       </View>
       <HScroll contentContainerStyle={{ paddingHorizontal: 16, gap: 12 }}>
         {[
-          { bg: C.navy, gradStyle: grad.navyCard, fg: '#fff', tag: 'MÃ THO20', title: 'Giảm 20.000đ', body: 'Cho đơn từ 150.000đ', icon: 'ticket', onPress: () => nav.push('rewards') },
-          { bg: C.primary, gradStyle: grad.primaryBtn, fg: '#fff', tag: 'BÁN CHẠY', title: 'Vệ sinh máy lạnh 180K', body: 'Giảm 10% · Bảo hành 60 ngày', icon: 'snowflake', onPress: () => nav.push('detail', { id: 'vs-ml-1' }) },
+          // Mã ưu đãi công khai thật từ backend (GET /customer/vouchers/catalog); chưa có thì không hiện thẻ mã.
+          ...(s.publicVouchers || []).slice(0, 2).map((v) => ({ bg: C.navy, gradStyle: grad.navyCard, fg: '#fff', tag: `MÃ ${v.code}`, title: v.label, body: v.min ? `Cho đơn từ ${formatVND(v.min)}` : 'Nhập mã ở bước đặt lịch', icon: 'ticket', onPress: () => nav.push('rewards') })),
+          ...(SERVICES[0] ? [{ bg: C.primary, gradStyle: grad.primaryBtn, fg: '#fff', tag: 'NỔI BẬT', title: `${SERVICES[0].name} ${formatVND(SERVICES[0].price)}`, body: 'Bảo hành 60 ngày', icon: SERVICES[0].icon || 'wrench', onPress: () => nav.push('detail', { id: SERVICES[0].id }) }] : []),
           { bg: C.navy2, gradStyle: grad.navyCard, fg: '#fff', tag: 'TIẾT KIỆM', title: 'Bảo dưỡng định kỳ', body: 'Nhắc lịch tự động, ưu đãi dài lâu', icon: 'infinity', onPress: () => nav.services('tron-doi') },
         ].map((b) => (
           <Tap key={b.tag} style={[st.promo, { backgroundColor: b.bg }, b.gradStyle]} onPress={b.onPress}>
@@ -244,7 +249,7 @@ export default function HomeScreen() {
         <SectionTitle title="Được đặt nhiều nhất" action="Xem tất cả" onAction={() => nav.services('bao-duong')} />
       </View>
       <HScroll contentContainerStyle={{ paddingHorizontal: 16, gap: 12, paddingBottom: 4 }}>
-        {POPULAR.map((it) => <ServiceCard key={it.id} item={it} style={{ width: 168 }} />)}
+        {popularServices().map((it) => <ServiceCard key={it.id} item={it} style={{ width: 168 }} />)}
       </HScroll>
 
       <View style={{ paddingHorizontal: 16 }}>
@@ -269,7 +274,7 @@ export default function HomeScreen() {
             <View style={[st.tipMedia, { backgroundColor: toneOf(t.category).bg }]}><AppIcon icon={t.icon} size={34} color={toneOf(t.category).fg} strokeWidth={1.9} /></View>
             <View style={{ padding: 12 }}>
               <Text style={st.tipTitle} numberOfLines={2}>{t.title}</Text>
-              <Text style={ui.meta}>{t.views} lượt xem</Text>
+              <Text style={ui.meta}>Cẩm nang thiết bị</Text>
             </View>
           </Tap>
         ))}
@@ -308,11 +313,12 @@ export default function HomeScreen() {
         onClose={() => setTip(null)}
         title="Mẹo hay"
         footer={tip ? (
-          <Btn title={`Đặt ${getService(tip.serviceId)?.name || 'dịch vụ'}`} onPress={() => { const id = tip.serviceId; setTip(null); nav.push('detail', { id }); }} />
+          tipService
+            ? <Btn title={`Đặt ${tipService.name}`} onPress={() => { const id = tipService.id; setTip(null); nav.push('detail', { id }); }} />
+            : <Btn title="Xem dịch vụ" onPress={() => { setTip(null); nav.services(); }} />
         ) : null}
       >
         <Text style={[st.cardTitle, { fontSize: 18, lineHeight: 24 }]}>{tip?.title}</Text>
-        <Text style={[ui.meta, { marginBottom: 10 }]}>👁 {tip?.views}</Text>
         <Text style={st.sheetBody}>{tip?.body}</Text>
       </Sheet>
     </ScrollView>

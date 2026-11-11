@@ -60,16 +60,20 @@ export default function AuthScreen() {
   const [showPw, setShowPw] = useState(false);
   const [formErr, setFormErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
 
   const handleModeChange = (nextMode) => {
     setMode(nextMode);
     setFormErr('');
     setPassword('');
     setPassword2('');
+    setOtp('');
+    setOtpSent(false);
   };
 
   const submit = async () => {
-    if ((mode === 'register' || mode === 'tech_partner' || mode === 'forgot') && password !== password2) {
+    if ((mode === 'register' || mode === 'tech_partner' || (mode === 'forgot' && otpSent)) && password !== password2) {
       setFormErr('Mật khẩu nhập lại không khớp.');
       return;
     }
@@ -80,12 +84,19 @@ export default function AuthScreen() {
         // Đăng nhập bằng Email hoặc Username (áp dụng đồng bộ cho cả Thợ và Khách)
         res = await a.login({ identifier: identifier.trim(), password });
       } else if (mode === 'forgot') {
-        res = await a.resetPassword({ identifier: identifier.trim(), newPassword: password });
-        if (res.ok) {
-          setMode('login');
-          setPassword('');
-          setPassword2('');
-          setFormErr('');
+        if (!otpSent) {
+          res = await a.requestPasswordReset({ identifier: identifier.trim() });
+          if (res.ok) { setOtpSent(true); setFormErr(''); }
+        } else {
+          res = await a.resetPassword({ identifier: identifier.trim(), otp, newPassword: password });
+          if (res.ok) {
+            setMode('login');
+            setPassword('');
+            setPassword2('');
+            setOtp('');
+            setOtpSent(false);
+            setFormErr('');
+          }
         }
       } else if (mode === 'register') {
         // Khách hàng đăng ký bằng Email & Username (không cần SĐT)
@@ -188,7 +199,9 @@ export default function AuthScreen() {
               <Text style={st.forgotNote}>
                 {mode === 'tech_partner'
                   ? 'Điền thông tin để đăng ký hồ sơ kỹ thuật viên đối tác'
-                  : 'Nhập thông tin xác nhận để tạo mật khẩu mới'}
+                  : otpSent
+                    ? 'Nhập mã 6 số đã gửi tới email của tài khoản (hiệu lực 10 phút) và mật khẩu mới'
+                    : 'Nhập email hoặc tên đăng nhập để nhận mã đặt lại mật khẩu qua email'}
               </Text>
             </View>
           )}
@@ -239,12 +252,24 @@ export default function AuthScreen() {
               />
             )}
 
+            {mode === 'forgot' && otpSent && (
+              <ModernField
+                label="Mã xác nhận (6 số)"
+                icon="shield-check"
+                value={otp}
+                onChangeText={(t) => setOtp(t.replace(/\D/g, '').slice(0, 6))}
+                placeholder="Mã gửi trong email"
+                keyboardType="number-pad"
+              />
+            )}
+
+            {!(mode === 'forgot' && !otpSent) && (
             <ModernField
               label={mode === 'forgot' ? 'Mật khẩu mới' : 'Mật khẩu'}
               icon="lock"
               value={password}
               onChangeText={setPassword}
-              placeholder={mode === 'login' ? 'Nhập mật khẩu của bạn' : 'Tối thiểu 6 ký tự'}
+              placeholder={mode === 'login' ? 'Nhập mật khẩu của bạn' : 'Tối thiểu 8 ký tự'}
               secure={!showPw}
               right={(
                 <Tap onPress={() => setShowPw(!showPw)} style={st.eyeToggle} hitSlop={10}>
@@ -252,8 +277,9 @@ export default function AuthScreen() {
                 </Tap>
               )}
             />
+            )}
 
-            {(mode === 'register' || mode === 'forgot' || mode === 'tech_partner') && (
+            {(mode === 'register' || (mode === 'forgot' && otpSent) || mode === 'tech_partner') && (
               <ModernField
                 label="Xác nhận mật khẩu"
                 icon="shield-check"
@@ -286,7 +312,7 @@ export default function AuthScreen() {
                   : mode === 'login'
                     ? 'Đăng nhập'
                     : mode === 'forgot'
-                      ? 'Lưu mật khẩu mới'
+                      ? (otpSent ? 'Lưu mật khẩu mới' : 'Gửi mã xác nhận')
                       : mode === 'tech_partner'
                         ? 'Đăng ký Kỹ thuật viên'
                         : 'Tạo tài khoản'

@@ -1,6 +1,6 @@
 // Service kết nối API trực tiếp với Backend HRMSS
 // Hỗ trợ kết nối đa cổng: 5173, 5174 và Cloud https://server.hrmss.cyou/api/v1
-import { API_BASE_URL, API_ENDPOINTS, APP_CONFIG } from '../constants/config';
+import { API_BASE_URL, API_ENDPOINTS, APP_CONFIG, API_URL_OVERRIDDEN } from '../constants/config';
 
 // Quản lý Token trong sessionStorage (cô lập theo từng tab & tự động xoá khi đóng trình duyệt, chống rò rỉ localStorage)
 const getStoredToken = () => {
@@ -133,8 +133,9 @@ export async function apiRequest(endpoint, options = {}) {
     if (timer) clearTimeout(timer);
     const isTimeout = err?.name === 'AbortError';
 
-    // Nếu gọi local (5173 hoặc 5174) bị lỗi kết nối, tự động thử fallback sang Cloud Server
-    if (baseUrl !== API_ENDPOINTS.cloud && !isTimeout) {
+    // Nếu gọi local (5173 hoặc 5174) bị lỗi kết nối, tự động thử fallback sang Cloud Server.
+    // Khi đã chỉ định EXPO_PUBLIC_API_URL (backend test) thì không chuyển, để không ghi nhầm vào server thật.
+    if (baseUrl !== API_ENDPOINTS.cloud && !isTimeout && !API_URL_OVERRIDDEN) {
       try {
         const cloudUrl = `${API_ENDPOINTS.cloud}${cleanPath}`;
         const cloudRes = await fetch(cloudUrl, {
@@ -231,6 +232,25 @@ export const hrmssApi = {
     });
   },
 
+  // 3c. Mật khẩu: đổi khi đã đăng nhập; quên mật khẩu = gửi mã OTP qua email rồi đặt lại bằng mã đó.
+  async changePassword({ currentPassword, newPassword }, targetPort = null) {
+    return apiRequest('/auth/change-password', {
+      method: 'POST',
+      body: { current_password: currentPassword, new_password: newPassword, confirm_password: newPassword },
+      targetPort,
+    });
+  },
+  async forgotPassword(identifier, targetPort = null) {
+    return apiRequest('/auth/forgot-password', { method: 'POST', body: { identifier }, targetPort });
+  },
+  async resetPassword({ identifier, otp, newPassword }, targetPort = null) {
+    return apiRequest('/auth/reset-password', {
+      method: 'POST',
+      body: { identifier, otp: String(otp || '').trim(), new_password: newPassword, confirm_password: newPassword },
+      targetPort,
+    });
+  },
+
   // 4. Lấy thông tin tài khoản và profile hiện tại qua JWT
   async getMe(targetPort = null) {
     return apiRequest('/auth/me', { targetPort });
@@ -250,18 +270,24 @@ export const hrmssApi = {
     });
   },
 
-  // 7. Lấy danh mục dịch vụ thực tế từ backend
+  // 7. Danh mục + dịch vụ đang mở (công khai, chỉ mục đang bật)
+  async getServiceCategories(targetPort = null) {
+    return apiRequest('/service-categories', { targetPort });
+  },
   async getServices(targetPort = null) {
-    const res = await apiRequest('/services?limit=100', { targetPort });
+    const res = await apiRequest('/customer/services', { targetPort });
     if (res.ok && res.data?.items) {
       return { ok: true, items: res.data.items };
     }
     return res;
   },
 
-  // 8. Lấy chi tiết dịch vụ theo ID
+  // 8. Chi tiết dịch vụ công khai (mô tả, số lượt đặt) và các bước thực hiện chuẩn của dịch vụ
   async getServiceDetail(id, targetPort = null) {
-    return apiRequest(`/services/${id}`, { targetPort });
+    return apiRequest(`/customer/services/${encodeURIComponent(id)}`, { targetPort });
+  },
+  async getServiceProcedure(id, targetPort = null) {
+    return apiRequest(`/customer/services/${encodeURIComponent(id)}/procedure`, { targetPort });
   },
 
   // 9. Nghiệp vụ Khách hàng (Customer Requests & Addresses)
@@ -390,7 +416,71 @@ export const hrmssApi = {
     });
   },
 
-  // 11. Đăng xuất
+  // 11. Dữ liệu công khai thay cho dữ liệu mẫu trong app (không cần đăng nhập)
+  // Chính sách hệ thống: phí kiểm tra, mức trễ, quy tắc điểm, hạng thành viên.
+  async getPublicConfig(targetPort = null) {
+    return apiRequest('/config/public', { targetPort });
+  },
+  // Bảng giá vật tư niêm yết.
+  async getPublicMaterials(targetPort = null) {
+    return apiRequest('/customer/materials', { targetPort });
+  },
+  // Điểm trung bình + nhận xét của khách cho một dịch vụ (tên khách đã che).
+  async getServiceReviews(serviceDbId, { page = 1, limit = 10 } = {}, targetPort = null) {
+    return apiRequest(`/customer/services/${encodeURIComponent(serviceDbId)}/reviews?page=${page}&limit=${limit}`, { targetPort });
+  },
+
+  // 12. Thông báo (khách & thợ)
+  async getNotifications({ limit = 50 } = {}, targetPort = null) {
+    return apiRequest(`/notifications?limit=${limit}`, { targetPort });
+  },
+  async markNotificationRead(id, targetPort = null) {
+    return apiRequest(`/notifications/${encodeURIComponent(id)}/read`, { method: 'PATCH', targetPort });
+  },
+  async markAllNotificationsRead(targetPort = null) {
+    return apiRequest('/notifications/read-all', { method: 'PATCH', targetPort });
+  },
+
+  // 13. Điểm thưởng & voucher (khách)
+  async getLoyalty({ limit = 50 } = {}, targetPort = null) {
+    return apiRequest(`/customer/loyalty?limit=${limit}`, { targetPort });
+  },
+  async getVoucherWallet(status = 'AVAILABLE', targetPort = null) {
+    return apiRequest(`/customer/vouchers?status=${encodeURIComponent(status)}`, { targetPort });
+  },
+  async getVoucherCatalog(targetPort = null) {
+    return apiRequest('/customer/vouchers/catalog', { targetPort });
+  },
+  async redeemVoucher(voucherId, targetPort = null) {
+    return apiRequest('/customer/vouchers/redeem', { method: 'POST', body: { voucher_id: String(voucherId) }, targetPort });
+  },
+
+  // 14. Theo dõi thợ của đơn (khách): tên, SĐT, điểm đánh giá của thợ được giao.
+  async getRequestTracking(id, targetPort = null) {
+    return apiRequest(`/customer/requests/${encodeURIComponent(id)}/tracking`, { targetPort });
+  },
+
+  // 15. Hồ sơ & đánh giá của thợ
+  async getTechnicianProfile(targetPort = null) {
+    return apiRequest('/technician/profile', { targetPort });
+  },
+  async updateTechnicianWorkArea(workArea, targetPort = null) {
+    return apiRequest('/technician/profile', { method: 'PATCH', body: { work_area: workArea }, targetPort });
+  },
+  async getTechnicianReviews({ limit = 20 } = {}, targetPort = null) {
+    return apiRequest(`/technician/jobs/reviews?limit=${limit}`, { targetPort });
+  },
+
+  // 15b. Thanh toán VietQR: mã thật do backend tạo (đúng số tiền, nội dung HRMSS<số>, đúng tài khoản nhận).
+  async createVietQr(requestId, targetPort = null) {
+    return apiRequest(`/customer/requests/${encodeURIComponent(requestId)}/payments/vietqr`, { method: 'POST', targetPort });
+  },
+  // Hóa đơn + tình trạng thanh toán: payment_status = UNPAID | PENDING | PARTIALLY_PAID | PAID | NOTHING_TO_PAY.
+  async getBill(requestId, targetPort = null) {
+    return apiRequest(`/customer/requests/${encodeURIComponent(requestId)}/bill`, { targetPort });
+  },
+
+  // 16. Đăng xuất
   logout() {
     authTokens.clear();
   },

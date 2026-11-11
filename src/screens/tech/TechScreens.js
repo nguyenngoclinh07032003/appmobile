@@ -280,7 +280,7 @@ export function TechJobsScreen() {
             <View style={{ flex: 1 }}>
               <Text style={tx.hello}>Kỹ thuật viên Minh Đức</Text>
               <Text style={tx.techName} numberOfLines={1}>{me.name}</Text>
-              <Text style={tx.techSub}>{me.code} · ★ {me.rating || TECH_ME.rating} ({done.length || 128} đánh giá dịch vụ)</Text>
+              <Text style={tx.techSub}>{me.code} · ★ {me.rating != null ? me.rating : '—'} ({me.ratingCount || 0} đánh giá dịch vụ)</Text>
             </View>
             <IconBtn icon="🔔" dark badge={d.techUnread} onPress={() => nav.go('tech-notifs')} label="Thông báo" />
           </View>
@@ -609,14 +609,15 @@ export function TechAccountScreen() {
   const [skills, setSkills] = useState(me.skills || TECH_ME.skills);
   const [showPayout, setShowPayout] = useState(false);
   const [payoutBank, setPayoutBank] = useState('MBBank');
-  const [payoutAccNum, setPayoutAccNum] = useState(me.phone || '0988123456');
-  const [payoutAccHolder, setPayoutAccHolder] = useState(me.name?.toUpperCase() || 'NGUYEN VAN THO');
+  const [payoutAccNum, setPayoutAccNum] = useState(me.phone || '');
+  const [payoutAccHolder, setPayoutAccHolder] = useState(me.name?.toUpperCase() || '');
   const [payoutAmount, setPayoutAmount] = useState('');
   const done = d.myJobs.filter((o) => o.status === 'done');
   const rated = done.filter((o) => o.rating);
-  const avg = rated.length
-    ? (rated.reduce((sum, o) => sum + o.rating.stars, 0) / rated.length).toFixed(1)
-    : (me.rating != null ? Number(me.rating).toFixed(1) : '—');
+  const avg = me.rating != null
+    ? Number(me.rating).toFixed(1)
+    : (rated.length ? (rated.reduce((sum, o) => sum + o.rating.stars, 0) / rated.length).toFixed(1) : '—');
+  const backendReviews = Array.isArray(me.reviews) ? me.reviews : [];
   const accepted = d.myJobs.length;
   const declined = (d.declinedCodes || s.declined || []).length;
   const rate = accepted + declined ? Math.round((accepted / (accepted + declined)) * 100) : 100;
@@ -659,9 +660,8 @@ export function TechAccountScreen() {
 
         <View style={{ paddingHorizontal: 16, marginTop: -18, zIndex: 2 }}>
           {(() => {
-            const fiveStarCount = rated.filter((r) => r.rating?.stars === 5).length;
-            const satisfactionRate = rated.length ? Math.round((fiveStarCount / rated.length) * 100) : 99;
-            const topFeedback = rated.find((r) => r.rating?.text)?.rating?.text || 'Kỹ thuật viên thao tác chuyên nghiệp, kiểm tra máy cẩn thận và chạy rất êm.';
+            const satisfactionRate = me.satisfactionPercent != null ? me.satisfactionPercent : null;
+            const topFeedback = backendReviews.find((r) => r.review_text)?.review_text || rated.find((r) => r.rating?.text)?.rating?.text || '';
             return (
               <Card style={{ marginBottom: 0, borderColor: '#E8EEF5', backgroundColor: '#fff', ...shadow.md }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -671,7 +671,7 @@ export function TechAccountScreen() {
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <Text style={{ fontWeight: '900', color: C.ink, fontSize: 19 }}>★ {avg} / 5.0</Text>
-                      <Badge text={`${satisfactionRate}% Hài lòng`} fg="#059669" bg="#ECFDF5" />
+                      {satisfactionRate != null ? <Badge text={`${satisfactionRate}% Hài lòng`} fg="#059669" bg="#ECFDF5" /> : null}
                     </View>
                     <Text style={[ui.meta, { marginTop: 2, lineHeight: 18 }]}>
                       Đánh giá dịch vụ của khách hàng ({completedCount} đơn hoàn thành)
@@ -680,9 +680,9 @@ export function TechAccountScreen() {
                 </View>
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
                   {[
-                    { l: '5★ Tuyệt đối', v: `${satisfactionRate}%` },
-                    { l: 'Đúng giờ hẹn', v: `${rate}%` },
-                    { l: 'Khách quay lại', v: '95%' },
+                    { l: '5★ Tuyệt đối', v: satisfactionRate != null ? `${satisfactionRate}%` : '—' },
+                    { l: 'Tỷ lệ nhận việc', v: `${rate}%` },
+                    { l: 'Lượt đánh giá', v: `${me.ratingCount || 0}` },
                   ].map((x) => (
                     <View key={x.l} style={{ flex: 1, backgroundColor: '#F8FAFC', borderRadius: 12, paddingVertical: 10, paddingHorizontal: 8, alignItems: 'center' }}>
                       <Text style={{ fontSize: 11, color: C.muted, fontWeight: '700', textAlign: 'center' }} numberOfLines={1}>{x.l}</Text>
@@ -693,7 +693,7 @@ export function TechAccountScreen() {
                 <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: '#F0F3F8', paddingTop: 10 }}>
                   <Text style={{ fontSize: 11.5, color: C.muted, fontWeight: '600', marginBottom: 4 }}>Nhận xét tiêu biểu từ khách hàng:</Text>
                   <Text style={{ fontSize: 12.5, color: C.ink, fontStyle: 'italic', lineHeight: 18 }}>
-                    “{topFeedback}”
+                    {topFeedback ? `“${topFeedback}”` : 'Chưa có nhận xét.'}
                   </Text>
                 </View>
               </Card>
@@ -726,16 +726,20 @@ export function TechAccountScreen() {
             <Text style={[ui.meta, { marginTop: 10 }]}>📍 Khu vực phục vụ: {me.area || TECH_ME.area}</Text>
           </Card>
 
-          {rated.length ? (
+          {backendReviews.length ? (
             <Card style={{ marginTop: 12 }}>
               <Text style={tx.h}>Đánh giá gần đây</Text>
-              {rated.slice(0, 5).map((o) => (
-                <Tap key={o.code} style={tx.reviewRow} onPress={() => nav.push('tech-job', { code: o.code })}>
-                  <Stars value={o.rating.stars} size={12} />
-                  <Text style={{ color: C.ink2, fontSize: 13, marginTop: 4 }} numberOfLines={2}>{o.rating.text || 'Không có nhận xét'}</Text>
-                  <Text style={ui.meta}>{o.address?.name} · {o.code}</Text>
-                </Tap>
-              ))}
+              {backendReviews.slice(0, 5).map((r) => {
+                const code = r.request_code;
+                const open = code && s.orders.some((o) => o.code === code) ? () => nav.push('tech-job', { code }) : undefined;
+                return (
+                  <Tap key={r.review_id} style={tx.reviewRow} onPress={open}>
+                    <Stars value={r.rating} size={12} />
+                    <Text style={{ color: C.ink2, fontSize: 13, marginTop: 4 }} numberOfLines={2}>{r.review_text || 'Không có nhận xét'}</Text>
+                    <Text style={ui.meta}>{code || ''}</Text>
+                  </Tap>
+                );
+              })}
             </Card>
           ) : (
             <Card style={{ marginTop: 12 }}>
@@ -766,17 +770,10 @@ export function TechAccountScreen() {
             <ListRow icon="headphones" label="Liên hệ điều phối" value={HOTLINE} onPress={u.call} last />
           </View>
           <Btn
-            title="Nạp dữ liệu kịch bản Demo (Review với cô)"
-            icon="clapperboard"
-            variant="soft"
-            style={{ marginTop: 18 }}
-            onPress={a.loadMockData}
-          />
-          <Btn
             title="Đăng xuất tài khoản Thợ"
             icon="log-out"
             variant="dangerSoft"
-            style={{ marginTop: 10 }}
+            style={{ marginTop: 18 }}
             onPress={() => u.confirm('Thông báo', 'Bạn có muốn đăng xuất?', a.logout, 'Đồng ý', false)}
           />
         </View>
@@ -1103,9 +1100,9 @@ export function TechAccountScreen() {
         footer={(
           <Btn
             title="Cập nhật mật khẩu"
-            onPress={() => {
+            onPress={async () => {
               if (newPw !== newPw2) { u.alert('Không khớp', 'Mật khẩu mới nhập lại chưa khớp.', '🔐'); return; }
-              const res = a.changePassword({ currentPassword: curPw, newPassword: newPw });
+              const res = await a.changePassword({ currentPassword: curPw, newPassword: newPw });
               if (!res.ok) { u.alert('Không đổi được', res.error, '🔐'); return; }
               setShowPw(false);
             }}

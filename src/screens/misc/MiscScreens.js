@@ -2,11 +2,11 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TextInput, Platform, Image, Linking } from 'react-native';
 import { C, R, shadow, toneOf, STATUS_META, grad } from '../../theme';
 import {
-  ALL_SERVICES, CATEGORIES, POPULAR_SEARCHES, FAQ, REDEEM_OPTIONS, VOUCHERS, ORDER_STEPS, HOTLINE, STATUS_DESC, stepIndexOf,
+  ALL_SERVICES, CATEGORIES, POPULAR_SEARCHES, FAQ, ORDER_STEPS, HOTLINE, STATUS_DESC, stepIndexOf,
   getService, formatVND, normalize, catLabel, catIcon, tierOf, TIERS, TIME_SLOTS, MATERIALS, SAFETY_CHECKLIST_ITEMS,
 } from '../../constants/data';
 import {
-  useApp, fmtDate, fmtDateTime, timeAgo, warrantyInfo, LAST_SERVICE_OPTIONS, isActiveOrder, orderTotal,
+  useApp, fmtDate, fmtDateTime, timeAgo, warrantyInfo, isActiveOrder, orderTotal,
   lateDiscountAmount, tierPartDiscountAmount, normalizeTechRep, getCancellationWindowStatus, isQRPayment,
 } from '../../context';
 import {
@@ -15,7 +15,7 @@ import {
   TimeRangeSlider, minutesToSlotStr, minutesToTimeStr, resolveSemanticTone,
 } from '../../components';
 import { pickImage, validateVietnamesePhone, validateContactName } from '../../utils';
-import { TrackingCard } from '../../components/order';
+import { TrackingCard, VietQRPay } from '../../components/order';
 
 const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const nextDays = (n) => Array.from({ length: n }, (_, i) => {
@@ -747,10 +747,7 @@ export function OrderScreen({ params }) {
                 <Text style={[ui.meta, { marginBottom: 8, color: '#92400E', textAlign: 'center' }]}>
                   Thanh toán phí dịch vụ kiểm tra thiết bị tại nhà {formatVND(o.inspectionFee)} cho thợ.
                 </Text>
-                <PseudoQR value={`MINHDUC|KT|${o.code}|${o.inspectionFee}`} size={160} />
-                <Text style={[ui.meta, { marginTop: 8, textAlign: 'center', lineHeight: 18 }]}>
-                  Quét mã QR qua Ngân hàng / Ví điện tử · Nội dung: {o.code} KT · {formatVND(o.inspectionFee)}
-                </Text>
+                <VietQRPay requestId={o.dbRequestId} onPaid={() => a.confirmPayment(o.code, 'webhook')} size={180} />
               </View>
             ) : null}
             {o.status !== 'cancelled' && !o.report?.paid && isQRPayment(o) ? (
@@ -770,38 +767,11 @@ export function OrderScreen({ params }) {
                     ? 'Quét mã VietQR để thanh toán dịch vụ và kích hoạt Bảo hành điện tử 60 ngày'
                     : 'Mã VietQR tạm tính — chỉ quét thanh toán sau khi thợ hoàn thành & nghiệm thu thiết bị'}
                 </Text>
-                <PseudoQR value={`MINHDUC|${o.code}|${orderTotal(o)}`} size={160} />
-                <View style={{ marginTop: 10, width: '100%', backgroundColor: '#fff', padding: 10, borderRadius: R.sm, borderWidth: 1, borderColor: '#E2E8F0', gap: 4 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={ui.meta}>Chủ tài khoản:</Text>
-                    <Text style={{ fontWeight: '700', color: C.ink, fontSize: 12 }}>DỊCH VỤ KỸ THUẬT MINH ĐỨC</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={ui.meta}>Ngân hàng:</Text>
-                    <Text style={{ fontWeight: '700', color: C.ink, fontSize: 12 }}>MBBank (Quân Đội)</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={ui.meta}>Số tài khoản:</Text>
-                    <Text style={{ fontWeight: '800', color: C.primary, fontSize: 12 }}>0908 888 999</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={ui.meta}>Số tiền:</Text>
-                    <Text style={{ fontWeight: '800', color: C.red, fontSize: 12 }}>{formatVND(orderTotal(o))}</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={ui.meta}>Nội dung CK:</Text>
-                    <Text style={{ fontWeight: '800', color: C.orange, fontSize: 12 }}>{o.code}</Text>
-                  </View>
-                </View>
-                {['repairing', 'done'].includes(o.status) ? (
-                  <Btn
-                    title="⚡ Xác nhận đã quét QR (Bank Webhook)"
-                    variant="success"
-                    small
-                    style={{ marginTop: 10, width: '100%' }}
-                    onPress={() => a.confirmPayment(o.code, 'webhook')}
-                  />
-                ) : null}
+                {['repairing', 'pending_review', 'done'].includes(o.status) ? (
+                  <VietQRPay requestId={o.dbRequestId} onPaid={() => a.confirmPayment(o.code, 'webhook')} />
+                ) : (
+                  <Text style={[ui.meta, { textAlign: 'center' }]}>Mã QR thanh toán hiện khi thợ hoàn thành công việc.</Text>
+                )}
               </View>
             ) : null}
             {o.status === 'done' && !o.report?.paid && !isQRPayment(o) ? (
@@ -1304,7 +1274,8 @@ export function RewardsScreen({ params }) {
 
         {/* 1. ĐỔI ĐIỂM LẤY VOUCHER (Ưu tiên đưa lên trên để khách dễ dàng sử dụng điểm) */}
         <SectionTitle title="Đổi điểm lấy voucher" />
-        {REDEEM_OPTIONS.map((r) => {
+        {(s.redeemOptions || []).length === 0 ? <Text style={ui.meta}>Hiện chưa có ưu đãi đổi điểm.</Text> : null}
+        {(s.redeemOptions || []).map((r) => {
           const enough = s.points >= r.cost;
           return (
             <Card key={r.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 }}>
@@ -1319,8 +1290,8 @@ export function RewardsScreen({ params }) {
         })}
 
         {/* 2. VÍ VOUCHER */}
-        <SectionTitle title={`Ví voucher (${s.myVouchers.length + VOUCHERS.length})`} />
-        {[...s.myVouchers, ...VOUCHERS].map((v) => (
+        <SectionTitle title={`Ví voucher (${(s.myVouchers || []).length + (s.publicVouchers || []).length})`} />
+        {[...(s.myVouchers || []), ...(s.publicVouchers || [])].map((v) => (
           <View key={v.code} style={mx.ticket}>
             <View style={[mx.ticketLeft, v.wallet && { backgroundColor: C.primary }]}>
               <AppIcon icon={v.wallet ? 'gift' : 'ticket'} size={22} color={v.wallet ? '#fff' : C.primary} strokeWidth={2.1} />
@@ -1337,8 +1308,8 @@ export function RewardsScreen({ params }) {
         {/* 3. CÁCH TÍCH ĐIỂM */}
         <SectionTitle title="Cách tích điểm" />
         <Card style={{ padding: 0, overflow: 'hidden' }}>
-          <ListRow icon="receipt-text" iconBg={C.primarySoft} label="Hoàn thành đơn hàng" sub="10.000đ = 1 điểm" onPress={() => nav.services()} />
-          <ListRow icon="star" iconBg={C.goldSoft} label="Đánh giá sau khi dùng dịch vụ" sub="+20 điểm mỗi đơn" onPress={() => nav.activity('done')} last />
+          <ListRow icon="receipt-text" iconBg={C.primarySoft} label="Hoàn thành đơn hàng" sub={`${formatVND(s.policy?.loyalty?.earn?.vnd_per_point || 10000)} = 1 điểm`} onPress={() => nav.services()} />
+          <ListRow icon="star" iconBg={C.goldSoft} label="Đánh giá sau khi dùng dịch vụ" sub={`+${s.policy?.loyalty?.review_bonus_points ?? 20} điểm mỗi đơn`} onPress={() => nav.activity('done')} last />
         </Card>
 
         {/* 4. LỊCH SỬ ĐIỂM THƯỞNG (THIẾT KẾ GỌN GÀNG, KHÔNG BỊ TRÀN DÀI) */}
@@ -1830,9 +1801,9 @@ export function ProfileScreen() {
     a.updateUser({ name: name.trim(), phone, email: email.trim(), dob: dob.trim() });
     nav.back();
   };
-  const savePw = () => {
+  const savePw = async () => {
     if (newPw !== newPw2) { u.alert('Không khớp', 'Mật khẩu mới nhập lại chưa khớp.', '🔐'); return; }
-    const res = a.changePassword({ currentPassword: curPw, newPassword: newPw });
+    const res = await a.changePassword({ currentPassword: curPw, newPassword: newPw });
     if (!res.ok) { u.alert('Không đổi được', res.error, '🔐'); return; }
     setShowPw(false);
     setCurPw(''); setNewPw(''); setNewPw2('');
