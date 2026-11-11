@@ -113,7 +113,7 @@ export const mapBackendItemsToAppItems = (rawItems = []) => {
       id: slug,
       dbRequestServiceId: it.request_service_id || null,
       dbServiceId: it.service_id || svc?.dbId || 1,
-      name: it.service_name || it.service_name_snapshot || svc?.name || 'Dịch vụ HRMSS',
+      name: it.service_name || it.service_name_snapshot || svc?.name || 'Dịch vụ Minh Đức',
       qty: 1,
       price,
     };
@@ -222,7 +222,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
       .filter((l) => l.type === 'part')
       .map((l, idx) => ({ id: `mat-${req.request_id}-${idx}`, matId: l.matId || 'm-gas-r32', name: l.name, unit: l.unit, qty: l.qty, price: l.price })),
     report: isDone ? {
-      summary: latestVisit?.work_performed || 'Đã hoàn thành sửa chữa & bảo dưỡng thiết bị chuẩn kỹ thuật HRMSS.',
+      summary: latestVisit?.work_performed || 'Đã hoàn thành sửa chữa & bảo dưỡng thiết bị chuẩn kỹ thuật Minh Đức.',
       paid: req.request_status === 'COMPLETED',
       at: doneAt,
       tech: TECH_ME.name,
@@ -363,7 +363,7 @@ export const mapBackendOpenRequestToOrder = (req) => {
     dateLabel: formatDateLabelFromIso(preferredIso),
     dateKey: formatDateKeyFromIso(preferredIso),
     slot: formatSlotFromIso(preferredIso),
-    payment: 'Chuyển khoản VietQR (Công ty HRMSS)',
+    payment: 'Chuyển khoản VietQR (Công ty Minh Đức)',
     note: req.problem_description || '',
     address: {
       id: `addr-open-${req.request_id}`,

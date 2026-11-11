@@ -1,4 +1,4 @@
-// Dữ liệu dịch vụ, giá niêm yết, lượt bán và đánh giá trên hệ thống Thợ HRMSS
+// Dữ liệu dịch vụ, giá niêm yết, lượt bán và đánh giá trên hệ thống Thợ Minh Đức
 export const CATEGORIES = [
   { id: 'may-lanh', label: 'Máy lạnh', icon: 'snowflake' },
   { id: 'may-giat', label: 'Máy giặt/sấy', icon: 'washing-machine' },
@@ -51,17 +51,17 @@ export const COMMITMENTS = [
   {
     title: 'Tay nghề giỏi',
     sub: '100% Thợ được tuyển chọn',
-    detail: 'Thợ HRMSS cam kết thợ có tay nghề chuyên môn cao mang đến cho Quý Khách dịch vụ chất lượng tốt và thẩm mỹ. Nếu Quý Khách không hài lòng về tay nghề của kỹ thuật viên HRMSS, chúng tôi sẽ cử quản lý kỹ thuật viên làm lại hoàn toàn miễn phí cho Quý Khách như một lời xin lỗi chân thành và sẽ đưa nhân viên vào quy trình kèm cặp/huấn luyện nâng cao tay nghề.',
+    detail: 'Thợ Minh Đức cam kết thợ có tay nghề chuyên môn cao mang đến cho Quý Khách dịch vụ chất lượng tốt và thẩm mỹ. Nếu Quý Khách không hài lòng về tay nghề của kỹ thuật viên Minh Đức, chúng tôi sẽ cử quản lý kỹ thuật viên làm lại hoàn toàn miễn phí cho Quý Khách như một lời xin lỗi chân thành và sẽ đưa nhân viên vào quy trình kèm cặp/huấn luyện nâng cao tay nghề.',
   },
   {
     title: 'Trung thực',
     sub: 'Báo giá rõ ràng trên app trước khi thực hiện',
-    detail: 'Thợ HRMSS cam kết thợ trung thực và nghiêm túc. Nếu HRMSS phát hiện bất kỳ gian lận nào của kỹ thuật viên chung, Thợ HRMSS sẽ bồi thường 2 lần giá trị gian lận của Quý Khách.',
+    detail: 'Thợ Minh Đức cam kết thợ trung thực và nghiêm túc. Nếu Minh Đức phát hiện bất kỳ gian lận nào của kỹ thuật viên chung, Thợ Minh Đức sẽ bồi thường 2 lần giá trị gian lận của Quý Khách.',
   },
   {
     title: 'Thân thiện & Vui vẻ',
     sub: 'Không tư vấn thêm dịch vụ hay linh kiện không cần thiết',
-    detail: 'Được phục vụ Quý Khách là một vinh dự lớn với Thợ HRMSS và Thợ HRMSS luôn trân trọng. Thợ HRMSS cam kết mang đến cho Quý Khách dịch vụ thân thiện và vui vẻ. Nhân viên chỉ nhận thanh toán đúng số tiền trên đơn hàng. Nhân viên sẽ không được xin hoặc gợi ý tiền bồi dưỡng của Quý Khách. Nếu Quý Khách cảm thấy không hài lòng với thái độ, hành vi xin tiền bồi dưỡng của nhân viên, xin vui lòng phản ánh cho Thợ HRMSS để chúng tôi chấn chỉnh.',
+    detail: 'Được phục vụ Quý Khách là một vinh dự lớn với Thợ Minh Đức và Thợ Minh Đức luôn trân trọng. Thợ Minh Đức cam kết mang đến cho Quý Khách dịch vụ thân thiện và vui vẻ. Nhân viên chỉ nhận thanh toán đúng số tiền trên đơn hàng. Nhân viên sẽ không được xin hoặc gợi ý tiền bồi dưỡng của Quý Khách. Nếu Quý Khách cảm thấy không hài lòng với thái độ, hành vi xin tiền bồi dưỡng của nhân viên, xin vui lòng phản ánh cho Thợ Minh Đức để chúng tôi chấn chỉnh.',
   },
 ];
 
@@ -168,7 +168,7 @@ export const videoFor = (item) => {
   if (kind === 'install') {
     return {
       title: `Quy trình khảo sát & lắp đặt ${cat}`,
-      sub: 'Tiêu chuẩn kỹ thuật Thợ HRMSS · 4 bước an toàn',
+      sub: 'Tiêu chuẩn kỹ thuật Thợ Minh Đức · 4 bước an toàn',
       duration: '45 – 90 phút',
       tools: ['Máy khoan chuyên dụng', 'Thước thủy cân bằng', 'Đồng hồ đo áp suất & dòng điện', 'Bộ dụng cụ bảo hộ & bạt che bụi'],
     };
@@ -178,7 +178,7 @@ export const videoFor = (item) => {
       title: `Quy trình kiểm tra & chẩn đoán ${cat}`,
       sub: 'Báo giá minh bạch trước khi sửa · Linh kiện chính hãng',
       duration: '30 – 60 phút',
-      tools: ['Đồng hồ vạn năng đo điện', 'Thiết bị đo nhiệt độ & áp suất', 'Bộ dụng cụ tháo lắp chuyên dụng', 'Tem bảo hành điện tử HRMSS'],
+      tools: ['Đồng hồ vạn năng đo điện', 'Thiết bị đo nhiệt độ & áp suất', 'Bộ dụng cụ tháo lắp chuyên dụng', 'Tem bảo hành điện tử Minh Đức'],
     };
   }
   if (kind === 'gas') {
@@ -214,7 +214,7 @@ export const noteFor = (items) => {
   return '';
 };
 
-// Bảng giá dịch vụ sửa chữa & bảo dưỡng định kỳ chính hãng Thợ HRMSS (Hệ thống không cung cấp lắp đặt mới).
+// Bảng giá dịch vụ sửa chữa & bảo dưỡng định kỳ chính hãng Thợ Minh Đức (Hệ thống không cung cấp lắp đặt mới).
 export const INSTALL_SERVICES = [];
 export const REPAIR_SERVICES = [
   { id: 'sc-ml', dbId: 79, category: 'may-lanh', name: 'Sửa chữa điều hòa / máy lạnh', price: 250000, rating: 0, sold: '', icon: 'snowflake', warranty: 'BH 60 ngày' },
@@ -235,7 +235,7 @@ export const AREAS = [
 export const TIME_SLOTS = ['08h00 - 10h00', '10h00 - 12h00', '12h00 - 14h00', '14h00 - 16h00', '16h00 - 18h00', '18h00 - 20h00'];
 export const VOUCHERS = [
   { code: 'THO20', label: 'Giảm 20.000đ cho đơn từ 150.000đ', discount: 20000, min: 150000 },
-  { code: 'HRMSS10', label: 'Giảm 10% tối đa 50.000đ', percent: 10, max: 50000 },
+  { code: 'MINHDUC10', label: 'Giảm 10% tối đa 50.000đ', percent: 10, max: 50000 },
 ];
 export const imgFor = (id) => `https://picsum.photos/seed/${id}/400/300`;
 
@@ -314,12 +314,12 @@ export const TIERS = [
     color: '#64748B',
     bg: '#F1F5F9',
     summary: 'Quyền lợi tiêu chuẩn bảo vệ khách hàng ngay từ đơn đầu tiên',
-    condition: 'Đăng ký tài khoản miễn phí trên ứng dụng Thợ HRMSS (từ 0 điểm tích luỹ).',
+    condition: 'Đăng ký tài khoản miễn phí trên ứng dụng Thợ Minh Đức (từ 0 điểm tích luỹ).',
     pointRule: '10.000đ thanh toán = 1 điểm · Đánh giá đơn = +20 điểm',
     warrantyDays: 60,
     partDiscountPercent: 0,
     benefits: [
-      '🎁 Tặng ngay mã giảm 10% (HRMSS10) cho đơn đặt lịch đầu tiên',
+      '🎁 Tặng ngay mã giảm 10% (MINHDUC10) cho đơn đặt lịch đầu tiên',
       '💰 Tích luỹ 1 điểm cho mỗi 10.000đ thanh toán dịch vụ hoàn tất',
       '⭐ Thưởng thêm +20 điểm mỗi khi gửi đánh giá chất lượng thợ sau nghiệm thu',
       '🛡️ Bảo hành tiêu chuẩn 60 ngày cho dịch vụ vệ sinh, nạp gas & sửa chữa',
@@ -362,7 +362,7 @@ export const TIERS = [
     color: '#D69E00',
     bg: '#FEF3C7',
     summary: 'Đặc quyền giảm giá linh kiện chính hãng & bảo hành mở rộng 90 ngày',
-    condition: 'Đạt từ 500 điểm tích luỹ trọn đời trên hệ thống Thợ HRMSS.',
+    condition: 'Đạt từ 500 điểm tích luỹ trọn đời trên hệ thống Thợ Minh Đức.',
     pointRule: 'Ưu tiên ghép lịch giờ cao điểm · Bảo hành 90 ngày',
     warrantyDays: 90,
     partDiscountPercent: 5,
@@ -386,7 +386,7 @@ export const TIERS = [
     color: '#2563EB',
     bg: '#DBEAFE',
     summary: 'Chăm sóc đặc quyền VIP, bảo hành 120 ngày & Thợ Trưởng phụ trách',
-    condition: 'Đạt từ 1.000 điểm tích luỹ trọn đời — Hạng thành viên danh giá nhất của Thợ HRMSS.',
+    condition: 'Đạt từ 1.000 điểm tích luỹ trọn đời — Hạng thành viên danh giá nhất của Thợ Minh Đức.',
     pointRule: 'Đặc quyền trọn đời · Thợ Trưởng ★ 4.9+ · Bảo hành 120 ngày',
     warrantyDays: 120,
     partDiscountPercent: 10,
@@ -418,7 +418,7 @@ export const ORDER_STEPS = [
   { key: 'diagnosing', label: 'Kiểm tra thiết bị', desc: 'Thợ kiểm tra và lập chẩn đoán' },
   { key: 'quoted', label: 'Chờ duyệt báo giá', desc: 'Văn phòng đã gửi báo giá, chờ bạn duyệt' },
   { key: 'repairing', label: 'Đang thực hiện', desc: 'Thợ đang sửa chữa / vệ sinh' },
-  { key: 'pending_review', label: 'Chờ nghiệm thu', desc: 'Văn phòng HRMSS đang đối soát biên bản nghiệm thu' },
+  { key: 'pending_review', label: 'Chờ nghiệm thu', desc: 'Văn phòng Minh Đức đang đối soát biên bản nghiệm thu' },
   { key: 'done', label: 'Hoàn thành', desc: 'Dịch vụ đã hoàn tất và nghiệm thu' },
 ];
 // Timeline thợ gọn hơn (gộp báo giá vào bước kiểm tra)
@@ -441,9 +441,9 @@ export const techStepIndexOf = (status) => {
 };
 
 export const TECHS = [
-  { name: 'Hoàng Văn Thọ', code: 'HRMSS1024', rating: 5.0, jobs: 1250 },
-  { name: 'Đặng Quang Minh', code: 'HRMSS2071', rating: 5.0, jobs: 860 },
-  { name: 'Lê Quốc Cường', code: 'HRMSS3318', rating: 4.9, jobs: 1520 },
+  { name: 'Hoàng Văn Thọ', code: 'MD1024', rating: 5.0, jobs: 1250 },
+  { name: 'Đặng Quang Minh', code: 'MD2071', rating: 5.0, jobs: 860 },
+  { name: 'Lê Quốc Cường', code: 'MD3318', rating: 4.9, jobs: 1520 },
 ];
 
 export const PAYMENT_METHODS = [
@@ -497,12 +497,12 @@ export const voucherDiscount = (voucher, subtotal) => {
 };
 
 // ---------------------------------------------------------------------------
-// PHÍA THỢ (Technician) — Hệ thống điều phối kỹ thuật viên Thợ HRMSS:
+// PHÍA THỢ (Technician) — Hệ thống điều phối kỹ thuật viên Thợ Minh Đức:
 //   Thợ → Hệ thống: chẩn đoán, tiến độ sửa chữa, vật tư sử dụng, ảnh minh chứng, biên bản hoàn thành
 //   Hệ thống → Thợ: việc được giao, địa chỉ & liên hệ khách, lịch làm việc, báo giá, thông báo
 // ---------------------------------------------------------------------------
 export const TECH_ME = {
-  name: 'Hoàng Văn Thọ', code: 'HRMSS1024', rating: 5.0, jobs: 1, phone: '0945678901',
+  name: 'Hoàng Văn Thọ', code: 'MD1024', rating: 5.0, jobs: 1, phone: '0945678901',
   area: 'Cầu Giấy, Nam Từ Liêm, Ba Đình, Hoài Đức', skills: ['Máy lạnh', 'Máy giặt', 'Tủ lạnh', 'Nạp gas'],
 };
 
@@ -515,8 +515,8 @@ export const STATUS_DESC = {
   diagnosing: 'Thợ đang kiểm tra thiết bị và lập báo giá',
   quoted: 'Văn phòng đã gửi báo giá — mở đơn để đồng ý hoặc từ chối',
   repairing: 'Thợ đang thực hiện dịch vụ',
-  pending_review: 'KTV đã gửi biên bản. Văn phòng HRMSS đang đối soát kiểm tra nghiệm thu (WF2).',
-  warranty_pending: 'Văn phòng HRMSS đang thẩm định hồ sơ bảo hành theo lịch sử cũ (WF4).',
+  pending_review: 'KTV đã gửi biên bản. Văn phòng Minh Đức đang đối soát kiểm tra nghiệm thu (WF2).',
+  warranty_pending: 'Văn phòng Minh Đức đang thẩm định hồ sơ bảo hành theo lịch sử cũ (WF4).',
   out_of_warranty: 'Thiết bị lỗi do ngoại lực/người dùng. Đã chuyển sang báo giá dịch vụ có phí.',
   done: 'Văn phòng đã duyệt nghiệm thu & dịch vụ hoàn tất. Cảm ơn bạn!',
   cancelled: 'Đơn đã huỷ',
@@ -529,7 +529,7 @@ export const TECH_STATUS_DESC = {
   diagnosing: 'Kiểm tra thiết bị, ghi chẩn đoán và gửi báo giá trước khi làm.',
   quoted: 'Đã gửi báo giá. Chờ khách duyệt trên app để tiếp tục.',
   repairing: 'Đang làm việc — cập nhật tiến độ, vật tư và ảnh minh chứng.',
-  pending_review: 'Đã nộp biên bản. Chờ Văn phòng HRMSS duyệt kết quả nghiệm thu (WF2).',
+  pending_review: 'Đã nộp biên bản. Chờ Văn phòng Minh Đức duyệt kết quả nghiệm thu (WF2).',
   warranty_pending: 'Đơn bảo hành mới — chờ Văn phòng thẩm định hồ sơ gốc (WF4).',
   out_of_warranty: 'Đã xác định ngoài phạm vi bảo hành — chuyển sang báo giá có phí.',
   done: 'Văn phòng đã duyệt nghiệm thu hoàn tất biên bản cho khách.',
@@ -710,7 +710,7 @@ export const matchJobForTech = (order, techProfile) => {
   };
 };
 
-// Điều kiện vị trí thi công chuẩn HRMSS (để thợ chuẩn bị thang, giấy đăng ký BQL, đồ bảo hộ)
+// Điều kiện vị trí thi công chuẩn Minh Đức (để thợ chuẩn bị thang, giấy đăng ký BQL, đồ bảo hộ)
 export const SITE_CONDITIONS = [
   { id: 'nha-pho', label: 'Nhà phố / Tầng trệt', note: 'Vị trí dễ tiếp cận, thi công tiêu chuẩn' },
   { id: 'chung-cu', label: 'Chung cư / Căn hộ', note: 'Thợ đăng ký với BQL toà nhà' },
@@ -718,7 +718,7 @@ export const SITE_CONDITIONS = [
   { id: 'van-phong', label: 'Văn phòng / Cửa hàng', note: 'Thi công gọn gàng, hạn chế tiếng ồn' },
 ];
 
-// Checklist an toàn điện & nghiệm thu bắt buộc của Thợ HRMSS trước khi đóng đơn
+// Checklist an toàn điện & nghiệm thu bắt buộc của Thợ Minh Đức trước khi đóng đơn
 export const SAFETY_CHECKLIST_ITEMS = [
   'Đã đo kiểm dòng điện & áp suất hoạt động an toàn',
   'Đã vận hành chạy thử thiết bị ổn định (≥15 phút)',
@@ -726,7 +726,7 @@ export const SAFETY_CHECKLIST_ITEMS = [
   'Đã kích hoạt bảo hành điện tử & hướng dẫn khách sử dụng',
 ];
 
-// Ưu đãi Combo nhiều máy chuẩn HRMSS: đặt từ 2 máy giảm 5% (tối đa 50k), từ 3 máy giảm 10% (tối đa 120k)
+// Ưu đãi Combo nhiều máy chuẩn Minh Đức: đặt từ 2 máy giảm 5% (tối đa 50k), từ 3 máy giảm 10% (tối đa 120k)
 export const comboDiscountFor = (items = []) => {
   const totalQty = items.reduce((s, it) => s + (Number(it.qty) || 0), 0);
   if (totalQty < 2) return { qty: totalQty, percent: 0, amount: 0, label: '' };
@@ -742,7 +742,7 @@ export const comboDiscountFor = (items = []) => {
   return { qty: totalQty, percent: 10, amount, label: `Combo ${totalQty} thiết bị (-10%)` };
 };
 
-// Danh sách thiết bị trên hệ thống HRMSS tra cứu theo SĐT khách hàng
+// Danh sách thiết bị trên hệ thống Minh Đức tra cứu theo SĐT khách hàng
 export const lookupHrmssPurchasedDevices = (phone = '') => {
   const digits = String(phone || '').replace(/\D/g, '').slice(-4) || '9180';
   const now = Date.now();
@@ -753,7 +753,7 @@ export const lookupHrmssPurchasedDevices = (phone = '') => {
       brand: 'Daikin Inverter 1.5 HP ATKF35XVMV',
       room: 'Phòng ngủ',
       serial: `DK-${digits}-01`,
-      hrmssInvoice: `HD-HRMSS-${digits}1`,
+      hrmssInvoice: `HD-MINHDUC-${digits}1`,
       purchasedAt: now - 210 * DAY_MS,
       warrantyUntil: now + 520 * DAY_MS,
       lastService: now - 195 * DAY_MS, // đã đến kỳ bảo dưỡng 6 tháng
@@ -764,7 +764,7 @@ export const lookupHrmssPurchasedDevices = (phone = '') => {
       brand: 'LG AI DD Inverter 10 kg FV1410S4P',
       room: 'Phòng tắm',
       serial: `LG-${digits}-02`,
-      hrmssInvoice: `HD-HRMSS-${digits}2`,
+      hrmssInvoice: `HD-MINHDUC-${digits}2`,
       purchasedAt: now - 160 * DAY_MS,
       warrantyUntil: now + 570 * DAY_MS,
       lastService: now - 155 * DAY_MS, // sắp đến kỳ bảo dưỡng
@@ -775,7 +775,7 @@ export const lookupHrmssPurchasedDevices = (phone = '') => {
       brand: 'Panasonic Inverter 322L NR-BC360QKVN',
       room: 'Bếp',
       serial: `PA-${digits}-03`,
-      hrmssInvoice: `HD-HRMSS-${digits}3`,
+      hrmssInvoice: `HD-MINHDUC-${digits}3`,
       purchasedAt: now - 90 * DAY_MS,
       warrantyUntil: now + 640 * DAY_MS,
       lastService: now - 60 * DAY_MS,

@@ -125,17 +125,22 @@ export default function HomeScreen() {
       {/* ---------------- Header ---------------- */}
       <View style={st.header}>
         <View style={st.headRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={st.hello}>{firstName ? `Xin chào, ${firstName}` : 'Xin chào'}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 }}>
-              <Text style={st.brand}>Thợ HRMSS</Text>
-              <View style={{ backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' }}>
-                <Text style={{ color: '#fff', fontSize: 10, fontWeight: '900' }}>CHÍNH HÃNG</Text>
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <Text style={st.hello} numberOfLines={1}>
+              {firstName ? `Xin chào, ${firstName}` : 'Xin chào Quý khách'}
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
+              <Text style={st.brand} numberOfLines={1}>Thợ Minh Đức</Text>
+              <View style={st.officialTag}>
+                <AppIcon name="shield-check" size={10} color="#BAE6FD" strokeWidth={2.6} />
+                <Text style={st.officialText}>CHÍNH HÃNG</Text>
               </View>
             </View>
           </View>
-          <IconBtn icon="🔔" dark badge={d.unread} onPress={() => nav.push('notifications')} label="Thông báo" />
-          <IconBtn icon="🛒" dark badge={d.cartCount} onPress={() => nav.push('cart')} style={{ marginLeft: 10 }} label="Giỏ hàng" />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <IconBtn icon="bell" dark badge={d.unread} onPress={() => nav.push('notifications')} label="Thông báo" />
+            <IconBtn icon="shopping-cart" dark badge={d.cartCount} onPress={() => nav.push('cart')} label="Giỏ hàng" />
+          </View>
         </View>
         <Tap style={st.addr} onPress={() => nav.push(d.address ? 'addresses' : 'address-form')}>
           <AppIcon name="map-pin" size={16} color="#fff" strokeWidth={2.2} />
@@ -317,9 +322,21 @@ export default function HomeScreen() {
 export const st = StyleSheet.create({
   header: { backgroundColor: C.navy, ...grad.navyHero, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 46, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: 'hidden' },
   blob: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.06)' },
-  headRow: { flexDirection: 'row', alignItems: 'center' },
-  hello: { color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '500' },
-  brand: { color: '#fff', fontSize: 26, fontWeight: '900', letterSpacing: -0.5, marginTop: 2 },
+  headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  hello: { color: 'rgba(255,255,255,0.78)', fontSize: 12.5, fontWeight: '500' },
+  brand: { color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: -0.3 },
+  officialTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3.5,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  officialText: { color: '#fff', fontSize: 9.5, fontWeight: '900', letterSpacing: 0.4 },
   addr: { flexDirection: 'row', alignItems: 'center', marginTop: 16 },
   addrLabel: { color: 'rgba(255,255,255,0.6)', fontSize: 11 },
   addrText: { color: '#fff', fontSize: 14, fontWeight: '700', marginTop: 1 },

@@ -132,7 +132,7 @@ export default function AuthScreen() {
               <AppIcon name="zap" size={22} color={C.primary} strokeWidth={2.4} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={st.brand}>Thợ HRMSS</Text>
+              <Text style={st.brand}>Thợ Minh Đức</Text>
               <Text style={st.brandSlogan}>HỆ THỐNG DỊCH VỤ SỬA CHỮA & BẢO TRÌ TẬN NHÀ</Text>
             </View>
           </View>
@@ -153,7 +153,7 @@ export default function AuthScreen() {
                 : mode === 'register'
                   ? 'Đăng ký tài khoản để đặt lịch sửa chữa, bảo dưỡng tận nhà và nhận bảo hành đến 120 ngày.'
                   : mode === 'tech_partner'
-                    ? 'Gia nhập mạng lưới kỹ thuật viên chuyên nghiệp HRMSS để nhận việc và gia tăng thu nhập.'
+                    ? 'Gia nhập mạng lưới kỹ thuật viên chuyên nghiệp Minh Đức để nhận việc và gia tăng thu nhập.'
                     : 'Nhập Email hoặc Tên đăng nhập đã đăng ký để tạo mật khẩu bảo vệ mới.'}
             </Text>
           </View>
@@ -317,7 +317,7 @@ export default function AuthScreen() {
 
               <View style={st.securityBadge}>
                 <AppIcon name="lock" size={14} color={C.primary} strokeWidth={2.2} />
-                <Text style={st.securityText}>Bảo mật thông tin người dùng theo tiêu chuẩn an toàn HRMSS</Text>
+                <Text style={st.securityText}>Bảo mật thông tin người dùng theo tiêu chuẩn an toàn Minh Đức</Text>
               </View>
             </View>
           </View>

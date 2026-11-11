@@ -175,7 +175,7 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
 const KEY = 'tho-hrmss-state-v2';
 const welcome = () => ({
   id: uid(), at: Date.now(), read: false, icon: '🎉',
-  title: 'Chào mừng bạn đến với Thợ HRMSS',
+  title: 'Chào mừng bạn đến với Thợ Minh Đức',
   body: 'Nhập mã THO20 để được giảm 20.000đ cho đơn từ 150.000đ.',
   link: { name: 'rewards' },
 });
@@ -540,7 +540,7 @@ export function AppProvider({ children }) {
       tone: 'info',
       fallbackTone: 'info',
       title: `Hotline ${HOTLINE}`,
-      message: 'Tổng đài hỗ trợ Thợ HRMSS hoạt động 7:30 – 22:00 mỗi ngày (miễn phí).',
+      message: 'Tổng đài hỗ trợ Thợ Minh Đức hoạt động 7:30 – 22:00 mỗi ngày (miễn phí).',
       actions: [
         { label: 'Để sau', variant: 'ghost' },
         { label: 'Gọi ngay', variant: 'primary', onPress: () => Linking.openURL(`tel:${HOTLINE.replace(/\s/g, '')}`).catch(() => {}) },
@@ -731,7 +731,7 @@ export function AppProvider({ children }) {
         devices: [...(p.devices || []), d],
         notifications: pushNotif(p, {
           icon: '📺', title: `Đã thêm ${catLabel(category)}`,
-          body: 'Thợ HRMSS sẽ nhắc bạn khi đến kỳ bảo dưỡng.', link: { tab: 'services' },
+          body: 'Thợ Minh Đức sẽ nhắc bạn khi đến kỳ bảo dưỡng.', link: { tab: 'services' },
         }),
       }));
       ui.toast('Đã lưu thiết bị');
@@ -754,16 +754,16 @@ export function AppProvider({ children }) {
           devices: [...toAdd, ...(p.devices || [])],
           notifications: pushNotif(p, {
             icon: '🔄',
-            title: `Đã đồng bộ ${addedCount} thiết bị trên hệ thống HRMSS`,
+            title: `Đã đồng bộ ${addedCount} thiết bị trên hệ thống Minh Đức`,
             body: 'Hệ thống đã tự động nạp số Serial, hạn bảo hành chính hãng và chu kỳ bảo dưỡng.',
             link: { tab: 'services' },
           }),
         };
       });
       if (addedCount > 0) {
-        ui.toast(`Đã đồng bộ ${addedCount} thiết bị HRMSS`, '🔄');
+        ui.toast(`Đã đồng bộ ${addedCount} thiết bị Minh Đức`, '🔄');
       } else {
-        ui.toast('Tất cả thiết bị HRMSS đã được đồng bộ', '✓');
+        ui.toast('Tất cả thiết bị Minh Đức đã được đồng bộ', '✓');
       }
       return addedCount;
     },
@@ -843,7 +843,7 @@ export function AppProvider({ children }) {
         );
         return null;
       }
-      const code = `HRMSS${String(Date.now()).slice(-6)}`;
+      const code = `MD${String(Date.now()).slice(-6)}`;
       const now = Date.now();
       const customerPhone = s.auth?.phone || s.user?.phone || address?.phone || '';
       const curTier = tierOf(s.lifetimePoints || 0).cur;
@@ -1519,7 +1519,7 @@ export function AppProvider({ children }) {
             },
           };
         }
-        // Khách từ chối báo giá & huỷ đơn: Miễn phí 100% kiểm tra tại nhà (0đ) theo chính sách HRMSS
+        // Khách từ chối báo giá & huỷ đơn: Miễn phí 100% kiểm tra tại nhà (0đ) theo chính sách Minh Đức
         const fee = 0;
         appliedFee = fee;
         return {
@@ -1539,7 +1539,7 @@ export function AppProvider({ children }) {
           customer: {
             icon: '❌',
             title: `Đã từ chối báo giá & huỷ đơn · ${code}`,
-            body: 'Đã huỷ đơn thành công. Bạn được miễn phí kiểm tra 100% (0đ) theo chính sách HRMSS.',
+            body: 'Đã huỷ đơn thành công. Bạn được miễn phí kiểm tra 100% (0đ) theo chính sách Minh Đức.',
           },
           extra: { myVouchers: o.voucher?.wallet ? [o.voucher, ...p.myVouchers] : p.myVouchers },
           customerProfilePatch: (prof) => ({
@@ -1568,7 +1568,7 @@ export function AppProvider({ children }) {
         const isAuto = raw === 'AUTO_SCAN';
         const cleanDigits = raw.replace(/\D/g, '');
         const valid = isAuto
-          || raw.toUpperCase().includes(`HRMSS:${custPhone}`)
+          || raw.toUpperCase().includes(`MINHDUC:${custPhone}`)
           || (custPhone && cleanDigits === custPhone)
           || (custPhone && cleanDigits.length >= 4 && custPhone.endsWith(cleanDigits));
         if (!valid) {
@@ -1585,7 +1585,7 @@ export function AppProvider({ children }) {
               at: now,
               by: myTechCode,
               phone: custPhone,
-              qrCode: `HRMSS:${custPhone || o.address?.name || code}`,
+              qrCode: `MINHDUC:${custPhone || o.address?.name || code}`,
             },
           },
           customer: {
@@ -1745,13 +1745,13 @@ export function AppProvider({ children }) {
           customer: {
             icon: '🏢',
             title: `Đơn ${code} đang chờ Văn phòng nghiệm thu (WF2)`,
-            body: `Kỹ thuật viên đã nộp biên bản & hình ảnh sau làm việc. Văn phòng HRMSS đang đối soát kiểm tra chất lượng.`,
+            body: `Kỹ thuật viên đã nộp biên bản & hình ảnh sau làm việc. Văn phòng Minh Đức đang đối soát kiểm tra chất lượng.`,
             link: { name: 'order', params: { code } },
           },
           tech: {
             icon: '⏳',
             title: `Đã nộp biên bản · Chờ Văn phòng nghiệm thu (WF2)`,
-            body: `Biên bản đã chuyển đến Văn phòng HRMSS để đối soát và xác nhận hoàn tất.`,
+            body: `Biên bản đã chuyển đến Văn phòng Minh Đức để đối soát và xác nhận hoàn tất.`,
             link: { name: 'tech-job', params: { code } },
           },
           extra: {
@@ -1775,7 +1775,7 @@ export function AppProvider({ children }) {
       if (authTokens.get() && o0.dbAssignmentId) {
         const cleanSummary = (summary && String(summary).trim().length >= 5)
           ? String(summary).trim()
-          : 'Đã hoàn thành sửa chữa & bảo dưỡng thiết bị theo quy trình chuẩn HRMSS.';
+          : 'Đã hoàn thành sửa chữa & bảo dưỡng thiết bị theo quy trình chuẩn Minh Đức.';
         hrmssApi.completeTechnicianJob(o0.dbAssignmentId, {
           work_performed: cleanSummary,
           testing_result: Array.isArray(safetyChecklist) && safetyChecklist.length > 0
@@ -1813,19 +1813,19 @@ export function AppProvider({ children }) {
                   ? `Văn phòng đã nghiệm thu đơn ${code} · Quét mã VietQR`
                   : `Văn phòng đã nghiệm thu đơn ${code}`,
                 body: qrOrder && !alreadyPaid
-                  ? `Văn phòng HRMSS đã duyệt biên bản đạt chuẩn! Mời bạn mở đơn quét mã VietQR ${formatVND(tot)} để kích hoạt bảo hành 60 ngày.`
-                  : (earn ? `Văn phòng HRMSS đã duyệt nghiệm thu. Bạn nhận được +${earn} điểm & Phiếu bảo hành 60 ngày!` : 'Cảm ơn bạn đã tin tưởng dịch vụ Thợ HRMSS.'),
+                  ? `Văn phòng Minh Đức đã duyệt biên bản đạt chuẩn! Mời bạn mở đơn quét mã VietQR ${formatVND(tot)} để kích hoạt bảo hành 60 ngày.`
+                  : (earn ? `Văn phòng Minh Đức đã duyệt nghiệm thu. Bạn nhận được +${earn} điểm & Phiếu bảo hành 60 ngày!` : 'Cảm ơn bạn đã tin tưởng dịch vụ Thợ Minh Đức.'),
                 link: { name: 'order', params: { code } },
               },
               tech: {
                 icon: '🎉',
                 title: `Văn phòng đã duyệt nghiệm thu đơn ${code}`,
-                body: `Biên bản đạt chuẩn chất lượng HRMSS. Ca sửa chữa đã hoàn tất!`,
+                body: `Biên bản đạt chuẩn chất lượng Minh Đức. Ca sửa chữa đã hoàn tất!`,
                 link: { name: 'tech-job', params: { code } },
               },
             };
           });
-          ui.toast('🏢 Văn phòng HRMSS: Đã phê duyệt nghiệm thu kết quả!', '✅', 'success');
+          ui.toast('🏢 Văn phòng Minh Đức: Đã phê duyệt nghiệm thu kết quả!', '✅', 'success');
         }
       }, 3500);
     },
@@ -1855,18 +1855,18 @@ export function AppProvider({ children }) {
             ? `Văn phòng đã nghiệm thu đơn ${code} · Quét mã VietQR`
             : `Văn phòng đã nghiệm thu đơn ${code}`,
           body: qrOrder && !alreadyPaid
-            ? `Văn phòng HRMSS đã duyệt biên bản đạt chuẩn! Mời bạn mở đơn quét mã VietQR ${formatVND(tot)} để kích hoạt bảo hành 60 ngày.`
-            : (earn ? `Văn phòng HRMSS đã duyệt nghiệm thu. Bạn nhận được +${earn} điểm & Phiếu bảo hành 60 ngày!` : 'Cảm ơn bạn đã tin tưởng dịch vụ Thợ HRMSS.'),
+            ? `Văn phòng Minh Đức đã duyệt biên bản đạt chuẩn! Mời bạn mở đơn quét mã VietQR ${formatVND(tot)} để kích hoạt bảo hành 60 ngày.`
+            : (earn ? `Văn phòng Minh Đức đã duyệt nghiệm thu. Bạn nhận được +${earn} điểm & Phiếu bảo hành 60 ngày!` : 'Cảm ơn bạn đã tin tưởng dịch vụ Thợ Minh Đức.'),
           link: { name: 'order', params: { code } },
         },
         tech: {
           icon: '🎉',
           title: `Văn phòng đã duyệt nghiệm thu đơn ${code}`,
-          body: `Biên bản đạt chuẩn chất lượng HRMSS. Ca sửa chữa đã hoàn tất!`,
+          body: `Biên bản đạt chuẩn chất lượng Minh Đức. Ca sửa chữa đã hoàn tất!`,
           link: { name: 'tech-job', params: { code } },
         },
       }));
-      ui.toast('🏢 Văn phòng HRMSS: Đã phê duyệt nghiệm thu kết quả!', '✅', 'success');
+      ui.toast('🏢 Văn phòng Minh Đức: Đã phê duyệt nghiệm thu kết quả!', '✅', 'success');
       return true;
     },
     // Văn phòng thẩm định duyệt hồ sơ bảo hành (WF4)
@@ -1892,7 +1892,7 @@ export function AppProvider({ children }) {
           link: { name: 'tech-job', params: { code } },
         },
       }));
-      ui.toast('🏢 Văn phòng HRMSS: Đã thẩm định hồ sơ bảo hành hợp lệ', '🛡️', 'success');
+      ui.toast('🏢 Văn phòng Minh Đức: Đã thẩm định hồ sơ bảo hành hợp lệ', '🛡️', 'success');
       return true;
     },
     // Thợ từ chối bảo hành tại nhà do lỗi ngoại lực/người dùng → chuyển sang báo giá có phí (WF4)
@@ -1947,7 +1947,7 @@ export function AppProvider({ children }) {
         tech: {
           icon: '📅',
           title: `Đã lưu yêu cầu tái khám đơn ${code}`,
-          body: `Lý do: ${r}. Quản lý kỹ thuật HRMSS đã nhận được thông tin để điều phối.`,
+          body: `Lý do: ${r}. Quản lý kỹ thuật Minh Đức đã nhận được thông tin để điều phối.`,
           link: { name: 'tech-job', params: { code } },
         },
       }));
@@ -2326,7 +2326,7 @@ export function AppProvider({ children }) {
       if (authTokens.get() && o.dbRequestId) {
         hrmssApi.reviewCustomerRequest(o.dbRequestId, {
           rating: stars,
-          review_text: text || 'Hài lòng với dịch vụ kỹ thuật viên HRMSS.',
+          review_text: text || 'Hài lòng với dịch vụ kỹ thuật viên Minh Đức.',
           punctuality_rating: stars,
           attitude_rating: stars,
           expertise_rating: stars,
@@ -2376,7 +2376,7 @@ export function AppProvider({ children }) {
         notifications: pushNotif(p, {
           icon: '🛡️',
           title: `Đã gửi yêu cầu bảo hành ${newCode}`,
-          body: `Văn phòng HRMSS đang đối soát hồ sơ theo lịch sử đơn ${code} (WF4).`,
+          body: `Văn phòng Minh Đức đang đối soát hồ sơ theo lịch sử đơn ${code} (WF4).`,
           link: { name: 'order', params: { code: newCode } },
         }),
       }));
@@ -2403,7 +2403,7 @@ export function AppProvider({ children }) {
               link: { name: 'tech-job', params: { code: newCode } },
             },
           }));
-          ui.toast('🏢 Văn phòng HRMSS: Đã phê duyệt hồ sơ bảo hành', '🛡️', 'success');
+          ui.toast('🏢 Văn phòng Minh Đức: Đã phê duyệt hồ sơ bảo hành', '🛡️', 'success');
         }
       }, 3500);
       return newCode;

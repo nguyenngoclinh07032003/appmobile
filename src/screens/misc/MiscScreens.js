@@ -356,7 +356,7 @@ export function OrderScreen({ params }) {
               </Tap>
             </View>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-              Kỹ thuật viên đã gửi biên bản & hình ảnh sau làm việc. Bộ phận kiểm soát chất lượng (QA) của Văn phòng HRMSS đang đối soát kiểm tra trước khi bàn giao thanh toán.
+              Kỹ thuật viên đã gửi biên bản & hình ảnh sau làm việc. Bộ phận kiểm soát chất lượng (QA) của Văn phòng Minh Đức đang đối soát kiểm tra trước khi bàn giao thanh toán.
             </Text>
           </Card>
         ) : null}
@@ -371,7 +371,7 @@ export function OrderScreen({ params }) {
               </Tap>
             </View>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-              Yêu cầu bảo hành đã được gửi. Văn phòng HRMSS đang đối chiếu lỗi với nhật ký sửa chữa gốc và thời hạn bảo hành 60 ngày.
+              Yêu cầu bảo hành đã được gửi. Văn phòng Minh Đức đang đối chiếu lỗi với nhật ký sửa chữa gốc và thời hạn bảo hành 60 ngày.
             </Text>
           </Card>
         ) : null}
@@ -427,7 +427,7 @@ export function OrderScreen({ params }) {
               <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(orderTotal(o))}</Text>
             </View>
             <Tap onPress={() => setShowMatPrice(true)} style={{ marginTop: 10 }}>
-              <Text style={ui.link}>Đối chiếu bảng giá vật tư niêm yết HRMSS ›</Text>
+              <Text style={ui.link}>Đối chiếu bảng giá vật tư niêm yết Minh Đức ›</Text>
             </Tap>
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
               <Btn title="Báo giá lại / Huỷ" variant="dangerSoft" style={{ flex: 1.1 }} onPress={() => { setRejectMode('revise'); setShowReject(true); }} />
@@ -503,7 +503,7 @@ export function OrderScreen({ params }) {
               <Text style={{ fontWeight: '800', color: '#0369A1', fontSize: 14 }}>Hệ thống đang điều phối Kỹ thuật viên</Text>
             </View>
             <Text style={{ color: '#0C4A6E', marginTop: 6, fontSize: 12.5, lineHeight: 18 }}>
-              Hệ thống HRMSS đang tự động điều phối Kỹ thuật viên chuyên trách gần bạn nhất để đảm bảo có mặt đúng khung giờ {o.slot}.
+              Hệ thống Minh Đức đang tự động điều phối Kỹ thuật viên chuyên trách gần bạn nhất để đảm bảo có mặt đúng khung giờ {o.slot}.
             </Text>
             <View style={{ marginTop: 8, gap: 4 }}>
               <Text style={{ color: '#0284C7', fontSize: 12, fontWeight: '600' }}>✓ Đúng chuyên môn kỹ thuật thiết bị</Text>
@@ -747,7 +747,7 @@ export function OrderScreen({ params }) {
                 <Text style={[ui.meta, { marginBottom: 8, color: '#92400E', textAlign: 'center' }]}>
                   Thanh toán phí dịch vụ kiểm tra thiết bị tại nhà {formatVND(o.inspectionFee)} cho thợ.
                 </Text>
-                <PseudoQR value={`HRMSS|KT|${o.code}|${o.inspectionFee}`} size={160} />
+                <PseudoQR value={`MINHDUC|KT|${o.code}|${o.inspectionFee}`} size={160} />
                 <Text style={[ui.meta, { marginTop: 8, textAlign: 'center', lineHeight: 18 }]}>
                   Quét mã QR qua Ngân hàng / Ví điện tử · Nội dung: {o.code} KT · {formatVND(o.inspectionFee)}
                 </Text>
@@ -770,11 +770,11 @@ export function OrderScreen({ params }) {
                     ? 'Quét mã VietQR để thanh toán dịch vụ và kích hoạt Bảo hành điện tử 60 ngày'
                     : 'Mã VietQR tạm tính — chỉ quét thanh toán sau khi thợ hoàn thành & nghiệm thu thiết bị'}
                 </Text>
-                <PseudoQR value={`HRMSS|${o.code}|${orderTotal(o)}`} size={160} />
+                <PseudoQR value={`MINHDUC|${o.code}|${orderTotal(o)}`} size={160} />
                 <View style={{ marginTop: 10, width: '100%', backgroundColor: '#fff', padding: 10, borderRadius: R.sm, borderWidth: 1, borderColor: '#E2E8F0', gap: 4 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                     <Text style={ui.meta}>Chủ tài khoản:</Text>
-                    <Text style={{ fontWeight: '700', color: C.ink, fontSize: 12 }}>DỊCH VỤ KỸ THUẬT HRMSS</Text>
+                    <Text style={{ fontWeight: '700', color: C.ink, fontSize: 12 }}>DỊCH VỤ KỸ THUẬT MINH ĐỨC</Text>
                   </View>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                     <Text style={ui.meta}>Ngân hàng:</Text>
@@ -900,11 +900,11 @@ export function OrderScreen({ params }) {
       <Sheet
         visible={showMatPrice}
         onClose={() => setShowMatPrice(false)}
-        title="Bảng giá vật tư niêm yết HRMSS"
+        title="Bảng giá vật tư niêm yết Minh Đức"
         footer={<Btn title="Đã hiểu" onPress={() => setShowMatPrice(false)} />}
       >
         <Text style={[ui.meta, { marginBottom: 10, lineHeight: 18 }]}>
-          Đối chiếu đơn giá vật tư chính hãng của HRMSS. Thợ không được thu cao hơn bảng giá niêm yết.
+          Đối chiếu đơn giá vật tư chính hãng của Minh Đức. Thợ không được thu cao hơn bảng giá niêm yết.
         </Text>
         {refMaterials.map((m) => (
           <View key={m.id} style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.line }}>
@@ -931,7 +931,7 @@ export function OrderScreen({ params }) {
         ) : <Btn title="Đóng phiếu" onPress={() => setShowCertificate(false)} />}
       >
         <View style={{ backgroundColor: C.navy, borderRadius: R.lg, padding: 16, alignItems: 'center', marginBottom: 14 }}>
-          <Text style={{ color: '#93C5FD', fontWeight: '900', fontSize: 12, letterSpacing: 0.8 }}>THỢ HRMSS · CHỨNG NHẬN ĐIỆN TỬ</Text>
+          <Text style={{ color: '#93C5FD', fontWeight: '900', fontSize: 12, letterSpacing: 0.8 }}>THỢ MINH ĐỨC · CHỨNG NHẬN ĐIỆN TỬ</Text>
           <Text style={{ color: '#fff', fontWeight: '900', fontSize: 18, marginTop: 4 }}>
             Mã chứng nhận: {o.report?.warrantyCertificateCode || `BH-${o.code}`}
           </Text>
@@ -939,7 +939,7 @@ export function OrderScreen({ params }) {
             Đơn gốc: {o.code} · Hoàn thành: {fmtDateTime(o.doneAt || o.createdAt)}
           </Text>
           <View style={{ backgroundColor: '#fff', padding: 10, borderRadius: 16, marginTop: 12 }}>
-            <PseudoQR value={`HRMSS-WARRANTY|${o.code}|${o.address?.phone || ''}|${winfo.totalDays || 60}D`} size={130} />
+            <PseudoQR value={`MINHDUC-WARRANTY|${o.code}|${o.address?.phone || ''}|${winfo.totalDays || 60}D`} size={130} />
           </View>
           <Badge
             text={winfo.ok ? `🛡️ Còn ${winfo.daysLeft}/${winfo.totalDays} ngày bảo hành (đến ${fmtDate(winfo.until)})` : winfo.text}
@@ -958,7 +958,7 @@ export function OrderScreen({ params }) {
               • Thiết bị: {catLabel(o.device.category)} {o.device.brand || ''} {o.device.room ? `(${o.device.room})` : ''}{o.device.serial ? ` · SN: ${o.device.serial}` : ''}
             </Text>
           ) : null}
-          <Text style={ui.meta}>• Kỹ thuật viên: {o.tech?.name || o.report?.tech || 'Thợ HRMSS'} ({o.tech?.code || o.report?.techCode || 'HRMSS'})</Text>
+          <Text style={ui.meta}>• Kỹ thuật viên: {o.tech?.name || o.report?.tech || 'Thợ Minh Đức'} ({o.tech?.code || o.report?.techCode || 'MINHDUC'})</Text>
         </View>
 
         <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, gap: 6, marginTop: 10 }}>
@@ -1052,7 +1052,7 @@ export function OrderScreen({ params }) {
         <Text style={[ui.meta, { fontSize: 13, marginBottom: 8 }]}>
           {rejectMode === 'revise'
             ? 'Thợ sẽ nhận được yêu cầu và điều chỉnh lại phương án / chi phí cho bạn.'
-            : 'Đơn hàng sẽ được huỷ ngay lập tức. Chính sách HRMSS miễn phí 100% kiểm tra tại nhà (0đ), bạn không phải trả bất kỳ khoản phí nào.'}
+            : 'Đơn hàng sẽ được huỷ ngay lập tức. Chính sách Minh Đức miễn phí 100% kiểm tra tại nhà (0đ), bạn không phải trả bất kỳ khoản phí nào.'}
         </Text>
         {REJECT_REASONS.map((r) => (
           <Tap key={r} style={mx.option} onPress={() => setRejectReason(r)}>
@@ -1729,7 +1729,7 @@ export function HelpScreen() {
 
 export function TermsScreen() {
   const items = [
-    ['1. Phạm vi áp dụng', 'Điều khoản áp dụng cho mọi khách hàng đặt dịch vụ kỹ thuật tại nhà qua ứng dụng Thợ HRMSS.'],
+    ['1. Phạm vi áp dụng', 'Điều khoản áp dụng cho mọi khách hàng đặt dịch vụ kỹ thuật tại nhà qua ứng dụng Thợ Minh Đức.'],
     ['2. Đặt lịch & huỷ lịch', 'Khách hàng có thể huỷ đơn miễn phí khi thợ chưa di chuyển. Lịch hẹn được xác nhận qua cuộc gọi của thợ.'],
     ['3. Giá & thanh toán', 'Giá hiển thị gồm nhân công. Vật tư, linh kiện phát sinh được báo giá và chỉ thực hiện khi khách đồng ý.'],
     ['4. Bảo hành', 'Dịch vụ vệ sinh, nạp gas được bảo hành 60 ngày kể từ ngày hoàn thành.'],

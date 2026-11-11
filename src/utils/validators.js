@@ -1,4 +1,4 @@
-// Bộ quy tắc kiểm tra tính hợp lệ dữ liệu nhập liệu (Validation) chuẩn cho ứng dụng Thợ HRMSS
+// Bộ quy tắc kiểm tra tính hợp lệ dữ liệu nhập liệu (Validation) chuẩn cho ứng dụng Thợ Minh Đức
 
 /**
  * Kiểm tra số điện thoại Việt Nam hợp lệ:

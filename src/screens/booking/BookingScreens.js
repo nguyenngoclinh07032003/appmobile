@@ -93,7 +93,7 @@ export function DetailScreen({ params }) {
           <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#F5D77A', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <AppIcon name="flame" size={22} color="#D97706" strokeWidth={2.2} />
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: '800', color: C.goldInk, fontSize: 13 }}>Ưu đãi Combo nhiều máy chuẩn HRMSS</Text>
+              <Text style={{ fontWeight: '800', color: C.goldInk, fontSize: 13 }}>Ưu đãi Combo nhiều máy chuẩn Minh Đức</Text>
               <Text style={{ color: C.ink2, fontSize: 12, marginTop: 2 }}>Đặt 2 máy giảm thêm 5% (tối đa 50K) · Đặt từ 3 máy giảm thêm 10% (tối đa 120K)</Text>
             </View>
             <Btn title="Đặt 2 máy" small variant="gold" style={{ flexShrink: 0 }} onPress={() => nav.push('checkout', { items: [{ id: service.id, qty: 2 }] })} />
@@ -105,7 +105,7 @@ export function DetailScreen({ params }) {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <IconBox icon="settings" size={42} bg={C.primarySoft} radius={13} />
               <View style={{ flex: 1 }}>
-                <Text style={bx.h}>Bảng giá vật tư & linh kiện niêm yết HRMSS</Text>
+                <Text style={bx.h}>Bảng giá vật tư & linh kiện niêm yết Minh Đức</Text>
                 <Text style={ui.meta}>
                   Công khai {catMaterials.length} hạng mục chính hãng · Chỉ thực hiện khi bạn duyệt
                   {curTier.partDiscountPercent ? ` · Hạng ${curTier.label} giảm thêm ${curTier.partDiscountPercent}%` : ''}
@@ -216,7 +216,7 @@ export function DetailScreen({ params }) {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <View style={bx.play}><Text style={{ color: C.primary, fontSize: 18, marginLeft: 3 }}>▶</Text></View>
             <View style={{ flex: 1 }}>
-              <Text style={{ color: '#93C5FD', fontWeight: '800', fontSize: 11 }}>TIÊU CHUẨN KỸ THUẬT THỢ HRMSS</Text>
+              <Text style={{ color: '#93C5FD', fontWeight: '800', fontSize: 11 }}>TIÊU CHUẨN KỸ THUẬT THỢ MINH ĐỨC</Text>
               <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15, marginTop: 2 }}>{service.name}</Text>
               <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2 }}>⏱ Thời gian dự kiến: {video?.duration || '45 – 60 phút'}</Text>
             </View>
@@ -250,7 +250,7 @@ export function DetailScreen({ params }) {
         footer={<Btn title="Đã hiểu" onPress={() => setShowMatPrice(false)} />}
       >
         <View style={{ padding: 12, borderRadius: R.md, backgroundColor: C.primarySoft, marginBottom: 12 }}>
-          <Text style={{ fontWeight: '800', color: C.primary, fontSize: 13 }}>🛡️ Cam kết minh bạch từ Thợ HRMSS</Text>
+          <Text style={{ fontWeight: '800', color: C.primary, fontSize: 13 }}>🛡️ Cam kết minh bạch từ Thợ Minh Đức</Text>
           <Text style={{ color: C.ink2, fontSize: 12.5, marginTop: 4, lineHeight: 18 }}>
             • Giá dịch vụ bạn đặt đã bao gồm 100% công thợ và phí đi lại.{'\n'}
             • Vật tư/linh kiện dưới đây chỉ phát sinh khi thiết bị thực sự cần thay thế và phải được bạn bấm “Đồng ý báo giá” trên ứng dụng.
@@ -299,7 +299,7 @@ export function CartScreen() {
         right={s.cart.length ? <Tap onPress={() => u.confirm('Xoá toàn bộ giỏ hàng?', '', a.clearCart, 'Xoá hết', true)}><Text style={{ color: C.red, fontWeight: '700' }}>Xoá hết</Text></Tap> : null}
       />
       {s.cart.length === 0 ? (
-        <EmptyState icon="shopping-cart" title="Giỏ hàng đang trống" body="Thêm dịch vụ bạn cần, chọn giờ và thợ HRMSS sẽ đến tận nhà." action="Khám phá dịch vụ" onAction={() => nav.services()} style={{ flex: 1 }} />
+        <EmptyState icon="shopping-cart" title="Giỏ hàng đang trống" body="Thêm dịch vụ bạn cần, chọn giờ và thợ Minh Đức sẽ đến tận nhà." action="Khám phá dịch vụ" onAction={() => nav.services()} style={{ flex: 1 }} />
       ) : (
         <View style={{ flex: 1 }}>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
@@ -461,7 +461,7 @@ export function CheckoutScreen({ params }) {
 
   const applyVoucher = (code) => {
     const v = allVouchers.find((x) => x.code === code.trim().toUpperCase());
-    if (!v) { u.alert('Mã không hợp lệ', 'Thử THO20, HRMSS10 hoặc voucher đã đổi bằng điểm.', '🎟️'); return; }
+    if (!v) { u.alert('Mã không hợp lệ', 'Thử THO20, MINHDUC10 hoặc voucher đã đổi bằng điểm.', '🎟️'); return; }
     if (v.min && subtotal < v.min) { u.alert('Chưa đủ điều kiện', `${v.code} áp dụng cho đơn từ ${formatVND(v.min)}. Đơn hiện tại ${formatVND(subtotal)}.`, '🎟️'); return; }
     setVoucher(v); setVoucherInput(v.code); setShowVoucher(false);
     u.toast(`Đã áp dụng ${v.code}`, '🎟️');
@@ -668,7 +668,7 @@ export function CheckoutScreen({ params }) {
 
         <Field label="Mô tả tình trạng thiết bị" multiline value={note} onChangeText={setNote} placeholder="VD: Máy lạnh chảy nước, kém lạnh…" />
 
-        {/* Điều kiện vị trí thi công chuẩn HRMSS */}
+        {/* Điều kiện vị trí thi công chuẩn Minh Đức */}
         <Text style={[bx.sec, { marginTop: 16, marginBottom: 8 }]}>Vị trí & điều kiện thi công</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
           {SITE_CONDITIONS.map((sc) => (
@@ -1098,7 +1098,7 @@ export function AddressesScreen({ params }) {
       <TopBar title={selectMode ? 'Chọn địa chỉ' : 'Sổ địa chỉ'} />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
         {s.addresses.length === 0 ? (
-          <EmptyState icon="map-pin" title="Chưa có địa chỉ" body="Thêm địa chỉ để thợ HRMSS đến đúng nhà và phục vụ bạn." action="Thêm địa chỉ mới" onAction={() => nav.push('address-form', { useNow: selectMode })} />
+          <EmptyState icon="map-pin" title="Chưa có địa chỉ" body="Thêm địa chỉ để thợ Minh Đức đến đúng nhà và phục vụ bạn." action="Thêm địa chỉ mới" onAction={() => nav.push('address-form', { useNow: selectMode })} />
         ) : s.addresses.map((ad) => {
           const on = d.address?.id === ad.id;
           return (

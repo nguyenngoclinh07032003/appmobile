@@ -162,7 +162,7 @@ function WarrantyView() {
           label="Số điện thoại hoặc mã đơn"
           value={warrantyQuery}
           onChangeText={setWarrantyQuery}
-          placeholder="VD: 0901234567 hoặc HRMSS123456"
+          placeholder="VD: 0901234567 hoặc MD123456"
           autoCapitalize="characters"
           onSubmitEditing={() => lookup()}
           style={{ marginTop: -8 }}
@@ -221,7 +221,7 @@ export function ActivityScreen() {
           <EmptyState
             icon={actFilter === 'active' ? 'calendar-clock' : actFilter === 'done' ? 'check-circle-2' : 'archive'}
             title={actFilter === 'active' ? 'Không có đơn đang xử lý' : actFilter === 'done' ? 'Chưa có đơn hoàn thành' : 'Không có đơn bị huỷ'}
-            body="Đặt dịch vụ để thợ HRMSS đến tận nhà. Đơn của bạn sẽ hiện tại đây."
+            body="Đặt dịch vụ để thợ Minh Đức đến tận nhà. Đơn của bạn sẽ hiện tại đây."
             action="Đặt dịch vụ ngay"
             onAction={() => nav.services()}
           />

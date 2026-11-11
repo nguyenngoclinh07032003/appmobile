@@ -1,4 +1,4 @@
-/** Dịch vụ định vị GPS cho kỹ thuật viên Thợ HRMSS */
+/** Dịch vụ định vị GPS cho kỹ thuật viên Thợ Minh Đức */
 
 const DEFAULT_COORDS = { lat: 21.028511, lng: 105.804817, label: 'Đã xác thực toạ độ GPS (±18m)' };
 

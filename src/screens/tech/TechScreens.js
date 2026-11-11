@@ -1,5 +1,5 @@
 // ===========================================================================
-// APP THỢ (Technician) — Hệ thống kỹ thuật viên Thợ HRMSS
+// APP THỢ (Technician) — Hệ thống kỹ thuật viên Thợ Minh Đức
 //   Nhận từ hệ thống: việc được giao, địa chỉ & liên hệ khách, lịch làm việc, báo giá, thông báo
 //   Gửi lên hệ thống: chẩn đoán, tiến độ, vật tư sử dụng, ảnh minh chứng, biên bản hoàn thành
 // Dùng chung dữ liệu đơn hàng với app Khách hàng (src/store.js) nên hai bên cập nhật cho nhau.
@@ -36,7 +36,7 @@ const sameDay = (ts, key) => {
 const slotHour = (slot) => parseInt(slot, 10) || 0;
 const callPhone = (phone) => Linking.openURL(`tel:${(phone || '').replace(/\s/g, '')}`).catch(() => {});
 const openMap = (addr) => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr || '')}`).catch(() => {});
-// Tách bạch thu nhập của Thợ chuẩn HRMSS: 70% phí nhân công + 15% hoa hồng vật tư kho + 100% hoàn trả vật tư phát sinh mua ngoài
+// Tách bạch thu nhập của Thợ chuẩn Minh Đức: 70% phí nhân công + 15% hoa hồng vật tư kho + 100% hoàn trả vật tư phát sinh mua ngoài
 const techIncomeBreakdown = (o) => {
   if (!o || o.kind === 'warranty' || o.kind === 'followup') {
     return { laborGross: 0, partsGross: 0, laborShare: 0, partCommission: 0, customPartsReimbursement: 0, warehouseReturn: 0, total: 0 };
@@ -134,7 +134,7 @@ function JobCard({ o, compact, onDecline, canAccept = true }) {
             borderColor: '#BAE6FD',
           }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <Text style={{ fontSize: 11.5, fontWeight: '800', color: '#0369A1' }}>🏷️ ĐIỀU PHỐI TỪ HỆ THỐNG HRMSS</Text>
+              <Text style={{ fontSize: 11.5, fontWeight: '800', color: '#0369A1' }}>🏷️ ĐIỀU PHỐI TỪ HỆ THỐNG MINH ĐỨC</Text>
               <Text style={{ fontSize: 11, fontWeight: '700', color: C.orange }}>⏳ Còn 14:30 tiếp nhận</Text>
             </View>
             <View style={{ gap: 2 }}>
@@ -278,7 +278,7 @@ export function TechJobsScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <View style={tx.avatar}><AppIcon name="hard-hat" size={28} color={C.primary} strokeWidth={2.1} /></View>
             <View style={{ flex: 1 }}>
-              <Text style={tx.hello}>Kỹ thuật viên HRMSS</Text>
+              <Text style={tx.hello}>Kỹ thuật viên Minh Đức</Text>
               <Text style={tx.techName} numberOfLines={1}>{me.name}</Text>
               <Text style={tx.techSub}>{me.code} · ★ {me.rating || TECH_ME.rating} ({done.length || 128} đánh giá dịch vụ)</Text>
             </View>
@@ -881,7 +881,7 @@ export function TechAccountScreen() {
             </View>
             <Text style={{ fontSize: 18, fontWeight: '900', color: C.ink }}>{s.auth?.name || me.name || 'Kỹ thuật viên'}</Text>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
-              <Badge text="Kỹ thuật viên HRMSS" fg={C.primary} bg={C.primarySoft} />
+              <Badge text="Kỹ thuật viên Minh Đức" fg={C.primary} bg={C.primarySoft} />
               <Badge text="Đang hoạt động" fg={C.green} bg={C.greenSoft} />
             </View>
           </View>
@@ -972,7 +972,7 @@ export function TechAccountScreen() {
         </View>
       </Sheet>
 
-      <Sheet visible={showIncome} onClose={() => setShowIncome(false)} title="Ví thu nhập & Chiết khấu HRMSS">
+      <Sheet visible={showIncome} onClose={() => setShowIncome(false)} title="Ví thu nhập & Chiết khấu Minh Đức">
         <View style={tx.incomeHead}>
           <Text style={ui.meta}>Số dư ví khả dụng (Có thể rút ngay)</Text>
           <Text style={[ui.price, { fontSize: 24, color: C.green }]}>{formatVND(availableBalance)}</Text>
@@ -991,7 +991,7 @@ export function TechAccountScreen() {
 
         <View style={{ padding: 10, borderRadius: R.md, backgroundColor: C.primarySoft, marginTop: 12 }}>
           <Text style={{ fontSize: 12, color: C.primary, fontWeight: '700', lineHeight: 18 }}>
-            💡 Chính sách HRMSS: Thợ hưởng 70% phí nhân công + 15% phụ cấp vật tư kho + 100% hoàn tiền linh kiện phát sinh mua ngoài (rút về ATM tức thì).
+            💡 Chính sách Minh Đức: Thợ hưởng 70% phí nhân công + 15% phụ cấp vật tư kho + 100% hoàn tiền linh kiện phát sinh mua ngoài (rút về ATM tức thì).
           </Text>
         </View>
         {monthDone.length === 0 ? (
@@ -1287,7 +1287,7 @@ export function TechJobScreen({ params }) {
               </Tap>
             </View>
             <Text style={{ color: '#4C1D95', fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>
-              Bạn đã nộp biên bản và hình ảnh hiện trường. Hệ thống đang chuyển đến Văn phòng HRMSS để đối soát biên bản nghiệm thu trước khi chốt đơn.
+              Bạn đã nộp biên bản và hình ảnh hiện trường. Hệ thống đang chuyển đến Văn phòng Minh Đức để đối soát biên bản nghiệm thu trước khi chốt đơn.
             </Text>
           </Card>
         ) : null}
@@ -1297,7 +1297,7 @@ export function TechJobScreen({ params }) {
           <Card style={{ marginTop: 12, backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }}>
             <Text style={{ fontWeight: '800', color: '#1D4ED8', fontSize: 13.5 }}>📅 ĐÃ GỬI YÊU CẦU HẸN TÁI KHÁM (WF2)</Text>
             <Text style={{ color: '#1E3A8A', fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>
-              Lý do: <Text style={{ fontWeight: '700' }}>{o.followUpReason || 'Chờ linh kiện phụ tùng'}</Text>. Quản lý kỹ thuật HRMSS đang lên lịch hẹn tái khám tiếp theo.
+              Lý do: <Text style={{ fontWeight: '700' }}>{o.followUpReason || 'Chờ linh kiện phụ tùng'}</Text>. Quản lý kỹ thuật Minh Đức đang lên lịch hẹn tái khám tiếp theo.
             </Text>
           </Card>
         ) : null}
@@ -1416,7 +1416,7 @@ export function TechJobScreen({ params }) {
                 </View>
                 <Text style={{ fontSize: 12.5, color: o.report?.paid ? '#065F46' : C.goldInk, lineHeight: 18 }}>
                   {o.report?.paid
-                    ? `Hệ thống HRMSS đã nhận đủ ${formatVND(orderTotal(o))} qua VietQR. Thu nhập ca làm & hoàn ứng vật tư đã cộng trực tiếp vào Ví thu nhập của bạn.`
+                    ? `Hệ thống Minh Đức đã nhận đủ ${formatVND(orderTotal(o))} qua VietQR. Thu nhập ca làm & hoàn ứng vật tư đã cộng trực tiếp vào Ví thu nhập của bạn.`
                     : `Khách thanh toán ${formatVND(orderTotal(o))} qua mã VietQR trên ứng dụng Khách hàng. Kỹ thuật viên tuyệt đối KHÔNG thu tiền mặt. Tiền công & hoàn ứng vật tư sẽ tự động cộng vào Ví của bạn.`}
                 </Text>
               </View>
@@ -1867,7 +1867,7 @@ export function TechJobScreen({ params }) {
             <Text style={{ color: (o.inspectionFee || 0) > 0 ? '#92400E' : C.ink2, lineHeight: 20 }}>
               {(o.inspectionFee || 0) > 0
                 ? `Khách huỷ sau khi thợ đã tới kiểm tra thiết bị trực tiếp tại nhà. Khách thanh toán ${formatVND(o.inspectionFee)} phí kiểm tra cho thợ.`
-                : 'Chính sách HRMSS miễn phí 100% kiểm tra tại nhà khi khách từ chối sửa chữa (0đ).'}
+                : 'Chính sách Minh Đức miễn phí 100% kiểm tra tại nhà khi khách từ chối sửa chữa (0đ).'}
             </Text>
           </Card>
         ) : null}
@@ -1931,7 +1931,7 @@ export function TechJobScreen({ params }) {
               u.dialog({
                 icon: '📅',
                 title: 'Yêu cầu hẹn tái khám (WF2)',
-                message: 'Chưa thể hoàn thành ca trong hôm nay? Chọn lý do để Quản lý kỹ thuật HRMSS xếp lịch quay lại.',
+                message: 'Chưa thể hoàn thành ca trong hôm nay? Chọn lý do để Quản lý kỹ thuật Minh Đức xếp lịch quay lại.',
                 actions: [
                   { label: 'Đóng', variant: 'ghost' },
                   {
@@ -2055,7 +2055,7 @@ export function TechJobScreen({ params }) {
                 return;
               }
               if (safetyChecks.length < SAFETY_CHECKLIST_ITEMS.length) {
-                u.alert('Chưa đủ checklist an toàn', 'Vui lòng kiểm tra và xác nhận đủ 4 tiêu chuẩn an toàn kỹ thuật HRMSS trước khi bàn giao.', '⚡');
+                u.alert('Chưa đủ checklist an toàn', 'Vui lòng kiểm tra và xác nhận đủ 4 tiêu chuẩn an toàn kỹ thuật Minh Đức trước khi bàn giao.', '⚡');
                 return;
               }
               const hasAfter = evidence.some((e) => e.stage === 'after');
@@ -2076,7 +2076,7 @@ export function TechJobScreen({ params }) {
         )}
       >
         <Field label="Nội dung công việc đã làm" multiline value={summary} onChangeText={setSummary} style={{ marginTop: -8 }} />
-        <Text style={[ui.fieldLabel, { marginTop: 10, marginBottom: 6 }]}>⚡ Checklist an toàn kỹ thuật & nghiệm thu chuẩn HRMSS</Text>
+        <Text style={[ui.fieldLabel, { marginTop: 10, marginBottom: 6 }]}>⚡ Checklist an toàn kỹ thuật & nghiệm thu chuẩn Minh Đức</Text>
         <View style={{ padding: 10, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, marginBottom: 10, gap: 6 }}>
           {SAFETY_CHECKLIST_ITEMS.map((item) => {
             const checked = safetyChecks.includes(item);
