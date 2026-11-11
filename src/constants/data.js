@@ -328,7 +328,7 @@ export const TIERS = [
     terms: [
       'Cam kết đúng giờ: Tự động giảm 20%–50% phí nhân công (tối đa 200.000đ) nếu thợ check-in trễ giờ hẹn.',
       'Linh hoạt tuyệt đối: Miễn phí 100% khi sửa yêu cầu, đổi lịch hẹn hoặc huỷ đơn trước khi thợ di chuyển.',
-      'Điểm tích luỹ xếp hạng được cộng dồn trọn đời, không bị trừ khi bạn dùng điểm đổi voucher.',
+      'Chu kỳ xét hạng: Điểm tích luỹ được tính trong chu kỳ 12 tháng. Đổi điểm lấy voucher KHÔNG làm giảm điểm xét hạng.',
     ],
   },
   {
@@ -338,8 +338,8 @@ export const TIERS = [
     color: '#475569',
     bg: '#E2E8F0',
     summary: 'Ưu tiên điều phối thợ giỏi & cộng thêm thời hạn bảo hành tận nhà',
-    condition: 'Đạt từ 200 điểm tích luỹ trọn đời (tương đương ~2.000.000đ chi tiêu tích luỹ hoặc hoàn thành đơn kèm đánh giá).',
-    pointRule: 'Giữ hạng trọn đời · Không hạ hạng khi đổi điểm lấy voucher',
+    condition: 'Đạt từ 200 điểm tích luỹ trong 12 tháng (tương đương ~2.000.000đ chi tiêu hoặc hoàn thành đơn kèm đánh giá).',
+    pointRule: 'Duy trì hạng 12 tháng · Đổi voucher không ảnh hưởng hạng',
     warrantyDays: 75,
     partDiscountPercent: 0,
     benefits: [
@@ -350,8 +350,8 @@ export const TIERS = [
       '🔄 Miễn phí 100% chi phí kiểm tra lại tận nơi nếu thiết bị phát sinh lỗi trong thời gian bảo hành',
     ],
     terms: [
-      'Bảo toàn thứ hạng: Hạng Bạc được tính theo tổng điểm tích luỹ trọn đời, việc đổi điểm lấy voucher không làm giảm hạng.',
-      'Bảo vệ lịch hẹn: Nếu thợ gặp sự cố đột xuất phải trả việc, hệ thống lập tức điều phối thợ ưu tiên mới kèm tặng bạn Voucher xin lỗi.',
+      'Bảo toàn thứ hạng 12 tháng: Thứ hạng Bạc được duy trì trọn vẹn trong 12 tháng kể từ ngày đạt hạng. Khách hàng dùng điểm đổi voucher thoải mái mà không bị tụt hạng.',
+      'Gia hạn thứ hạng: Chỉ cần tích luỹ đủ 200 điểm trong chu kỳ 12 tháng tiếp theo để tự động gia hạn hạng Bạc.',
       'Quyền yêu cầu báo giá lại: Khách có quyền yêu cầu thợ điều chỉnh phương án/vật tư ngay trên app mà không mất phí.',
     ],
   },
@@ -362,8 +362,8 @@ export const TIERS = [
     color: '#D69E00',
     bg: '#FEF3C7',
     summary: 'Đặc quyền giảm giá linh kiện chính hãng & bảo hành mở rộng 90 ngày',
-    condition: 'Đạt từ 500 điểm tích luỹ trọn đời trên hệ thống Thợ Minh Đức.',
-    pointRule: 'Ưu tiên ghép lịch giờ cao điểm · Bảo hành 90 ngày',
+    condition: 'Đạt từ 500 điểm tích luỹ trong 12 tháng trên hệ thống Thợ Minh Đức.',
+    pointRule: 'Duy trì hạng 12 tháng · Ưu tiên giờ cao điểm · Bảo hành 90 ngày',
     warrantyDays: 90,
     partDiscountPercent: 5,
     benefits: [
@@ -374,9 +374,9 @@ export const TIERS = [
       '🧰 Miễn phí kiểm tra tổng quát thêm 01 thiết bị điện máy khác trong cùng lần thợ đến nhà',
     ],
     terms: [
-      'Cam kết phản hồi nhanh: Ưu tiên phân công thợ xác nhận lịch hẹn trong vòng 15 phút tại khu vực nội thành.',
+      'Bảo toàn thứ hạng 12 tháng: Đổi điểm lấy voucher không làm trừ điểm xét hạng Vàng.',
       'Bảo vệ giá 100%: Tuyệt đối không phát sinh bất kỳ phụ phí nào ngoài bảng báo giá điện tử đã được bạn phê duyệt trên ứng dụng.',
-      'Hỗ trợ kỹ thuật tận nhà: Kiểm tra vận hành thiết bị và hỗ trợ bảo hành tận nơi hoàn toàn miễn phí.',
+      'Gia hạn thứ hạng: Tích luỹ đủ 500 điểm trong 12 tháng tiếp theo để tiếp tục duy trì đặc quyền hạng Vàng.',
     ],
   },
   {
@@ -386,8 +386,8 @@ export const TIERS = [
     color: '#2563EB',
     bg: '#DBEAFE',
     summary: 'Chăm sóc đặc quyền VIP, bảo hành 120 ngày & Thợ Trưởng phụ trách',
-    condition: 'Đạt từ 1.000 điểm tích luỹ trọn đời — Hạng thành viên danh giá nhất của Thợ Minh Đức.',
-    pointRule: 'Đặc quyền trọn đời · Thợ Trưởng ★ 4.9+ · Bảo hành 120 ngày',
+    condition: 'Đạt từ 1.000 điểm tích luỹ trong 12 tháng — Hạng thành viên danh giá nhất của Thợ Minh Đức.',
+    pointRule: 'Duy trì hạng 12 tháng · Thợ Trưởng ★ 4.9+ · Bảo hành 120 ngày',
     warrantyDays: 120,
     partDiscountPercent: 10,
     benefits: [
@@ -398,7 +398,7 @@ export const TIERS = [
       '📞 Đường dây nóng CSKH VIP ưu tiên hỗ trợ 24/7 và giải quyết yêu cầu tức thì',
     ],
     terms: [
-      'Duy trì hạng Vĩnh Viễn: Quyền lợi Kim Cương được bảo lưu trọn đời trên tài khoản số điện thoại của khách hàng.',
+      'Chu kỳ duy trì hạng VIP: Quyền lợi Kim Cương được bảo lưu trọn vẹn trong chu kỳ 12 tháng.',
       'Cam kết hài lòng 100%: Hỗ trợ cử Thợ Trưởng kiểm tra và xử lý lại hoàn toàn miễn phí trong 48 giờ nếu bạn chưa hài lòng khi nghiệm thu.',
       'Ưu tiên bồi thường cao nhất: Nhân đôi giá trị Voucher đền bù nếu xảy ra bất kỳ sự cố trễ hẹn hoặc đổi lịch nào từ phía kỹ thuật.',
     ],

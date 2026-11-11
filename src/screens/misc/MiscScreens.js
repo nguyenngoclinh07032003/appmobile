@@ -1171,6 +1171,9 @@ export function RewardsScreen({ params }) {
   const [selectedTierId, setSelectedTierId] = useState(params?.tierId || null);
   const activeTier = TIERS.find((t) => t.id === selectedTierId) || null;
   const previewTier = activeTier || cur;
+  const [historyFilter, setHistoryFilter] = useState('all');
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [showHistorySheet, setShowHistorySheet] = useState(false);
 
   // Ghi nhớ mã → màn Xác nhận đặt lịch sẽ tự áp dụng
   const pickWalletVoucher = (v) => {
@@ -1187,16 +1190,54 @@ export function RewardsScreen({ params }) {
       <TopBar title="Quyền lợi của tôi" />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
         <View style={mx.pointsHero}>
-          <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '600' }}>Điểm hiện có</Text>
-          <Text style={{ color: '#FFFFFF', fontSize: 40, fontWeight: '900', marginTop: 2 }}>{s.points}</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
-            <Tap onPress={() => setSelectedTierId(cur.id)}>
-              <Badge text={`${cur.label} · Xem quyền lợi ›`} fg="#fff" bg={cur.color} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <View>
+              <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '600' }}>Điểm khả dụng (Đổi voucher)</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
+                <Text style={{ color: '#FFFFFF', fontSize: 38, fontWeight: '900' }}>{s.points}</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: '700' }}>điểm tiêu dùng</Text>
+              </View>
+            </View>
+            <Tap
+              onPress={() => setSelectedTierId(cur.id)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 5,
+                backgroundColor: 'rgba(255,255,255,0.18)',
+                paddingHorizontal: 10,
+                paddingVertical: 5,
+                borderRadius: R.pill,
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.3)',
+              }}
+            >
+              <AppIcon name="crown" size={14} color="#FDE047" strokeWidth={2.4} />
+              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>{cur.label}</Text>
             </Tap>
-            <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12 }}>Tích luỹ: {s.lifetimePoints} điểm</Text>
           </View>
-          <Progress value={progress} color="#FFFFFF" style={{ marginTop: 14, backgroundColor: 'rgba(255,255,255,0.25)' }} />
-          <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 6 }}>{next ? `Còn ${next.min - s.lifetimePoints} điểm để lên hạng ${next.label}` : 'Bạn đã đạt hạng cao nhất'}</Text>
+
+          <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.15)', marginVertical: 12 }} />
+
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12.5, fontWeight: '600' }}>
+              Điểm tích luỹ xét hạng: <Text style={{ color: '#fff', fontWeight: '800' }}>{s.lifetimePoints} điểm</Text>
+            </Text>
+            <View style={{ backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 }}>
+              <Text style={{ color: '#BAE6FD', fontSize: 10.5, fontWeight: '800' }}>
+                Chu kỳ 12 tháng
+              </Text>
+            </View>
+          </View>
+          <Progress value={progress} color="#FFFFFF" style={{ marginTop: 8, backgroundColor: 'rgba(255,255,255,0.25)', height: 6 }} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 7 }}>
+            <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 11.5, fontWeight: '600', flex: 1 }}>
+              {next ? `Cần thêm ${next.min - s.lifetimePoints} điểm để lên hạng ${next.label}` : '👑 Bạn đã đạt thứ hạng cao nhất (Kim cương)!'}
+            </Text>
+            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
+              Đổi voucher không trừ điểm hạng
+            </Text>
+          </View>
         </View>
 
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, marginBottom: 2 }}>
@@ -1261,67 +1302,7 @@ export function RewardsScreen({ params }) {
           </Text>
         </Card>
 
-        <SectionTitle title="Cách tích điểm" />
-        <Card style={{ padding: 0, overflow: 'hidden' }}>
-          <ListRow icon="receipt-text" iconBg={C.primarySoft} label="Hoàn thành đơn hàng" sub="10.000đ = 1 điểm" onPress={() => nav.services()} />
-          <ListRow icon="star" iconBg={C.goldSoft} label="Đánh giá sau khi dùng dịch vụ" sub="+20 điểm mỗi đơn" onPress={() => nav.activity('done')} last />
-        </Card>
-
-        {(() => {
-          const fallbackEntries = s.orders
-            .filter((o) => o.status === 'done' && o.kind !== 'warranty')
-            .flatMap((o) => {
-              const earned = Math.max(1, Math.floor(orderTotal(o) / 10000));
-              const arr = [{ id: `ord_${o.code}`, title: `Hoàn thành đơn ${o.code}`, delta: earned, at: o.doneAt || o.createdAt, orderCode: o.code }];
-              if (o.rating) {
-                arr.unshift({ id: `rate_${o.code}`, title: `Đánh giá dịch vụ đơn ${o.code}`, delta: 20, at: (o.doneAt || o.createdAt) + 60000, orderCode: o.code });
-              }
-              return arr;
-            });
-          const historyList = (s.pointHistory && s.pointHistory.length) ? s.pointHistory : fallbackEntries;
-          return (
-            <>
-              <SectionTitle title={`Lịch sử điểm thưởng (${historyList.length})`} />
-              {historyList.length === 0 ? (
-                <Card style={{ backgroundColor: '#F8FAFC' }}>
-                  <Text style={ui.meta}>Chưa có giao dịch điểm nào. Hoàn thành đơn hoặc gửi đánh giá để tích điểm thưởng đầu tiên!</Text>
-                </Card>
-              ) : (
-                <Card style={{ padding: 0, overflow: 'hidden' }}>
-                  {historyList.slice(0, 10).map((h, i, arr) => (
-                    <Tap
-                      key={h.id || i}
-                      onPress={() => (h.orderCode ? nav.push('order', { code: h.orderCode }) : null)}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 12,
-                        padding: 13,
-                        borderBottomWidth: i < arr.length - 1 ? 1 : 0,
-                        borderBottomColor: C.line,
-                      }}
-                    >
-                      <IconBox
-                        icon={h.delta > 0 ? 'trending-up' : 'gift'}
-                        size={38}
-                        bg={h.delta > 0 ? C.greenSoft : C.goldSoft}
-                        radius={12}
-                      />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontWeight: '700', color: C.ink, fontSize: 13.5 }}>{h.title}</Text>
-                        <Text style={ui.meta}>{fmtDateTime(h.at)}</Text>
-                      </View>
-                      <Text style={{ fontWeight: '900', fontSize: 14, color: h.delta > 0 ? C.green : C.orange }}>
-                        {h.delta > 0 ? `+${h.delta}` : h.delta} điểm
-                      </Text>
-                    </Tap>
-                  ))}
-                </Card>
-              )}
-            </>
-          );
-        })()}
-
+        {/* 1. ĐỔI ĐIỂM LẤY VOUCHER (Ưu tiên đưa lên trên để khách dễ dàng sử dụng điểm) */}
         <SectionTitle title="Đổi điểm lấy voucher" />
         {REDEEM_OPTIONS.map((r) => {
           const enough = s.points >= r.cost;
@@ -1337,6 +1318,7 @@ export function RewardsScreen({ params }) {
           );
         })}
 
+        {/* 2. VÍ VOUCHER */}
         <SectionTitle title={`Ví voucher (${s.myVouchers.length + VOUCHERS.length})`} />
         {[...s.myVouchers, ...VOUCHERS].map((v) => (
           <View key={v.code} style={mx.ticket}>
@@ -1350,8 +1332,320 @@ export function RewardsScreen({ params }) {
             <Btn title="Dùng" small variant="soft" style={{ marginRight: 12 }} onPress={() => pickWalletVoucher(v)} />
           </View>
         ))}
-        <Text style={[ui.meta, { textAlign: 'center', marginTop: 6 }]}>Chọn mã ở bước Xác nhận đặt lịch để được giảm giá.</Text>
+        <Text style={[ui.meta, { textAlign: 'center', marginTop: 4, marginBottom: 8 }]}>Chọn mã ở bước Xác nhận đặt lịch để được giảm giá.</Text>
+
+        {/* 3. CÁCH TÍCH ĐIỂM */}
+        <SectionTitle title="Cách tích điểm" />
+        <Card style={{ padding: 0, overflow: 'hidden' }}>
+          <ListRow icon="receipt-text" iconBg={C.primarySoft} label="Hoàn thành đơn hàng" sub="10.000đ = 1 điểm" onPress={() => nav.services()} />
+          <ListRow icon="star" iconBg={C.goldSoft} label="Đánh giá sau khi dùng dịch vụ" sub="+20 điểm mỗi đơn" onPress={() => nav.activity('done')} last />
+        </Card>
+
+        {/* 4. LỊCH SỬ ĐIỂM THƯỞNG (THIẾT KẾ GỌN GÀNG, KHÔNG BỊ TRÀN DÀI) */}
+        {(() => {
+          const fallbackEntries = s.orders
+            .filter((o) => o.status === 'done' && o.kind !== 'warranty')
+            .flatMap((o) => {
+              const earned = Math.max(1, Math.floor(orderTotal(o) / 10000));
+              const arr = [{ id: `ord_${o.code}`, title: `Hoàn thành đơn ${o.code}`, delta: earned, at: o.doneAt || o.createdAt, orderCode: o.code, type: 'order' }];
+              if (o.rating) {
+                arr.unshift({ id: `rate_${o.code}`, title: `Đánh giá dịch vụ đơn ${o.code}`, delta: 20, at: (o.doneAt || o.createdAt) + 60000, orderCode: o.code, type: 'review' });
+              }
+              return arr;
+            });
+          const historyList = (s.pointHistory && s.pointHistory.length) ? s.pointHistory : fallbackEntries;
+          const totalEarned = historyList.filter((h) => h.delta > 0).reduce((sum, h) => sum + h.delta, 0);
+          const totalSpent = Math.abs(historyList.filter((h) => h.delta < 0).reduce((sum, h) => sum + h.delta, 0));
+
+          const filteredList = historyList.filter((h) => {
+            if (historyFilter === 'earn') return h.delta > 0;
+            if (historyFilter === 'redeem') return h.delta < 0;
+            return true;
+          });
+
+          const INITIAL_COUNT = 3;
+          const displayList = historyExpanded ? filteredList : filteredList.slice(0, INITIAL_COUNT);
+          const hasMore = filteredList.length > INITIAL_COUNT;
+
+          const renderHistoryRow = (h, i, arr) => {
+            const isEarn = h.delta > 0;
+            const isReview = h.type === 'review' || /đánh giá/i.test(h.title);
+            const isBonus = h.type === 'bonus' || /tân thủ|đăng ký/i.test(h.title);
+
+            const iconName = isEarn
+              ? (isReview ? 'star' : (isBonus ? 'sparkles' : 'receipt-text'))
+              : 'gift';
+
+            const iconBg = isEarn
+              ? (isReview ? '#FEF9C3' : (isBonus ? '#F3E8FF' : '#E0F2FE'))
+              : '#FFEDD5';
+
+            const iconFg = isEarn
+              ? (isReview ? '#CA8A04' : (isBonus ? '#9333EA' : '#0284C7'))
+              : '#EA580C';
+
+            return (
+              <Tap
+                key={h.id || i}
+                onPress={() => (h.orderCode ? nav.push('order', { code: h.orderCode }) : null)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 12,
+                  paddingVertical: 12,
+                  paddingHorizontal: 14,
+                  borderBottomWidth: i < arr.length - 1 ? 1 : 0,
+                  borderBottomColor: '#F1F5F9',
+                }}
+              >
+                <IconBox icon={iconName} size={38} bg={iconBg} color={iconFg} radius={11} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: '700', color: C.ink, fontSize: 13 }} numberOfLines={1}>
+                    {h.title}
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                    <Text style={{ fontSize: 11, color: C.muted }}>{fmtDateTime(h.at)}</Text>
+                    {h.orderCode ? (
+                      <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: C.primary }}>#{h.orderCode}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+                <Text style={{ fontWeight: '900', fontSize: 14, color: isEarn ? '#16A34A' : '#EA580C' }}>
+                  {isEarn ? `+${h.delta}` : h.delta} điểm
+                </Text>
+              </Tap>
+            );
+          };
+
+          return (
+            <View style={{ marginTop: 12 }}>
+              <SectionTitle
+                title="Lịch sử điểm thưởng"
+                action={historyList.length > 0 ? `Toàn bộ (${historyList.length})` : null}
+                onAction={() => setShowHistorySheet(true)}
+              />
+
+              {/* Thẻ thống kê 2 chỉ số: Tích luỹ & Đã dùng */}
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                <View
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                    backgroundColor: '#F0FDF4',
+                    borderWidth: 1,
+                    borderColor: '#DCFCE7',
+                    paddingVertical: 9,
+                    paddingHorizontal: 12,
+                    borderRadius: 12,
+                  }}
+                >
+                  <IconBox icon="trending-up" size={30} bg="#DCFCE7" color="#16A34A" radius={8} />
+                  <View>
+                    <Text style={{ fontSize: 10.5, color: '#15803D', fontWeight: '600' }}>Tổng tích luỹ</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: '#16A34A' }}>+{totalEarned} điểm</Text>
+                  </View>
+                </View>
+
+                <View
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                    backgroundColor: '#FFF7ED',
+                    borderWidth: 1,
+                    borderColor: '#FFEDD5',
+                    paddingVertical: 9,
+                    paddingHorizontal: 12,
+                    borderRadius: 12,
+                  }}
+                >
+                  <IconBox icon="gift" size={30} bg="#FFEDD5" color="#EA580C" radius={8} />
+                  <View>
+                    <Text style={{ fontSize: 10.5, color: '#C2410C', fontWeight: '600' }}>Đã đổi voucher</Text>
+                    <Text style={{ fontSize: 14, fontWeight: '900', color: '#EA580C' }}>-{totalSpent} điểm</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Bộ lọc tab mini: Tất cả | Đã nhận | Đã đổi */}
+              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+                {[
+                  { id: 'all', label: `Tất cả (${historyList.length})` },
+                  { id: 'earn', label: `+ Đã nhận (${historyList.filter((h) => h.delta > 0).length})` },
+                  { id: 'redeem', label: `- Đã đổi (${historyList.filter((h) => h.delta < 0).length})` },
+                ].map((tab) => {
+                  const on = historyFilter === tab.id;
+                  return (
+                    <Tap
+                      key={tab.id}
+                      onPress={() => setHistoryFilter(tab.id)}
+                      style={{
+                        paddingVertical: 5,
+                        paddingHorizontal: 10,
+                        borderRadius: R.pill,
+                        backgroundColor: on ? C.primary : '#F1F5F9',
+                      }}
+                    >
+                      <Text style={{ fontSize: 11.5, fontWeight: on ? '800' : '600', color: on ? '#fff' : C.ink2 }}>
+                        {tab.label}
+                      </Text>
+                    </Tap>
+                  );
+                })}
+              </View>
+
+              {/* Danh sách rút gọn tối đa 3 dòng */}
+              {filteredList.length === 0 ? (
+                <Card style={{ backgroundColor: '#F8FAFC', padding: 16, alignItems: 'center' }}>
+                  <Text style={ui.meta}>Không có giao dịch nào trong mục này.</Text>
+                </Card>
+              ) : (
+                <Card style={{ padding: 0, overflow: 'hidden' }}>
+                  {displayList.map((h, i) => renderHistoryRow(h, i, displayList))}
+
+                  {/* Nút Xem thêm / Thu gọn trực tiếp */}
+                  {hasMore && (
+                    <Tap
+                      onPress={() => setHistoryExpanded(!historyExpanded)}
+                      style={{
+                        paddingVertical: 11,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexDirection: 'row',
+                        gap: 6,
+                        backgroundColor: '#F8FAFC',
+                        borderTopWidth: 1,
+                        borderTopColor: '#F1F5F9',
+                      }}
+                    >
+                      <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.primary }}>
+                        {historyExpanded ? 'Thu gọn danh sách ▲' : `Xem thêm (${filteredList.length - INITIAL_COUNT} giao dịch khác) ▼`}
+                      </Text>
+                    </Tap>
+                  )}
+                </Card>
+              )}
+            </View>
+          );
+        })()}
       </ScrollView>
+
+      {/* Sheet xem toàn bộ lịch sử điểm thưởng */}
+      <Sheet
+        visible={showHistorySheet}
+        onClose={() => setShowHistorySheet(false)}
+        title="Lịch sử giao dịch điểm"
+        footer={<Btn title="Đóng" variant="ghost" onPress={() => setShowHistorySheet(false)} />}
+      >
+        {(() => {
+          const fallbackEntries = s.orders
+            .filter((o) => o.status === 'done' && o.kind !== 'warranty')
+            .flatMap((o) => {
+              const earned = Math.max(1, Math.floor(orderTotal(o) / 10000));
+              const arr = [{ id: `ord_${o.code}`, title: `Hoàn thành đơn ${o.code}`, delta: earned, at: o.doneAt || o.createdAt, orderCode: o.code, type: 'order' }];
+              if (o.rating) {
+                arr.unshift({ id: `rate_${o.code}`, title: `Đánh giá dịch vụ đơn ${o.code}`, delta: 20, at: (o.doneAt || o.createdAt) + 60000, orderCode: o.code, type: 'review' });
+              }
+              return arr;
+            });
+          const historyList = (s.pointHistory && s.pointHistory.length) ? s.pointHistory : fallbackEntries;
+          const filtered = historyList.filter((h) => {
+            if (historyFilter === 'earn') return h.delta > 0;
+            if (historyFilter === 'redeem') return h.delta < 0;
+            return true;
+          });
+
+          return (
+            <View>
+              {/* Bộ lọc trong Sheet */}
+              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
+                {[
+                  { id: 'all', label: `Tất cả (${historyList.length})` },
+                  { id: 'earn', label: `+ Đã nhận (${historyList.filter((h) => h.delta > 0).length})` },
+                  { id: 'redeem', label: `- Đã đổi (${historyList.filter((h) => h.delta < 0).length})` },
+                ].map((tab) => {
+                  const on = historyFilter === tab.id;
+                  return (
+                    <Tap
+                      key={tab.id}
+                      onPress={() => setHistoryFilter(tab.id)}
+                      style={{
+                        paddingVertical: 5,
+                        paddingHorizontal: 10,
+                        borderRadius: R.pill,
+                        backgroundColor: on ? C.primary : '#F1F5F9',
+                      }}
+                    >
+                      <Text style={{ fontSize: 11.5, fontWeight: on ? '800' : '600', color: on ? '#fff' : C.ink2 }}>
+                        {tab.label}
+                      </Text>
+                    </Tap>
+                  );
+                })}
+              </View>
+
+              <Card style={{ padding: 0, overflow: 'hidden' }}>
+                {filtered.map((h, i, arr) => {
+                  const isEarn = h.delta > 0;
+                  const isReview = h.type === 'review' || /đánh giá/i.test(h.title);
+                  const isBonus = h.type === 'bonus' || /tân thủ|đăng ký/i.test(h.title);
+                  const iconName = isEarn
+                    ? (isReview ? 'star' : (isBonus ? 'sparkles' : 'receipt-text'))
+                    : 'gift';
+                  const iconBg = isEarn
+                    ? (isReview ? '#FEF9C3' : (isBonus ? '#F3E8FF' : '#E0F2FE'))
+                    : '#FFEDD5';
+                  const iconFg = isEarn
+                    ? (isReview ? '#CA8A04' : (isBonus ? '#9333EA' : '#0284C7'))
+                    : '#EA580C';
+
+                  return (
+                    <Tap
+                      key={h.id || i}
+                      onPress={() => {
+                        if (h.orderCode) {
+                          setShowHistorySheet(false);
+                          nav.push('order', { code: h.orderCode });
+                        }
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 12,
+                        paddingVertical: 12,
+                        paddingHorizontal: 14,
+                        borderBottomWidth: i < arr.length - 1 ? 1 : 0,
+                        borderBottomColor: '#F1F5F9',
+                      }}
+                    >
+                      <IconBox icon={iconName} size={38} bg={iconBg} color={iconFg} radius={11} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontWeight: '700', color: C.ink, fontSize: 13 }}>{h.title}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                          <Text style={{ fontSize: 11, color: C.muted }}>{fmtDateTime(h.at)}</Text>
+                          {h.orderCode ? (
+                            <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: C.primary }}>#{h.orderCode}</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      </View>
+                      <Text style={{ fontWeight: '900', fontSize: 14, color: isEarn ? '#16A34A' : '#EA580C' }}>
+                        {isEarn ? `+${h.delta}` : h.delta} điểm
+                      </Text>
+                    </Tap>
+                  );
+                })}
+              </Card>
+            </View>
+          );
+        })()}
+      </Sheet>
 
       <Sheet
         visible={!!activeTier}

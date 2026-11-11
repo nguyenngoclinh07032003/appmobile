@@ -4,7 +4,7 @@ import {
   getService, MAINT_MONTHS, TECH_ME, REDEEM_OPTIONS, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech,
   tierOf, lookupHrmssPurchasedDevices, comboDiscountFor, syncCatalogFromBackend, resolveDbServiceId,
 } from '../constants/data';
-import { MOCK_ORDERS, MOCK_DEVICES, MOCK_ADDRESSES, MOCK_CUSTOMER_NOTIFS, MOCK_TECH_NOTIFS } from '../constants/mockData';
+import { MOCK_ORDERS, MOCK_DEVICES, MOCK_ADDRESSES, MOCK_CUSTOMER_NOTIFS, MOCK_TECH_NOTIFS, MOCK_POINT_HISTORY } from '../constants/mockData';
 export { matchJobForTech, comboDiscountFor } from '../constants/data';
 import {
   getSession, clearSession, loginAccount, registerAccount, urlRoleHint, resetPassword, changePassword, quickLoginRole, setSession, upsertBackendAccount, deleteAccountById,
@@ -213,9 +213,9 @@ const makeCustomerSlice = () => ({
   devices: [],
   favorites: [],
   notifications: [...MOCK_CUSTOMER_NOTIFS],
-  points: 0,
-  lifetimePoints: 0,
-  pointHistory: [],
+  points: 120,
+  lifetimePoints: 350,
+  pointHistory: [...MOCK_POINT_HISTORY],
   myVouchers: [],
   searches: [],
 });
@@ -250,6 +250,9 @@ const switchCustomerSlice = (prev, nextAccount) => {
     const loaded = {
       ...rawLoaded,
       notifications: (rawLoaded.notifications && rawLoaded.notifications.length > 1) ? rawLoaded.notifications : [...MOCK_CUSTOMER_NOTIFS],
+      points: (rawLoaded.points != null) ? rawLoaded.points : 120,
+      lifetimePoints: (rawLoaded.lifetimePoints != null) ? rawLoaded.lifetimePoints : 350,
+      pointHistory: (rawLoaded.pointHistory && rawLoaded.pointHistory.length > 0) ? rawLoaded.pointHistory : [...MOCK_POINT_HISTORY],
     };
     profiles[nextKey] = loaded;
     return { ...loaded, customerProfiles: profiles };
@@ -307,6 +310,7 @@ export function AppProvider({ children }) {
     const cleanAddresses = (saved.addresses && saved.addresses.length > 0) ? saved.addresses : MOCK_ADDRESSES;
     const cleanNotifs = (saved.notifications && saved.notifications.length > 1) ? saved.notifications : MOCK_CUSTOMER_NOTIFS;
     const cleanTechNotifs = (saved.techNotifs && saved.techNotifs.length > 0) ? saved.techNotifs : MOCK_TECH_NOTIFS;
+    const cleanPointHistory = (saved.pointHistory && saved.pointHistory.length > 0) ? saved.pointHistory : [...MOCK_POINT_HISTORY];
     const baseState = {
       ...makeInitial(),
       ...saved,
@@ -315,6 +319,9 @@ export function AppProvider({ children }) {
       addresses: cleanAddresses,
       notifications: cleanNotifs,
       techNotifs: cleanTechNotifs,
+      pointHistory: cleanPointHistory,
+      points: saved.points != null ? saved.points : 120,
+      lifetimePoints: saved.lifetimePoints != null ? saved.lifetimePoints : 350,
       selectedAddressId: saved.selectedAddressId,
       role,
       user,
@@ -331,6 +338,9 @@ export function AppProvider({ children }) {
         const existingSlice = {
           ...rawSlice,
           notifications: (rawSlice.notifications && rawSlice.notifications.length > 1) ? rawSlice.notifications : cleanNotifs,
+          pointHistory: (rawSlice.pointHistory && rawSlice.pointHistory.length > 0) ? rawSlice.pointHistory : [...MOCK_POINT_HISTORY],
+          points: rawSlice.points != null ? rawSlice.points : 120,
+          lifetimePoints: rawSlice.lifetimePoints != null ? rawSlice.lifetimePoints : 350,
         };
         profiles[sessKey] = existingSlice;
         return { ...baseState, ...existingSlice, customerProfiles: profiles };
@@ -2479,6 +2489,7 @@ export function AppProvider({ children }) {
         selectedAddressId: MOCK_ADDRESSES[0].id,
         points: 120,
         lifetimePoints: 350,
+        pointHistory: [...MOCK_POINT_HISTORY],
       }));
       ui.toast('Đã nạp bộ dữ liệu kịch bản Demo (Review với cô)!', '🎬');
     },

@@ -402,4 +402,74 @@ export const MOCK_TECH_NOTIFS = [
   },
 ];
 
-
+// Lịch sử biến động điểm thưởng mẫu (Khớp với 350 điểm tích luỹ & 120 điểm hiện có)
+export const MOCK_POINT_HISTORY = [
+  {
+    id: 'ph-1',
+    title: 'Đổi Voucher giảm 20.000đ (DIEM20K)',
+    delta: -100,
+    at: now - 18 * 60 * 60 * 1000,
+    type: 'redeem',
+  },
+  {
+    id: 'ph-2',
+    title: 'Đổi Voucher giảm 20.000đ (DIEM20K)',
+    delta: -100,
+    at: now - 36 * 60 * 60 * 1000,
+    type: 'redeem',
+  },
+  {
+    id: 'ph-3',
+    title: 'Đánh giá 5★ dịch vụ sửa máy giặt',
+    delta: 20,
+    at: now - 86400000 * 2 + 130 * 60 * 1000,
+    orderCode: 'HRM261108-04',
+    type: 'review',
+  },
+  {
+    id: 'ph-4',
+    title: 'Hoàn thành đơn sửa máy giặt HRM261108-04',
+    delta: 75,
+    at: now - 86400000 * 2 + 120 * 60 * 1000,
+    orderCode: 'HRM261108-04',
+    type: 'order',
+  },
+  {
+    id: 'ph-5',
+    title: 'Đổi Voucher giảm 20.000đ (DIEM20K)',
+    delta: -30,
+    at: now - 86400000 * 5,
+    type: 'redeem',
+  },
+  {
+    id: 'ph-6',
+    title: 'Đánh giá 5★ vệ sinh máy lạnh Daikin',
+    delta: 20,
+    at: now - 86400000 * 14 + 60 * 60 * 1000,
+    orderCode: 'MD241028-02',
+    type: 'review',
+  },
+  {
+    id: 'ph-7',
+    title: 'Hoàn thành đơn vệ sinh máy lạnh MD241028-02',
+    delta: 18,
+    at: now - 86400000 * 14,
+    orderCode: 'MD241028-02',
+    type: 'order',
+  },
+  {
+    id: 'ph-8',
+    title: 'Hoàn thành gói bảo dưỡng trọn đời máy lạnh',
+    delta: 120,
+    at: now - 86400000 * 30,
+    orderCode: 'MD241012-01',
+    type: 'order',
+  },
+  {
+    id: 'ph-9',
+    title: 'Đăng ký tài khoản mới & hoàn thành đơn đầu tiên',
+    delta: 97,
+    at: now - 86400000 * 45,
+    type: 'bonus',
+  },
+];
