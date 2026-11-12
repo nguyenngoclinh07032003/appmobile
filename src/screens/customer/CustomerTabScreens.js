@@ -277,7 +277,6 @@ export function ActivityScreen() {
 // =========================================================== CÁ NHÂN
 export function PersonalScreen() {
   const { s, a, d, nav, ui: u } = useApp();
-  const [showAccSheet, setShowAccSheet] = useState(false);
   const name = s.user.name || d.address?.name || 'Khách';
   const phone = s.user.phone || d.address?.phone || 'Chưa có số điện thoại';
   const { cur, next } = tierOf(s.lifetimePoints);
@@ -331,8 +330,7 @@ export function PersonalScreen() {
           <ListRow icon="circle-user-round" label="Sửa thông tin cá nhân" onPress={() => nav.push('profile')} />
           <ListRow icon="map-pin" label="Sổ địa chỉ" value={s.addresses.length ? `${s.addresses.length}` : ''} onPress={() => nav.push('addresses')} />
           <ListRow icon="ticket" label="Quyền lợi của tôi" value={s.points ? `${s.points} điểm` : ''} onPress={() => nav.push('rewards')} />
-          <ListRow icon="trophy" label="Hạng thành viên" value={cur.label} onPress={() => nav.push('rewards', { tierId: cur.id })} />
-          <ListRow icon="settings" label="Quản lý tài khoản" onPress={() => setShowAccSheet(true)} last />
+          <ListRow icon="trophy" label="Hạng thành viên" value={cur.label} onPress={() => nav.push('rewards', { tierId: cur.id })} last />
         </Group>
         <Group title="Hỗ trợ khách hàng">
           <ListRow icon="shield-check" label="Tra cứu bảo hành" onPress={() => nav.warranty(s.user.phone || '')} />
@@ -352,98 +350,7 @@ export function PersonalScreen() {
         />
       </View>
 
-      <Sheet
-        visible={showAccSheet}
-        onClose={() => setShowAccSheet(false)}
-        title="Tài khoản đang đăng nhập"
-      >
-        <View style={{ paddingVertical: 4 }}>
-          <View style={{ alignItems: 'center', marginBottom: 16 }}>
-            <View style={{ position: 'relative', marginBottom: 10 }}>
-              <View style={[sx.avatar, { width: 66, height: 66, borderRadius: 22, backgroundColor: C.navy, alignItems: 'center', justifyContent: 'center', ...shadow.sm }]}>
-                <Text style={{ fontSize: 28, color: '#fff', fontWeight: '900' }}>{(s.user.name || s.auth?.name || 'K').trim().charAt(0).toUpperCase()}</Text>
-              </View>
-              <View style={{ position: 'absolute', right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10, backgroundColor: C.green, borderWidth: 2.5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
-                <AppIcon name="check" size={11} color="#fff" strokeWidth={3} />
-              </View>
-            </View>
-            <Text style={{ fontSize: 18, fontWeight: '900', color: C.ink }}>{s.user.name || s.auth?.name || 'Khách hàng'}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
-              <Badge text={s.auth?.role === 'customer' ? 'Khách hàng cá nhân' : 'Kỹ thuật viên'} fg={C.primary} bg={C.primarySoft} />
-              <Badge text="Đang hoạt động" fg={C.green} bg={C.greenSoft} />
-            </View>
-          </View>
 
-          <Card style={{ backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, padding: 14, marginBottom: 16 }}>
-            <View style={{ gap: 12 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <AppIcon name="user" size={16} color={C.primary} />
-                  <Text style={ui.meta}>Tên đăng nhập</Text>
-                </View>
-                <Text style={{ fontWeight: '700', color: C.ink }}>{s.auth?.username || s.auth?.phone || '—'}</Text>
-              </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <AppIcon name="phone" size={16} color={C.primary} />
-                  <Text style={ui.meta}>Số điện thoại</Text>
-                </View>
-                <Text style={{ fontWeight: '700', color: C.ink }}>{s.auth?.phone || s.user?.phone || '—'}</Text>
-              </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <AppIcon name="mail" size={16} color={C.primary} />
-                  <Text style={ui.meta}>Email</Text>
-                </View>
-                <Text style={{ fontWeight: '700', color: C.ink }}>{s.auth?.email || s.user?.email || '—'}</Text>
-              </View>
-              {(s.user?.dob || s.auth?.dob) ? (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <AppIcon name="cake" size={16} color={C.primary} />
-                    <Text style={ui.meta}>Ngày sinh</Text>
-                  </View>
-                  <Text style={{ fontWeight: '700', color: C.ink }}>{s.user?.dob || s.auth?.dob}</Text>
-                </View>
-              ) : null}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <AppIcon name="calendar" size={16} color={C.primary} />
-                  <Text style={ui.meta}>Ngày tạo</Text>
-                </View>
-                <Text style={{ fontWeight: '700', color: C.ink }}>{fmtDate(s.auth?.createdAt || Date.now())}</Text>
-              </View>
-            </View>
-          </Card>
-
-          <Btn
-            title="Đăng xuất"
-            icon="log-out"
-            variant="ghost"
-            style={{ marginBottom: 10 }}
-            onPress={() => {
-              setShowAccSheet(false);
-              u.confirm('Thông báo', 'Bạn có muốn đăng xuất?', a.logout, 'Đồng ý', false);
-            }}
-          />
-
-          <Btn
-            title="Xoá tài khoản này"
-            icon="trash-2"
-            variant="dangerSoft"
-            onPress={() => {
-              setShowAccSheet(false);
-              u.confirm(
-                'Xoá vĩnh viễn tài khoản?',
-                'Toàn bộ thông tin tài khoản, lịch sử đơn và dữ liệu cá nhân của bạn sẽ bị xoá hoàn toàn khỏi hệ thống. Bạn có chắc chắn muốn xoá không?',
-                () => a.deleteAccount(),
-                'Xoá tài khoản',
-                true,
-              );
-            }}
-          />
-        </View>
-      </Sheet>
     </ScrollView>
   );
 }

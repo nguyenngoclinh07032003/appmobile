@@ -7,6 +7,7 @@ import { useApp } from '../context';
 import { DialogHost, ToastHost, FrameCtx, AppIcon } from '../components';
 import BottomNav from './BottomNav';
 import { CUSTOMER_TABS, TECH_TABS, SCREENS, DARK_TOP, PHONE_W, BEZEL, AuthScreen } from './routes';
+import GuestHomeScreen from '../screens/auth/GuestHomeScreen';
 
 export function AnimatedScreen({ children, mode = 'stack' }) {
   const anim = useRef(new Animated.Value(0)).current;
@@ -32,6 +33,12 @@ export function AnimatedScreen({ children, mode = 'stack' }) {
 export function Shell() {
   const { s, nav } = useApp();
   const loggedIn = !!s.auth;
+  const [authMode, setAuthMode] = React.useState(null);
+  const previousLoggedIn = useRef(loggedIn);
+  useEffect(() => {
+    if (previousLoggedIn.current && !loggedIn) setAuthMode(null);
+    previousLoggedIn.current = loggedIn;
+  }, [loggedIn]);
   const role = s.auth?.role || s.role;
   const tabs = role === 'tech' ? TECH_TABS : CUSTOMER_TABS;
   const Tab = tabs.find((t) => t.id === nav.tab)?.Comp || tabs[0].Comp;
@@ -50,7 +57,11 @@ export function Shell() {
       <View style={{ height: topInset, backgroundColor: darkTop ? C.navy : '#fff' }} />
       {!loggedIn ? (
         <View style={st.fill}>
-          <AuthScreen />
+          {authMode ? (
+            <AuthScreen key={authMode} initialMode={authMode} onBackHome={() => setAuthMode(null)} />
+          ) : (
+            <GuestHomeScreen onLogin={() => setAuthMode('login')} onRegister={() => setAuthMode('register')} />
+          )}
           <ToastHost />
           <DialogHost />
         </View>

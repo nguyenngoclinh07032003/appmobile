@@ -616,7 +616,15 @@ export const matchJobForTech = (order, techProfile) => {
     if (k === 'repair' || k === 'install') neededSkills.add('Sửa chữa');
   });
   const neededArr = [...neededSkills];
-  const skillMatch = neededArr.length === 0 || skills.length === 0 || neededArr.some((sk) => skills.includes(normalize(sk)));
+  const backendCategoryIds = (me.specialtyCategoryIds || []).map(String);
+  const backendCategoryMatch = items.some((item) => {
+    const category = getService(item.id)?.category;
+    const categoryId = String(category || '').replace(/^c/i, '');
+    return categoryId && backendCategoryIds.includes(categoryId);
+  });
+  const skillMatch = me.specialtiesAvailable
+    ? (neededArr.length === 0 || me.acceptsAllCategories || backendCategoryMatch)
+    : (neededArr.length === 0 || skills.length === 0 || neededArr.some((sk) => skills.includes(normalize(sk))));
 
   const orderAddrNorm = normalize(`${order?.address?.area || ''} ${order?.address?.full || ''}`);
   const areaMatch = areaTokens.length === 0 || areaTokens.some((tok) => orderAddrNorm.includes(tok));

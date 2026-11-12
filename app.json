@@ -4,6 +4,16 @@
     "slug": "tho-minh-duc-app",
     "version": "3.0.8",
     "orientation": "portrait",
+    "icon": "./assets/app-icon.png",
+    "ios": {
+      "icon": "./assets/app-icon.png"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png"
+      }
+    },
     "userInterfaceStyle": "light",
     "platforms": [
       "ios",

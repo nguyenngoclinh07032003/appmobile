@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Animated, Easing } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Animated, Easing, Image } from 'react-native';
 import { C, R, shadow, toneOf, grad } from '../../theme';
 import {
   CATEGORIES, SERVICES, ALL_SERVICES, COMMITMENTS, SERVICE_TYPES, TIPS, PARTNERS, CAT_SHORT, HOTLINE, catLabel, catIcon, getService, formatVND, normalize,
@@ -128,15 +128,20 @@ export default function HomeScreen() {
       {/* ---------------- Header ---------------- */}
       <View style={st.header}>
         <View style={st.headRow}>
-          <View style={{ flex: 1, marginRight: 8 }}>
-            <Text style={st.hello} numberOfLines={1}>
-              {firstName ? `Xin chào, ${firstName}` : 'Xin chào Quý khách'}
-            </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
-              <Text style={st.brand} numberOfLines={1}>Thợ Minh Đức</Text>
-              <View style={st.officialTag}>
-                <AppIcon name="shield-check" size={10} color="#BAE6FD" strokeWidth={2.6} />
-                <Text style={st.officialText}>CHÍNH HÃNG</Text>
+          <View style={{ flex: 1, marginRight: 8, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Image source={require('../../../assets/app-icon.png')} style={st.homeBrandLogo} resizeMode="cover" accessibilityLabel="Logo Thợ Minh Đức" />
+            <View style={{ flex: 1 }}>
+              <Text style={st.hello} numberOfLines={1}>
+                {firstName ? `Xin chào, ${firstName}` : 'Xin chào Quý khách'}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+                <Text style={st.brand} numberOfLines={1}>Thợ Minh Đức</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                <View style={st.officialTag}>
+                  <AppIcon name="shield-check" size={10} color="#BAE6FD" strokeWidth={2.6} />
+                  <Text style={st.officialText}>CHÍNH HÃNG</Text>
+                </View>
               </View>
             </View>
           </View>
@@ -329,8 +334,9 @@ export const st = StyleSheet.create({
   header: { backgroundColor: C.navy, ...grad.navyHero, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 46, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: 'hidden' },
   blob: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.06)' },
   headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  homeBrandLogo: { width: 44, height: 44, borderRadius: 13, backgroundColor: '#fff' },
   hello: { color: 'rgba(255,255,255,0.78)', fontSize: 12.5, fontWeight: '500' },
-  brand: { color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: -0.3 },
+  brand: { color: '#fff', fontSize: 17, fontWeight: '900', letterSpacing: -0.2 },
   officialTag: {
     flexDirection: 'row',
     alignItems: 'center',

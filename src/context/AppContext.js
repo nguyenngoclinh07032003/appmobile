@@ -11,6 +11,7 @@ import {
 import { hrmssApi, authTokens } from '../services/api';
 import { API_BASE_URL } from '../constants/config';
 import { authErrorMessage } from '../utils/authErrorMessages';
+import { readTechnicianSpecialties } from '../utils/techProfile';
 
 // Lỗi mạng: ghi rõ địa chỉ server app đang gọi (sai địa chỉ / server tắt thì nhìn là thấy).
 const networkError = (res) => (res?.code === 'TIMEOUT'
@@ -727,11 +728,16 @@ export function AppProvider({ children }) {
         ]);
         if (okItems(techMatRes)) syncCatalogFromBackend({ materials: techMatRes.data.items });
         const summary = reviewRes.ok ? reviewRes.data?.summary : null;
+        const specialtyInfo = profRes.ok ? readTechnicianSpecialties(profRes.data) : null;
         up((p) => {
           const base = p.techProfile || mergeTechProfile(null, acc);
           const techProf = {
             ...base,
             ...(profRes.ok ? { area: profRes.data?.work_area || '' } : {}),
+            specialtiesAvailable: Boolean(specialtyInfo?.available),
+            specialties: specialtyInfo?.specialties || [],
+            specialtyCategoryIds: specialtyInfo?.categoryIds || [],
+            acceptsAllCategories: specialtyInfo?.acceptsAllCategories || false,
             ...(summary ? {
               rating: summary.rating_average,
               ratingCount: summary.rating_count,
@@ -1215,26 +1221,28 @@ export function AppProvider({ children }) {
       else ui.alert('Không gửi được', 'Chỉ nhắc được khi đơn đang chờ duyệt báo giá.', 'ℹ️');
     },
     updateTechProfile: (patch) => {
+      // Chuyên môn do backend cấp; không nhận cập nhật từ client.
+      const { skills: _ignoredSkills, ...editablePatch } = patch || {};
       up((p) => {
         const base = p.techProfile || TECH_ME;
-        const next = { ...base, ...patch, ...normalizeTechRep({ ...base, ...patch }) };
+        const next = { ...base, ...editablePatch, ...normalizeTechRep({ ...base, ...editablePatch }) };
         return {
           techProfile: next,
           user: {
             ...p.user,
-            name: patch.name != null ? patch.name : p.user.name,
-            phone: patch.phone != null ? patch.phone : p.user.phone,
-            dob: patch.dob != null ? patch.dob : p.user.dob,
-            email: patch.email != null ? patch.email : p.user.email,
+            name: editablePatch.name != null ? editablePatch.name : p.user.name,
+            phone: editablePatch.phone != null ? editablePatch.phone : p.user.phone,
+            dob: editablePatch.dob != null ? editablePatch.dob : p.user.dob,
+            email: editablePatch.email != null ? editablePatch.email : p.user.email,
           },
         };
       });
       if (authTokens.get()) {
-        if (patch.area !== undefined) hrmssApi.updateTechnicianWorkArea(patch.area || null).catch(() => {});
-        if (patch.name || patch.phone !== undefined) {
+        if (editablePatch.area !== undefined) hrmssApi.updateTechnicianWorkArea(editablePatch.area || null).catch(() => {});
+        if (editablePatch.name || editablePatch.phone !== undefined) {
           hrmssApi.updateProfile({
-            ...(patch.name ? { full_name: patch.name } : {}),
-            ...(patch.phone !== undefined ? { phone: patch.phone || null } : {}),
+            ...(editablePatch.name ? { full_name: editablePatch.name } : {}),
+            ...(editablePatch.phone !== undefined ? { phone: editablePatch.phone || null } : {}),
           }).catch(() => {});
         }
       }

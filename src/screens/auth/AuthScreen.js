@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, StyleSheet, ScrollView, KeyboardAvoidingView, Platform,
+  View, Text, TextInput, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Image,
 } from 'react-native';
 import { C, R, shadow, grad } from '../../theme';
 import { useApp } from '../../context';
@@ -48,10 +48,10 @@ function ModernField({
   );
 }
 
-export default function AuthScreen() {
+export default function AuthScreen({ initialMode = 'login', onBackHome }) {
   const { a } = useApp();
 
-  const [mode, setMode] = useState('login'); // login | register | forgot | tech_partner
+  const [mode, setMode] = useState(initialMode); // login | register | forgot | tech_partner
   const [name, setName] = useState('');
   const [username, setUsername] = useState(''); // Tên đăng nhập cho đăng ký
   const [identifier, setIdentifier] = useState(''); // Nhập Email hoặc Username (Đăng nhập / Quên mật khẩu)
@@ -138,10 +138,16 @@ export default function AuthScreen() {
         <View style={st.hero}>
           <View style={st.heroBlob} />
           <View style={[st.heroBlob, st.heroBlob2]} />
+          {onBackHome ? (
+            <Tap onPress={onBackHome} style={st.homeLink}>
+              <AppIcon name="arrow-left" size={16} color="#DBEAFE" />
+              <Text style={st.homeLinkText}>Trang chủ</Text>
+            </Tap>
+          ) : null}
           
           <View style={st.brandRow}>
             <View style={st.brandMark}>
-              <AppIcon name="zap" size={22} color={C.primary} strokeWidth={2.4} />
+              <Image source={require('../../../assets/app-icon.png')} style={st.authBrandLogo} resizeMode="cover" accessibilityLabel="Logo Thợ Minh Đức" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={st.brand}>Thợ Minh Đức</Text>
@@ -387,6 +393,8 @@ const st = StyleSheet.create({
     backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  homeLink: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginBottom: 16 },
+  homeLinkText: { color: '#DBEAFE', fontSize: 13, fontWeight: '700' },
   brandMark: {
     width: 44,
     height: 44,
@@ -396,6 +404,7 @@ const st = StyleSheet.create({
     justifyContent: 'center',
     ...shadow.sm,
   },
+  authBrandLogo: { width: 44, height: 44, borderRadius: 14 },
   brand: { fontSize: 26, fontWeight: '900', color: '#FFFFFF', letterSpacing: -0.5 },
   brandSlogan: { color: 'rgba(255, 255, 255, 0.85)', fontSize: 10, fontWeight: '800', letterSpacing: 0.6, marginTop: 2 },
   

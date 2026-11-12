@@ -5,7 +5,7 @@
 // Dùng chung dữ liệu đơn hàng với app Khách hàng (src/store.js) nên hai bên cập nhật cho nhau.
 // ===========================================================================
 import React, { useMemo, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Image, Linking } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Image, Linking, RefreshControl } from 'react-native';
 import { C, R, shadow, STATUS_META, toneOf, grad } from '../../theme';
 import {
   getService, formatVND, formatNumberInput, catIcon, catLabel, TECH_ME, MATERIALS, DIAG_TAGS, TIME_SLOTS, TECH_STATUS_DESC, TECH_ORDER_STEPS, techStepIndexOf, HOTLINE,
@@ -27,7 +27,6 @@ import { TrackingCard } from '../../components/order';
 const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const DECLINE_REASONS = ['Bận lịch khác', 'Ngoài khu vực phục vụ', 'Không đúng chuyên môn', 'Lý do khác'];
 const RELEASE_REASONS = ['Khẩn cấp gia đình', 'Xe / phương tiện hỏng', 'Ốm đột xuất', 'Lịch trùng không xử lý kịp', 'Lý do khác'];
-const SKILL_OPTIONS = ['Máy lạnh', 'Máy giặt', 'Tủ lạnh', 'Nóng lạnh', 'Hút mùi', 'Nạp gas', 'Sửa chữa'];
 const sameDay = (ts, key) => {
   if (!ts) return false;
   const d = new Date(ts);
@@ -596,7 +595,7 @@ export function TechAccountScreen() {
   const { s, a, d, nav, ui: u } = useApp();
   const me = s.techProfile || TECH_ME;
   const [showProfile, setShowProfile] = useState(false);
-  const [showAccountInfo, setShowAccountInfo] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [showIncome, setShowIncome] = useState(false);
   const [showPw, setShowPw] = useState(false);
   const [curPw, setCurPw] = useState('');
@@ -606,7 +605,6 @@ export function TechAccountScreen() {
   const [phone, setPhone] = useState(me.phone || '');
   const [dob, setDob] = useState(me.dob || s.user?.dob || s.auth?.dob || '');
   const [area, setArea] = useState(me.area || TECH_ME.area);
-  const [skills, setSkills] = useState(me.skills || TECH_ME.skills);
   const [showPayout, setShowPayout] = useState(false);
   const [payoutBank, setPayoutBank] = useState('MBBank');
   const [payoutAccNum, setPayoutAccNum] = useState(me.phone || '');
@@ -628,22 +626,27 @@ export function TechAccountScreen() {
   const completedCount = done.length;
   const payoutTotal = (s.payoutHistory || []).reduce((sum, p) => sum + p.amount, 0);
   const availableBalance = Math.max(0, totalIncome - payoutTotal);
+  const refreshProfile = async () => {
+    setRefreshing(true);
+    try { await a.syncFromBackend(); } finally { setRefreshing(false); }
+  };
 
   const openProfile = () => {
     setName(me.name || '');
     setPhone(me.phone || '');
     setDob(me.dob || s.user?.dob || s.auth?.dob || '');
     setArea(me.area || TECH_ME.area);
-    setSkills(me.skills?.length ? [...me.skills] : [...TECH_ME.skills]);
     setShowProfile(true);
-  };
-  const toggleSkill = (sk) => {
-    setSkills((prev) => (prev.includes(sk) ? prev.filter((x) => x !== sk) : [...prev, sk]));
   };
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 32 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refreshProfile} tintColor={C.primary} colors={[C.primary]} />}
+      >
         <View style={[tx.header, { paddingBottom: 28 }]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
             <View style={[tx.avatar, { width: 68, height: 68, borderRadius: 24 }]}><AppIcon name="hard-hat" size={34} color={C.primary} strokeWidth={2.1} /></View>
@@ -717,14 +720,23 @@ export function TechAccountScreen() {
         </View>
 
         <View style={{ paddingHorizontal: 16 }}>
-          <Card style={{ marginTop: 14 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          {me.specialtiesAvailable ? (
+            <Card style={{ marginTop: 14 }}>
               <Text style={[tx.h, { marginBottom: 0 }]}>Chuyên môn</Text>
-              <Tap onPress={openProfile}><Text style={ui.link}>Sửa ›</Text></Tap>
-            </View>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>{(me.skills || TECH_ME.skills).map((k) => <Chip key={k} label={k} />)}</View>
-            <Text style={[ui.meta, { marginTop: 10 }]}>📍 Khu vực phục vụ: {me.area || TECH_ME.area}</Text>
-          </Card>
+              {me.specialties?.length && !me.acceptsAllCategories ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+                  {me.specialties.map((specialty) => <Chip key={specialty} label={specialty} />)}
+                </View>
+              ) : (
+                <Text style={[ui.meta, { marginTop: 10 }]}>Nhận mọi loại dịch vụ</Text>
+              )}
+              <Text style={[ui.meta, { marginTop: 10 }]}>📍 Khu vực phục vụ: {me.area || TECH_ME.area}</Text>
+            </Card>
+          ) : (
+            <Card style={{ marginTop: 14 }}>
+              <Text style={[ui.meta, { marginTop: 2 }]}>📍 Khu vực phục vụ: {me.area || TECH_ME.area}</Text>
+            </Card>
+          )}
 
           {backendReviews.length ? (
             <Card style={{ marginTop: 12 }}>
@@ -755,14 +767,6 @@ export function TechAccountScreen() {
             <ListRow icon="bell" label="Thông báo" value={d.techUnread ? `${d.techUnread} mới` : ''} onPress={() => nav.go('tech-notifs')} />
             <ListRow icon="circle-user-round" label="Sửa thông tin kỹ thuật viên" onPress={openProfile} />
             <ListRow icon="lock" label="Đổi mật khẩu" onPress={() => { setCurPw(''); setNewPw(''); setNewPw2(''); setShowPw(true); }} />
-            {s.auth ? (
-              <ListRow
-                icon="settings"
-                label="Quản lý tài khoản"
-                onPress={() => setShowAccountInfo(true)}
-                last
-              />
-            ) : null}
           </View>
 
           <Text style={{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }}>Hỗ trợ kỹ thuật viên</Text>
@@ -806,13 +810,11 @@ export function TechAccountScreen() {
                   return;
                 }
               }
-              if (!skills.length) { u.alert('Thiếu chuyên môn', 'Chọn ít nhất một lĩnh vực bạn nhận việc.', '🧰'); return; }
               a.updateTechProfile({
                 name: name.trim(),
                 phone: String(phone).replace(/\D/g, ''),
                 dob: dob.trim(),
                 area: area.trim() || TECH_ME.area,
-                skills,
               });
               setShowProfile(false);
             }}
@@ -850,124 +852,20 @@ export function TechAccountScreen() {
           placeholder="DD/MM/YYYY (VD: 15/08/1995)"
         />
         <Field label="Khu vực phục vụ" value={area} onChangeText={setArea} placeholder="Quận / huyện" />
-        <Text style={[ui.fieldLabel, { marginTop: 12 }]}>Chuyên môn nhận việc</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
-          {SKILL_OPTIONS.map((sk) => (
-            <Chip key={sk} label={sk} on={skills.includes(sk)} onPress={() => toggleSkill(sk)} />
-          ))}
-        </View>
+        {me.specialtiesAvailable ? (
+          <>
+            <Text style={[ui.fieldLabel, { marginTop: 12 }]}>Chuyên môn</Text>
+            {me.specialties?.length && !me.acceptsAllCategories ? (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                {me.specialties.map((specialty) => <Chip key={specialty} label={specialty} />)}
+              </View>
+            ) : <Text style={[ui.meta, { marginTop: 8 }]}>Nhận mọi loại dịch vụ</Text>}
+          </>
+        ) : null}
         <Text style={[ui.meta, { marginTop: 12 }]}>Mã thợ: {me.code}</Text>
       </Sheet>
 
-      <Sheet
-        visible={showAccountInfo}
-        onClose={() => setShowAccountInfo(false)}
-        title="Tài khoản đang đăng nhập"
-      >
-        <View style={{ paddingVertical: 4 }}>
-          <View style={{ alignItems: 'center', marginBottom: 16 }}>
-            <View style={{ position: 'relative', marginBottom: 10 }}>
-              <View style={{ width: 66, height: 66, borderRadius: 22, backgroundColor: C.navy, alignItems: 'center', justifyContent: 'center', ...shadow.sm }}>
-                <Text style={{ fontSize: 28, color: '#fff', fontWeight: '900' }}>
-                  {(s.auth?.name || me.name || 'T').trim().charAt(0).toUpperCase()}
-                </Text>
-              </View>
-              <View style={{ position: 'absolute', right: -2, bottom: -2, width: 20, height: 20, borderRadius: 10, backgroundColor: C.green, borderWidth: 2.5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' }}>
-                <AppIcon name="check" size={11} color="#fff" strokeWidth={3} />
-              </View>
-            </View>
-            <Text style={{ fontSize: 18, fontWeight: '900', color: C.ink }}>{s.auth?.name || me.name || 'Kỹ thuật viên'}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
-              <Badge text="Kỹ thuật viên Minh Đức" fg={C.primary} bg={C.primarySoft} />
-              <Badge text="Đang hoạt động" fg={C.green} bg={C.greenSoft} />
-            </View>
-          </View>
 
-          <View style={{ padding: 14, borderRadius: R.lg, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, gap: 12, marginBottom: 14 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <AppIcon name="id-card" size={16} color={C.primary} />
-                <Text style={ui.meta}>Mã kỹ thuật viên</Text>
-              </View>
-              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>{me.code}</Text>
-            </View>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <AppIcon name="user" size={16} color={C.primary} />
-                <Text style={ui.meta}>Tên đăng nhập</Text>
-              </View>
-              <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{s.auth?.username || s.auth?.phone || me.phone || '—'}</Text>
-            </View>
-            {(s.auth?.phone || me.phone) ? (
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <AppIcon name="phone" size={16} color={C.primary} />
-                  <Text style={ui.meta}>Số điện thoại</Text>
-                </View>
-                <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{s.auth?.phone || me.phone}</Text>
-              </View>
-            ) : null}
-            {s.auth?.email ? (
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <AppIcon name="mail" size={16} color={C.primary} />
-                  <Text style={ui.meta}>Email</Text>
-                </View>
-                <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{s.auth.email}</Text>
-              </View>
-            ) : null}
-            {(me.dob || s.user?.dob || s.auth?.dob) ? (
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <AppIcon name="cake" size={16} color={C.primary} />
-                  <Text style={ui.meta}>Ngày sinh</Text>
-                </View>
-                <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{me.dob || s.user?.dob || s.auth?.dob}</Text>
-              </View>
-            ) : null}
-            {me.area ? (
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <AppIcon name="map-pin" size={16} color={C.primary} />
-                  <Text style={ui.meta}>Khu vực nhận việc</Text>
-                </View>
-                <Text style={{ fontWeight: '700', color: C.ink, fontSize: 14 }}>{me.area}</Text>
-              </View>
-            ) : null}
-          </View>
-
-          <Text style={[ui.meta, { marginBottom: 14, lineHeight: 18, textAlign: 'center' }]}>
-            Bạn có thể đăng xuất tạm thời hoặc xoá vĩnh viễn tài khoản kỹ thuật viên này khỏi ứng dụng.
-          </Text>
-
-          <Btn
-            title="Đăng xuất tài khoản"
-            icon="log-out"
-            variant="ghost"
-            style={{ marginBottom: 10 }}
-            onPress={() => {
-              setShowAccountInfo(false);
-              u.confirm('Thông báo', 'Bạn có muốn đăng xuất?', a.logout, 'Đồng ý', false);
-            }}
-          />
-
-          <Btn
-            title="Xoá tài khoản này"
-            icon="trash-2"
-            variant="dangerSoft"
-            onPress={() => {
-              setShowAccountInfo(false);
-              u.confirm(
-                'Xoá vĩnh viễn tài khoản?',
-                'Tài khoản đang đăng nhập và toàn bộ thông tin cá nhân của tài khoản này sẽ bị xoá khỏi thiết bị. Bạn có chắc chắn muốn xoá không?',
-                a.deleteAccount,
-                'Xoá tài khoản',
-                true,
-              );
-            }}
-          />
-        </View>
-      </Sheet>
 
       <Sheet visible={showIncome} onClose={() => setShowIncome(false)} title="Ví thu nhập & Chiết khấu Minh Đức">
         <View style={tx.incomeHead}>
