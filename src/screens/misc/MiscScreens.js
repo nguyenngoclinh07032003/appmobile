@@ -6,7 +6,7 @@ import {
   getService, formatVND, normalize, catLabel, catIcon, tierOf, TIERS, TIME_SLOTS, MATERIALS, SAFETY_CHECKLIST_ITEMS,
 } from '../../constants/data';
 import {
-  useApp, fmtDate, fmtDateTime, timeAgo, warrantyInfo, isActiveOrder, orderTotal,
+  useApp, fmtDate, fmtDateTime, timeAgo, warrantyInfo, isActiveOrder, orderTotal, isPaid, isAwaitingPayment, amountRemaining,
   lateDiscountAmount, tierPartDiscountAmount, normalizeTechRep, getCancellationWindowStatus, isQRPayment,
 } from '../../context';
 import {
@@ -283,7 +283,7 @@ export function OrderScreen({ params }) {
     if (!uri) return;
     setEditAtts((p) => [...p, { id: newAttId(), uri, at: Date.now() }]);
   };
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (editDayIdx === 0 && isTodayOutOfSlotsEdit) {
       u.alert('Hết giờ phục vụ', 'Hôm nay thợ đã kết thúc nhận ca. Quý khách vui lòng chọn Ngày mai.', '⏰');
       return;
@@ -293,14 +293,14 @@ export function OrderScreen({ params }) {
       return;
     }
     const day = editDays[editDayIdx];
-    a.updatePendingRequest(o.code, {
+    const ok = await a.updatePendingRequest(o.code, {
       note: editNote,
       slot: editSlot,
       dateLabel: `${day.label} (${day.ddmm})`,
       dateKey: day.key,
       attachments: editAtts,
     });
-    setShowEdit(false);
+    if (ok) setShowEdit(false);
   };
 
   return (
@@ -363,9 +363,6 @@ export function OrderScreen({ params }) {
           <Card style={{ marginTop: 12, backgroundColor: '#FDF4FF', borderColor: '#F5D0FE' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={[mx.tlTitle, { color: '#A21CAF' }]}>🛡️ Văn phòng đang thẩm định bảo hành</Text>
-              <Tap onPress={() => a.officeApproveWarranty(o.code)} style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: '#FAE8FF' }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#A21CAF' }}>⚡ Duyệt ngay (Demo)</Text>
-              </Tap>
             </View>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
               Yêu cầu bảo hành đã được gửi. Văn phòng Minh Đức đang đối chiếu lỗi với nhật ký sửa chữa gốc và thời hạn bảo hành 60 ngày.
@@ -480,8 +477,8 @@ export function OrderScreen({ params }) {
                 <Badge text="KTV chuyên trách" fg={C.primaryDark} bg={C.primarySoft} />
               </View>
               <Text style={[ui.meta, { marginTop: 2 }]}>
-                {o.tech.code} · ★ {o.tech.rating || 5.0}
-                {o.tech.jobs != null ? ` (${Number(o.tech.jobs).toLocaleString('vi-VN')} đánh giá dịch vụ)` : ' (Đánh giá dịch vụ tốt)'}
+                {o.tech.code}{o.tech.rating != null ? ` · ★ ${o.tech.rating}` : " · Chưa có đánh giá"}
+                {o.tech.rating != null && o.tech.ratingCount ? ` (${Number(o.tech.ratingCount).toLocaleString('vi-VN')} đánh giá)` : ''}
               </Text>
               {o.lateCompensation?.tier && o.lateCompensation.tier !== 'ok' ? (
                 <Text style={[ui.meta, { color: C.orange, fontWeight: '700', marginTop: 2 }]}>
@@ -694,13 +691,13 @@ export function OrderScreen({ params }) {
                 <Bill l="Tổng tiền dịch vụ" v={formatVND(o.goods)} />
                 {o.productDiscount ? <Bill l="Giảm giá dịch vụ" v={`-${formatVND(o.productDiscount)}`} green /> : null}
                 {o.comboDiscount ? <Bill l={`Ưu đãi ${o.comboLabel || 'Combo nhiều máy'}`} v={`-${formatVND(o.comboDiscount)}`} green /> : null}
-                {o.quote?.approved && o.quote.total !== o.quote.booked ? <Bill l="Phát sinh theo báo giá" v={`${o.quote.total > o.quote.booked ? '+' : ''}${formatVND(o.quote.total - o.quote.booked)}`} /> : null}
-                {partDisc ? <Bill l={`Đặc quyền hạng ${o.customerTierLabel || ''} (−${o.tierPartDiscountPercent}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
-                {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
-                {lateDiscountAmount(o) ? (
-                  <Bill l={`Bồi thường đến muộn (−${o.lateCompensation.percent}% NC)`} v={`−${formatVND(lateDiscountAmount(o))}`} green />
-                ) : null}
-                <Bill l="Phí đi lại" v="Miễn phí" green />
+                {/* Số tiền dưới đây lấy từ hoá đơn server (GET /customer/requests/:id/bill) */}
+                {o.bill?.quotationTotal != null && o.bill.quotationTotal !== o.bill.bookedAmount ? <Bill l="Theo báo giá đã duyệt" v={formatVND(o.bill.quotationTotal)} /> : null}
+                {o.bill?.supplementalTotal ? <Bill l="Trong đó phát sinh" v={`+${formatVND(o.bill.supplementalTotal)}`} /> : null}
+                {partDisc ? <Bill l={`Ưu đãi hạng thành viên (−${o.bill?.tierPartDiscountPercent || 0}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
+                {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code || ''}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
+                {lateDiscountAmount(o) ? <Bill l="Bồi thường thợ đến muộn" v={`−${formatVND(lateDiscountAmount(o))}`} green /> : null}
+                {o.bill?.paidAmount ? <Bill l="Đã thanh toán" v={formatVND(o.bill.paidAmount)} green /> : null}
               </>
             )}
             <Bill l="Hình thức" v={o.payment || 'Chuyển khoản VietQR'} />
@@ -717,13 +714,13 @@ export function OrderScreen({ params }) {
                         ? (isQRPayment(o) ? 'Chờ thanh toán VietQR' : 'Chờ khách thanh toán')
                         : isQRPayment(o) ? 'Thanh toán qua QR (Thợ không thu tiền mặt)' : 'Chưa đến bước thanh toán'
               }
-              green={!!o.report?.paid || (o.status === 'cancelled' && !(o.inspectionFee > 0))}
+              green={isPaid(o) || (o.status === 'cancelled' && !(o.inspectionFee > 0))}
             />
             <View style={mx.totalRow}>
               <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>Tổng thanh toán</Text>
               <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(o.status === 'cancelled' ? (o.inspectionFee || 0) : orderTotal(o))}</Text>
             </View>
-            {o.status !== 'cancelled' && !o.report?.paid && !isQRPayment(o) ? (
+            {o.status !== 'cancelled' && !isPaid(o) && !isQRPayment(o) ? (
               <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <IconBox icon="qr-code" size={38} bg="#E0F2FE" color="#0284C7" radius={12} />
                 <View style={{ flex: 1 }}>
@@ -778,22 +775,18 @@ export function OrderScreen({ params }) {
                 style={{ marginTop: 12 }}
                 onPress={() => u.confirm(
                   'Xác nhận đã thanh toán?',
-                  `Hình thức: ${o.payment || 'Tiền mặt tại nhà'}. Tổng ${formatVND(orderTotal(o))}.`,
+                  `Hình thức: ${o.payment || 'Tiền mặt tại nhà'}. Số tiền ${formatVND(amountRemaining(o))}.`,
                   () => a.confirmPayment(o.code),
                   'Xác nhận',
                 )}
               />
             ) : null}
-            {o.status === 'done' && o.report?.paid ? (
+            {isPaid(o) && ['done', 'pending_review'].includes(o.status) ? (
               <View style={{ marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: C.greenSoft }}>
-                <Text style={{ fontWeight: '800', color: C.green }}>🧾 Biên lai điện tử</Text>
+                <Text style={{ fontWeight: '800', color: C.green }}>🧾 Đã thanh toán</Text>
                 <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-                  Mã đơn {o.code} · {formatVND(orderTotal(o))} · {o.payment || 'Tại nhà'}
-                  {o.report.paidAt ? `\nXác nhận lúc ${fmtDateTime(o.report.paidAt)}` : ''}
+                  Mã đơn {o.code} · {formatVND(o.bill?.paidAmount || orderTotal(o))} · {o.payment || 'Tại nhà'}
                 </Text>
-                <View style={{ alignItems: 'center', marginTop: 10 }}>
-                  <PseudoQR value={`RECEIPT|${o.code}|PAID|${orderTotal(o)}`} size={120} />
-                </View>
               </View>
             ) : null}
           </Card>
@@ -845,7 +838,7 @@ export function OrderScreen({ params }) {
         <Text style={[ui.meta, { textAlign: 'center', marginTop: 16 }]}>Đặt lúc {fmtDateTime(o.createdAt)}</Text>
       </ScrollView>
 
-      {(canEdit || canCancel || (o.status === 'done' && o.kind !== 'warranty') || (o.status === 'cancelled' && o.kind !== 'warranty') || (o.kind === 'warranty' && !active)) ? (
+      {(canEdit || canCancel || isAwaitingPayment(o) || (o.status === 'done' && o.kind !== 'warranty') || (o.status === 'cancelled' && o.kind !== 'warranty') || (o.kind === 'warranty' && !active)) ? (
         <View style={mx.dock}>
           {canEdit ? <Btn title="Sửa yêu cầu" icon="pencil" variant="soft" style={{ flex: 1 }} onPress={openEdit} /> : null}
           {canCancel ? <Btn title="Huỷ đơn" variant="dangerSoft" style={{ flex: 1 }} onPress={handlePressCancel} /> : null}
@@ -1326,7 +1319,7 @@ export function RewardsScreen({ params }) {
               }
               return arr;
             });
-          const historyList = (s.pointHistory && s.pointHistory.length) ? s.pointHistory : fallbackEntries;
+          const historyList = (s.pointHistory || []);
           const totalEarned = historyList.filter((h) => h.delta > 0).reduce((sum, h) => sum + h.delta, 0);
           const totalSpent = Math.abs(historyList.filter((h) => h.delta < 0).reduce((sum, h) => sum + h.delta, 0));
 
@@ -1526,7 +1519,7 @@ export function RewardsScreen({ params }) {
               }
               return arr;
             });
-          const historyList = (s.pointHistory && s.pointHistory.length) ? s.pointHistory : fallbackEntries;
+          const historyList = (s.pointHistory || []);
           const filtered = historyList.filter((h) => {
             if (historyFilter === 'earn') return h.delta > 0;
             if (historyFilter === 'redeem') return h.delta < 0;
@@ -1773,7 +1766,7 @@ export function ProfileScreen() {
     }
   };
 
-  const save = () => {
+  const save = async () => {
     const e = {};
     const nameErr = validateContactName(name);
     if (nameErr) e.name = nameErr;
@@ -1800,8 +1793,7 @@ export function ProfileScreen() {
     if (email && !/^\S+@\S+\.\S+$/.test(email)) e.email = 'Email không hợp lệ.';
     setErr(e);
     if (Object.keys(e).length) return;
-    a.updateUser({ name: name.trim(), phone, email: email.trim(), dob: dob.trim() });
-    nav.back();
+    if (await a.updateUser({ name: name.trim(), phone, dob: dob.trim() })) nav.back();
   };
   const savePw = async () => {
     if (newPw !== newPw2) { u.alert('Không khớp', 'Mật khẩu mới nhập lại chưa khớp.', '🔐'); return; }
@@ -1879,7 +1871,7 @@ export function ProfileScreen() {
             placeholder="DD/MM/YYYY (VD: 15/08/1995)"
             error={err.dob}
           />
-          <Field label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" placeholder="email@example.com" error={err.email} />
+          <Field label="Email (tài khoản đăng nhập, không sửa ở đây)" value={email} editable={false} />
           <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
             {s.auth?.emailVerified ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

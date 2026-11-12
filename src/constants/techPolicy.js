@@ -17,6 +17,8 @@ export const TECH_POLICY = {
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
 export const slotStartTs = (order) => {
+  // Giờ hẹn thật từ server (preferred_time) — khung giờ hiển thị chỉ làm tròn để xem.
+  if (order?.preferredTimeAt) return order.preferredTimeAt;
   if (!order?.dateKey || !order?.slot) return null;
   const parts = String(order.dateKey).split('-').map(Number);
   if (parts.length < 3 || parts.some((x) => Number.isNaN(x))) return null;

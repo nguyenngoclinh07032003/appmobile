@@ -14,7 +14,7 @@ export function TrackingCard({ order, compact }) {
 
   useEffect(() => {
     if (!active) return undefined;
-    const id = setInterval(() => a.tickTracking(o.code), 4000);
+    const id = setInterval(() => a.tickTracking(o.code), 15000);
     a.tickTracking(o.code);
     return () => clearInterval(id);
   }, [active, o.code]);
@@ -32,8 +32,9 @@ export function TrackingCard({ order, compact }) {
     );
   }
 
-  const progress = Math.min(0.98, Math.max(0.05, tr?.progress ?? 0.1));
-  const eta = tr?.etaMin ?? Math.max(1, Math.round(22 * (1 - progress)));
+  // Backend không trả quãng đường / thời gian dự kiến: chỉ hiện vị trí thật + thời điểm cập nhật.
+  const progress = tr?.progress != null ? Math.min(0.98, Math.max(0.05, tr.progress)) : 0.5;
+  const eta = tr?.etaMin ?? null;
 
   return (
     <Card style={{ marginTop: 12, backgroundColor: '#F0F7FF', borderColor: '#D6E4FF' }}>
@@ -42,10 +43,10 @@ export function TrackingCard({ order, compact }) {
           <AppIcon name="navigation" size={16} color={C.primary} strokeWidth={2.3} />
           <Text style={st.h}>Theo dõi thợ realtime</Text>
         </View>
-        <Text style={{ color: C.primary, fontWeight: '800', fontSize: 13 }}>~{eta} phút</Text>
+        {eta != null ? <Text style={{ color: C.primary, fontWeight: '800', fontSize: 13 }}>~{eta} phút</Text> : null}
       </View>
       <Text style={st.body}>{tr?.label || 'Thợ đang di chuyển tới địa chỉ của bạn.'}</Text>
-      <Progress value={progress} color={C.primary} style={{ marginTop: 10 }} />
+      {tr?.progress != null ? <Progress value={progress} color={C.primary} style={{ marginTop: 10 }} /> : null}
       <View style={st.trackMap}>
         <View style={st.route}>
           <View style={[st.dot, { backgroundColor: C.primary }]} />

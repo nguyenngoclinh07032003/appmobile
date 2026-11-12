@@ -3,10 +3,11 @@ import { View, Text, ScrollView, StyleSheet, Image } from 'react-native';
 import { C, R, shadow } from '../../theme';
 import {
   getService, formatVND, discountOf, isEstimate, isClean, durationText, featureFor, stepsFor, videoFor,
-  COMMITMENTS, ALL_SERVICES, TIME_SLOTS, PAYMENTS, PAYMENT_METHODS, AREAS, noteFor, voucherDiscount,
+  COMMITMENTS, ALL_SERVICES, TIME_SLOTS, PAYMENTS, PAYMENT_METHODS, noteFor, voucherDiscount, normalize,
   catLabel, catIcon, MATERIALS, SITE_CONDITIONS, tierOf, comboDiscountFor, CATEGORIES,
 } from '../../constants/data';
 import { useApp, cartTotal, fmtDate } from '../../context';
+import { hrmssApi } from '../../services/api';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Media, Badge, Stars, Stepper, Sheet, Radio, Field,
   SelectRow, Segmented, Checkbox, EmptyState, ServiceCard, Price, Chip, ui, HScroll, AppIcon,
@@ -517,7 +518,9 @@ export function CheckoutScreen({ params }) {
     }
   };
 
-  const confirm = () => {
+  const [placing, setPlacing] = useState(false);
+  const confirm = async () => {
+    if (placing) return;
     if (s.auth?.role === 'customer' && !s.auth.emailVerified) {
       setShowEmailOtp(true);
       if (!sentOtpHint) handleSendEmailOtp();
@@ -539,7 +542,8 @@ export function CheckoutScreen({ params }) {
       return;
     }
 
-    const code = a.placeOrder({
+    setPlacing(true);
+    const code = await a.placeOrder({
       items: lines.map(({ id, qty }) => ({ id, qty })),
       device: { category: lines[0]?.svc?.category || null },
       siteCondition: selectedSite,
@@ -548,7 +552,7 @@ export function CheckoutScreen({ params }) {
       goods, productDiscount, voucher: voucher ? { ...voucher } : null, voucherDiscount: vDiscount, total,
       dateLabel: `${days[dayIdx].label} (${days[dayIdx].ddmm})`, dateKey: days[dayIdx].key, slot, payment, note, workerCode: '',
       attachments, fromCart: !!params.fromCart,
-    });
+    }).finally(() => setPlacing(false));
     if (code) nav.replace('success', { code });
   };
 
@@ -1145,14 +1149,25 @@ export function AddressFormScreen({ params }) {
   const [name, setName] = useState(initial?.name || s.user.name || '');
   const [gender, setGender] = useState(initial?.gender || 'Nam');
   const [phone, setPhone] = useState(initial?.phone || s.user.phone || '');
-  const [area, setArea] = useState(initial?.area || AREAS[0]);
-  const [street, setStreet] = useState(initial?.street || '');
+  // Phường/xã Hà Nội sau sáp nhập: lấy từ backend (GET /locations/hanoi/wards), lưu ward_code.
+  const [ward, setWard] = useState(initial?.wardCode ? { code: initial.wardCode, name: initial.wardName || initial.area } : null);
+  const [wards, setWards] = useState([]);
+  const [wardQuery, setWardQuery] = useState('');
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    hrmssApi.getHanoiWards().then((res) => { if (res.ok) setWards(res.data?.items || []); });
+  }, []);
+  const area = ward?.name || '';
+  // Sửa địa chỉ cũ: chỉ lấy phần số nhà + đường (bỏ ", Phường X, Thành phố Hà Nội" backend đã ghép).
+  const initialStreet = initial ? String(initial.street || initial.full || '').split(',')[0].trim() : '';
+  const [street, setStreet] = useState(initialStreet);
   const [isDefault, setIsDefault] = useState(initial ? !!initial.isDefault : s.addresses.length === 0);
   const [showArea, setShowArea] = useState(false);
   const [err, setErr] = useState({});
 
-  const save = () => {
+  const save = async () => {
     const e = {};
+    if (!ward) e.area = 'Chọn phường/xã Hà Nội.';
     const nameErr = validateContactName(name);
     if (nameErr) e.name = nameErr;
 
@@ -1164,7 +1179,11 @@ export function AddressFormScreen({ params }) {
 
     setErr(e);
     if (Object.keys(e).length) return;
-    const id = a.saveAddress({ id: initial?.id, name: name.trim(), gender, phone: phone.trim(), area, street: street.trim(), isDefault, full: `${street.trim()}, ${area}` });
+    setSaving(true);
+    const res = await a.saveAddress({ id: initial?.id, name: name.trim(), gender, phone: phone.trim(), area, wardCode: ward.code, wardName: ward.name, street: street.trim(), isDefault });
+    setSaving(false);
+    if (!res.ok) { setErr((prev) => ({ ...prev, area: res.error })); return; }
+    const id = res.id;
     if (params.useNow) {
       a.selectAddress(id);
       if (nav.stack.some((x) => x.name === 'checkout')) { nav.popTo('checkout'); return; }
@@ -1224,7 +1243,8 @@ export function AddressFormScreen({ params }) {
         </Card>
         <Card style={{ marginTop: 12 }}>
           <Text style={bx.h}>Địa chỉ</Text>
-          <SelectRow label="Khu vực" icon="🗺️" value={area} onPress={() => setShowArea(true)} />
+          <SelectRow label="Phường/Xã (Hà Nội)" icon="🗺️" value={area || 'Chọn phường/xã'} onPress={() => setShowArea(true)} />
+          {err.area ? <Text style={{ color: C.red, fontSize: 12, marginTop: 4 }}>{err.area}</Text> : null}
           <Field
             label="Số nhà, tên đường"
             value={street}
@@ -1244,14 +1264,19 @@ export function AddressFormScreen({ params }) {
           <Checkbox on={isDefault} onPress={() => setIsDefault(!isDefault)} label="Đặt làm địa chỉ mặc định" />
         </Card>
       </ScrollView>
-      <View style={bx.dockCol}><Btn title="Lưu địa chỉ" onPress={save} /></View>
-      <Sheet visible={showArea} onClose={() => setShowArea(false)} title="Chọn khu vực">
-        {AREAS.map((ar) => (
-          <Tap key={ar} style={bx.option} onPress={() => { setArea(ar); setShowArea(false); }}>
-            <Radio on={area === ar} />
-            <Text style={bx.optionText}>{ar}</Text>
-          </Tap>
-        ))}
+      <View style={bx.dockCol}><Btn title={saving ? 'Đang lưu…' : 'Lưu địa chỉ'} disabled={saving} onPress={save} /></View>
+      <Sheet visible={showArea} onClose={() => setShowArea(false)} title="Chọn phường/xã (Hà Nội)">
+        <Field label="Tìm phường/xã" value={wardQuery} onChangeText={setWardQuery} placeholder="VD: cau giay, dong da" />
+        {wards.length === 0 ? <Text style={ui.meta}>Đang tải danh sách phường/xã…</Text> : null}
+        {wards
+          .filter((w) => !wardQuery.trim() || normalize(w.name).includes(normalize(wardQuery.trim())))
+          .slice(0, 60)
+          .map((w) => (
+            <Tap key={w.code} style={bx.option} onPress={() => { setWard({ code: w.code, name: w.name }); setShowArea(false); setErr((prev) => ({ ...prev, area: '' })); }}>
+              <Radio on={ward?.code === w.code} />
+              <Text style={bx.optionText}>{w.name}</Text>
+            </Tap>
+          ))}
       </Sheet>
     </View>
   );
