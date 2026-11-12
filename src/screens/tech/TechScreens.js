@@ -1289,6 +1289,17 @@ export function TechJobScreen({ params }) {
           </Card>
         ) : null}
 
+        {['pending_payment', 'partially_paid'].includes(o.status) ? (
+          <Card style={{ marginTop: 12, backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
+            <Text style={{ fontWeight: '800', color: '#92400E', fontSize: 13.5 }}>
+              {o.status === 'partially_paid' ? 'KHÁCH ĐÃ TRẢ MỘT PHẦN' : 'CHỜ KHÁCH KIỂM TRA & THANH TOÁN'}
+            </Text>
+            <Text style={{ color: '#78350F', fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>
+              Biên bản đã gửi lên hệ thống. Khi khách thanh toán đủ, đơn sẽ chuyển sang chờ Văn phòng nghiệm thu.
+            </Text>
+          </Card>
+        ) : null}
+
         {/* ===== Đã gửi yêu cầu tái khám ===== */}
         {o.followUpRequested ? (
           <Card style={{ marginTop: 12, backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }}>

@@ -345,8 +345,10 @@ export const ORDER_STEPS = [
   { key: 'confirmed', label: 'Thợ đã nhận đơn', desc: 'Thợ sẽ gọi cho bạn trước khi đến' },
   { key: 'onway', label: 'Thợ đang đến', desc: 'Thợ đang di chuyển tới địa chỉ của bạn' },
   { key: 'diagnosing', label: 'Kiểm tra thiết bị', desc: 'Thợ kiểm tra và lập chẩn đoán' },
-  { key: 'quoted', label: 'Chờ duyệt báo giá', desc: 'Văn phòng đã gửi báo giá, chờ bạn duyệt' },
+  { key: 'quoted', label: 'Chờ duyệt báo giá', desc: 'Thợ đã gửi báo giá, chờ bạn quyết định' },
   { key: 'repairing', label: 'Đang thực hiện', desc: 'Thợ đang sửa chữa / vệ sinh' },
+  { key: 'pending_payment', label: 'Chờ thanh toán', desc: 'Kiểm tra thiết bị và thanh toán để chuyển văn phòng nghiệm thu' },
+  { key: 'partially_paid', label: 'Còn công nợ', desc: 'Đơn đã trả một phần, vui lòng thanh toán số tiền còn lại' },
   { key: 'pending_review', label: 'Chờ nghiệm thu', desc: 'Văn phòng Minh Đức đang đối soát biên bản nghiệm thu' },
   { key: 'done', label: 'Hoàn thành', desc: 'Dịch vụ đã hoàn tất và nghiệm thu' },
 ];
@@ -428,14 +430,16 @@ export const voucherDiscount = (voucher, subtotal) => {
 export const TECH_ME = { name: '', code: '', rating: null, jobs: 0, phone: '', area: '', skills: [] };
 
 // Trạng thái đơn đầy đủ (khách ↔ thợ)
-export const STATUS_FLOW = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'pending_review', 'done'];
+export const STATUS_FLOW = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'pending_payment', 'partially_paid', 'pending_review', 'done'];
 export const STATUS_DESC = {
   pending: 'Đơn đã gửi, đang chờ thợ nhận',
   confirmed: 'Thợ sẽ gọi cho bạn trước khi đến',
   onway: 'Thợ đang di chuyển tới địa chỉ của bạn',
   diagnosing: 'Thợ đang kiểm tra thiết bị và lập báo giá',
-  quoted: 'Văn phòng đã gửi báo giá — mở đơn để đồng ý hoặc từ chối',
+  quoted: 'Thợ đã gửi báo giá — mở đơn để đồng ý, yêu cầu sửa hoặc từ chối',
   repairing: 'Thợ đang thực hiện dịch vụ',
+  pending_payment: 'Thợ đã nộp biên bản. Vui lòng kiểm tra thiết bị và thanh toán.',
+  partially_paid: 'Đã ghi nhận thanh toán một phần. Vui lòng thanh toán số tiền còn thiếu.',
   pending_review: 'KTV đã gửi biên bản. Văn phòng Minh Đức đang đối soát kiểm tra nghiệm thu.',
   warranty_pending: 'Văn phòng Minh Đức đang thẩm định hồ sơ bảo hành theo lịch sử cũ.',
   out_of_warranty: 'Thiết bị lỗi do ngoại lực/người dùng. Đã chuyển sang báo giá dịch vụ có phí.',
@@ -451,6 +455,8 @@ export const TECH_STATUS_DESC = {
   quoted: 'Đã gửi báo giá. Chờ khách duyệt trên app để tiếp tục.',
   repairing: 'Đang làm việc — cập nhật tiến độ, vật tư và ảnh minh chứng.',
   pending_review: 'Đã nộp biên bản. Chờ Văn phòng Minh Đức duyệt kết quả nghiệm thu.',
+  pending_payment: 'Đã nộp biên bản. Chờ khách kiểm tra và thanh toán.',
+  partially_paid: 'Khách đã thanh toán một phần. Chờ thanh toán phần còn lại.',
   warranty_pending: 'Đơn bảo hành mới — chờ Văn phòng thẩm định hồ sơ gốc.',
   out_of_warranty: 'Đã xác định ngoài phạm vi bảo hành — chuyển sang báo giá có phí.',
   done: 'Văn phòng đã duyệt nghiệm thu hoàn tất biên bản cho khách.',

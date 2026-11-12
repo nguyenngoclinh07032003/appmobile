@@ -104,11 +104,10 @@ export const mapBackendStatusToAppStatus = (requestStatus, visitStatus, hasAppro
   }
   if (st === 'DIAGNOSED_PENDING_QUOTATION') return 'quoted';
   if (st === 'READY_FOR_REPAIR') return 'repairing';
-  // Luồng mới (backend 12/11): thợ nộp biên bản -> chờ khách kiểm tra & thanh toán (PENDING_PAYMENT / trả thiếu)
-  // -> trả đủ (READY_FOR_ACCEPTANCE) -> văn phòng nghiệm thu (COMPLETED). App gộp các bước chờ này vào "Chờ nghiệm thu".
-  if (['PENDING_REVIEW', 'READY_FOR_ACCEPTANCE', 'PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE'].includes(st)) {
-    return 'pending_review';
-  }
+  if (st === 'PENDING_PAYMENT') return 'pending_payment';
+  if (st === 'PARTIALLY_PAID_RECEIVABLE') return 'partially_paid';
+  if (st === 'PENDING_REVIEW') return 'pending_payment'; // trạng thái cũ vẫn thuộc nhóm chờ thanh toán ở BE
+  if (st === 'READY_FOR_ACCEPTANCE') return 'pending_review';
   if (st === 'COMPLETED') {
     return 'done';
   }
@@ -244,9 +243,9 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     materials: (quote?.lines || [])
       .filter((l) => l.type === 'part')
       .map((l, idx) => ({ id: `mat-${req.request_id}-${idx}`, matId: l.matId || null, name: l.name, unit: l.unit, qty: l.qty, price: l.price })),
-    report: isDone ? {
+    report: (isDone || ['pending_payment', 'partially_paid', 'pending_review'].includes(status)) ? {
       summary: latestVisit?.work_performed || '',
-      paid: req.request_status === 'COMPLETED',
+      paid: ['COMPLETED', 'READY_FOR_ACCEPTANCE'].includes(String(req.request_status || '').toUpperCase()),
       at: doneAt,
       tech: techName,
       techCode: techInfo?.technician_id != null ? String(techInfo.technician_id) : '',
@@ -269,7 +268,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
   const quote = mapBackendQuotationToAppQuote(job.quotations || [], job.diagnoses || [], goods, req.problem_description);
   const isEnded = job.assignment_status === 'ENDED';
   const status = ['PENDING_REVIEW', 'READY_FOR_ACCEPTANCE', 'PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE'].includes(req.request_status)
-    ? 'pending_review'
+    ? mapBackendStatusToAppStatus(req.request_status)
     : (isEnded && !req.request_status?.startsWith('CANCELLED')
       ? 'done'
       : mapBackendStatusToAppStatus(req.request_status, visit.visit_status, quote?.approved, hasPendingQuote));
@@ -353,9 +352,9 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
       text: `${d.symptoms ? `[Triệu chứng: ${d.symptoms}] ` : ''}${d.findings || ''}${d.repair_recommendation ? ` -> Đề xuất: ${d.repair_recommendation}` : ''}`,
       at: d.recorded_at ? new Date(d.recorded_at).getTime() : createdAt,
     })),
-    report: isDone ? {
+    report: (isDone || ['pending_payment', 'partially_paid', 'pending_review'].includes(status)) ? {
       summary: visit.work_performed || '',
-      paid: req.request_status === 'COMPLETED',
+      paid: ['COMPLETED', 'READY_FOR_ACCEPTANCE'].includes(String(req.request_status || '').toUpperCase()),
       at: doneAt,
       tech: myTech.name,
       techCode: myTech.code,

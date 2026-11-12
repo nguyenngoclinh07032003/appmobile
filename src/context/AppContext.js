@@ -60,7 +60,7 @@ const addMonths = (ts, m) => { const d = new Date(ts); d.setMonth(d.getMonth() +
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 export const cartTotal = (items) => items.reduce((sum, it) => sum + (getService(it.id)?.price || 0) * it.qty, 0);
-export const ACTIVE_STATUSES = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'pending_review', 'warranty_pending', 'out_of_warranty'];
+export const ACTIVE_STATUSES = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'pending_payment', 'partially_paid', 'pending_review', 'warranty_pending', 'out_of_warranty'];
 export const isActiveOrder = (o) => ACTIVE_STATUSES.includes(o.status);
 // Giá trị dịch vụ khách đã đặt (sau giảm giá dịch vụ + combo, trước voucher)
 export const bookedValue = (o) => (
@@ -1413,7 +1413,15 @@ export function AppProvider({ children }) {
       } else ui.toast('Đã check-in GPS tại nhà khách', '📍');
     },
     // Khách yêu cầu / chuyển đổi sang thanh toán Chuyển khoản QR (VietQR) -> Khoá quyền thu tiền mặt của Thợ
-    switchToQRPayment: (code) => {
+    switchToQRPayment: async (code) => {
+      const current = s.orders.find((x) => x.code === code);
+      if (current?.dbRequestId && authTokens.get()) {
+        const res = await hrmssApi.updateCustomerPaymentMethod(current.dbRequestId, 'BANK_TRANSFER');
+        if (!res.ok) {
+          ui.alert('Chưa đổi được phương thức thanh toán', res.message || 'Vui lòng thử lại.', '⚠️');
+          return false;
+        }
+      }
       let ok = false;
       updateOrder(code, (o) => {
         if (!o || o.status === 'cancelled') return {};
@@ -1435,7 +1443,7 @@ export function AppProvider({ children }) {
           customer: {
             icon: '🏦',
             title: `Đã chuyển sang thanh toán VietQR · ${code}`,
-            body: 'Đơn đã khoá thu tiền mặt phía thợ. Bạn vui lòng quét mã VietQR trên ứng dụng sau khi nghiệm thu.',
+            body: 'Đơn đã khoá thu tiền mặt phía thợ. Bạn có thể quét mã VietQR sau khi thợ nộp biên bản hoàn thành.',
             link: { name: 'order', params: { code } },
           },
         };
@@ -1446,45 +1454,24 @@ export function AppProvider({ children }) {
       return ok;
     },
     // Khách xác nhận đã thanh toán (sau khi hoàn thành hoặc khi đang nghiệm thu QR)
-    confirmPayment: (code, mode = 'manual') => {
-      let ok = false;
-      let targetTotal = 0;
-      updateOrder(code, (o) => {
-        if (!['done', 'repairing', 'quoted', 'pending_review'].includes(o.status)) return {};
-        ok = true;
-        targetTotal = orderTotal(o);
-        const isQR = mode === 'webhook' || isQRPayment(o);
-        const report = {
-          ...(o.report || {}),
-          paid: true,
-          paidAt: Date.now(),
-          paidBy: mode === 'webhook' ? 'vietqr_webhook' : isQR ? 'customer_qr' : 'customer',
-        };
-        return {
-          order: {
-            ...o,
-            ...(isQR ? { payment: 'Chuyển khoản VietQR (MBBank)', qrPaymentRequested: true } : {}),
-            report,
-          },
-          tech: {
-            icon: '✅',
-            title: isQR ? `TingTing! Khách đã CK VietQR ${formatVND(targetTotal)} · ${code}` : `Khách xác nhận đã thanh toán · ${code}`,
-            body: isQR
-              ? `Hệ thống đã nhận đủ ${formatVND(targetTotal)} qua VietQR. Thợ KHÔNG thu tiền mặt — chiết khấu & hoàn ứng đã cộng vào Ví thợ!`
-              : (o.payment || 'Đã thanh toán'),
-            link: { name: 'tech-job', params: { code } },
-          },
-        };
-      });
-      if (ok) {
-        if (mode === 'webhook') {
-          ui.toast(`🔔 Webhook MBBank: Nhận ${formatVND(targetTotal)} · Gạch nợ thành công!`, '✅', 'success');
-        } else {
-          ui.toast('Đã ghi nhận thanh toán thành công', '✅', 'success');
-        }
-      } else {
-        ui.alert('Không cập nhật được', 'Chỉ xác nhận thanh toán khi đơn đang thực hiện hoặc đã hoàn thành.', 'ℹ️');
+    confirmPayment: async (code, mode = 'manual') => {
+      const order = s.orders.find((x) => x.code === code);
+      if (!order?.dbRequestId) {
+        ui.alert('Chưa thể xác nhận thanh toán', 'Đơn chưa đồng bộ với hệ thống. Hãy làm mới đơn rồi thử lại.', 'ℹ️');
+        return false;
       }
+      if (mode === 'webhook') {
+        await syncFromBackend();
+        return true;
+      }
+      const res = await hrmssApi.confirmCustomerPayment(order.dbRequestId);
+      if (!res.ok) {
+        ui.alert('Chưa xác nhận được thanh toán', res.status > 0 ? (res.message || 'Vui lòng thử lại.') : networkError(res), '⚠️');
+        return false;
+      }
+      await syncFromBackend();
+      ui.toast('Đã ghi nhận thanh toán. Đơn đang chờ Văn phòng nghiệm thu.', '✅', 'success');
+      return true;
     },
     requestPayout: ({ amount, bankName, accountNumber, accountHolder }) => {
       const amt = parseInt(String(amount).replace(/[^0-9]/g, ''), 10);
@@ -1696,11 +1683,14 @@ export function AppProvider({ children }) {
           }),
         };
       });
-      if (authTokens.get() && targetOrder?.dbRequestId && decision !== 'revise') {
+      if (authTokens.get() && targetOrder?.dbRequestId) {
         const isApprove = decision === true || decision === 'approve';
         hrmssApi.decideQuotation(targetOrder.dbRequestId, {
-          decision: isApprove ? 'APPROVED' : 'REJECTED',
+          decision: decision === 'revise' ? 'REVISE' : isApprove ? 'APPROVED' : 'REJECTED',
           rejection_reason: reason || null,
+        }).then((res) => {
+          if (!res.ok) ui.alert('Chưa cập nhật được báo giá', res.message || 'Vui lòng làm mới đơn và thử lại.', '⚠️');
+          syncFromBackend();
         }).catch(() => {});
       }
       if (decision === true || decision === 'approve') ui.toast('Đã duyệt báo giá', '✅');
@@ -1898,10 +1888,7 @@ export function AppProvider({ children }) {
         }
         return false;
       }
-      const total = orderTotal(o0);
-      const earned = o0.kind !== 'warranty' ? Math.max(1, Math.floor(total / 10000)) : 0;
-      const ptEntry = earned ? { id: uid(), title: `Hoàn thành đơn ${code}`, delta: earned, at: now, orderCode: code } : null;
-      const cats = new Set(o0.items.map((it) => getService(it.id)?.category));
+      // Điểm thưởng chỉ phát sinh khi văn phòng nghiệm thu trên backend.
       const onTimeBonus = !o0.lateCompensation || o0.lateCompensation.tier === 'soft' ? 2 : 1;
       updateOrder(code, (o, p) => {
         const boosted = applyTechBonus(p.techProfile || TECH_ME, onTimeBonus);
@@ -1915,8 +1902,12 @@ export function AppProvider({ children }) {
         const finalPaidBy = qrOrder
           ? (o.report?.paidBy || null)
           : (finalPaid ? 'tech' : null);
+        const backendStatus = String(res.data?.completion?.request_status || res.data?.request_status || '').toUpperCase();
+        const nextStatus = backendStatus === 'READY_FOR_ACCEPTANCE' || backendStatus === 'COMPLETED'
+          ? 'pending_review'
+          : (backendStatus === 'PARTIALLY_PAID_RECEIVABLE' ? 'partially_paid' : 'pending_payment');
         return {
-          order: withStatus(o, 'pending_review', now, {
+          order: withStatus(o, nextStatus, now, {
             pendingReviewAt: now,
             report: {
               ...(o.report || {}),
@@ -1932,34 +1923,41 @@ export function AppProvider({ children }) {
             },
           }),
           customer: {
-            icon: '🏢',
-            title: `Đơn ${code} đang chờ Văn phòng nghiệm thu`,
-            body: `Kỹ thuật viên đã nộp biên bản & hình ảnh sau làm việc. Văn phòng Minh Đức đang đối soát kiểm tra chất lượng.`,
+            icon: nextStatus === 'pending_review' ? '🏢' : '💳',
+            title: nextStatus === 'pending_review' ? `Đơn ${code} đang chờ Văn phòng nghiệm thu` : `Đơn ${code} cần thanh toán`,
+            body: nextStatus === 'pending_review'
+              ? 'Đơn đã đủ điều kiện thanh toán và đang chờ Văn phòng kiểm tra nghiệm thu.'
+              : 'Thợ đã nộp biên bản. Vui lòng kiểm tra thiết bị và thanh toán để chuyển đơn sang chờ nghiệm thu.',
             link: { name: 'order', params: { code } },
           },
           tech: {
             icon: '⏳',
-            title: `Đã nộp biên bản · Chờ Văn phòng nghiệm thu`,
-            body: `Biên bản đã chuyển đến Văn phòng Minh Đức để đối soát và xác nhận hoàn tất.`,
+            title: nextStatus === 'pending_review' ? `Đã nộp biên bản · Chờ Văn phòng nghiệm thu` : `Đã nộp biên bản · Chờ khách thanh toán`,
+            body: nextStatus === 'pending_review'
+              ? 'Đơn đã đủ điều kiện và đang chờ Văn phòng nghiệm thu.'
+              : 'Khách cần kiểm tra thiết bị và thanh toán. Sau khi trả đủ, đơn sẽ chuyển sang chờ Văn phòng nghiệm thu.',
             link: { name: 'tech-job', params: { code } },
           },
           extra: {
-            points: p.points + earned,
-            lifetimePoints: p.lifetimePoints + earned,
-            pointHistory: ptEntry ? [ptEntry, ...(p.pointHistory || [])] : (p.pointHistory || []),
+            points: p.points,
+            lifetimePoints: p.lifetimePoints,
+            pointHistory: p.pointHistory || [],
             techProfile: {
               ...boosted,
               jobs: (boosted.jobs || 0) + 1,
             },
           },
           customerProfilePatch: (prof) => ({
-            points: (prof.points || 0) + earned,
-            lifetimePoints: (prof.lifetimePoints || 0) + earned,
-            pointHistory: ptEntry ? [ptEntry, ...(prof.pointHistory || [])] : (prof.pointHistory || []),
+            points: prof.points || 0,
+            lifetimePoints: prof.lifetimePoints || 0,
+            pointHistory: prof.pointHistory || [],
           }),
         };
       });
-      ui.toast(Boolean(paid) && !isQRPayment(o0) ? 'Đã nộp biên bản · Chờ Văn phòng nghiệm thu' : 'Đã nộp biên bản · Chờ khách kiểm tra & thanh toán', '🏢');
+      const submittedStatus = String(res.data?.completion?.request_status || res.data?.request_status || '').toUpperCase();
+      ui.toast(submittedStatus === 'READY_FOR_ACCEPTANCE'
+        ? 'Đã nộp biên bản · Chờ Văn phòng nghiệm thu'
+        : 'Đã nộp biên bản · Chờ khách kiểm tra & thanh toán', submittedStatus === 'READY_FOR_ACCEPTANCE' ? '🏢' : '💳');
       // Luồng backend: chờ khách thanh toán -> trả đủ -> văn phòng nghiệm thu trên web; app đọc trạng thái thật khi đồng bộ.
       syncFromBackend();
       return true;

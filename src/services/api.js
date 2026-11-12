@@ -411,7 +411,9 @@ export const hrmssApi = {
     return apiRequest(`/customer/requests/${id}/quotation-decision`, {
       method: 'POST',
       body: {
-        decision: decision === 'APPROVED' || decision === true || decision === 'approve' ? 'APPROVED' : 'REJECTED',
+        decision: ['APPROVED', 'REVISE'].includes(decision) || decision === true || decision === 'approve'
+          ? (decision === 'REVISE' ? 'REVISE' : 'APPROVED')
+          : 'REJECTED',
         ...(rejection_reason ? { rejection_reason } : {}),
       },
       targetPort,
@@ -578,6 +580,16 @@ export const hrmssApi = {
   // Hóa đơn + tình trạng thanh toán: payment_status = UNPAID | PENDING | PARTIALLY_PAID | PAID | NOTHING_TO_PAY.
   async getBill(requestId, targetPort = null) {
     return apiRequest(`/customer/requests/${encodeURIComponent(requestId)}/bill`, { targetPort });
+  },
+  async updateCustomerPaymentMethod(requestId, method, targetPort = null) {
+    return apiRequest(`/customer/requests/${encodeURIComponent(requestId)}/payment-method`, {
+      method: 'PATCH', body: { method }, targetPort,
+    });
+  },
+  async confirmCustomerPayment(requestId, targetPort = null) {
+    return apiRequest(`/customer/requests/${encodeURIComponent(requestId)}/payments/confirm`, {
+      method: 'POST', body: { method: 'CASH' }, targetPort,
+    });
   },
 
   // 15c. Các bước thực hiện của việc (thợ) và ảnh của bước.

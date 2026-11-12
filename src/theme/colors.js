@@ -53,6 +53,8 @@ export const STATUS_META = {
   diagnosing: { label: 'Đang kiểm tra', fg: '#B45309', bg: '#FFFBEB' },
   quoted: { label: 'Chờ duyệt báo giá', fg: '#B45309', bg: '#FEF3C7' },
   repairing: { label: 'Đang thực hiện', fg: '#0062E0', bg: '#DBEAFE' },
+  pending_payment: { label: 'Chờ thanh toán', fg: '#B45309', bg: '#FEF3C7' },
+  partially_paid: { label: 'Còn công nợ', fg: '#C2410C', bg: '#FFF7ED' },
   pending_review: { label: 'Chờ VP nghiệm thu', fg: '#7C3AED', bg: '#F5F3FF' },
   warranty_pending: { label: 'Chờ VP duyệt BH', fg: '#C026D3', bg: '#FDF4FF' },
   out_of_warranty: { label: 'Ngoài bảo hành', fg: '#EA580C', bg: '#FFF7ED' },

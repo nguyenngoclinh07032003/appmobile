@@ -709,11 +709,13 @@ export function OrderScreen({ params }) {
               v={
                 o.status === 'cancelled'
                   ? ((o.inspectionFee || 0) > 0 ? 'Cần thanh toán phí KT' : 'Đã huỷ (0đ)')
-                  : o.report?.paid
+              : o.report?.paid
                     ? (isQRPayment(o) ? 'Đã chuyển khoản VietQR' : 'Đã thanh toán')
-                    : isQRPayment(o)
-                      ? 'Thanh toán qua QR (Thợ không thu tiền mặt)'
-                      : (o.status === 'done' ? 'Chờ xác nhận' : 'Thanh toán sau nghiệm thu')
+                    : o.status === 'partially_paid'
+                      ? 'Đã trả một phần · Còn thiếu'
+                      : o.status === 'pending_payment'
+                        ? (isQRPayment(o) ? 'Chờ thanh toán VietQR' : 'Chờ khách thanh toán')
+                        : isQRPayment(o) ? 'Thanh toán qua QR (Thợ không thu tiền mặt)' : 'Chưa đến bước thanh toán'
               }
               green={!!o.report?.paid || (o.status === 'cancelled' && !(o.inspectionFee > 0))}
             />
@@ -747,7 +749,7 @@ export function OrderScreen({ params }) {
                 <VietQRPay requestId={o.dbRequestId} onPaid={() => a.confirmPayment(o.code, 'webhook')} size={180} />
               </View>
             ) : null}
-            {o.status !== 'cancelled' && !o.report?.paid && isQRPayment(o) ? (
+            {['pending_payment', 'partially_paid'].includes(o.status) && !o.report?.paid && isQRPayment(o) ? (
               <View style={{ marginTop: 14, alignItems: 'center', padding: 14, borderRadius: 14, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1' }}>
                 <View style={{ width: '100%', padding: 10, borderRadius: R.sm, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <AppIcon name="shield-check" size={18} color={C.orange} strokeWidth={2.3} />
@@ -760,18 +762,16 @@ export function OrderScreen({ params }) {
                   <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>Chuyển khoản nhanh VietQR 24/7</Text>
                 </View>
                 <Text style={[ui.meta, { marginBottom: 10, textAlign: 'center', color: C.muted }]}>
-                  {['repairing', 'done'].includes(o.status)
-                    ? 'Quét mã VietQR để thanh toán dịch vụ và kích hoạt Bảo hành điện tử 60 ngày'
-                    : 'Mã VietQR tạm tính — chỉ quét thanh toán sau khi thợ hoàn thành & nghiệm thu thiết bị'}
+                  Quét mã VietQR để thanh toán dịch vụ. Khi thanh toán đủ, đơn sẽ chuyển chờ Văn phòng nghiệm thu.
                 </Text>
-                {['repairing', 'pending_review', 'done'].includes(o.status) ? (
+                {['pending_payment', 'partially_paid'].includes(o.status) ? (
                   <VietQRPay requestId={o.dbRequestId} onPaid={() => a.confirmPayment(o.code, 'webhook')} />
                 ) : (
                   <Text style={[ui.meta, { textAlign: 'center' }]}>Mã QR thanh toán hiện khi thợ hoàn thành công việc.</Text>
                 )}
               </View>
             ) : null}
-            {o.status === 'done' && !o.report?.paid && !isQRPayment(o) ? (
+            {['pending_payment', 'partially_paid'].includes(o.status) && !o.report?.paid && !isQRPayment(o) ? (
               <Btn
                 title="Xác nhận đã thanh toán tiền mặt"
                 icon="banknote"
@@ -849,13 +849,18 @@ export function OrderScreen({ params }) {
         <View style={mx.dock}>
           {canEdit ? <Btn title="Sửa yêu cầu" icon="pencil" variant="soft" style={{ flex: 1 }} onPress={openEdit} /> : null}
           {canCancel ? <Btn title="Huỷ đơn" variant="dangerSoft" style={{ flex: 1 }} onPress={handlePressCancel} /> : null}
-          {o.status === 'done' && !o.report?.paid && o.kind !== 'warranty' && o.kind !== 'followup' ? (
+          {['pending_payment', 'partially_paid'].includes(o.status) && !o.report?.paid && !isQRPayment(o) && o.kind !== 'warranty' && o.kind !== 'followup' ? (
             <Btn
-              title={isQRPayment(o) ? 'Xác nhận QR' : 'Thanh toán'}
-              icon={isQRPayment(o) ? 'qr-code' : 'credit-card'}
-              variant={isQRPayment(o) ? 'success' : 'soft'}
+              title="Xác nhận đã trả tiền"
+              icon="credit-card"
+              variant="soft"
               style={{ flex: 1.15, paddingHorizontal: 10 }}
-              onPress={() => a.confirmPayment(o.code, isQRPayment(o) ? 'webhook' : 'manual')}
+              onPress={() => u.confirm(
+                'Xác nhận đã thanh toán?',
+                `Hình thức: ${o.payment || 'Tiền mặt'}. Số tiền ${formatVND(orderTotal(o))}.`,
+                () => a.confirmPayment(o.code),
+                'Xác nhận',
+              )}
             />
           ) : null}
           {o.status === 'done' && !o.rating && o.kind !== 'warranty' ? <Btn title="Đánh giá" icon="star" variant="gold" style={{ flex: 1, paddingHorizontal: 10 }} onPress={() => nav.push('rate', { code: o.code })} /> : null}
