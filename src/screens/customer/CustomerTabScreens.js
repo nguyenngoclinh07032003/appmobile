@@ -112,7 +112,7 @@ function WarrantyView() {
   const request = (o) => u.confirm(
     'Gửi yêu cầu bảo hành?',
     `Thợ sẽ quay lại kiểm tra miễn phí cho đơn ${o.code}.`,
-    () => { const code = a.requestWarranty(o.code); if (code) nav.push('order', { code }); },
+    () => { a.requestWarranty(o.code).then((code) => { if (code) nav.push('order', { code }); }); },
     'Gửi yêu cầu',
   );
 

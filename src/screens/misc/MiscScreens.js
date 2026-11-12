@@ -351,9 +351,6 @@ export function OrderScreen({ params }) {
           <Card style={{ marginTop: 12, backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={[mx.tlTitle, { color: '#6D28D9' }]}>🏢 Văn phòng đang đối soát nghiệm thu</Text>
-              <Tap onPress={() => a.officeApproveCompletion(o.code)} style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: '#EDE9FE' }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#6D28D9' }}>⚡ Duyệt ngay (Demo)</Text>
-              </Tap>
             </View>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
               Kỹ thuật viên đã gửi biên bản & hình ảnh sau làm việc. Bộ phận kiểm soát chất lượng (QA) của Văn phòng Minh Đức đang đối soát kiểm tra trước khi bàn giao thanh toán.
@@ -827,7 +824,7 @@ export function OrderScreen({ params }) {
                   variant="soft"
                   small
                   style={{ flex: 1 }}
-                  onPress={() => u.confirm('Gửi yêu cầu bảo hành?', 'Thợ sẽ quay lại kiểm tra miễn phí.', () => { const c = a.requestWarranty(o.code); if (c) nav.push('order', { code: c }); }, 'Gửi')}
+                  onPress={() => u.confirm('Gửi yêu cầu bảo hành?', 'Thợ sẽ quay lại kiểm tra miễn phí.', () => { a.requestWarranty(o.code).then((c) => { if (c) nav.push('order', { code: c }); }); }, 'Gửi')}
                 />
               </View>
             ) : null}
@@ -895,7 +892,7 @@ export function OrderScreen({ params }) {
             title="🛠️ Yêu cầu bảo hành miễn phí"
             onPress={() => {
               setShowCertificate(false);
-              u.confirm('Gửi yêu cầu bảo hành?', 'Thợ sẽ quay lại kiểm tra miễn phí.', () => { const c = a.requestWarranty(o.code); if (c) nav.push('order', { code: c }); }, 'Gửi');
+              u.confirm('Gửi yêu cầu bảo hành?', 'Thợ sẽ quay lại kiểm tra miễn phí.', () => { a.requestWarranty(o.code).then((c) => { if (c) nav.push('order', { code: c }); }); }, 'Gửi');
             }}
           />
         ) : <Btn title="Đóng phiếu" onPress={() => setShowCertificate(false)} />}

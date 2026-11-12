@@ -1118,6 +1118,106 @@ export function TechAccountScreen() {
 }
 
 // =========================================================== CHI TIẾT CÔNG VIỆC
+// Các bước thực hiện của việc: checklist, chỉ số đo, ảnh (nếu bước yêu cầu) -> "Xong bước" gửi backend.
+function ProcedureCard({ o, editable }) {
+  const { a, ui: u } = useApp();
+  const [openId, setOpenId] = useState(null);
+  const [checked, setChecked] = useState([]);
+  const [measures, setMeasures] = useState({});
+  const [photos, setPhotos] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const proc = o.procedure;
+  if (!proc) return null;
+  const steps = (proc.services || []).flatMap((sv) => sv.steps.map((st) => ({ ...st, service_name: sv.service_name })));
+  const open = (st) => {
+    if (!editable || st.status !== 'PENDING') return;
+    setOpenId(openId === st.step_id ? null : st.step_id);
+    setChecked([...(st.items || [])]);
+    setMeasures(Object.fromEntries((st.measures || []).map((m) => [m.key, st.measurements?.[m.key] != null ? String(st.measurements[m.key]) : ''])));
+    setPhotos([]);
+  };
+  const addPhoto = async () => {
+    let uri = await pickCamera();
+    if (uri === null) uri = await pickImage();
+    if (uri == null) {
+      if (uri === null) u.alert('Chưa hỗ trợ camera', 'Cho phép camera hoặc chọn ảnh từ thư viện.', '📷');
+      return;
+    }
+    setPhotos((p) => [...p, uri]);
+  };
+  const finish = async (st) => {
+    const missing = (st.measures || []).filter((m) => String(measures[m.key] ?? '').trim() === '' || Number.isNaN(Number(measures[m.key])));
+    if (missing.length) { u.alert('Thiếu chỉ số đo', `Nhập số cho: ${missing.map((m) => m.label).join(', ')}.`, '📏'); return; }
+    if (st.require_photo && !photos.length && !(st.photo_ids || []).length) { u.alert('Thiếu ảnh', 'Bước này cần ít nhất 1 ảnh.', '📷'); return; }
+    setBusy(true);
+    const res = await a.completeProcedureStep(o.code, st, {
+      checkedItems: checked,
+      measurements: Object.fromEntries(Object.entries(measures).map(([k, v]) => [k, Number(v)])),
+      photoUris: photos,
+    });
+    setBusy(false);
+    if (!res.ok) { u.alert('Chưa xong bước', res.error, '⚠️'); return; }
+    setOpenId(null);
+    u.toast(`Đã xong bước ${st.step_no}`, '✅');
+  };
+  return (
+    <Card style={{ marginTop: 12 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Text style={[tx.h, { marginBottom: 0 }]}>📋 Các bước thực hiện</Text>
+        <Badge text={`${proc.done_steps}/${proc.total_steps} bước`} fg={proc.done_steps === proc.total_steps ? C.green : C.primary} bg={proc.done_steps === proc.total_steps ? C.greenSoft : C.primarySoft} />
+      </View>
+      <Text style={[ui.meta, { marginTop: 4, marginBottom: 6 }]}>Đánh dấu xong các bước bắt buộc rồi mới nộp biên bản.</Text>
+      {steps.map((st) => {
+        const done = st.status !== 'PENDING';
+        const isOpen = openId === st.step_id;
+        return (
+          <View key={st.step_id} style={{ borderTopWidth: 1, borderTopColor: C.line, paddingVertical: 10 }}>
+            <Tap onPress={() => open(st)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: done ? C.green : C.primarySoft }}>
+                <Text style={{ color: done ? '#fff' : C.primary, fontWeight: '800', fontSize: 12 }}>{done ? '✓' : st.step_no}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontWeight: '800', color: C.ink }}>{st.title}{st.is_required ? '' : ' (không bắt buộc)'}</Text>
+                <Text style={ui.meta}>
+                  {st.service_name}{st.require_photo ? ' · cần ảnh' : ''}{(st.measures || []).length ? ' · có chỉ số đo' : ''}
+                  {done ? ` · ${st.status === 'SKIPPED' ? 'Bỏ qua' : 'Đã xong'}` : (editable ? ' · bấm để làm' : '')}
+                </Text>
+              </View>
+            </Tap>
+            {isOpen ? (
+              <View style={{ marginTop: 10, gap: 6 }}>
+                {(st.items || []).map((it) => (
+                  <Checkbox key={it} on={checked.includes(it)} label={it}
+                    onPress={() => setChecked((p) => (p.includes(it) ? p.filter((x) => x !== it) : [...p, it]))} />
+                ))}
+                {(st.measures || []).map((m) => (
+                  <Field key={m.key} label={`${m.label}${m.unit ? ` (${m.unit})` : ''}`} value={measures[m.key] ?? ''} keyboardType="decimal-pad"
+                    onChangeText={(t) => setMeasures((p) => ({ ...p, [m.key]: t.replace(',', '.').replace(/[^0-9.-]/g, '') }))} />
+                ))}
+                {st.require_photo ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {photos.map((uri, i) => (
+                      <View key={`${i}`} style={tx.thumb}>
+                        <Image source={{ uri }} style={{ width: '100%', height: '100%' }} />
+                        <Tap style={tx.thumbX} onPress={() => setPhotos((p) => p.filter((_, j) => j !== i))}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>✕</Text></Tap>
+                      </View>
+                    ))}
+                    <Tap style={[tx.thumb, tx.thumbAdd]} onPress={addPhoto}>
+                      <Text style={{ fontSize: 22, color: C.primary }}>＋</Text>
+                      <Text style={{ fontSize: 10, color: C.primary, fontWeight: '700' }}>Ảnh bước</Text>
+                    </Tap>
+                  </View>
+                ) : null}
+                <Btn title={busy ? 'Đang gửi…' : `Xong bước ${st.step_no}`} disabled={busy} onPress={() => finish(st)} />
+              </View>
+            ) : null}
+          </View>
+        );
+      })}
+    </Card>
+  );
+}
+
 export function TechJobScreen({ params }) {
   const { s, a, d, nav, ui: u } = useApp();
   const o = s.orders.find((x) => x.code === params.code);
@@ -1226,6 +1326,11 @@ export function TechJobScreen({ params }) {
 
   const evidence = o.evidence || [];
   const openComplete = () => {
+    const pendingSteps = (o.procedure?.services || []).flatMap((sv) => sv.steps).filter((st) => st.is_required && st.status === 'PENDING');
+    if (pendingSteps.length) {
+      u.alert('Chưa xong các bước thực hiện', `Còn ${pendingSteps.length} bước bắt buộc chưa xong:\n${pendingSteps.map((st) => `• Bước ${st.step_no}: ${st.title}`).join('\n')}`, '📋');
+      return;
+    }
     const names = o.items.map((it) => getService(it.id)?.name).filter(Boolean).join(', ');
     setSummary(`Đã hoàn thành: ${names}.${o.quote?.diagnosis ? ` Tình trạng: ${o.quote.diagnosis}.` : ''} Thiết bị hoạt động ổn định, đã dọn dẹp khu vực.`);
     setShowDone(true);
@@ -1279,9 +1384,6 @@ export function TechJobScreen({ params }) {
           <Card style={{ marginTop: 12, backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={{ fontWeight: '800', color: '#6D28D9', fontSize: 13.5 }}>🏢 CHỜ VĂN PHÒNG NGHIỆM THU</Text>
-              <Tap onPress={() => a.officeApproveCompletion(o.code)} style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: '#EDE9FE' }}>
-                <Text style={{ fontSize: 11, fontWeight: '700', color: '#6D28D9' }}>⚡ Duyệt ngay (Demo)</Text>
-              </Tap>
             </View>
             <Text style={{ color: '#4C1D95', fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>
               Bạn đã nộp biên bản và hình ảnh hiện trường. Hệ thống đang chuyển đến Văn phòng Minh Đức để đối soát biên bản nghiệm thu trước khi chốt đơn.
@@ -1787,6 +1889,9 @@ export function TechJobScreen({ params }) {
           </Card>
         ) : null}
 
+        {/* ===== Các bước thực hiện (backend: bắt buộc xong trước khi nộp biên bản) ===== */}
+        {o.procedure && (mine || o.procedure.progress_percent > 0) ? <ProcedureCard o={o} editable={mine && ['diagnosing', 'repairing'].includes(o.status)} /> : null}
+
         {/* ===== Ảnh minh chứng ===== */}
         {(o.status === 'repairing' && mine) || evidence.length ? (
           <Card style={{ marginTop: 12 }}>
@@ -1911,11 +2016,6 @@ export function TechJobScreen({ params }) {
             <Text style={[ui.price, { fontSize: 18 }]}>{formatVND(qTotal)}</Text>
           </View>
           <Btn title={diff > 0 ? 'Gửi báo giá cho khách' : 'Xác nhận & bắt đầu'} style={{ flex: 2 }} onPress={sendQuote} />
-        </View>
-      ) : null}
-      {mine && o.status === 'pending_review' ? (
-        <View style={tx.dock}>
-          <Btn title="⚡ Văn phòng duyệt ngay (Demo)" icon="check-check" style={{ flex: 1 }} onPress={() => a.officeApproveCompletion(o.code)} />
         </View>
       ) : null}
       {mine && o.status === 'repairing' ? (
@@ -2060,13 +2160,13 @@ export function TechJobScreen({ params }) {
                 u.alert('Thiếu ảnh sau khi làm', 'Nên thêm ảnh “Sau khi làm” làm minh chứng. Tick xác nhận nếu khách đồng ý bỏ qua.', '📷');
                 return;
               }
-              setShowDone(false);
-              setForceDone(false);
               a.completeJob(o.code, {
                 summary: summary.trim(),
                 paid: isQRPayment(o) ? Boolean(o.report?.paid) : (orderTotal(o) > 0 ? paid : true),
                 safetyChecklist: safetyChecks,
                 customerSignature: signature || null,
+              }).then((ok) => {
+                if (ok) { setShowDone(false); setForceDone(false); }
               });
             }}
           />

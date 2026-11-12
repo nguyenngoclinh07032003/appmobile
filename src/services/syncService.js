@@ -104,10 +104,12 @@ export const mapBackendStatusToAppStatus = (requestStatus, visitStatus, hasAppro
   }
   if (st === 'DIAGNOSED_PENDING_QUOTATION') return 'quoted';
   if (st === 'READY_FOR_REPAIR') return 'repairing';
-  if (['PENDING_REVIEW', 'READY_FOR_ACCEPTANCE'].includes(st)) {
+  // Luồng mới (backend 12/11): thợ nộp biên bản -> chờ khách kiểm tra & thanh toán (PENDING_PAYMENT / trả thiếu)
+  // -> trả đủ (READY_FOR_ACCEPTANCE) -> văn phòng nghiệm thu (COMPLETED). App gộp các bước chờ này vào "Chờ nghiệm thu".
+  if (['PENDING_REVIEW', 'READY_FOR_ACCEPTANCE', 'PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE'].includes(st)) {
     return 'pending_review';
   }
-  if (['PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE', 'COMPLETED'].includes(st)) {
+  if (st === 'COMPLETED') {
     return 'done';
   }
   if (['WARRANTY_PENDING', 'UNDER_WARRANTY'].includes(st)) {
@@ -202,7 +204,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
   return {
     code: req.request_code,
     dbRequestId: req.request_id,
-    kind: 'normal',
+    kind: req.request_type === 'WARRANTY' ? 'warranty' : 'normal',
     customerPhone: customerPhoneFallback || contactPhone,
     warrantyDays: 60,
     items,
@@ -266,7 +268,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
   const hasPendingQuote = (job.quotations || []).some((q) => q.quotation_status === 'SENT');
   const quote = mapBackendQuotationToAppQuote(job.quotations || [], job.diagnoses || [], goods, req.problem_description);
   const isEnded = job.assignment_status === 'ENDED';
-  const status = (req.request_status === 'PENDING_REVIEW' || req.request_status === 'READY_FOR_ACCEPTANCE')
+  const status = ['PENDING_REVIEW', 'READY_FOR_ACCEPTANCE', 'PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE'].includes(req.request_status)
     ? 'pending_review'
     : (isEnded && !req.request_status?.startsWith('CANCELLED')
       ? 'done'
@@ -344,6 +346,8 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
           qty: l.qty,
           price: l.price,
         })),
+    // Các bước thực hiện (backend: job.procedure; null = đơn không có bước bắt buộc)
+    procedure: job.procedure || null,
     repairNotes: (job.diagnoses || []).map((d, idx) => ({
       id: `diag-${job.assignment_id}-${idx}`,
       text: `${d.symptoms ? `[Triệu chứng: ${d.symptoms}] ` : ''}${d.findings || ''}${d.repair_recommendation ? ` -> Đề xuất: ${d.repair_recommendation}` : ''}`,
