@@ -10,6 +10,7 @@ import {
 } from '../services/authService';
 import { hrmssApi, authTokens } from '../services/api';
 import { API_BASE_URL } from '../constants/config';
+import { authErrorMessage } from '../utils/authErrorMessages';
 
 // Lỗi mạng: ghi rõ địa chỉ server app đang gọi (sai địa chỉ / server tắt thì nhìn là thấy).
 const networkError = (res) => (res?.code === 'TIMEOUT'
@@ -2088,13 +2089,11 @@ export function AppProvider({ children }) {
         } else {
           return {
             ok: false,
-            error: beRes.status > 0
-              ? (beRes.message || 'Tài khoản hoặc mật khẩu không chính xác.')
-              : networkError(beRes),
+            error: authErrorMessage(beRes, 'login'),
           };
         }
       } catch (e) {
-        return { ok: false, error: networkError() };
+        return { ok: false, error: authErrorMessage({ status: 0 }, 'login') };
       }
 
       const res = { ok: true, account: backendAccount };
@@ -2150,7 +2149,7 @@ export function AppProvider({ children }) {
         });
         if (!beRes.ok) {
           if (beRes.status > 0) {
-            return { ok: false, error: beRes.message || 'Không thể tạo tài khoản trên máy chủ.' };
+            return { ok: false, error: authErrorMessage(beRes, 'register') };
           }
         } else {
           const createdUser = beRes.data?.account;
@@ -2170,10 +2169,10 @@ export function AppProvider({ children }) {
           });
         }
       } catch (e) {
-        return { ok: false, error: networkError() };
+        return { ok: false, error: authErrorMessage({ status: 0 }, 'register') };
       }
       if (!backendAccount) {
-        return { ok: false, error: networkError() };
+        return { ok: false, error: authErrorMessage({ status: 0 }, 'register') };
       }
       const res = { ok: true, account: backendAccount };
       up((p) => ({

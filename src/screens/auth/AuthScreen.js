@@ -5,6 +5,7 @@ import {
 import { C, R, shadow, grad } from '../../theme';
 import { useApp } from '../../context';
 import { Btn, Tap, AppIcon } from '../../components';
+import { authErrorMessage } from '../../utils/authErrorMessages';
 
 const webNoOutline = Platform.select({ web: { outlineStyle: 'none' }, default: {} });
 
@@ -118,11 +119,11 @@ export default function AuthScreen() {
         });
       }
     } catch (err) {
-      res = { ok: false, error: err?.message || 'Không thể kết nối đến máy chủ. Vui lòng thử lại.' };
+      res = { ok: false, error: authErrorMessage({ message: err?.message, status: 0 }, mode) };
     } finally {
       setBusy(false);
     }
-    if (res && !res.ok) setFormErr(res.error || res.message);
+    if (res && !res.ok) setFormErr(authErrorMessage(res, mode));
   };
 
   return (
