@@ -356,10 +356,15 @@ export const hrmssApi = {
   },
 
   // 6. Cập nhật hồ sơ user
+  // Ngày sinh / SĐT / địa chỉ của chính mình: PATCH /users/me { profile: { dateOfBirth: 'YYYY-MM-DD' } }.
+  async updateMyInfo(profile, targetPort = null) {
+    return apiRequest('/users/me', { method: 'PATCH', body: { profile }, targetPort });
+  },
   async updateProfile(profileData, targetPort = null) {
+    // Backend nhận trực tiếp { full_name, phone } (schema strict, không bọc trong "profile").
     return apiRequest('/auth/me/profile', {
       method: 'PATCH',
-      body: { profile: profileData },
+      body: profileData,
       targetPort,
     });
   },
@@ -387,6 +392,17 @@ export const hrmssApi = {
   // 9. Nghiệp vụ Khách hàng (Customer Requests & Addresses)
   async getCustomerAddresses(targetPort = null) {
     return apiRequest('/customer/addresses', { targetPort });
+  },
+  // Sửa / xóa địa chỉ (đổi phường thì gửi cả ward_code + address_text).
+  async updateCustomerAddress(id, payload, targetPort = null) {
+    return apiRequest(`/customer/addresses/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload, targetPort });
+  },
+  async deleteCustomerAddress(id, targetPort = null) {
+    return apiRequest(`/customer/addresses/${encodeURIComponent(id)}`, { method: 'DELETE', targetPort });
+  },
+  // 126 phường/xã Hà Nội sau sáp nhập (công khai). q: tìm không dấu.
+  async getHanoiWards(q = '', targetPort = null) {
+    return apiRequest(`/locations/hanoi/wards${q ? `?q=${encodeURIComponent(q)}` : ''}`, { targetPort });
   },
   async createCustomerAddress(payload, targetPort = null) {
     return apiRequest('/customer/addresses', { method: 'POST', body: payload, targetPort });
@@ -419,6 +435,22 @@ export const hrmssApi = {
       targetPort,
     });
   },
+  // Khách sửa đơn còn chờ (giờ hẹn, mô tả, nhà, cách trả tiền): PATCH /customer/requests/:id.
+  async updateCustomerRequest(id, payload, targetPort = null) {
+    return apiRequest(`/customer/requests/${encodeURIComponent(id)}`, { method: 'PATCH', body: payload, targetPort });
+  },
+  // Chọn cách trả tiền: method = 'CASH' | 'BANK_TRANSFER'.
+  async setPaymentMethod(id, method, targetPort = null) {
+    return apiRequest(`/customer/requests/${encodeURIComponent(id)}/payment-method`, { method: 'PATCH', body: { method }, targetPort });
+  },
+  // Khách xác nhận đã trả tiền mặt (chuyển khoản do SePay tự xác nhận).
+  async confirmCashPayment(id, targetPort = null) {
+    return apiRequest(`/customer/requests/${encodeURIComponent(id)}/payments/confirm`, { method: 'POST', body: { method: 'CASH' }, targetPort });
+  },
+  // Xóa tài khoản của chính mình (cần mật khẩu).
+  async deleteMyAccount(password, targetPort = null) {
+    return apiRequest('/auth/me', { method: 'DELETE', body: { password }, targetPort });
+  },
   // Yêu cầu bảo hành cho đơn đã xong: tạo đơn bảo hành WARRANTY_PENDING (văn phòng thẩm định).
   async requestWarranty(id, note = null, targetPort = null) {
     return apiRequest(`/customer/requests/${encodeURIComponent(id)}/warranty`, { method: 'POST', body: note ? { note } : {}, targetPort });
@@ -450,6 +482,70 @@ export const hrmssApi = {
       targetPort,
     });
   },
+  // Bỏ qua việc ở chợ việc (không phạt): POST /technician/jobs/open-requests/:request_id/decline.
+  async declineTechnicianOpenRequest(requestId, reason = null, targetPort = null) {
+    return apiRequest(`/technician/jobs/open-requests/${encodeURIComponent(requestId)}/decline`, { method: 'POST', body: reason ? { reason } : {}, targetPort });
+  },
+  async remindQuotation(jobId, targetPort = null) {
+    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/remind-quote`, { method: 'POST', targetPort });
+  },
+  // Tiến độ / ghi chú sửa chữa: cần progress_percent hoặc note.
+  async addJobProgress(jobId, { progress_percent, note }, targetPort = null) {
+    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/progress`, {
+      method: 'POST',
+      body: { ...(progress_percent != null ? { progress_percent } : {}), ...(note ? { note } : {}) },
+      targetPort,
+    });
+  },
+  async updateMaterialUsage(jobId, usageId, usedQuantity, targetPort = null) {
+    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/materials/${encodeURIComponent(usageId)}`, { method: 'PATCH', body: { used_quantity: usedQuantity }, targetPort });
+  },
+  async deleteMaterialUsage(jobId, usageId, targetPort = null) {
+    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/materials/${encodeURIComponent(usageId)}`, { method: 'DELETE', targetPort });
+  },
+  async markOutOfWarranty(jobId, reason, targetPort = null) {
+    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/out-of-warranty`, { method: 'POST', body: { reason }, targetPort });
+  },
+  async requestJobFollowUp(jobId, reason, remainingWork = null, targetPort = null) {
+    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/follow-up`, {
+      method: 'POST', body: { reason, ...(remainingWork ? { remaining_work: remainingWork } : {}) }, targetPort,
+    });
+  },
+  // Hóa đơn của việc (số tiền mặt cần thu).
+  async getTechnicianJobBill(jobId, targetPort = null) {
+    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/bill`, { targetPort });
+  },
+  // Ảnh của việc (thợ) / của đơn (khách): GET /uploads?job_id= | ?request_id=.
+  async listJobPhotos(jobId, targetPort = null) {
+    return apiRequest(`/uploads?job_id=${encodeURIComponent(jobId)}`, { targetPort });
+  },
+  // Khách gắn ảnh vào đơn của mình (POST /uploads: file + request_id).
+  async uploadRequestPhoto(requestId, uri, targetPort = null) {
+    const form = new FormData();
+    if (/^(data|blob):/.test(String(uri))) {
+      const blob = await (await fetch(uri)).blob();
+      form.append('file', blob, 'anh-don.jpg');
+    } else {
+      form.append('file', { uri, name: 'anh-don.jpg', type: 'image/jpeg' });
+    }
+    form.append('request_id', String(requestId));
+    return apiRequest('/uploads', { method: 'POST', formData: form, timeout: 30000, targetPort });
+  },
+  async listRequestPhotos(requestId, targetPort = null) {
+    return apiRequest(`/uploads?request_id=${encodeURIComponent(requestId)}`, { targetPort });
+  },
+  async updatePhotoNote(attachmentId, description, targetPort = null) {
+    return apiRequest(`/uploads/${encodeURIComponent(attachmentId)}`, { method: 'PATCH', body: { description: description || null }, targetPort });
+  },
+  async deletePhoto(attachmentId, targetPort = null) {
+    return apiRequest(`/uploads/${encodeURIComponent(attachmentId)}`, { method: 'DELETE', targetPort });
+  },
+  // Gắn ảnh biên lai (đã tải qua POST /uploads) vào dòng linh kiện mua ngoài của báo giá.
+  async attachPartReceipt(jobId, itemId, attachmentId, targetPort = null) {
+    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/quotation-items/${encodeURIComponent(itemId)}/receipt`, {
+      method: 'PATCH', body: { attachment_id: String(attachmentId) }, targetPort,
+    });
+  },
   async getTechnicianJobDetail(id, targetPort = null) {
     return apiRequest(`/technician/jobs/${id}`, { targetPort });
   },
@@ -467,6 +563,20 @@ export const hrmssApi = {
       },
       targetPort,
     });
+  },
+  // Hành trình của thợ: xuất phát và check-in (backend tính trễ, kiểm tra bán kính GPS, phát voucher bồi thường).
+  async travelTechnicianJob(id, targetPort = null) {
+    return apiRequest(`/technician/jobs/${encodeURIComponent(id)}/travel`, { method: 'PATCH', targetPort });
+  },
+  async arriveTechnicianJob(id, { latitude, longitude, location_accuracy }, targetPort = null) {
+    return apiRequest(`/technician/jobs/${encodeURIComponent(id)}/arrive`, {
+      method: 'PATCH',
+      body: { latitude: Number(latitude), longitude: Number(longitude), ...(location_accuracy != null ? { location_accuracy: Number(location_accuracy) } : {}) },
+      targetPort,
+    });
+  },
+  async releaseTechnicianJob(id, reason, targetPort = null) {
+    return apiRequest(`/technician/jobs/${encodeURIComponent(id)}/release`, { method: 'POST', body: { reason }, targetPort });
   },
   async startTechnicianJob(id, targetPort = null) {
     return apiRequest(`/technician/jobs/${id}/start`, { method: 'PATCH', targetPort });
@@ -602,7 +712,7 @@ export const hrmssApi = {
   },
   // Tải ảnh của việc lên server (POST /uploads multipart: file, job_id, evidence_type). Trả data.attachment.attachment_id.
   // uri: data:/blob: (bản web) hoặc file:// (bản native).
-  async uploadJobPhoto(jobId, uri, evidenceType = 'AFTER_REPAIR', targetPort = null) {
+  async uploadJobPhoto(jobId, uri, evidenceType = 'AFTER_REPAIR', targetPort = null, description = null) {
     const form = new FormData();
     if (/^(data|blob):/.test(String(uri))) {
       const blob = await (await fetch(uri)).blob();
@@ -612,6 +722,7 @@ export const hrmssApi = {
     }
     form.append('job_id', String(jobId));
     form.append('evidence_type', evidenceType);
+    if (description) form.append('description', String(description).slice(0, 500));
     return apiRequest('/uploads', { method: 'POST', formData: form, timeout: 30000, targetPort });
   },
 

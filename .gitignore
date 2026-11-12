@@ -7,3 +7,7 @@ yarn-debug.log*
 yarn-error.log*
 .DS_Store
 Thumbs.db
+
+# Cấu hình server riêng từng máy (xem .env.example)
+.env.local
+.env*.local

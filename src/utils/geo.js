@@ -1,10 +1,10 @@
 /** Dịch vụ định vị GPS cho kỹ thuật viên Thợ Minh Đức */
 
-const DEFAULT_COORDS = { lat: 21.028511, lng: 105.804817, label: 'Đã xác thực toạ độ GPS (±18m)' };
-
+// Vị trí GPS thật của máy. Không lấy được (chưa cấp quyền / không có GPS) -> null (KHÔNG dùng tọa độ mặc định:
+// backend dùng tọa độ này để kiểm tra bán kính check-in và tính trễ hẹn).
 export const getCheckInLocation = () => new Promise((resolve) => {
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    resolve({ ...DEFAULT_COORDS, accuracy: 18, at: Date.now() });
+    resolve(null);
     return;
   }
   const done = (payload) => resolve({ ...payload, at: Date.now() });
@@ -15,7 +15,7 @@ export const getCheckInLocation = () => new Promise((resolve) => {
       accuracy: Math.round(pos.coords.accuracy || 12),
       label: `GPS ±${Math.round(pos.coords.accuracy || 12)}m`,
     }),
-    () => done({ ...DEFAULT_COORDS, accuracy: 18 }),
+    () => resolve(null),
     { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 },
   );
 });

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from 'r
 import { BackHandler, Linking, Platform } from 'react-native';
 import {
   getService, TECH_ME, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech, CATEGORIES, SERVICES,
-  tierOf, comboDiscountFor, syncCatalogFromBackend, syncPolicyFromBackend, resolveDbServiceId,
+  tierOf, comboDiscountFor, syncCatalogFromBackend, syncPolicyFromBackend, resolveDbServiceId, PAYMENT_METHODS,
 } from '../constants/data';
 export { matchJobForTech, comboDiscountFor } from '../constants/data';
 import {
@@ -13,6 +13,15 @@ import { API_BASE_URL } from '../constants/config';
 import { authErrorMessage } from '../utils/authErrorMessages';
 import { readTechnicianSpecialties } from '../utils/techProfile';
 
+// Ngày sinh: server lưu 'YYYY-MM-DD', app hiển thị 'DD/MM/YYYY'.
+const isoToDob = (iso) => {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+};
+const dobToIso = (dob) => {
+  const m = String(dob || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : null;
+};
 // Lỗi mạng: ghi rõ địa chỉ server app đang gọi (sai địa chỉ / server tắt thì nhìn là thấy).
 const networkError = (res) => (res?.code === 'TIMEOUT'
   ? `Máy chủ ${API_BASE_URL} phản hồi quá lâu. Kiểm tra mạng rồi thử lại.`
@@ -30,12 +39,13 @@ import {
   mapPublicVoucher,
   mapRedeemOption,
   mapPointHistory,
+  mapBackendPhotoToEvidence,
 } from '../services/syncService';
 import {
   TECH_POLICY, normalizeTechRep, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
   applyTechPenalty, applyTechBonus, mintWalletVoucher, slotStartTs, getCancellationWindowStatus,
 } from '../constants/techPolicy';
-import { advanceTracking } from '../utils/geo';
+import { getCheckInLocation } from '../utils/geo';
 export {
   TECH_POLICY, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
   reputationTone, normalizeTechRep, slotStartTs, getCancellationWindowStatus,
@@ -66,35 +76,27 @@ export const isActiveOrder = (o) => ACTIVE_STATUSES.includes(o.status);
 export const bookedValue = (o) => (
   o.kind === 'warranty' ? 0 : Math.max(0, (o.goods || 0) - (o.productDiscount || 0) - (o.comboDiscount || 0))
 );
-/** Ưu đãi giảm giá vật tư/linh kiện phát sinh theo Hạng thành viên (Vàng -5%, Kim cương -10%) */
-export const tierPartDiscountAmount = (o) => {
-  const pct = Number(o?.tierPartDiscountPercent || 0);
-  if (!pct || !o?.quote?.lines?.length) return 0;
-  const partsSum = o.quote.lines
-    .filter((l) => l.type === 'part')
-    .reduce((sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 0), 0);
-  return Math.round((partsSum * pct) / 100);
-};
-/** Số tiền giảm do thợ đến muộn (theo % nhân công, có trần) */
-export const lateDiscountAmount = (o) => {
-  const lc = o?.lateCompensation;
-  if (!lc?.percent) return 0;
-  const labor = o.quote?.total != null ? o.quote.total : bookedValue(o);
-  const raw = Math.round(Math.max(0, labor) * (lc.percent / 100));
-  const cap = lc.maxDiscount != null ? lc.maxDiscount : (lc.percent >= 50 ? 200000 : 100000);
-  return Math.min(raw, cap);
-};
-// Số tiền khách phải trả: đơn huỷ có phí kiểm tra -> phí kiểm tra; báo giá (nếu có) − ưu đãi vật tư theo hạng − voucher − bồi thường đến muộn
+/** Giảm giá linh kiện theo hạng thành viên: lấy từ hoá đơn server (bill.tier_part_discount_amount). */
+export const tierPartDiscountAmount = (o) => Number(o?.bill?.tierPartDiscount) || 0;
+/** Giảm do thợ đến muộn: lấy từ hoá đơn server (bill.late_discount_amount). */
+export const lateDiscountAmount = (o) => Number(o?.bill?.lateDiscount) || 0;
+// Số tiền khách phải trả = bill.amount_due của server (đã gồm báo giá, phát sinh, giảm hạng, voucher, đến muộn, phí kiểm tra).
+// Chưa tải được hoá đơn thì tạm dùng tổng server trả cùng đơn (estimated_total / tổng báo giá đã duyệt).
 export const orderTotal = (o) => {
+  if (o?.bill) return Math.max(0, Number(o.bill.amountDue) || 0);
   if (o.kind === 'warranty' || o.kind === 'followup') return 0;
   if (o.status === 'cancelled') return o.inspectionFee || 0;
-  if (o.quote && (o.quote.approved || o.status === 'quoted')) {
-    const raw = o.quote.total - tierPartDiscountAmount(o) - (o.voucherDiscount || 0) - lateDiscountAmount(o);
-    return Math.max(0, raw);
-  }
+  if (o.quote?.approvedTotal != null) return Math.max(0, o.quote.approvedTotal - (o.voucherDiscount || 0));
   const base = o.finalTotal != null ? o.finalTotal : o.total;
-  return Math.max(0, base - lateDiscountAmount(o));
+  return Math.max(0, Number(base) || 0);
 };
+// Tiền mặt thợ cần thu: bill.cash_to_collect của server (0 nếu khách trả VietQR).
+export const cashToCollect = (o) => (o?.bill?.cashToCollect != null ? o.bill.cashToCollect : (o?.cashToCollect ?? orderTotal(o)));
+// Còn phải trả (đã trừ tiền đã thanh toán) và trạng thái thanh toán theo server.
+export const amountRemaining = (o) => (o?.bill ? Math.max(0, Number(o.bill.remainingAmount) || 0) : orderTotal(o));
+export const isPaid = (o) => (o?.bill ? ['PAID', 'NOTHING_TO_PAY'].includes(o.bill.paymentStatus) : Boolean(o?.report?.paid));
+// Đơn đã sửa xong, đang chờ khách trả tiền (PENDING_PAYMENT / trả thiếu).
+export const isAwaitingPayment = (o) => ['PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE'].includes(o?.backendStatus) && !isPaid(o);
 
 // Kiểm tra đơn hàng thanh toán bằng Chuyển khoản QR (VietQR) -> Thợ tuyệt đối KHÔNG được thu tiền mặt
 export const isQRPayment = (o) => {
@@ -139,22 +141,25 @@ export const dateKeyOf = (o) => {
 export const todayKey = (offset = 0) => { const d = new Date(); d.setDate(d.getDate() + offset); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 // orders: danh sách tất cả đơn — dùng để chặn gửi trùng yêu cầu bảo hành khi đã có đơn bảo hành đang xử lý
 export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
+  // Hạn bảo hành do server tính theo hạng khách lúc đặt (warranty_days / warranty_end_date).
   const totalDays = o?.warrantyDays || tierOf(lifetimePoints || 0).cur.warrantyDays || 60;
   if (o.status === 'cancelled') return { ok: false, totalDays, text: 'Đơn đã huỷ nên không được bảo hành.' };
   if (o.kind === 'warranty') return { ok: false, totalDays, text: 'Đây là đơn bảo hành.' };
-  const open = orders.find((x) => x.kind === 'warranty' && x.warrantyOf === o.code && isActiveOrder(x));
+  const open = orders.find((x) => x.kind === 'warranty' && isActiveOrder(x)
+    && (x.warrantyOf === o.code || (o.dbRequestId && String(x.originalRequestId) === String(o.dbRequestId))));
   if (open) return { ok: false, pending: true, totalDays, openCode: open.code, text: `Đã có yêu cầu bảo hành ${open.code} đang xử lý.` };
   const covered = o.items.filter((it) => ['clean', 'gas', 'repair', 'install'].includes(serviceKind(getService(it.id))));
   if (!covered.length) return { ok: false, totalDays, text: `Đơn này là gói dịch vụ định kỳ riêng, không thuộc diện bảo hành ${totalDays} ngày.` };
   if (o.status !== 'done') return { ok: false, pending: true, totalDays, text: `Bảo hành ${totalDays} ngày sẽ bắt đầu khi đơn hoàn thành.` };
-  const left = Math.ceil((o.doneAt + totalDays * DAY - Date.now()) / DAY);
+  const endAt = o.warrantyEndAt || (o.doneAt + totalDays * DAY);
+  const left = Math.ceil((endAt - Date.now()) / DAY);
   if (left <= 0) return { ok: false, totalDays, text: `Đơn đã hết thời hạn bảo hành ${totalDays} ngày.` };
   return {
     ok: true,
     totalDays,
     daysLeft: left,
-    until: o.doneAt + totalDays * DAY,
-    text: `Còn ${left}/${totalDays} ngày bảo hành (đến ${fmtDate(o.doneAt + totalDays * DAY)}).`,
+    until: endAt,
+    text: `Còn ${left}/${totalDays} ngày bảo hành (đến ${fmtDate(endAt)}).`,
   };
 };
 
@@ -176,7 +181,7 @@ const mergeTechProfile = (prev, account) => {
     rating: same?.rating ?? TECH_ME.rating,
     jobs: same?.jobs ?? 0,
     area: same?.area || TECH_ME.area,
-    skills: same?.skills?.length ? same.skills : TECH_ME.skills,
+    skills: same?.skills || [],
     reputation: rep.reputation,
     lockedUntil: rep.lockedUntil,
     violations: rep.violations,
@@ -259,7 +264,6 @@ const makeInitial = () => ({
   declined: [], // legacy — dùng declinedByTech theo mã thợ
   declinedByTech: {}, // { [techCode]: string[] }
   declineLog: [],
-  techOnline: true,
   techProfile: null,
   payoutHistory: [],
   tips: { customerHome: true, techJobs: true }, // gợi ý lần đầu
@@ -651,11 +655,18 @@ export function AppProvider({ children }) {
         const rawRequests = okItems(reqRes);
         if (rawRequests) {
           const needTech = rawRequests.filter((r) => r.request_status !== 'RECEIVED' && !String(r.request_status || '').startsWith('CANCELLED')).slice(0, 20);
-          const trackings = await Promise.all(needTech.map((r) => hrmssApi.getRequestTracking(r.request_id).catch(() => null)));
+          // Hoá đơn thật (tiền phải trả, đã trả, giảm giá, phí kiểm tra): GET /customer/requests/:id/bill.
+          const needBill = rawRequests.filter((r) => r.request_status !== 'RECEIVED').slice(0, 20);
+          const [trackings, bills] = await Promise.all([
+            Promise.all(needTech.map((r) => hrmssApi.getRequestTracking(r.request_id).catch(() => null))),
+            Promise.all(needBill.map((r) => hrmssApi.getBill(r.request_id).catch(() => null))),
+          ]);
           needTech.forEach((r, i) => {
             const t = trackings[i];
             if (t?.ok && t.data?.technician) r.technician = t.data.technician;
+            if (t?.ok && t.data?.journey) r.journey = t.data.journey;
           });
+          needBill.forEach((r, i) => { if (bills[i]?.ok && bills[i].data?.bill) r.bill = bills[i].data; });
         }
         const remoteOrders = rawRequests
           ? rawRequests.map((r) => mapBackendCustomerRequestToOrder(r, serverPhone || acc.phone)).filter(Boolean)
@@ -729,6 +740,24 @@ export function AppProvider({ children }) {
         if (okItems(techMatRes)) syncCatalogFromBackend({ materials: techMatRes.data.items });
         const summary = reviewRes.ok ? reviewRes.data?.summary : null;
         const specialtyInfo = profRes.ok ? readTechnicianSpecialties(profRes.data) : null;
+        // Ảnh minh chứng của các việc đang làm: GET /uploads?job_id= (bỏ ảnh đã gắn vào bước thực hiện).
+        const activeJobIds = (jobsRes.ok && Array.isArray(jobsRes.data?.items) ? jobsRes.data.items : [])
+          .filter((j) => j.assignment_status === 'ACTIVE' && j.assignment_id)
+          .map((j) => String(j.assignment_id))
+          .slice(0, 10);
+        const [photoLists, jobBills] = await Promise.all([
+          Promise.all(activeJobIds.map((id) => hrmssApi.listJobPhotos(id).catch(() => null))),
+          // Hoá đơn của việc (tiền mặt cần thu, giảm giá): GET /technician/jobs/:id/bill.
+          Promise.all(activeJobIds.map((id) => hrmssApi.getTechnicianJobBill(id).catch(() => null))),
+        ]);
+        const billByJob = new Map();
+        activeJobIds.forEach((id, i) => { if (jobBills[i]?.ok && jobBills[i].data?.bill) billByJob.set(id, jobBills[i].data); });
+        const evidenceByJob = new Map();
+        activeJobIds.forEach((id, i) => {
+          const res = photoLists[i];
+          const rows = res?.ok ? (res.data?.items || res.data?.attachments || (Array.isArray(res.data) ? res.data : [])) : null;
+          if (rows) evidenceByJob.set(id, rows.filter((r) => !r.procedure_step_id).map(mapBackendPhotoToEvidence));
+        });
         up((p) => {
           const base = p.techProfile || mergeTechProfile(null, acc);
           const techProf = {
@@ -746,7 +775,12 @@ export function AppProvider({ children }) {
             reviews: reviewRes.ok ? (reviewRes.data?.items || []) : (base.reviews || []),
           };
           const assignedOrders = (jobsRes.ok && Array.isArray(jobsRes.data?.items))
-            ? jobsRes.data.items.map((j) => mapBackendTechJobToOrder(j, techProf)).filter(Boolean)
+            ? jobsRes.data.items.map((j) => {
+                const b = billByJob.get(String(j.assignment_id));
+                const o = mapBackendTechJobToOrder(b ? { ...j, bill: b } : j, techProf);
+                const ev = evidenceByJob.get(String(j.assignment_id));
+                return o && ev ? { ...o, evidence: ev } : o;
+              }).filter(Boolean)
             : [];
           const assignedCodes = new Set(assignedOrders.map((o) => o.code));
           const openOrders = (openRes.ok && Array.isArray(openRes.data?.items))
@@ -811,12 +845,17 @@ export function AppProvider({ children }) {
       email: data.account?.email || '',
     };
     try {
-      const [meRes, verRes] = await Promise.all([hrmssApi.getMe(), hrmssApi.getEmailVerificationStatus()]);
+      const [meRes, verRes, infoRes] = await Promise.all([
+        hrmssApi.getMe(), hrmssApi.getEmailVerificationStatus(), hrmssApi.getUserProfile().catch(() => null),
+      ]);
       if (meRes.ok && meRes.data) {
         account.name = meRes.data.profile?.full_name || meRes.data.account?.username || account.name;
         account.phone = meRes.data.profile?.phone || '';
         account.email = meRes.data.account?.email || account.email;
       }
+      // Ngày sinh: GET /users/me -> profile.dateOfBirth (YYYY-MM-DD).
+      const info = infoRes?.ok ? (infoRes.data?.user || infoRes.data) : null;
+      account.dob = isoToDob(info?.profile?.dateOfBirth);
       if (verRes.ok && verRes.data) account.emailVerified = Boolean(verRes.data.email_verified);
     } catch (meErr) { /* hồ sơ lỗi: vẫn đăng nhập với thông tin tối thiểu */ }
     account.username = data.account?.username || '';
@@ -838,6 +877,23 @@ export function AppProvider({ children }) {
       syncFromBackend(s.auth);
     })();
   }, []);
+
+  // Thao tác ghi: gọi server trước. Lỗi -> báo (mã lỗi tiếng Việt nếu có) + tải lại dữ liệu thật, trả false.
+  // Thành công -> báo toast + tải lại dữ liệu thật, trả true. Không tự sửa dữ liệu trên máy.
+  const serverDone = (res, { title = 'Không thực hiện được', codes = {}, toast, icon = '✓' } = {}) => {
+    if (!res?.ok) {
+      ui.alert(title, codes[res?.code] || (res?.status > 0 ? res.message : networkError(res)), '⚠️');
+      syncFromBackend();
+      return false;
+    }
+    if (toast) ui.toast(toast, icon);
+    syncFromBackend();
+    return true;
+  };
+  const notSynced = (what = 'Việc này') => {
+    ui.alert('Chưa đồng bộ', `${what} chưa có trên hệ thống. Kéo làm mới rồi thử lại.`, 'ℹ️');
+    return false;
+  };
 
   const a = {
     syncFromBackend,
@@ -894,72 +950,88 @@ export function AppProvider({ children }) {
     },
 
     // Địa chỉ + hồ sơ (Ghi trực tiếp vào bảng hrmss.service_address trên PostgreSQL)
-    saveAddress: (addr) => {
-      const id = addr.id || uid();
-      up((p) => {
-        let list = addr.id ? p.addresses.map((x) => (x.id === id ? { ...addr, id } : x)) : [...p.addresses, { ...addr, id }];
-        const makeDefault = addr.isDefault || list.length === 1;
-        list = list.map((x) => ({ ...x, isDefault: makeDefault ? x.id === id : x.isDefault }));
-        const user = {
-          ...p.user,
-          name: p.user.name || addr.name,
-          phone: p.user.phone || addr.phone,
-        };
-        return { addresses: list, selectedAddressId: makeDefault || !p.selectedAddressId ? id : p.selectedAddressId, user };
-      });
-      if (authTokens.get() && !addr.dbAddressId) {
-        const fullText = [addr.full, addr.area].filter(Boolean).join(', ');
-        const cleanPhone = String(addr.phone || s.user?.phone || '').replace(/\D/g, '');
-        if (fullText.length >= 5 && /^(0|\+84)[3|5|7|8|9][0-9]{8}$/.test(cleanPhone)) {
-          hrmssApi.createCustomerAddress({
-            address_text: fullText,
-            contact_name: addr.name || s.user?.name || '',
-            contact_phone: cleanPhone,
-            is_default: Boolean(addr.isDefault),
-          }).then((res) => {
-            if (res.ok && res.data?.address) {
-              const dbAddr = mapBackendAddressToApp(res.data.address);
-              up((p) => ({
-                addresses: p.addresses.map((x) => (x.id === id ? { ...x, dbAddressId: dbAddr.dbAddressId } : x)),
-              }));
-            }
-          }).catch(() => {});
-        }
+    // Lưu địa chỉ: gửi backend TRƯỚC (POST/PATCH /customer/addresses). address_text = số nhà + đường; ward_code = phường/xã
+    // Hà Nội (backend tự ghép "…, Phường X, Thành phố Hà Nội"). Trả { ok, id } hoặc { ok:false, error }.
+    saveAddress: async (addr) => {
+      if (!authTokens.get()) return { ok: false, error: 'Vui lòng đăng nhập để lưu địa chỉ.' };
+      const cleanPhone = String(addr.phone || s.user?.phone || '').replace(/\D/g, '');
+      const existing = addr.id ? s.addresses.find((x) => x.id === addr.id) : null;
+      const body = {
+        address_text: String(addr.street || addr.full || '').trim(),
+        ...(addr.wardCode ? { ward_code: Number(addr.wardCode) } : {}),
+        contact_name: addr.name || s.user?.name || '',
+        contact_phone: cleanPhone,
+        is_default: Boolean(addr.isDefault),
+      };
+      const res = existing?.dbAddressId
+        ? await hrmssApi.updateCustomerAddress(existing.dbAddressId, body)
+        : await hrmssApi.createCustomerAddress(body);
+      if (!res.ok) {
+        const msg = {
+          ADDRESS_OUTSIDE_SERVICE_AREA: 'Hiện chỉ phục vụ tại Hà Nội. Chọn phường/xã Hà Nội.',
+          WARD_NOT_IN_SERVICE_AREA: 'Phường/xã không thuộc khu vực phục vụ.',
+        }[res.code];
+        return { ok: false, error: msg || (res.status > 0 ? res.message : networkError(res)) };
       }
-      ui.toast('Đã lưu địa chỉ', '📍');
-      return id;
-    },
-    deleteAddress: (id) => up((p) => {
-      const list = p.addresses.filter((x) => x.id !== id);
-      if (list.length && !list.some((x) => x.isDefault)) list[0] = { ...list[0], isDefault: true };
-      return { addresses: list, selectedAddressId: p.selectedAddressId === id ? (list[0]?.id || null) : p.selectedAddressId };
-    }),
-    selectAddress: (id) => up(() => ({ selectedAddressId: id })),
-    updateUser: (u) => {
+      const saved = mapBackendAddressToApp(res.data?.address);
+      if (!saved) return { ok: false, error: 'Không đọc được địa chỉ vừa lưu.' };
       up((p) => {
-        const nextUser = { ...p.user, ...u };
+        let list = existing ? p.addresses.map((x) => (x.id === existing.id ? saved : x)) : [...p.addresses.filter((x) => x.id !== saved.id), saved];
+        if (saved.isDefault) list = list.map((x) => ({ ...x, isDefault: x.id === saved.id }));
+        return {
+          addresses: list,
+          selectedAddressId: saved.isDefault || !p.selectedAddressId ? saved.id : p.selectedAddressId,
+          user: { ...p.user, name: p.user.name || saved.name, phone: p.user.phone || saved.phone },
+        };
+      });
+      ui.toast('Đã lưu địa chỉ', '📍');
+      return { ok: true, id: saved.id };
+    },
+    // Xóa địa chỉ: backend trước, thành công mới bỏ khỏi danh sách.
+    deleteAddress: async (id) => {
+      const addr = s.addresses.find((x) => x.id === id);
+      if (addr?.dbAddressId) {
+        const res = await hrmssApi.deleteCustomerAddress(addr.dbAddressId);
+        if (!res.ok) { ui.alert('Không xóa được địa chỉ', res.status > 0 ? res.message : networkError(res), '📍'); return false; }
+      }
+      up((p) => {
+        const list = p.addresses.filter((x) => x.id !== id);
+        if (list.length && !list.some((x) => x.isDefault)) list[0] = { ...list[0], isDefault: true };
+        return { addresses: list, selectedAddressId: p.selectedAddressId === id ? (list[0]?.id || null) : p.selectedAddressId };
+      });
+      return true;
+    },
+    selectAddress: (id) => up(() => ({ selectedAddressId: id })),
+    // Hồ sơ khách: PATCH /auth/me/profile { full_name, phone } TRƯỚC; thành công mới cập nhật trên máy.
+    // Email / ngày sinh backend chưa có trường sửa -> không đổi (email đổi qua tài khoản).
+    updateUser: async (u) => {
+      const body = {
+        ...(u.name ? { full_name: String(u.name).trim() } : {}),
+        ...(u.phone !== undefined ? { phone: u.phone ? String(u.phone) : null } : {}),
+      };
+      const fail = (res) => { ui.alert('Không lưu được', res.status > 0 ? res.message : networkError(res), '⚠️'); return false; };
+      if (authTokens.get() && Object.keys(body).length) {
+        const res = await hrmssApi.updateProfile(body);
+        if (!res.ok) return fail(res);
+      }
+      if (authTokens.get() && u.dob !== undefined) {
+        const res = await hrmssApi.updateMyInfo({ dateOfBirth: dobToIso(u.dob) });
+        if (!res.ok) return fail(res);
+      }
+      up((p) => {
+        const nextUser = { ...p.user, name: u.name ?? p.user.name, phone: u.phone ?? p.user.phone, dob: u.dob ?? p.user.dob };
         const nextAuth = p.auth
-          ? upsertBackendAccount({
-              ...p.auth,
-              name: nextUser.name ?? p.auth.name,
-              phone: nextUser.phone ?? p.auth.phone,
-              email: nextUser.email ?? p.auth.email,
-              dob: nextUser.dob ?? p.auth.dob,
-            })
+          ? upsertBackendAccount({ ...p.auth, name: nextUser.name ?? p.auth.name, phone: nextUser.phone ?? p.auth.phone, dob: nextUser.dob })
           : null;
         return { user: nextUser, ...(nextAuth ? { auth: nextAuth } : {}) };
       });
-      if (authTokens.get()) {
-        hrmssApi.updateProfile({
-          ...(u.name ? { full_name: u.name } : {}),
-          ...(u.phone !== undefined ? { phone: u.phone ? u.phone : null } : {}),
-        }).catch(() => {});
-      }
       ui.toast('Đã cập nhật thông tin');
+      return true;
     },
 
     // Đơn hàng (Ghi trực tiếp vào bảng hrmss.service_request, service_request_service, repair_visit)
-    placeOrder: (payload) => {
+    // Đặt lịch: POST /customer/requests TRƯỚC; mã đơn, giá, trạng thái lấy từ server. Lỗi thì báo, không tạo đơn trên máy.
+    placeOrder: async (payload) => {
       if (s.auth?.role === 'customer' && !s.auth.emailVerified) {
         ui.alert(
           'Chưa xác thực Email',
@@ -968,93 +1040,53 @@ export function AppProvider({ children }) {
         );
         return null;
       }
-      const code = `MD${String(Date.now()).slice(-6)}`;
-      const now = Date.now();
-      const customerPhone = s.auth?.phone || s.user?.phone || address?.phone || '';
-      const curTier = tierOf(s.lifetimePoints || 0).cur;
-      const order = {
-        ...payload,
-        code,
-        kind: payload.kind || 'normal',
-        customerPhone,
-        customerAccountId: s.auth?.id || null,
-        customerTier: curTier.id,
-        customerTierLabel: curTier.label,
-        warrantyDays: curTier.warrantyDays || 60,
-        tierPartDiscountPercent: curTier.partDiscountPercent || 0,
-        device: payload.device || null,
-        siteCondition: payload.siteCondition || null,
-        comboDiscount: payload.comboDiscount || 0,
-        comboLabel: payload.comboLabel || '',
-        address,
-        status: 'pending',
-        history: [{ status: 'pending', at: now }],
-        createdAt: now,
-        tech: null, // chưa có thợ — thợ nhận việc ở app Thợ
-        rating: null,
-      };
-      const svc0 = getService(payload.items[0]?.id);
-      const devNote = payload.device ? ` · ${catLabel(payload.device.category)}${payload.device.brand ? ` ${payload.device.brand}` : ''}` : '';
-      up((p) => ({
-        orders: [order, ...p.orders],
-        cart: payload.fromCart ? p.cart.filter((c) => !payload.items.some((it) => it.id === c.id)) : p.cart,
-        myVouchers: payload.voucher?.wallet ? p.myVouchers.filter((v) => v.code !== payload.voucher.code) : p.myVouchers,
-        user: { ...p.user, name: p.user.name || address?.name || '', phone: p.user.phone || address?.phone || '' },
-        notifications: pushNotif(p, {
-          icon: '📅', title: `Đặt lịch thành công · ${code}`,
-          body: `${payload.dateLabel} · ${payload.slot}${devNote}. Tổng ${formatVND(payload.total)}.`,
-          link: { name: 'order', params: { code } },
-        }),
-        techNotifs: pushTech(p, {
-          icon: '🆕', title: `Việc mới ${code} · ${svc0?.name || 'Dịch vụ'}`,
-          body: `${payload.dateLabel} · ${payload.slot}${devNote} · ${address?.area || ''}`,
-          link: { name: 'tech-job', params: { code } },
-        }),
-      }));
-
-      if (authTokens.get()) {
-        const cleanPhone = String(address?.phone || customerPhone || '').replace(/\D/g, '');
-        const fullAddrText = [address?.full, address?.area].filter(Boolean).join(', ');
-        const apiItems = [];
-        (payload.items || []).forEach((it) => {
-          const count = Math.max(1, Number(it.qty) || 1);
-          const dbServiceId = resolveDbServiceId(it.id);
-          for (let i = 0; i < count && apiItems.length < 10; i += 1) {
-            apiItems.push({
-              service_id: dbServiceId,
-              notes: payload.note ? String(payload.note).slice(0, 450) : null,
-            });
-          }
-        });
-        const reqBody = {
-          ...(address?.dbAddressId
-            ? { service_address_id: String(address.dbAddressId) }
-            : {
-                new_address: {
-                  address_text: fullAddrText,
-                  contact_name: address?.name || s.user?.name || '',
-                  contact_phone: cleanPhone,
-                  is_default: true,
-                },
-              }),
-          preferred_time: buildPreferredTimeIso(payload.dateKey, payload.slot),
-          problem_description: payload.note || `${svc0?.name || 'Đặt lịch dịch vụ'}${devNote}`,
-          items: apiItems,
-        };
-        if (apiItems.length > 0 && (address?.dbAddressId || (fullAddrText.length >= 5 && cleanPhone))) {
-          hrmssApi.createCustomerRequest(reqBody).then((res) => {
-            if (res.ok && res.data?.request) {
-              const dbReq = res.data.request;
-              up((p) => ({
-                orders: p.orders.map((x) => (x.code === code
-                  ? { ...x, dbRequestId: dbReq.request_id, backendCode: dbReq.request_code }
-                  : x)),
-              }));
-            }
-          }).catch(() => {});
-        }
+      if (!authTokens.get()) { ui.alert('Chưa đăng nhập', 'Đăng nhập để đặt lịch.', '🔐'); return null; }
+      if (!address?.dbAddressId) {
+        ui.alert('Địa chỉ chưa lưu', 'Địa chỉ này chưa lưu lên hệ thống. Mở Sổ địa chỉ, lưu lại rồi đặt lịch.', '📍');
+        return null;
       }
-      return code;
+      const svc0 = getService(payload.items[0]?.id);
+      const items = (payload.items || []).slice(0, 10).map((it) => ({
+        service_id: resolveDbServiceId(it.id),
+        quantity: Math.min(20, Math.max(1, Number(it.qty) || 1)),
+      }));
+      const method = PAYMENT_METHODS.find((m) => m.label === payload.payment)?.apiMethod || 'CASH';
+      const res = await hrmssApi.createCustomerRequest({
+        service_address_id: String(address.dbAddressId),
+        preferred_time: buildPreferredTimeIso(payload.dateKey, payload.slot),
+        problem_description: payload.note || svc0?.name || null,
+        ...(payload.siteCondition?.id ? { site_condition: payload.siteCondition.id } : {}),
+        preferred_payment_method: method,
+        ...(payload.voucher?.code ? { voucher_code: payload.voucher.code } : {}),
+        items,
+      });
+      if (!res.ok || !res.data?.request) {
+        const msg = {
+          VOUCHER_NOT_APPLICABLE: 'Mã giảm giá không dùng được cho đơn này.',
+          VOUCHER_EXPIRED: 'Mã giảm giá đã hết hạn.',
+          VOUCHER_NOT_AVAILABLE: 'Mã giảm giá đã hết lượt dùng.',
+          VOUCHER_NOT_FOUND: 'Mã giảm giá không tồn tại.',
+          ADDRESS_NOT_FOUND: 'Địa chỉ không còn trong sổ địa chỉ.',
+          INVALID_SERVICE: 'Có dịch vụ đã ngừng phục vụ. Tải lại danh sách dịch vụ.',
+          DUPLICATE_REQUEST: 'Bạn đã có đơn trùng dịch vụ và khung giờ này.',
+        }[res.code];
+        ui.alert('Chưa đặt được lịch', msg || (res.status > 0 ? res.message : networkError(res)), '⚠️');
+        return null;
+      }
+      const dbReq = res.data.request;
+      const created = mapBackendCustomerRequestToOrder(dbReq, address?.phone || '');
+      // Ảnh khách đính kèm: POST /uploads (request_id). Lỗi tải ảnh không làm hỏng đơn đã tạo.
+      const pics = (payload.attachments || []).filter((x) => x?.uri).slice(0, 5);
+      if (pics.length) {
+        Promise.all(pics.map((x) => hrmssApi.uploadRequestPhoto(dbReq.request_id, x.uri).catch(() => null)))
+          .then((rs) => { if (rs.some((r) => !r?.ok)) ui.toast('Một số ảnh chưa tải lên được', '⚠️'); });
+      }
+      up((p) => ({
+        orders: created ? [{ ...created, customerAccountId: s.auth?.id || null }, ...p.orders.filter((x) => x.code !== created.code)] : p.orders,
+        cart: payload.fromCart ? p.cart.filter((c) => !payload.items.some((it) => it.id === c.id)) : p.cart,
+      }));
+      syncFromBackend();
+      return dbReq.request_code;
     },
 
     // ------------------------- PHÍA THỢ -------------------------
@@ -1078,7 +1110,7 @@ export function AppProvider({ children }) {
           const msg = {
             TOO_MANY_ACTIVE_JOBS: `Bạn đang giữ tối đa ${TECH_POLICY.maxActiveJobs} việc. Hoàn thành hoặc trả việc trước khi nhận thêm.`,
             SPECIALTY_MISMATCH: 'Việc này không thuộc chuyên môn của bạn.',
-            NOT_ACCEPTING_JOBS: 'Bạn đang tắt nhận việc. Bật nhận việc rồi thử lại.',
+            NOT_ACCEPTING_JOBS: 'Tài khoản đang tạm ngưng nhận việc. Liên hệ điều phối để mở lại.',
             REQUEST_NOT_AVAILABLE: 'Việc đã có thợ khác nhận hoặc không còn chờ nhận.',
           }[res.code];
           ui.alert('Không nhận được', msg || (res.status > 0 ? res.message : networkError(res)), 'ℹ️');
@@ -1120,390 +1152,219 @@ export function AppProvider({ children }) {
       return true;
     },
     // Từ chối việc chưa nhận → không phạt uy tín (chỉ ẩn với đúng thợ này)
-    declineJob: (code, reason) => {
-      updateOrder(code, (o, p) => {
-        if (o.status !== 'pending') return {};
-        const myCode = techCodeOf(p);
-        return {
-          order: { ...o, dispatchNote: o.workerCode ? o.dispatchNote : 'Đang điều phối thợ khác cho bạn' },
-          customer: { icon: '🔄', title: `Đang tìm thợ khác cho đơn ${code}`, body: 'Một thợ gần bạn chưa nhận được việc, hệ thống tiếp tục điều phối.' },
-          extra: {
-            ...markDeclined(p, myCode, code),
-            declineLog: [...(p.declineLog || []), { code, reason: reason || '', at: Date.now(), stage: 'pre_accept', by: myCode }],
-          },
-        };
-      });
-      ui.toast('Đã chuyển việc cho điều phối');
+    // Từ chối việc chưa nhận (không phạt): việc ở chợ việc -> POST /open-requests/:id/decline;
+    // việc hệ thống đã gán cho mình -> trả việc (POST /technician/jobs/:id/release) để backend gán thợ khác.
+    declineJob: async (code, reason) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o || o.status !== 'pending') return false;
+      if (!authTokens.get() || !o.dbRequestId) return notSynced();
+      const why = String(reason || 'Thợ bỏ qua việc').slice(0, 500);
+      const res = o.dbAssignmentId
+        ? await hrmssApi.releaseTechnicianJob(o.dbAssignmentId, why.length >= 3 ? why : 'Thợ từ chối việc')
+        : await hrmssApi.declineTechnicianOpenRequest(o.dbRequestId, why);
+      if (!res.ok) return serverDone(res, { title: 'Không từ chối được' });
+      up((p) => ({ orders: p.orders.filter((x) => x.code !== code) }));
+      return serverDone(res, { toast: 'Đã chuyển việc cho điều phối' });
     },
     // Trả việc sau khi đã nhận — phạt uy tín theo mức (cửa sổ 15 phút / sát giờ / đang đến / đang sửa)
-    releaseJob: (code, reason) => {
-      let outcome = null;
-      up((p) => {
-        const o = p.orders.find((x) => x.code === code);
-        if (!o || !['confirmed', 'onway', 'diagnosing', 'quoted', 'repairing'].includes(o.status)) {
-          outcome = { ok: false, error: 'Chỉ trả được việc đang phụ trách (chưa hoàn thành).' };
-          return {};
-        }
-        const myCode = (p.techProfile || TECH_ME).code;
-        if (o.tech?.code && o.tech.code !== myCode) {
-          outcome = { ok: false, error: 'Đây không phải việc của bạn.' };
-          return {};
-        }
-        const assess = assessCancelAfterAccept(o);
-        const techNext = applyTechPenalty(p.techProfile || TECH_ME, {
-          points: assess.points,
-          lockMs: assess.lockMs,
-          violation: {
-            type: 'cancel_after_accept',
-            code,
-            reason: reason || '',
-            tier: assess.tier,
-            label: assess.label,
-          },
-        });
-        const voucher = mintWalletVoucher(assess.voucher);
-        const now = Date.now();
-        outcome = { ok: true, assess, locked: isTechLocked(techNext), lockReason: techLockReason(techNext), techNext };
-        return {
-          techProfile: techNext,
-          orders: p.orders.map((x) => (x.code === code
-            ? {
-              ...x,
-              status: 'pending',
-              tech: null,
-              acceptedAt: null,
-              workerCode: '', // mở lại cho thợ khác
-              dispatchNote: 'Đang điều phối thợ khác cho bạn',
-              releaseLog: [...(x.releaseLog || []), { at: now, reason: reason || '', tier: assess.tier, by: myCode }],
-              history: [...x.history, { status: 'pending', at: now, note: 'released' }],
-            }
-            : x)),
-          ...markDeclined(p, myCode, code),
-          declineLog: [...(p.declineLog || []), { code, reason: reason || '', at: now, stage: 'after_accept', tier: assess.tier, by: myCode }],
-          myVouchers: voucher ? [voucher, ...p.myVouchers] : p.myVouchers,
-          notifications: pushNotif(p, {
-            icon: '🔄',
-            title: `Đang tìm thợ khác · ${code}`,
-            body: assess.customerNote + (voucher ? ` Bạn nhận mã ${voucher.code}.` : ''),
-            link: { name: 'order', params: { code } },
-          }),
-          techNotifs: pushTech(p, {
-            icon: '↩️',
-            title: `Đã trả việc · ${code}`,
-            body: `${assess.label} · Hệ thống đã chuyển đơn cho điều phối viên.`,
-            link: { name: 'tech-jobs' },
-          }),
-        };
-      });
-      if (!outcome?.ok) {
-        ui.alert('Không trả việc được', outcome?.error || 'Thử lại sau.', 'ℹ️');
-        return outcome;
+    // Trả việc: POST /technician/jobs/:id/release { reason } TRƯỚC. Backend ghi mức trả việc, tự phát voucher xin lỗi cho
+    // khách (nếu đã đi / sát giờ) và tự gán thợ khác. Thành công mới bỏ việc khỏi danh sách của thợ.
+    releaseJob: async (code, reason) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o || !['confirmed', 'onway', 'diagnosing', 'quoted', 'repairing'].includes(o.status)) {
+        ui.alert('Không trả việc được', 'Chỉ trả được việc đang phụ trách (chưa hoàn thành).', 'ℹ️');
+        return { ok: false };
       }
-      ui.toast('Đã trả việc cho điều phối', '↩️');
-      return outcome;
+      if (!authTokens.get() || !o.dbAssignmentId) {
+        ui.alert('Không trả việc được', 'Việc này chưa đồng bộ với hệ thống. Kéo làm mới rồi thử lại.', 'ℹ️');
+        return { ok: false };
+      }
+      const res = await hrmssApi.releaseTechnicianJob(o.dbAssignmentId, String(reason || '').trim() || 'Thợ trả việc');
+      if (!res.ok) {
+        ui.alert('Không trả việc được', res.status > 0 ? res.message : networkError(res), 'ℹ️');
+        return { ok: false };
+      }
+      up((p) => ({ orders: p.orders.filter((x) => x.code !== code) }));
+      const rel = res.data?.release || {};
+      ui.toast(rel.reassigned ? 'Đã trả việc · Hệ thống đã gán thợ khác' : 'Đã trả việc cho điều phối', '↩️');
+      syncFromBackend();
+      return { ok: true, release: rel };
     },
     // Nhắc khách duyệt báo giá đang chờ
-    remindQuote: (code) => {
-      let ok = false;
-      updateOrder(code, (o) => {
-        if (o.status !== 'quoted' || !o.quote) return {};
-        ok = true;
-        return {
-          order: { ...o, quote: { ...o.quote, remindedAt: Date.now() } },
-          customer: {
-            icon: '⏰',
-            title: `Nhắc duyệt báo giá · ${code}`,
-            body: `Thợ đang chờ bạn duyệt báo giá ${formatVND(o.quote.total)} để tiếp tục công việc.`,
-          },
-        };
+    // Nhắc khách duyệt báo giá: POST /technician/jobs/:id/remind-quote (server chống gửi dồn 10 phút).
+    remindQuote: async (code) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
+      const res = await hrmssApi.remindQuotation(o.dbAssignmentId);
+      return serverDone(res, {
+        title: 'Không gửi được',
+        codes: {
+          NO_PENDING_QUOTATION: 'Chỉ nhắc được khi đơn đang chờ khách duyệt báo giá.',
+          REMIND_TOO_SOON: 'Bạn vừa nhắc khách. Vui lòng đợi ít phút rồi nhắc lại.',
+        },
+        toast: 'Đã gửi nhắc cho khách',
+        icon: '📨',
       });
-      if (ok) ui.toast('Đã gửi nhắc cho khách', '📨');
-      else ui.alert('Không gửi được', 'Chỉ nhắc được khi đơn đang chờ duyệt báo giá.', 'ℹ️');
     },
-    updateTechProfile: (patch) => {
-      // Chuyên môn do backend cấp; không nhận cập nhật từ client.
-      const { skills: _ignoredSkills, ...editablePatch } = patch || {};
+    // Hồ sơ thợ: tên/SĐT -> PATCH /auth/me/profile; khu vực -> PATCH /technician/profile. Gọi server TRƯỚC.
+    // Chuyên môn do admin gán: bỏ qua nếu màn hình nào đó vẫn gửi lên.
+    updateTechProfile: async (input) => {
+      const { skills: _ignoredSkills, specialties: _ignoredSpecs, specialtyCategoryIds: _ignoredIds, ...patch } = input || {};
+      if (!authTokens.get()) return notSynced('Hồ sơ');
+      const fail = (res) => { ui.alert('Không lưu được hồ sơ', res.status > 0 ? res.message : networkError(res), '⚠️'); return false; };
+      if (patch.name || patch.phone !== undefined) {
+        const res = await hrmssApi.updateProfile({
+          ...(patch.name ? { full_name: patch.name } : {}),
+          ...(patch.phone !== undefined ? { phone: patch.phone || null } : {}),
+        });
+        if (!res.ok) return fail(res);
+      }
+      if (patch.area !== undefined) {
+        const res = await hrmssApi.updateTechnicianWorkArea(patch.area || null);
+        if (!res.ok) return fail(res);
+      }
+      if (patch.dob !== undefined) {
+        const res = await hrmssApi.updateMyInfo({ dateOfBirth: dobToIso(patch.dob) });
+        if (!res.ok) return fail(res);
+      }
       up((p) => {
         const base = p.techProfile || TECH_ME;
-        const next = { ...base, ...editablePatch, ...normalizeTechRep({ ...base, ...editablePatch }) };
         return {
-          techProfile: next,
+          techProfile: { ...base, ...patch, ...normalizeTechRep({ ...base, ...patch }) },
           user: {
             ...p.user,
-            name: editablePatch.name != null ? editablePatch.name : p.user.name,
-            phone: editablePatch.phone != null ? editablePatch.phone : p.user.phone,
-            dob: editablePatch.dob != null ? editablePatch.dob : p.user.dob,
-            email: editablePatch.email != null ? editablePatch.email : p.user.email,
+            name: patch.name != null ? patch.name : p.user.name,
+            phone: patch.phone != null ? patch.phone : p.user.phone,
+            dob: patch.dob != null ? patch.dob : p.user.dob,
           },
         };
       });
-      if (authTokens.get()) {
-        if (editablePatch.area !== undefined) hrmssApi.updateTechnicianWorkArea(editablePatch.area || null).catch(() => {});
-        if (editablePatch.name || editablePatch.phone !== undefined) {
-          hrmssApi.updateProfile({
-            ...(editablePatch.name ? { full_name: editablePatch.name } : {}),
-            ...(editablePatch.phone !== undefined ? { phone: editablePatch.phone || null } : {}),
-          }).catch(() => {});
-        }
-      }
       ui.toast('Đã cập nhật hồ sơ thợ');
-    },
-    startTravel: (code) => {
-      const now = Date.now();
-      let lateHint = '';
-      let ok = false;
-      let blockedReason = null;
-      let travelCoords = null;
-      updateOrder(code, (o) => {
-        if (o.status !== 'confirmed') return {};
-        if (o.quote && !o.quote.approved) {
-          blockedReason = 'Khách hàng chưa đồng ý báo giá trên ứng dụng. Thợ chỉ xuất phát sau khi khách đồng ý.';
-          return {};
-        }
-        ok = true;
-        const start = slotStartTs(o);
-        if (start != null && now > start + TECH_POLICY.lateGraceMin * 60000) {
-          lateHint = `Bạn đã quá giờ hẹn ~${Math.floor((now - start) / 60000)} phút. Vui lòng liên hệ khách hàng và di chuyển khẩn trương.`;
-        }
-        const destLat = o.address?.lat ?? 21.036778;
-        const destLng = o.address?.lng ?? 105.782374;
-        const tracking = {
-          progress: 0.08,
-          lat: destLat + 0.018,
-          lng: destLng - 0.012,
-          etaMin: 22,
-          updatedAt: now,
-          label: 'Thợ vừa xuất phát',
-        };
-        travelCoords = { latitude: tracking.lat, longitude: tracking.lng, location_accuracy: 15, location_sharing_enabled: true };
-        return {
-          order: withStatus(o, 'onway', now, { travelStartedAt: now, tracking }),
-          customer: { icon: '🛵', title: `Thợ đang đến · ${code}`, body: `Thợ ${o.tech?.name || ''} đang di chuyển tới địa chỉ của bạn. Mở đơn để theo dõi.` },
-        };
-      });
-      if (blockedReason) { ui.alert('Chờ khách đồng ý', blockedReason, '⏳'); return; }
-      if (!ok) { ui.alert('Không cập nhật được', 'Chỉ bấm “Đang đến” khi đã nhận việc.', 'ℹ️'); return; }
-      if (authTokens.get() && travelCoords) {
-        hrmssApi.updateTechnicianLocation(travelCoords).catch(() => {});
-      }
-      if (lateHint) ui.alert('Cảnh báo giờ hẹn', lateHint, '⏰');
-      else ui.toast('Đã báo khách: đang di chuyển', '🛵');
-    },
-    tickTracking: (code) => {
-      up((p) => {
-        const o = p.orders.find((x) => x.code === code);
-        if (!o || o.status !== 'onway') return {};
-        const tracking = advanceTracking(o);
-        if (!tracking) return {};
-        const prev = o.tracking?.progress || 0;
-        if (Math.abs((tracking.progress || 0) - prev) < 0.001) return {};
-        return { orders: p.orders.map((x) => (x.code === code ? { ...x, tracking } : x)) };
-      });
-    },
-    arrive: (code, checkIn = null) => {
-      let lateInfo = null;
-      let ok = false;
-      let targetOrder = null;
-      let checkInCoords = null;
-      up((p) => {
-        const o = p.orders.find((x) => x.code === code);
-        if (!o || o.status !== 'onway') return {};
-        ok = true;
-        targetOrder = o;
-        const now = Date.now();
-        const late = assessLateness(o, now);
-        lateInfo = late;
-        let techProfile = p.techProfile || TECH_ME;
-        let myVouchers = p.myVouchers;
-        let voucher = null;
-        if (late.tier !== 'ok' && late.points > 0) {
-          techProfile = applyTechPenalty(techProfile, {
-            points: late.points,
-            lockMs: late.tier === 'severe' ? 4 * 60 * 60 * 1000 : 0,
-            violation: {
-              type: 'late_arrival',
-              code,
-              tier: late.tier,
-              minutesLate: late.minutesLate,
-              label: late.label,
-            },
-          });
-        }
-        if (late.voucher) {
-          voucher = mintWalletVoucher(late.voucher);
-          if (voucher) myVouchers = [voucher, ...myVouchers];
-        }
-        const lateCompensation = late.tier === 'ok' ? null : {
-          minutesLate: late.minutesLate,
-          tier: late.tier,
-          percent: late.compensationPercent || 0,
-          maxDiscount: late.voucher?.max || (late.compensationPercent >= 50 ? 200000 : late.compensationPercent ? 100000 : 0),
-          voucherCode: voucher?.code || null,
-          at: now,
-        };
-        const discPreview = lateCompensation?.percent
-          ? Math.min(
-            Math.round((o.quote?.total != null ? o.quote.total : bookedValue(o)) * (lateCompensation.percent / 100)),
-            lateCompensation.maxDiscount,
-          )
-          : 0;
-        const checkInPayload = checkIn ? {
-          lat: checkIn.lat,
-          lng: checkIn.lng,
-          accuracy: checkIn.accuracy || 15,
-          label: checkIn.label || 'Đã xác thực vị trí GPS tại điểm hẹn',
-          at: now,
-        } : { lat: 21.036778, lng: 105.782374, accuracy: 15, label: 'Đã xác thực vị trí GPS tại điểm hẹn', at: now };
-        checkInCoords = {
-          latitude: checkInPayload.lat || 21.036778,
-          longitude: checkInPayload.lng || 105.782374,
-          location_accuracy: checkInPayload.accuracy || 15,
-          location_sharing_enabled: true,
-        };
-        const geoNote = ` (GPS ±${checkInPayload.accuracy || 15}m)`;
-        const body = late.tier === 'ok'
-          ? `Thợ đã check-in tại địa chỉ của bạn${geoNote}. Đang kiểm tra thiết bị.`
-          : `Thợ đã đến (trễ ${late.minutesLate} phút)${geoNote}.${discPreview ? ` Giảm ${formatVND(discPreview)} phí nhân công.` : ''}${voucher ? ` Mã ${voucher.code} trong Quyền lợi.` : ''}`;
-        return {
-          techProfile,
-          myVouchers,
-          orders: p.orders.map((x) => (x.code === code
-            ? withStatus(o, 'diagnosing', now, {
-              arrivedAt: now,
-              lateCompensation,
-              checkIn: checkInPayload,
-              tracking: { ...(o.tracking || {}), progress: 1, etaMin: 0, updatedAt: now, label: 'Đã check-in tại nhà khách', lat: checkInPayload.lat, lng: checkInPayload.lng },
-            })
-            : x)),
-          notifications: pushNotif(p, {
-            icon: late.tier === 'ok' ? '📍' : '⏰',
-            title: late.tier === 'ok' ? `Thợ đã đến điểm hẹn · ${code}` : `Thợ đến muộn ${late.minutesLate} phút · ${code}`,
-            body,
-            link: { name: 'order', params: { code } },
-          }),
-          techNotifs: pushTech(p, {
-            icon: late.tier === 'ok' ? '📍' : '⏰',
-            title: late.tier === 'ok' ? `Check-in đúng giờ · ${code}` : `Check-in muộn ${late.minutesLate} phút · ${code}`,
-            body: late.tier === 'ok' ? 'Đã xác thực vị trí GPS tại nhà khách. Bắt đầu kiểm tra thiết bị.' : late.label,
-            link: { name: late.tier === 'ok' ? 'tech-job' : 'tech-account', params: { code } },
-          }),
-        };
-      });
-      if (!ok) { ui.alert('Không check-in được', 'Chỉ check-in khi đang ở trạng thái “Đang đến”.', 'ℹ️'); return; }
-      if (authTokens.get()) {
-        if (checkInCoords) hrmssApi.updateTechnicianLocation(checkInCoords).catch(() => {});
-        if (targetOrder?.dbAssignmentId) {
-          hrmssApi.startTechnicianJob(targetOrder.dbAssignmentId).catch(() => {});
-        } else if (targetOrder?.dbRequestId) {
-          hrmssApi.acceptTechnicianOpenRequest(targetOrder.dbRequestId).then((res) => {
-            if (res.ok && res.data?.job?.assignment_id) {
-              const aid = res.data.job.assignment_id;
-              up((p) => ({ orders: p.orders.map((x) => (x.code === code ? { ...x, dbAssignmentId: aid } : x)) }));
-              hrmssApi.startTechnicianJob(aid).catch(() => {});
-            }
-          }).catch(() => {});
-        }
-      }
-      if (lateInfo && lateInfo.tier !== 'ok') {
-        ui.alert(
-          `Check-in muộn ${lateInfo.minutesLate} phút`,
-          `${lateInfo.label}. Khách được áp dụng ưu đãi theo chính sách đúng giờ.`,
-          '⏰',
-        );
-      } else ui.toast('Đã check-in GPS tại nhà khách', '📍');
-    },
-    // Khách yêu cầu / chuyển đổi sang thanh toán Chuyển khoản QR (VietQR) -> Khoá quyền thu tiền mặt của Thợ
-    switchToQRPayment: async (code) => {
-      const current = s.orders.find((x) => x.code === code);
-      if (current?.dbRequestId && authTokens.get()) {
-        const res = await hrmssApi.updateCustomerPaymentMethod(current.dbRequestId, 'BANK_TRANSFER');
-        if (!res.ok) {
-          ui.alert('Chưa đổi được phương thức thanh toán', res.message || 'Vui lòng thử lại.', '⚠️');
-          return false;
-        }
-      }
-      let ok = false;
-      updateOrder(code, (o) => {
-        if (!o || o.status === 'cancelled') return {};
-        ok = true;
-        return {
-          order: {
-            ...o,
-            payment: 'Chuyển khoản VietQR (MBBank)',
-            paymentMethod: 'vietqr',
-            qrPaymentRequested: true,
-            qrRequestedAt: Date.now(),
-          },
-          tech: {
-            icon: '⚠️',
-            title: `Khách chuyển khoản QR · Không thu tiền · ${code}`,
-            body: `Khách yêu cầu chuyển khoản VietQR (${formatVND(orderTotal(o))}) trên App. Kỹ thuật viên tuyệt đối KHÔNG thu tiền mặt!`,
-            link: { name: 'tech-job', params: { code } },
-          },
-          customer: {
-            icon: '🏦',
-            title: `Đã chuyển sang thanh toán VietQR · ${code}`,
-            body: 'Đơn đã khoá thu tiền mặt phía thợ. Bạn có thể quét mã VietQR sau khi thợ nộp biên bản hoàn thành.',
-            link: { name: 'order', params: { code } },
-          },
-        };
-      });
-      if (ok) {
-        ui.toast('Đã chuyển sang VietQR · Thợ không thu tiền mặt', '🏦', 'success');
-      }
-      return ok;
-    },
-    // Khách xác nhận đã thanh toán (sau khi hoàn thành hoặc khi đang nghiệm thu QR)
-    confirmPayment: async (code, mode = 'manual') => {
-      const order = s.orders.find((x) => x.code === code);
-      if (!order?.dbRequestId) {
-        ui.alert('Chưa thể xác nhận thanh toán', 'Đơn chưa đồng bộ với hệ thống. Hãy làm mới đơn rồi thử lại.', 'ℹ️');
-        return false;
-      }
-      if (mode === 'webhook') {
-        await syncFromBackend();
-        return true;
-      }
-      const res = await hrmssApi.confirmCustomerPayment(order.dbRequestId);
-      if (!res.ok) {
-        ui.alert('Chưa xác nhận được thanh toán', res.status > 0 ? (res.message || 'Vui lòng thử lại.') : networkError(res), '⚠️');
-        return false;
-      }
-      await syncFromBackend();
-      ui.toast('Đã ghi nhận thanh toán. Đơn đang chờ Văn phòng nghiệm thu.', '✅', 'success');
       return true;
     },
-    requestPayout: ({ amount, bankName, accountNumber, accountHolder }) => {
-      const amt = parseInt(String(amount).replace(/[^0-9]/g, ''), 10);
-      if (!amt || amt < 50000) {
-        ui.alert('Số tiền không hợp lệ', 'Số tiền rút tối thiểu là 50.000đ.', '⚠️');
+    // Xuất phát: PATCH /technician/jobs/:id/travel (backend báo khách "thợ đang đến"), rồi gửi vị trí GPS thật nếu có.
+    startTravel: async (code) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o || o.status !== 'confirmed') { ui.alert('Không cập nhật được', 'Chỉ bấm “Đang đến” khi đã nhận việc.', 'ℹ️'); return false; }
+      if (o.quote && !o.quote.approved) { ui.alert('Chờ khách đồng ý', 'Khách hàng chưa đồng ý báo giá trên ứng dụng. Thợ chỉ xuất phát sau khi khách đồng ý.', '⏳'); return false; }
+      if (!authTokens.get() || !o.dbAssignmentId) { ui.alert('Không cập nhật được', 'Việc này chưa đồng bộ với hệ thống. Kéo làm mới rồi thử lại.', 'ℹ️'); return false; }
+      const res = await hrmssApi.travelTechnicianJob(o.dbAssignmentId);
+      if (!res.ok) { ui.alert('Không cập nhật được', res.status > 0 ? res.message : networkError(res), '⚠️'); syncFromBackend(); return false; }
+      const now = Date.now();
+      updateOrder(code, (ord) => ({ order: withStatus(ord, 'onway', now, { travelStartedAt: now, tracking: { updatedAt: now, label: 'Thợ vừa xuất phát' } }) }));
+      getCheckInLocation().then((loc) => {
+        if (loc) hrmssApi.updateTechnicianLocation({ latitude: loc.lat, longitude: loc.lng, location_accuracy: loc.accuracy, location_sharing_enabled: true }).catch(() => {});
+      });
+      ui.toast('Đã báo khách: đang di chuyển', '🛵');
+      return true;
+    },
+    // Đang đến: thợ gửi vị trí GPS thật lên server; khách đọc vị trí thật từ GET /customer/requests/:id/tracking.
+    tickTracking: async (code) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o || o.status !== 'onway' || !authTokens.get()) return;
+      if (s.auth?.role === 'tech') {
+        const loc = await getCheckInLocation();
+        if (loc) {
+          hrmssApi.updateTechnicianLocation({ latitude: loc.lat, longitude: loc.lng, location_accuracy: loc.accuracy, location_sharing_enabled: true }).catch(() => {});
+          updateOrder(code, (ord) => ({ order: { ...ord, tracking: { ...(ord.tracking || {}), lat: loc.lat, lng: loc.lng, accuracy: loc.accuracy, updatedAt: Date.now(), label: 'Đang chia sẻ vị trí với khách' } } }));
+        }
+        return;
+      }
+      if (!o.dbRequestId) return;
+      const res = await hrmssApi.getRequestTracking(o.dbRequestId);
+      if (!res.ok) return;
+      const loc = res.data?.location;
+      updateOrder(code, (ord) => ({
+        order: {
+          ...ord,
+          tracking: loc
+            ? { lat: loc.latitude, lng: loc.longitude, accuracy: loc.accuracy, updatedAt: loc.recorded_at ? new Date(loc.recorded_at).getTime() : Date.now(), label: 'Vị trí thợ trên đường tới' }
+            : { ...(ord.tracking || {}), label: 'Thợ đang di chuyển (chưa có vị trí mới)' },
+        },
+      }));
+      if (res.data?.journey?.arrived_at) syncFromBackend();
+    },
+    // Check-in: PATCH /technician/jobs/:id/arrive với GPS thật. Backend kiểm tra bán kính, tính trễ, phát voucher bồi thường.
+    arrive: async (code, checkIn = null) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o || o.status !== 'onway') { ui.alert('Không check-in được', 'Chỉ check-in khi đang ở trạng thái “Đang đến”.', 'ℹ️'); return false; }
+      if (!checkIn || checkIn.lat == null || checkIn.lng == null) {
+        ui.alert('Chưa lấy được vị trí', 'Bật định vị (GPS) và cho phép ứng dụng truy cập vị trí rồi check-in lại.', '📍');
         return false;
       }
-      if (!accountNumber || !bankName) {
-        ui.alert('Thiếu thông tin', 'Vui lòng nhập đầy đủ ngân hàng và số tài khoản nhận tiền.', '⚠️');
+      if (!authTokens.get() || !o.dbAssignmentId) { ui.alert('Không check-in được', 'Việc này chưa đồng bộ với hệ thống. Kéo làm mới rồi thử lại.', 'ℹ️'); return false; }
+      const res = await hrmssApi.arriveTechnicianJob(o.dbAssignmentId, { latitude: checkIn.lat, longitude: checkIn.lng, location_accuracy: checkIn.accuracy });
+      if (!res.ok) {
+        const msg = {
+          TOO_FAR_FROM_CUSTOMER: res.message || 'Bạn đang ở quá xa địa chỉ khách. Đến đúng địa chỉ rồi check-in lại.',
+          TRAVEL_NOT_STARTED: 'Bấm “Bắt đầu di chuyển” trước khi check-in.',
+          ALREADY_ARRIVED: 'Việc này đã check-in rồi.',
+        }[res.code];
+        ui.alert('Không check-in được', msg || (res.status > 0 ? res.message : networkError(res)), '📍');
+        syncFromBackend();
         return false;
       }
-      const entry = {
-        id: uid(),
-        amount: amt,
-        bankName,
-        accountNumber,
-        accountHolder: accountHolder || 'KỸ THUẬT VIÊN',
-        at: Date.now(),
-        status: 'success',
-      };
-      up((p) => ({
-        payoutHistory: [entry, ...(p.payoutHistory || [])],
-        techNotifs: pushTech(p, {
-          icon: '💸',
-          title: `Lệnh rút tiền thành công · -${formatVND(amt)}`,
-          body: `Đã chuyển ${formatVND(amt)} về ${bankName} (${accountNumber}). Tiền về tài khoản trong 30 giây.`,
+      const lateness = res.data?.lateness || {};
+      const now = Date.now();
+      const checkInPayload = { lat: checkIn.lat, lng: checkIn.lng, accuracy: checkIn.accuracy, label: checkIn.label || 'Đã xác thực vị trí GPS tại điểm hẹn', at: now };
+      updateOrder(code, (ord) => ({
+        order: withStatus(ord, 'diagnosing', now, {
+          arrivedAt: now,
+          checkIn: checkInPayload,
+          lateCompensation: lateness.tier && lateness.tier !== 'ok' ? { minutesLate: lateness.minutes_late, tier: lateness.tier, voucherIssued: Boolean(lateness.compensation_voucher_issued), at: now } : null,
+          tracking: { ...(ord.tracking || {}), updatedAt: now, label: 'Đã check-in tại nhà khách', lat: checkIn.lat, lng: checkIn.lng },
         }),
       }));
-      ui.toast(`Đã rút ${formatVND(amt)} về ${bankName}`, '💸');
+      syncFromBackend();
+      if (lateness.tier && lateness.tier !== 'ok') {
+        ui.alert(`Check-in muộn ${lateness.minutes_late} phút`,
+          lateness.compensation_voucher_issued ? 'Hệ thống đã phát voucher bồi thường cho khách theo chính sách đúng giờ.' : 'Lần sau vui lòng đến đúng khung giờ hẹn.', '⏰');
+      } else ui.toast('Đã check-in GPS tại nhà khách', '📍');
       return true;
     },
+    // Khách yêu cầu / chuyển đổi sang thanh toán Chuyển khoản QR (VietQR) -> Khoá quyền thu tiền mặt của Thợ
+    // Khách đổi sang chuyển khoản VietQR: PATCH /customer/requests/:id/payment-method (thợ sẽ không thu tiền mặt).
+    switchToQRPayment: async (code) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbRequestId || !authTokens.get()) return notSynced('Đơn này');
+      const res = await hrmssApi.setPaymentMethod(o.dbRequestId, 'BANK_TRANSFER');
+      if (res.ok) updateOrder(code, (x) => ({ order: { ...x, payment: 'Chuyển khoản VietQR', paymentMethod: 'vietqr', qrPaymentRequested: true } }));
+      return serverDone(res, {
+        title: 'Không đổi được',
+        codes: { PAYMENT_IN_PROGRESS: 'Đang có một giao dịch chuyển khoản chờ xác nhận.', REQUEST_CLOSED: 'Đơn đã huỷ.' },
+        toast: 'Đã chuyển sang VietQR · Thợ không thu tiền mặt',
+        icon: '🏦',
+      });
+    },
+    // Thanh toán:
+    //  - 'webhook': VietQRPay đã thấy hóa đơn PAID trên server (SePay báo) -> chỉ tải lại dữ liệu thật.
+    //  - 'manual': khách xác nhận đã trả TIỀN MẶT -> POST /customer/requests/:id/payments/confirm { method: CASH }.
+    confirmPayment: async (code, mode = 'manual') => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbRequestId || !authTokens.get()) return notSynced('Đơn này');
+      if (mode === 'webhook' || isQRPayment(o)) {
+        if (mode === 'webhook') ui.toast('Đã nhận thanh toán chuyển khoản', '✅');
+        else ui.alert('Chờ ngân hàng xác nhận', 'Chuyển khoản được hệ thống tự xác nhận khi tiền về. Vui lòng đợi ít phút.', '🏦');
+        syncFromBackend();
+        return mode === 'webhook';
+      }
+      const res = await hrmssApi.confirmCashPayment(o.dbRequestId);
+      return serverDone(res, {
+        title: 'Không xác nhận được',
+        codes: {
+          NOT_PAYABLE_YET: 'Đơn chưa đến bước thanh toán.',
+          NOTHING_TO_PAY: 'Đơn không còn khoản nào phải trả.',
+          ALREADY_PAID: 'Đơn đã được thanh toán.',
+          PAYMENT_IN_PROGRESS: 'Đang có giao dịch chuyển khoản chờ xác nhận.',
+          BANK_TRANSFER_AUTO_CONFIRMED: 'Chuyển khoản được hệ thống tự xác nhận khi tiền về.',
+        },
+        toast: 'Đã ghi nhận thanh toán tiền mặt',
+        icon: '✅',
+      });
+    },
     dismissTip: (key) => up((p) => ({ tips: { ...(p.tips || {}), [key]: false } })),
+    // Mở lại form báo giá để sửa / thêm phát sinh: chỉ là chế độ màn hình trên máy (không đổi dữ liệu server).
+    // Đồng bộ giữ chế độ này tới khi thợ gửi báo giá mới (POST /technician/jobs/:id/quotation qua submitQuote).
     reopenQuote: (code) => {
       const now = Date.now();
       let ok = false;
@@ -1514,8 +1375,9 @@ export function AppProvider({ children }) {
         return {
           order: withStatus(o, isOnSite ? 'diagnosing' : 'confirmed', now, {
             quote: o.quote ? { ...o.quote, revisionRequested: true } : null,
+            quoteEditing: true,
+            quoteEditingFrom: o.quote?.dbQuotationId || null,
           }),
-          tech: { icon: '✏️', title: `Điều chỉnh báo giá đơn ${code}`, body: 'Bạn có thể chỉnh sửa vật tư, dịch vụ và nhập chi phí phát sinh.' },
         };
       });
       if (ok) ui.toast('Mở lại báo giá để điều chỉnh phát sinh', '✏️');
@@ -1523,306 +1385,186 @@ export function AppProvider({ children }) {
     // Lập chẩn đoán / báo giá:
     //  - Trước khi xuất phát (confirmed): gửi báo giá trên app, khách đồng ý thì thợ mới đi. Khách huỷ -> 0đ.
     //  - Sau khi kiểm tra tại nhà (diagnosing): gửi báo giá hiện trường. Khách huỷ -> mất phí kiểm tra 100k.
-    submitQuote: (code, { diagnosis, symptoms, recommendation, lines }) => {
-      const now = Date.now();
-      const cleanLines = (lines || []).map((l) => ({ ...l, isCustom: Boolean(l.isCustom) }));
-      const qTotal = cleanLines.reduce((sum, l) => sum + l.price * l.qty, 0);
-      let ok = false;
-      let targetOrder = null;
-      let isPreVisitQuote = false;
-      updateOrder(code, (o) => {
-        if (!['diagnosing', 'confirmed', 'quoted', 'repairing'].includes(o.status)) return {};
-        ok = true;
-        targetOrder = o;
-        const isPre = o.status === 'confirmed';
-        isPreVisitQuote = isPre;
-        const booked = bookedValue(o);
-        const quote = {
-          diagnosis: diagnosis || (isPre ? 'Báo giá sơ bộ trước khi xuất phát' : 'Đã kiểm tra thiết bị tại nhà'),
-          symptoms: symptoms || '',
-          recommendation: recommendation || '',
-          lines: cleanLines,
-          total: qTotal,
-          booked,
-          needsApproval: true,
-          isPreVisit: isPre,
-          at: now,
-          approved: false,
-        };
-        const materials = cleanLines.filter((l) => l.type === 'part').map((l) => ({ id: uid(), matId: l.matId, name: l.name, unit: l.unit, qty: l.qty, price: l.price, isCustom: Boolean(l.isCustom) }));
-        const tempOrder = { ...o, quote };
-        const partDisc = tierPartDiscountAmount(tempOrder);
-
-        return {
-          order: withStatus(o, 'quoted', now, { quote, materials }),
-          customer: {
-            icon: '🧾',
-            title: isPre ? `Báo giá cho đơn ${code}` : `Báo giá kiểm tra tại nhà cho đơn ${code}`,
-            body: isPre
-              ? `Tổng ${formatVND(qTotal)}. Vui lòng đồng ý để thợ xuất phát đến nhà bạn.`
-              : `Tổng ${formatVND(qTotal - partDisc)}. Vui lòng duyệt để thợ bắt đầu thực hiện.`,
-          },
-        };
-      });
-      if (!ok) { ui.alert('Không gửi được', 'Chỉ gửi báo giá khi đã nhận việc hoặc đang kiểm tra thiết bị.', 'ℹ️'); return; }
-      if (authTokens.get() && targetOrder?.dbAssignmentId) {
-        const aid = targetOrder.dbAssignmentId;
-        const cleanFindings = (diagnosis && String(diagnosis).trim().length >= 5)
-          ? String(diagnosis).trim()
-          : (isPreVisitQuote ? 'Báo giá sơ bộ trước khi xuất phát' : 'Đã kiểm tra thực tế thiết bị tại nhà khách hàng');
-        (async () => {
-          try {
-            if (!isPreVisitQuote) {
-              await hrmssApi.startTechnicianJob(aid).catch(() => {});
-              await hrmssApi.submitDiagnosis(aid, {
-                symptoms: symptoms || null,
-                findings: cleanFindings,
-                repair_recommendation: recommendation || null,
-                needs_quotation: true,
-              }).catch(() => {});
-            }
-            if (Array.isArray(lines) && lines.length > 0) {
-              const quoteItems = lines.map((l) => {
-                if (l.type === 'part') {
-                  return {
-                    item_type: 'MATERIAL',
-                    material_id: resolveDbMaterialId(l.matId, l.name),
-                    description_snapshot: l.name || 'Linh kiện vật tư',
-                    quantity: Math.max(1, Number(l.qty) || 1),
-                    unit_price: Math.max(0, Number(l.price) || 0),
-                  };
-                }
-                return {
-                  item_type: 'SERVICE',
-                  description_snapshot: l.name || 'Dịch vụ sửa chữa & bảo dưỡng',
-                  quantity: Math.max(1, Number(l.qty) || 1),
-                  unit_price: Math.max(0, Number(l.price) || 0),
-                };
-              });
-              await hrmssApi.submitQuotation(aid, {
-                quotation_type: isPreVisitQuote ? 'INITIAL' : 'SUPPLEMENTAL',
-                items: quoteItems,
-              });
-            }
-          } catch (e) { /* bỏ qua */ }
-        })();
+    // Lập chẩn đoán / báo giá: gửi server TRƯỚC (đang ở nhà khách: start + diagnosis rồi quotation).
+    // Trạng thái, tổng tiền, thông báo cho khách đều do server tạo; app tải lại sau khi gửi.
+    submitQuote: async (code, { diagnosis, symptoms, recommendation, lines }) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o || !['diagnosing', 'confirmed', 'quoted', 'repairing'].includes(o.status)) {
+        ui.alert('Không gửi được', 'Chỉ gửi báo giá khi đã nhận việc hoặc đang kiểm tra thiết bị.', 'ℹ️');
+        return false;
       }
-      ui.toast('Đã gửi báo giá cho khách', '🧾');
+      if (!authTokens.get() || !o.dbAssignmentId) return notSynced();
+      if (!Array.isArray(lines) || !lines.length) { ui.alert('Thiếu hạng mục', 'Thêm ít nhất 1 hạng mục vào báo giá.', '🧾'); return false; }
+      const aid = o.dbAssignmentId;
+      const isPre = o.status === 'confirmed';
+      if (!isPre) {
+        const findings = (diagnosis && String(diagnosis).trim().length >= 5) ? String(diagnosis).trim() : 'Đã kiểm tra thực tế thiết bị tại nhà khách hàng';
+        await hrmssApi.startTechnicianJob(aid).catch(() => null); // đã bắt đầu rồi thì server trả lỗi, bỏ qua
+        const dRes = await hrmssApi.submitDiagnosis(aid, {
+          symptoms: symptoms || null, findings, repair_recommendation: recommendation || null, needs_quotation: true,
+        });
+        if (!dRes.ok) return serverDone(dRes, { title: 'Không lưu được chẩn đoán' });
+      }
+      const items = lines.map((l) => (l.type === 'part'
+        ? {
+            item_type: 'MATERIAL',
+            ...(l.isCustom ? { external_purchase: true } : { material_id: resolveDbMaterialId(l.matId, l.name) }),
+            description_snapshot: l.name || 'Linh kiện vật tư',
+            quantity: Math.max(1, Number(l.qty) || 1),
+            unit_price: Math.max(0, Number(l.price) || 0),
+          }
+        : {
+            item_type: 'SERVICE',
+            description_snapshot: l.name || 'Dịch vụ sửa chữa & bảo dưỡng',
+            quantity: Math.max(1, Number(l.qty) || 1),
+            unit_price: Math.max(0, Number(l.price) || 0),
+          }));
+      const qRes = await hrmssApi.submitQuotation(aid, {
+        quotation_type: o.quote && (o.quote.approved || o.status === 'repairing') ? 'SUPPLEMENTAL' : 'INITIAL',
+        items,
+      });
+      return serverDone(qRes, {
+        title: 'Không gửi được báo giá',
+        codes: { QUOTATION_PENDING: 'Đang có báo giá chờ khách duyệt.', INVALID_VISIT_STATE: 'Việc chưa ở bước báo giá.', JOB_NOT_ACTIVE: 'Việc không còn được giao cho bạn.' },
+        toast: 'Đã gửi báo giá cho khách',
+        icon: '🧾',
+      });
     },
     // Khách duyệt / yêu cầu sửa báo giá / từ chối & huỷ đơn (Ghi vào hrmss.quotation & service_request)
     // - Nếu thợ chưa đến nhà: huỷ miễn phí 100%. Khách đồng ý thì thợ mới đi.
     // - Chỉ khi thợ đã đến kiểm tra báo giá tại nhà mà khách huỷ thì mới thu phí kiểm tra (100.000đ).
-    respondQuote: (code, decision, reason) => {
-      const now = Date.now();
-      let targetOrder = null;
-      let appliedFee = 0;
-      updateOrder(code, (o, p) => {
-        if (!o.quote) return {};
-        targetOrder = o;
-        const isOnSite = Boolean(o.arrivedAt || o.checkIn || o.history?.some((h) => h.status === 'diagnosing'));
-        if (decision === true || decision === 'approve') {
-          const partDisc = tierPartDiscountAmount(o);
-          const nextStatus = isOnSite ? 'repairing' : 'confirmed';
-          return {
-            order: withStatus(o, nextStatus, now, {
-              quote: { ...o.quote, approved: true, revisionRequested: false, respondedAt: now },
-              finalTotal: Math.max(0, o.quote.total - partDisc - (o.voucherDiscount || 0)),
-            }),
-            tech: {
-              icon: '✅',
-              title: `Khách đã duyệt báo giá · ${code}`,
-              body: isOnSite
-                ? `Tổng ${formatVND(o.quote.total - partDisc)}. Bắt đầu thực hiện sửa chữa.`
-                : `Khách đã đồng ý báo giá ${formatVND(o.quote.total)}. Bạn có thể bắt đầu di chuyển đến nhà khách.`,
-            },
-          };
-        }
-        if (decision === 'revise') {
-          return {
-            order: withStatus(o, isOnSite ? 'diagnosing' : 'confirmed', now, {
-              quote: {
-                ...o.quote,
-                approved: false,
-                revisionRequested: true,
-                rejectReason: reason || 'Khách yêu cầu điều chỉnh hạng mục / chi phí',
-                respondedAt: now,
-              },
-            }),
-            tech: {
-              icon: '🔄',
-              title: `Khách yêu cầu báo giá lại · ${code}`,
-              body: reason || 'Vui lòng trao đổi với khách và gửi lại báo giá.',
-            },
-          };
-        }
-        // Khách từ chối báo giá & huỷ đơn: Miễn phí 100% kiểm tra tại nhà (0đ) theo chính sách Minh Đức
-        const fee = 0;
-        appliedFee = fee;
-        return {
-          order: withStatus(o, 'cancelled', now, {
-            quote: { ...o.quote, approved: false, revisionRequested: false, rejectReason: reason, respondedAt: now },
-            cancelReason: `Khách từ chối báo giá${reason ? `: ${reason}` : ''} (miễn phí 100%)`,
-            inspectionFee: fee,
-            total: fee,
-          }),
-          tech: {
-            icon: '❌',
-            title: `Khách từ chối báo giá · ${code}`,
-            body: isOnSite
-              ? 'Khách từ chối sau khi thợ đã đến kiểm tra. Đơn đã huỷ, không thu phí (chính sách miễn phí 100%).'
-              : 'Khách từ chối báo giá trước khi xuất phát. Đơn đã huỷ, không thu phí.',
-          },
-          customer: {
-            icon: '❌',
-            title: `Đã từ chối báo giá & huỷ đơn · ${code}`,
-            body: 'Đã huỷ đơn thành công. Bạn được miễn phí kiểm tra 100% (0đ) theo chính sách Minh Đức.',
-          },
-          extra: { myVouchers: o.voucher?.wallet ? [o.voucher, ...p.myVouchers] : p.myVouchers },
-          customerProfilePatch: (prof) => ({
-            myVouchers: o.voucher?.wallet ? [o.voucher, ...(prof.myVouchers || [])] : (prof.myVouchers || []),
-          }),
-        };
+    // Khách duyệt / yêu cầu sửa / từ chối báo giá: POST /customer/requests/:id/quotation-decision.
+    // Phí kiểm tra, hoàn voucher, huỷ đơn do server quyết định; app tải lại sau đó.
+    respondQuote: async (code, decision, reason) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.quote) return false;
+      if (!o.dbRequestId || !authTokens.get()) return notSynced('Đơn này');
+      const approve = decision === true || decision === 'approve';
+      const res = await hrmssApi.decideQuotation(o.dbRequestId, {
+        decision: approve ? 'APPROVED' : (decision === 'revise' ? 'REVISE' : 'REJECTED'),
+        rejection_reason: reason || null,
       });
-      if (authTokens.get() && targetOrder?.dbRequestId) {
-        const isApprove = decision === true || decision === 'approve';
-        hrmssApi.decideQuotation(targetOrder.dbRequestId, {
-          decision: decision === 'revise' ? 'REVISE' : isApprove ? 'APPROVED' : 'REJECTED',
-          rejection_reason: reason || null,
-        }).then((res) => {
-          if (!res.ok) ui.alert('Chưa cập nhật được báo giá', res.message || 'Vui lòng làm mới đơn và thử lại.', '⚠️');
-          syncFromBackend();
-        }).catch(() => {});
-      }
-      if (decision === true || decision === 'approve') ui.toast('Đã duyệt báo giá', '✅');
-      else if (decision === 'revise') ui.toast('Đã gửi yêu cầu báo giá lại cho thợ', '🔄');
-      else ui.toast(appliedFee > 0 ? 'Đã từ chối (thu phí kiểm tra 100k)' : 'Đã huỷ đơn (miễn phí)', '✖️');
+      return serverDone(res, {
+        title: 'Không gửi được',
+        codes: { NO_PENDING_QUOTATION: 'Báo giá này không còn chờ duyệt.' },
+        toast: approve ? 'Đã duyệt báo giá' : (decision === 'revise' ? 'Đã gửi yêu cầu báo giá lại cho thợ' : 'Đã từ chối báo giá'),
+        icon: approve ? '✅' : '🔄',
+      });
     },
     // Thợ quét / xác thực mã QR của khách hàng tại nhà
-    verifyCustomerQR: (code, scannedInput = 'AUTO_SCAN') => {
-      const now = Date.now();
-      let resStatus = 'missing';
-      updateOrder(code, (o, p) => {
-        const custPhone = String(o.address?.phone || o.customerPhone || '').replace(/\D/g, '');
-        const raw = String(scannedInput || '').trim();
-        const isAuto = raw === 'AUTO_SCAN';
-        const cleanDigits = raw.replace(/\D/g, '');
-        const valid = isAuto
-          || raw.toUpperCase().includes(`MINHDUC:${custPhone}`)
-          || (custPhone && cleanDigits === custPhone)
-          || (custPhone && cleanDigits.length >= 4 && custPhone.endsWith(cleanDigits));
-        if (!valid) {
-          resStatus = 'invalid';
-          return {};
-        }
-        resStatus = 'ok';
-        const myTechCode = (p.techProfile || TECH_ME).code;
-        const boosted = o.qrVerified ? (p.techProfile || TECH_ME) : applyTechBonus(p.techProfile || TECH_ME, 1);
-        return {
-          order: {
-            ...o,
-            qrVerified: {
-              at: now,
-              by: myTechCode,
-              phone: custPhone,
-              qrCode: `MINHDUC:${custPhone || o.address?.name || code}`,
-            },
-          },
-          customer: {
-            icon: '🔳',
-            title: `Đã xác thực QR khách hàng · ${code}`,
-            body: `Thợ ${o.tech?.name || myTechCode} đã quét mã QR xác nhận phục vụ tại nhà bạn.`,
-          },
-          extra: { techProfile: boosted },
-        };
+    // Tiến độ: POST /technician/jobs/:id/progress (server lưu + báo khách).
+    addProgress: async (code, { note, percent }) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
+      const res = await hrmssApi.addJobProgress(o.dbAssignmentId, {
+        progress_percent: percent != null && percent !== '' ? Math.max(0, Math.min(100, Math.round(Number(percent)))) : undefined,
+        note: note ? String(note).trim() : undefined,
       });
-      if (resStatus === 'invalid') {
-        ui.alert('Mã QR không khớp', 'Mã QR hoặc số điện thoại không khớp với khách hàng của đơn này.', '🔳');
-        return false;
-      }
-      if (resStatus === 'ok') {
-        ui.toast('Đã xác thực QR khách hàng · +1 uy tín', '🔳');
-        return true;
-      }
-      return false;
+      return serverDone(res, { title: 'Không cập nhật được tiến độ', toast: 'Đã cập nhật tiến độ', icon: '📈' });
     },
-    addProgress: (code, { note, percent }) => {
-      updateOrder(code, (o) => ({
-        order: { ...o, progress: [...(o.progress || []), { id: uid(), note, percent, at: Date.now() }] },
-        customer: { icon: '📈', title: `Tiến độ ${percent}% · ${code}`, body: note || 'Thợ vừa cập nhật tiến độ.' },
-      }));
-      ui.toast('Đã cập nhật tiến độ', '📈');
+    // Vật tư: sửa số lượng / xoá theo usage_id trên server (PATCH / DELETE /technician/jobs/:id/materials/:usageId).
+    setMaterialQty: async (code, id, qty) => {
+      const o = s.orders.find((x) => x.code === code);
+      const m = (o?.materials || []).find((x) => x.id === id);
+      if (!o?.dbAssignmentId || !m?.dbUsageId || !authTokens.get()) return notSynced('Vật tư này');
+      const res = await hrmssApi.updateMaterialUsage(o.dbAssignmentId, m.dbUsageId, Math.max(1, Number(qty) || 1));
+      return serverDone(res, { title: 'Không sửa được vật tư', codes: { MATERIAL_USAGE_NOT_FOUND: 'Vật tư này không còn trong việc.' } });
     },
-    setMaterialQty: (code, id, qty) => updateOrder(code, (o) => ({
-      order: { ...o, materials: (o.materials || []).map((m) => (m.id === id ? { ...m, qty: Math.max(1, qty) } : m)) },
-    })),
-    addMaterial: (code, mat) => {
-      let targetOrder = null;
-      updateOrder(code, (o) => {
-        targetOrder = o;
-        return {
-          order: { ...o, materials: [...(o.materials || []), { id: uid(), matId: mat.id, name: mat.name, unit: mat.unit, qty: 1, price: mat.price }] },
-          customer: { icon: '🔩', title: `Thợ ghi nhận vật tư · ${code}`, body: `${mat.name} · xem chi tiết đơn để theo dõi.` },
-        };
+    addMaterial: async (code, mat) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
+      const res = await hrmssApi.recordMaterialUsage(o.dbAssignmentId, {
+        material_id: resolveDbMaterialId(mat.dbId || mat.id, mat.name),
+        used_quantity: 1,
       });
-      if (authTokens.get() && targetOrder?.dbAssignmentId) {
-        hrmssApi.recordMaterialUsage(targetOrder.dbAssignmentId, {
-          material_id: resolveDbMaterialId(mat.dbId || mat.id, mat.name),
-          used_quantity: 1,
-          notes: `${mat.name} (${formatVND(mat.price)})`,
-        }).catch(() => {});
-      }
-      ui.toast('Đã thêm vật tư', '🔩');
+      return serverDone(res, {
+        title: 'Không thêm được vật tư',
+        codes: { MATERIAL_NOT_FOUND: 'Vật tư không có trong kho của hệ thống.' },
+        toast: 'Đã thêm vật tư',
+        icon: '🔩',
+      });
     },
-    removeMaterial: (code, id) => updateOrder(code, (o) => ({ order: { ...o, materials: (o.materials || []).filter((m) => m.id !== id) } })),
-    addEvidence: (code, { uri, stage, note }) => {
-      const stageLabel = stage === 'diagnosis' ? 'chẩn đoán' : stage === 'before' ? 'trước khi làm' : 'sau khi làm';
-      updateOrder(code, (o) => ({
-        order: {
-          ...o,
-          evidence: [...(o.evidence || []), { id: uid(), uri, stage, note: note || '', at: Date.now() }],
-        },
-        customer: { icon: '📷', title: `Thợ thêm ảnh ${stageLabel} · ${code}`, body: note || 'Có ảnh minh chứng mới trên đơn của bạn.' },
-      }));
-      ui.toast(stage === 'diagnosis' ? 'Đã thêm ảnh chẩn đoán' : 'Đã thêm ảnh minh chứng', '📷');
+    removeMaterial: async (code, id) => {
+      const o = s.orders.find((x) => x.code === code);
+      const m = (o?.materials || []).find((x) => x.id === id);
+      if (!o?.dbAssignmentId || !m?.dbUsageId || !authTokens.get()) return notSynced('Vật tư này');
+      const res = await hrmssApi.deleteMaterialUsage(o.dbAssignmentId, m.dbUsageId);
+      return serverDone(res, { title: 'Không xoá được vật tư', toast: 'Đã xoá vật tư', icon: '🗑️' });
     },
-    removeEvidence: (code, id) => updateOrder(code, (o) => ({ order: { ...o, evidence: (o.evidence || []).filter((e) => e.id !== id) } })),
-    updateEvidenceNote: (code, id, note) => updateOrder(code, (o) => ({
-      order: { ...o, evidence: (o.evidence || []).map((e) => (e.id === id ? { ...e, note } : e)) },
-    })),
-    // Nhật ký sửa chữa của kỹ thuật viên
-    addRepairNote: (code, text) => {
+    // Ảnh minh chứng: lưu trên server (POST /uploads job_id + evidence_type; PATCH / DELETE /uploads/:id).
+    addEvidence: async (code, { uri, stage, note }) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
+      const type = ({ diagnosis: 'PROBLEM_PHOTO', before: 'BEFORE_REPAIR', after: 'AFTER_REPAIR' })[stage] || 'AFTER_REPAIR';
+      const res = await hrmssApi.uploadJobPhoto(o.dbAssignmentId, uri, type, null, note || null);
+      return serverDone(res, {
+        title: 'Không tải được ảnh',
+        codes: { INVALID_PHOTO: 'Ảnh không hợp lệ (chỉ nhận JPG, PNG, WEBP).' },
+        toast: stage === 'diagnosis' ? 'Đã thêm ảnh chẩn đoán' : 'Đã thêm ảnh minh chứng',
+        icon: '📷',
+      });
+    },
+    removeEvidence: async (code, id) => {
+      const o = s.orders.find((x) => x.code === code);
+      const e = (o?.evidence || []).find((x) => x.id === id);
+      if (!e?.dbAttachmentId || !authTokens.get()) return notSynced('Ảnh này');
+      const res = await hrmssApi.deletePhoto(e.dbAttachmentId);
+      return serverDone(res, { title: 'Không xoá được ảnh', toast: 'Đã xoá ảnh', icon: '🗑️' });
+    },
+    updateEvidenceNote: async (code, id, note) => {
+      const o = s.orders.find((x) => x.code === code);
+      const e = (o?.evidence || []).find((x) => x.id === id);
+      if (!e?.dbAttachmentId || !authTokens.get()) return notSynced('Ảnh này');
+      const res = await hrmssApi.updatePhotoNote(e.dbAttachmentId, note);
+      return serverDone(res, { title: 'Không lưu được ghi chú ảnh' });
+    },
+    // Biên lai linh kiện mua ngoài: tải ảnh (POST /uploads, DOCUMENT) rồi gắn vào dòng báo giá
+    // (PATCH /technician/jobs/:id/quotation-items/:itemId/receipt). Thiếu biên lai thì backend không cho nộp hoàn thành.
+    uploadPartReceipt: async (code, itemId, uri) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbAssignmentId || !itemId || !authTokens.get()) return notSynced();
+      const up1 = await hrmssApi.uploadJobPhoto(o.dbAssignmentId, uri, 'DOCUMENT', null, 'Biên lai linh kiện mua ngoài');
+      const attId = up1.data?.attachment?.attachment_id;
+      if (!up1.ok || !attId) return serverDone(up1, { title: 'Không tải được ảnh biên lai' });
+      const res = await hrmssApi.attachPartReceipt(o.dbAssignmentId, itemId, attId);
+      return serverDone(res, {
+        title: 'Không gắn được biên lai',
+        codes: { INVALID_VISIT_STATE: 'Check-in tại nhà khách trước khi gắn biên lai.', NOT_EXTERNAL_PURCHASE: 'Dòng này không phải linh kiện mua ngoài.' },
+        toast: 'Đã gắn biên lai',
+        icon: '🧾',
+      });
+    },
+    // Nhật ký sửa chữa: ghi chú gửi qua POST /technician/jobs/:id/progress (chỉ note).
+    addRepairNote: async (code, text) => {
       const note = String(text || '').trim();
-      if (!note) { ui.alert('Thiếu nội dung', 'Nhập ghi chú công việc đã làm.', '📝'); return; }
-      updateOrder(code, (o) => ({
-        order: { ...o, repairNotes: [...(o.repairNotes || []), { id: uid(), text: note, at: Date.now() }] },
-        customer: { icon: '📝', title: `Thợ cập nhật ghi chú · ${code}`, body: note },
-      }));
-      ui.toast('Đã lưu ghi chú sửa chữa', '📝');
+      if (!note) { ui.alert('Thiếu nội dung', 'Nhập ghi chú công việc đã làm.', '📝'); return false; }
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
+      const res = await hrmssApi.addJobProgress(o.dbAssignmentId, { note });
+      return serverDone(res, { title: 'Không lưu được ghi chú', toast: 'Đã lưu ghi chú sửa chữa', icon: '📝' });
     },
-    // Khách sửa yêu cầu khi đơn còn chờ thợ nhận
-    updatePendingRequest: (code, patch) => {
-      let ok = false;
-      updateOrder(code, (o) => {
-        if (o.status !== 'pending') return {};
-        ok = true;
-        return {
-          order: {
-            ...o,
-            note: patch.note != null ? patch.note : o.note,
-            slot: patch.slot || o.slot,
-            dateLabel: patch.dateLabel || o.dateLabel,
-            dateKey: patch.dateKey || o.dateKey,
-            attachments: patch.attachments != null ? patch.attachments : (o.attachments || []),
-          },
-          tech: {
-            icon: '✏️',
-            title: `Khách cập nhật yêu cầu · ${code}`,
-            body: `${patch.dateLabel || o.dateLabel} · ${patch.slot || o.slot}`,
-          },
-        };
+    // Khách sửa đơn còn chờ: PATCH /customer/requests/:id; ảnh mới tải lên POST /uploads (request_id).
+    updatePendingRequest: async (code, patch) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbRequestId || !authTokens.get()) return notSynced('Đơn này');
+      const body = {
+        ...(patch.dateKey && patch.slot ? { preferred_time: buildPreferredTimeIso(patch.dateKey, patch.slot) } : {}),
+        ...(patch.note != null ? { problem_description: String(patch.note).slice(0, 1000) || null } : {}),
+      };
+      const res = await hrmssApi.updateCustomerRequest(o.dbRequestId, body);
+      if (res.ok) {
+        const fresh = (patch.attachments || []).filter((x) => x?.uri && !x.dbAttachmentId).slice(0, 5);
+        if (fresh.length) {
+          const rs = await Promise.all(fresh.map((x) => hrmssApi.uploadRequestPhoto(o.dbRequestId, x.uri).catch(() => null)));
+          if (rs.some((r) => !r?.ok)) ui.toast('Một số ảnh chưa tải lên được', '⚠️');
+        }
+      }
+      return serverDone(res, {
+        title: 'Không sửa được',
+        codes: { CANNOT_EDIT: 'Chỉ sửa được khi đơn còn chờ thợ.', EDIT_TOO_LATE: 'Đã quá thời gian được sửa đơn.' },
+        toast: 'Đã cập nhật yêu cầu',
+        icon: '✏️',
       });
-      if (ok) ui.toast('Đã cập nhật yêu cầu', '✏️');
-      else ui.alert('Không sửa được', 'Chỉ sửa được khi đơn còn chờ thợ nhận.', 'ℹ️');
     },
     // Mật khẩu: backend kiểm tra (8-64 ký tự). Lỗi trả { ok:false, error }.
     changePassword: async ({ currentPassword, newPassword }) => {
@@ -1883,173 +1625,51 @@ export function AppProvider({ children }) {
         if (res.code === 'PROCEDURE_INCOMPLETE') {
           const missing = (res.errors || []).map((e) => `• ${e.message}`).join('\n');
           ui.alert('Chưa xong các bước thực hiện', `Đánh dấu xong các bước bắt buộc trong thẻ "Các bước thực hiện" rồi nộp lại.${missing ? `\n\n${missing}` : ''}`, '📋');
+        } else if (res.code === 'RECEIPT_REQUIRED') {
+          const missing = (res.errors || []).map((e) => `• ${e.message}`).join('\n');
+          ui.alert('Thiếu biên lai linh kiện', `Gắn ảnh biên lai cho từng linh kiện mua ngoài (thẻ "Biên lai linh kiện mua ngoài") rồi nộp lại.${missing ? `\n\n${missing}` : ''}`, '🧾');
         } else {
-          ui.alert('Chưa nộp được biên bản', res.status > 0 ? (res.message || 'Vui lòng thử lại.') : networkError(res), '⚠️');
+          const msg = { CUSTOMER_PAYS_BY_QR: 'Khách trả bằng chuyển khoản VietQR, thợ không thu tiền mặt.' }[res.code];
+          ui.alert('Chưa nộp được biên bản', msg || (res.status > 0 ? (res.message || 'Vui lòng thử lại.') : networkError(res)), '⚠️');
         }
         return false;
       }
-      // Điểm thưởng chỉ phát sinh khi văn phòng nghiệm thu trên backend.
-      const onTimeBonus = !o0.lateCompensation || o0.lateCompensation.tier === 'soft' ? 2 : 1;
-      updateOrder(code, (o, p) => {
-        const boosted = applyTechBonus(p.techProfile || TECH_ME, onTimeBonus);
-        const qrOrder = isQRPayment(o);
-        const alreadyPaidByCustomer = Boolean(o.report?.paid);
-        // Nếu khách chọn Chuyển khoản QR: Thợ KHÔNG được thu tiền mặt -> chỉ đánh dấu paid nếu khách đã quét QR trước đó
-        const finalPaid = qrOrder ? alreadyPaidByCustomer : Boolean(paid);
-        const finalPaidAt = qrOrder
-          ? (o.report?.paidAt || null)
-          : (finalPaid ? now : null);
-        const finalPaidBy = qrOrder
-          ? (o.report?.paidBy || null)
-          : (finalPaid ? 'tech' : null);
-        const backendStatus = String(res.data?.completion?.request_status || res.data?.request_status || '').toUpperCase();
-        const nextStatus = backendStatus === 'READY_FOR_ACCEPTANCE' || backendStatus === 'COMPLETED'
-          ? 'pending_review'
-          : (backendStatus === 'PARTIALLY_PAID_RECEIVABLE' ? 'partially_paid' : 'pending_payment');
-        return {
-          order: withStatus(o, nextStatus, now, {
-            pendingReviewAt: now,
-            report: {
-              ...(o.report || {}),
-              summary,
-              paid: finalPaid,
-              at: now,
-              tech: o.tech?.name,
-              techCode: o.tech?.code,
-              safetyChecklist: safetyChecklist || [],
-              customerSignature: customerSignature || null,
-              warrantyCertificateCode: `BH-${code}`,
-              ...(finalPaid ? { paidAt: finalPaidAt, paidBy: finalPaidBy } : {}),
-            },
-          }),
-          customer: {
-            icon: nextStatus === 'pending_review' ? '🏢' : '💳',
-            title: nextStatus === 'pending_review' ? `Đơn ${code} đang chờ Văn phòng nghiệm thu` : `Đơn ${code} cần thanh toán`,
-            body: nextStatus === 'pending_review'
-              ? 'Đơn đã đủ điều kiện thanh toán và đang chờ Văn phòng kiểm tra nghiệm thu.'
-              : 'Thợ đã nộp biên bản. Vui lòng kiểm tra thiết bị và thanh toán để chuyển đơn sang chờ nghiệm thu.',
-            link: { name: 'order', params: { code } },
-          },
-          tech: {
-            icon: '⏳',
-            title: nextStatus === 'pending_review' ? `Đã nộp biên bản · Chờ Văn phòng nghiệm thu` : `Đã nộp biên bản · Chờ khách thanh toán`,
-            body: nextStatus === 'pending_review'
-              ? 'Đơn đã đủ điều kiện và đang chờ Văn phòng nghiệm thu.'
-              : 'Khách cần kiểm tra thiết bị và thanh toán. Sau khi trả đủ, đơn sẽ chuyển sang chờ Văn phòng nghiệm thu.',
-            link: { name: 'tech-job', params: { code } },
-          },
-          extra: {
-            points: p.points,
-            lifetimePoints: p.lifetimePoints,
-            pointHistory: p.pointHistory || [],
-            techProfile: {
-              ...boosted,
-              jobs: (boosted.jobs || 0) + 1,
-            },
-          },
-          customerProfilePatch: (prof) => ({
-            points: prof.points || 0,
-            lifetimePoints: prof.lifetimePoints || 0,
-            pointHistory: prof.pointHistory || [],
-          }),
-        };
-      });
-      const submittedStatus = String(res.data?.completion?.request_status || res.data?.request_status || '').toUpperCase();
-      ui.toast(submittedStatus === 'READY_FOR_ACCEPTANCE'
-        ? 'Đã nộp biên bản · Chờ Văn phòng nghiệm thu'
-        : 'Đã nộp biên bản · Chờ khách kiểm tra & thanh toán', submittedStatus === 'READY_FOR_ACCEPTANCE' ? '🏢' : '💳');
-      // Luồng backend: chờ khách thanh toán -> trả đủ -> văn phòng nghiệm thu trên web; app đọc trạng thái thật khi đồng bộ.
-      syncFromBackend();
-      return true;
-    },
-    // Văn phòng thẩm định duyệt hồ sơ bảo hành
-    officeApproveWarranty: (code) => {
-      const o0 = s.orders.find((x) => x.code === code);
-      if (!o0 || o0.status !== 'warranty_pending') return false;
-      const now = Date.now();
-      updateOrder(code, (o) => ({
-        order: withStatus(o, 'pending', now, {
-          warrantyApproved: true,
-          warrantyApprovedAt: now,
-        }),
-        customer: {
-          icon: '🛡️',
-          title: `Văn phòng đã duyệt bảo hành ${code}`,
-          body: `Hồ sơ hợp lệ theo bảo hành 60 ngày. Quản lý đang điều phối KTV tiếp nhận.`,
-          link: { name: 'order', params: { code } },
-        },
-        tech: {
-          icon: '🛡️',
-          title: `Việc bảo hành mới ${code}`,
-          body: `Văn phòng đã duyệt bảo hành cho đơn ${o.warrantyOf || ''} · ${o.address?.area || ''}`,
-          link: { name: 'tech-job', params: { code } },
-        },
-      }));
-      ui.toast('🏢 Văn phòng Minh Đức: Đã thẩm định hồ sơ bảo hành hợp lệ', '🛡️', 'success');
-      return true;
-    },
-    // Thợ từ chối bảo hành tại nhà do lỗi ngoại lực/người dùng → chuyển sang báo giá có phí
-    rejectWarrantyAsOutOfWarranty: (code, reason) => {
-      const o0 = s.orders.find((x) => x.code === code);
-      if (!o0) return false;
-      const now = Date.now();
-      const r = reason || 'Hư hỏng do rơi vỡ/ngoại lực tác động, không thuộc phạm vi bảo hành 60 ngày.';
-      updateOrder(code, (o) => ({
-        order: withStatus(o, 'diagnosing', now, {
-          outOfWarranty: true,
-          outOfWarrantyReason: r,
-          kind: 'repair',
-          payment: 'Tiền mặt / VietQR',
-        }),
-        customer: {
-          icon: '⚠️',
-          title: `Thiết bị ngoài phạm vi bảo hành · ${code}`,
-          body: `${r} Kỹ thuật viên sẽ lập báo giá sửa chữa chính thức cho bạn.`,
-          link: { name: 'order', params: { code } },
-        },
-        tech: {
-          icon: '📋',
-          title: `Chuyển sang sửa chữa có phí · ${code}`,
-          body: `Đã xác nhận ngoài phạm vi bảo hành. Vui lòng lập báo giá linh kiện/vật tư thay thế.`,
-          link: { name: 'tech-job', params: { code } },
-        },
-      }));
-      ui.toast('Đã ghi nhận ngoài bảo hành · Chuyển sang báo giá', '📋');
-      return true;
-    },
-    // Yêu cầu hẹn tái khám khi chưa hoàn thành sửa chữa
-    requestFollowUp: (code, reason) => {
-      const now = Date.now();
-      const o0 = s.orders.find((x) => x.code === code);
-      if (!o0) return false;
-      const r = reason || 'Chờ linh kiện phụ tùng từ kho điều phối';
+      // Trạng thái, điểm thưởng, bảo hành do server xử lý; app chỉ lưu chữ ký / checklist vừa nhập rồi tải lại.
       updateOrder(code, (o) => ({
         order: {
           ...o,
-          followUpRequested: true,
-          followUpReason: r,
-          followUpAt: now,
-          history: [...o.history, { status: 'repairing', at: now, note: `Yêu cầu hẹn tái khám: ${r}` }],
-        },
-        customer: {
-          icon: '📅',
-          title: `Hẹn lịch tái khám đơn ${code}`,
-          body: `KTV đã ghi nhận: "${r}". Quản lý đang xếp lịch hẹn tiếp theo cho bạn.`,
-          link: { name: 'order', params: { code } },
-        },
-        tech: {
-          icon: '📅',
-          title: `Đã lưu yêu cầu tái khám đơn ${code}`,
-          body: `Lý do: ${r}. Quản lý kỹ thuật Minh Đức đã nhận được thông tin để điều phối.`,
-          link: { name: 'tech-job', params: { code } },
+          report: {
+            ...(o.report || {}),
+            summary: cleanSummary,
+            at: now,
+            safetyChecklist: safetyChecklist || [],
+            customerSignature: customerSignature || null,
+          },
         },
       }));
-      ui.toast('Đã ghi nhận yêu cầu hẹn tái khám', '📅', 'success');
+      ui.toast(Boolean(paid) && !isQRPayment(o0) ? 'Đã nộp biên bản · Chờ Văn phòng nghiệm thu' : 'Đã nộp biên bản · Chờ khách kiểm tra & thanh toán', '🏢');
+      syncFromBackend();
       return true;
     },
-    setTechOnline: (v) => {
-      up(() => ({ techOnline: v }));
-      ui.toast(v ? 'Bạn đang trực tuyến' : 'Đã tạm nghỉ nhận việc', v ? '🟢' : '⏸');
+    // Thợ kết luận ngoài bảo hành: POST /technician/jobs/:id/out-of-warranty (đơn chuyển sang sửa có phí).
+    rejectWarrantyAsOutOfWarranty: async (code, reason) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
+      const r = reason || 'Hư hỏng do rơi vỡ/ngoại lực tác động, không thuộc phạm vi bảo hành.';
+      const res = await hrmssApi.markOutOfWarranty(o.dbAssignmentId, r);
+      return serverDone(res, {
+        title: 'Không cập nhật được',
+        codes: { NOT_WARRANTY_REQUEST: 'Đơn này không phải đơn bảo hành.', ALREADY_OUT_OF_WARRANTY: 'Đơn đã được ghi nhận ngoài bảo hành.' },
+        toast: 'Đã ghi nhận ngoài bảo hành · Chuyển sang báo giá',
+        icon: '📋',
+      });
+    },
+    // Hẹn tái khám: POST /technician/jobs/:id/follow-up (văn phòng xếp lịch).
+    requestFollowUp: async (code, reason, remainingWork) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
+      const res = await hrmssApi.requestJobFollowUp(o.dbAssignmentId, reason || 'Chờ linh kiện phụ tùng', remainingWork || null);
+      return serverDone(res, { title: 'Không gửi được', toast: 'Đã ghi nhận yêu cầu hẹn tái khám', icon: '📅' });
     },
     readTechNotif: (id) => {
       const n = (s.techNotifs || []).find((x) => x.id === id);
@@ -2319,44 +1939,21 @@ export function AppProvider({ children }) {
       syncFromBackend();
       return true;
     },
-    rateOrder: (code, stars, text) => {
+    // Đánh giá: POST /customer/requests/:id/review. Điểm thưởng, điểm TB của thợ do server tính; app tải lại.
+    rateOrder: async (code, stars, text) => {
       const o = s.orders.find((x) => x.code === code);
-      if (!o || o.status !== 'done' || o.rating) return;
-      const now = Date.now();
-      const review = { name: s.user.name || o.address?.name || 'Khách hàng', date: fmtDate(now), stars, text, mine: true };
-      const ptEntry = { id: uid(), title: `Đánh giá dịch vụ đơn ${code} (${stars}★)`, delta: 20, at: now, orderCode: code };
-      up((p) => {
-        const userReviews = { ...p.userReviews };
-        o.items.forEach((it) => { userReviews[it.id] = [review, ...(userReviews[it.id] || [])]; });
-        const nextOrders = p.orders.map((x) => (x.code === code ? { ...x, rating: { stars, text } } : x));
-        let techProfile = p.techProfile;
-        if (techProfile && o.tech?.code === techProfile.code) {
-          const rated = nextOrders.filter((x) => x.tech?.code === techProfile.code && x.rating);
-          const avg = rated.length
-            ? Math.round((rated.reduce((sum, x) => sum + x.rating.stars, 0) / rated.length) * 10) / 10
-            : stars;
-          techProfile = { ...techProfile, rating: avg };
-        }
-        return {
-          orders: nextOrders,
-          userReviews,
-          points: p.points + 20,
-          lifetimePoints: p.lifetimePoints + 20,
-          pointHistory: [ptEntry, ...(p.pointHistory || [])],
-          techProfile,
-          techNotifs: pushTech(p, { icon: '⭐', title: `Khách đánh giá ${stars}★ · ${code}`, body: text || 'Không có nhận xét.', link: { name: 'tech-job', params: { code } } }),
-        };
+      if (!o || o.status !== 'done' || o.rating) return false;
+      if (!o.dbRequestId || !authTokens.get()) return notSynced('Đơn này');
+      const res = await hrmssApi.reviewCustomerRequest(o.dbRequestId, {
+        rating: stars, review_text: text || null, punctuality_rating: stars, attitude_rating: stars, expertise_rating: stars,
       });
-      if (authTokens.get() && o.dbRequestId) {
-        hrmssApi.reviewCustomerRequest(o.dbRequestId, {
-          rating: stars,
-          review_text: text || 'Hài lòng với dịch vụ kỹ thuật viên Minh Đức.',
-          punctuality_rating: stars,
-          attitude_rating: stars,
-          expertise_rating: stars,
-        }).catch(() => {});
-      }
-      ui.toast('Cảm ơn bạn! +20 điểm', '⭐');
+      if (res.ok) updateOrder(code, (x) => ({ order: { ...x, rating: { stars, text } } }));
+      return serverDone(res, {
+        title: 'Không gửi được đánh giá',
+        codes: { REVIEW_ALREADY_EXISTS: 'Bạn đã đánh giá đơn này.', REQUEST_NOT_COMPLETED: 'Chỉ đánh giá được đơn đã hoàn thành.' },
+        toast: 'Cảm ơn bạn đã đánh giá!',
+        icon: '⭐',
+      });
     },
     // Yêu cầu bảo hành: backend tạo đơn bảo hành (WARRANTY_PENDING), văn phòng thẩm định trên web.
     // Trả mã đơn bảo hành mới (để mở màn đơn), lỗi thì báo và trả null.
@@ -2439,27 +2036,34 @@ export function AppProvider({ children }) {
       setTab('home');
       ui.toast('Đã đăng xuất');
     },
-    deleteAccount: () => {
-      const currentId = s.auth?.id;
-      if (currentId) {
-        deleteAccountById(currentId);
+    // Xoá tài khoản: DELETE /auth/me (cần mật khẩu). Server xoá xong mới xoá dữ liệu trên máy.
+    deleteAccount: async (password) => {
+      if (!password) { ui.alert('Thiếu mật khẩu', 'Nhập mật khẩu để xác nhận xoá tài khoản.', '🔐'); return false; }
+      const res = await hrmssApi.deleteMyAccount(password);
+      if (!res.ok) {
+        const msg = {
+          UNAUTHENTICATED: 'Mật khẩu không đúng.',
+          HAS_OPEN_REQUESTS: 'Bạn còn đơn đang xử lý. Hoàn thành hoặc huỷ các đơn đó trước khi xoá tài khoản.',
+        }[res.code];
+        ui.alert('Không xoá được tài khoản', msg || (res.status > 0 ? res.message : networkError(res)), '⚠️');
+        return false;
       }
+      const currentId = s.auth?.id;
+      if (currentId) deleteAccountById(currentId);
       hrmssApi.logout();
       clearSession();
-      up((p) => {
-        const resetSlice = switchCustomerSlice(p, null);
-        return {
-          ...resetSlice,
-          auth: null,
-          role: 'customer',
-          techProfile: null,
-          user: { name: '', phone: '', email: '' },
-          cart: [],
-        };
-      });
+      up((p) => ({
+        ...switchCustomerSlice(p, null),
+        auth: null,
+        role: 'customer',
+        techProfile: null,
+        user: { name: '', phone: '', email: '' },
+        cart: [],
+      }));
       setStack([]);
       setTab('home');
-      ui.toast('Đã xoá tài khoản thành công', '🗑️');
+      ui.toast('Đã xoá tài khoản', '🗑️');
+      return true;
     },
     wipeLocalData: () => {
       hrmssApi.logout();

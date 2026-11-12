@@ -176,10 +176,6 @@ export const noteFor = (items) => {
 export const INSTALL_SERVICES = [];
 export const REPAIR_SERVICES = [];
 export const LIFETIME_SERVICES = [];
-export const AREAS = [
-  'An Khánh, Hà Nội', 'Hoài Đức, Hà Nội', 'Cầu Giấy, Hà Nội', 'Nam Từ Liêm, Hà Nội',
-  'Thanh Xuân, Hà Nội', 'Quận 1, TP. Hồ Chí Minh', 'Quận 3, TP. Hồ Chí Minh', 'Thủ Đức, TP. Hồ Chí Minh',
-];
 export const TIME_SLOTS = ['08h00 - 10h00', '10h00 - 12h00', '12h00 - 14h00', '14h00 - 16h00', '16h00 - 18h00', '18h00 - 20h00'];
 export const imgFor = (id) => `https://picsum.photos/seed/${id}/400/300`;
 
@@ -374,6 +370,7 @@ export const techStepIndexOf = (status) => {
 export const PAYMENT_METHODS = [
   {
     id: 'vietqr',
+    apiMethod: 'BANK_TRANSFER', // service_request.preferred_payment_method
     label: 'Chuyển khoản VietQR (MBBank)',
     shortLabel: 'VietQR (MBBank)',
     icon: 'qr-code',
@@ -385,6 +382,7 @@ export const PAYMENT_METHODS = [
   },
   {
     id: 'cash',
+    apiMethod: 'CASH',
     label: 'Tiền mặt cho thợ tại nhà',
     shortLabel: 'Tiền mặt tại nhà',
     icon: 'banknote',
@@ -427,7 +425,8 @@ export const voucherDiscount = (voucher, subtotal) => {
 //   Hệ thống → Thợ: việc được giao, địa chỉ & liên hệ khách, lịch làm việc, báo giá, thông báo
 // ---------------------------------------------------------------------------
 // Hồ sơ thợ khi chưa tải được từ backend: để trống, không dùng tên/SĐT giả.
-export const TECH_ME = { name: '', code: '', rating: null, jobs: 0, phone: '', area: '', skills: [] };
+// Chuyên môn do admin gán, nạp từ GET /technician/profile (readTechnicianSpecialties): specialties, specialtyCategoryIds, acceptsAllCategories.
+export const TECH_ME = { name: '', code: '', rating: null, jobs: 0, phone: '', area: '', skills: [], specialties: [], specialtyCategoryIds: [], acceptsAllCategories: false };
 
 // Trạng thái đơn đầy đủ (khách ↔ thợ)
 export const STATUS_FLOW = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'pending_payment', 'partially_paid', 'pending_review', 'done'];
@@ -591,46 +590,29 @@ export const DIAG_TAGS = {
   all: ['Thiết bị hoạt động bình thường', 'Cần vệ sinh định kỳ', 'Nguồn điện không ổn định'],
 };
 
-// Map danh mục / loại dịch vụ sang kỹ năng của thợ để đối chiếu chuyên môn & khu vực
-const CAT_TO_SKILL = {
-  'may-lanh': 'Máy lạnh',
-  'may-giat': 'Máy giặt',
-  'tu-lanh': 'Tủ lạnh',
-  'nuoc-nong': 'Nóng lạnh',
-  'hut-mui': 'Hút mùi',
-  quat: 'Máy lạnh',
-  'loc-khong-khi': 'Máy lạnh',
-};
-
+// Đối chiếu chuyên môn & khu vực. Chuyên môn = danh mục admin gán cho thợ
+// (GET /technician/profile -> specialties, lưu ở techProfile.specialtyCategoryIds).
 export const matchJobForTech = (order, techProfile) => {
   const me = techProfile || TECH_ME;
-  const skills = (me.skills || TECH_ME.skills || []).map((s) => normalize(s));
   const areaTokens = String(me.area || TECH_ME.area || '')
     .split(/[,;/·|-]+/)
     .map((x) => normalize(x.trim()))
     .filter((x) => x.length >= 3);
 
   const items = order?.items || [];
-  const neededSkills = new Set();
+  const neededCats = new Set();
   items.forEach((it) => {
     const sv = getService(it.id);
-    if (!sv) return;
-    const catSkill = CAT_TO_SKILL[sv.category];
-    if (catSkill) neededSkills.add(catSkill);
-    const k = serviceKind(sv);
-    if (k === 'gas') neededSkills.add('Nạp gas');
-    if (k === 'repair' || k === 'install') neededSkills.add('Sửa chữa');
+    if (sv?.category && sv.category !== 'all') neededCats.add(sv.category);
   });
-  const neededArr = [...neededSkills];
+  const neededArr = [...neededCats];
+  // Chuyên môn do admin gán (GET /technician/profile, đọc bằng readTechnicianSpecialties):
+  // chưa gán chuyên môn (accepts_all_categories) = nhận mọi loại; app cũ chưa nạp được thì không chặn.
   const backendCategoryIds = (me.specialtyCategoryIds || []).map(String);
-  const backendCategoryMatch = items.some((item) => {
-    const category = getService(item.id)?.category;
-    const categoryId = String(category || '').replace(/^c/i, '');
-    return categoryId && backendCategoryIds.includes(categoryId);
-  });
-  const skillMatch = me.specialtiesAvailable
-    ? (neededArr.length === 0 || me.acceptsAllCategories || backendCategoryMatch)
-    : (neededArr.length === 0 || skills.length === 0 || neededArr.some((sk) => skills.includes(normalize(sk))));
+  const skillMatch = neededArr.length === 0
+    || !me.specialtiesAvailable
+    || me.acceptsAllCategories
+    || neededArr.some((c) => backendCategoryIds.includes(String(c).replace(/^c/i, '')));
 
   const orderAddrNorm = normalize(`${order?.address?.area || ''} ${order?.address?.full || ''}`);
   const areaMatch = areaTokens.length === 0 || areaTokens.some((tok) => orderAddrNorm.includes(tok));
@@ -644,7 +626,7 @@ export const matchJobForTech = (order, techProfile) => {
     areaMatch,
     assignedToMe,
     matchScore,
-    neededSkills: neededArr,
+    neededSkills: neededArr.map(catLabel),
   };
 };
 
