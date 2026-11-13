@@ -11,3 +11,6 @@ Thumbs.db
 # Cấu hình server riêng từng máy (xem .env.example)
 .env.local
 .env*.local
+
+# APK files (upload to VPS via scp)
+downloads/*.apk

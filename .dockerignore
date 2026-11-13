@@ -1,0 +1,16 @@
+node_modules
+.expo
+.git
+.gitignore
+dist
+web-build
+*.log
+.tmp-metro.log
+.env.local
+.env*.local
+*.md
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+downloads

@@ -9,6 +9,8 @@
       "icon": "./assets/app-icon.png"
     },
     "android": {
+      "package": "com.hrmss.thominhduc",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png"

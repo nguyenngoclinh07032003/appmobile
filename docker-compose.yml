@@ -1,0 +1,25 @@
+services:
+  hrmss-app:
+    build:
+      context: .
+      args:
+        # Để trống -> dùng server thật https://server.hrmss.cyou/api/v1
+        EXPO_PUBLIC_API_URL: ${EXPO_PUBLIC_API_URL:-}
+    image: hrmss-app:latest
+    container_name: hrmss-app
+    restart: unless-stopped
+    # Không publish port ra ngoài; Caddy trong infra gọi qua network chung: http://hrmss-app:80
+    expose:
+      - "80"
+    # Bỏ file .apk vào ./downloads -> tải tại https://<domain>/download/<ten-file>.apk (không cần build lại)
+    volumes:
+      - ./downloads:/usr/share/nginx/download:ro
+    networks:
+      - infra
+
+networks:
+  infra:
+    external: true
+    # Tên network mà Caddy trong folder infra đang dùng (xem bằng: docker network ls)
+    name: ${INFRA_NETWORK:-infra_default}
+
