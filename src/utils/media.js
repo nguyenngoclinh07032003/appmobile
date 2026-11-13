@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 
 const compressWebFile = (f) => new Promise((resolve) => {
   const url = URL.createObjectURL(f);
@@ -31,15 +32,31 @@ const pickWeb = (capture) => new Promise((resolve) => {
   input.click();
 });
 
-/** Thư viện ảnh (web). Huỷ → undefined; nền tảng chưa hỗ trợ → null */
-export const pickImage = () => {
-  if (Platform.OS === 'web') return pickWeb(false);
-  // Nền tảng native khi chưa cấp quyền truy cập thư viện ảnh
-  return Promise.resolve(null);
+// Bản native (iOS / Android): expo-image-picker. Trả uri file:// (api.js tải lên dạng multipart { uri, name, type }).
+// Ảnh nén 0.6 để tải nhanh và không vượt giới hạn dung lượng của backend.
+const nativePick = async (fromCamera) => {
+  try {
+    const perm = fromCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) return null; // không có quyền -> null (màn hình báo / thử cách khác)
+    const opts = { mediaTypes: ['images'], quality: 0.6, allowsEditing: false, exif: false };
+    const res = fromCamera ? await ImagePicker.launchCameraAsync(opts) : await ImagePicker.launchImageLibraryAsync(opts);
+    if (res.canceled || !res.assets?.length) return undefined;
+    return res.assets[0].uri;
+  } catch (e) {
+    return null;
+  }
 };
 
-/** Ưu tiên camera sau (mobile web). Desktop vẫn mở chọn file. */
+/** Thư viện ảnh. Huỷ → undefined; không có quyền / không hỗ trợ → null */
+export const pickImage = () => {
+  if (Platform.OS === 'web') return pickWeb(false);
+  return nativePick(false);
+};
+
+/** Ưu tiên camera sau. Desktop web vẫn mở chọn file. Không có quyền camera → null (màn hình chuyển sang chọn từ thư viện). */
 export const pickCamera = () => {
   if (Platform.OS === 'web') return pickWeb('environment');
-  return Promise.resolve(null);
+  return nativePick(true);
 };

@@ -33,7 +33,7 @@ const sameDay = (ts, key) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === key;
 };
 const slotHour = (slot) => parseInt(slot, 10) || 0;
-const callPhone = (phone) => Linking.openURL(`tel:${(phone || '').replace(/\s/g, '')}`).catch(() => {});
+const callPhone = (phone) => Linking.openURL(`tel:${String(phone || '').replace(/[^\d+]/g, '')}`).catch(() => {});
 const openMap = (addr) => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr || '')}`).catch(() => {});
 // Thu nhập / chi trả cho thợ: backend chưa có bảng ví hay rút tiền, văn phòng đối soát ngoài app (không hiển thị số tự tính).
 
@@ -1169,6 +1169,26 @@ export function TechJobScreen({ params }) {
             <Text style={{ color: '#78350F', fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>
               Biên bản đã gửi lên hệ thống. Khi khách thanh toán đủ, đơn sẽ chuyển sang chờ Văn phòng nghiệm thu.
             </Text>
+            {/* Tiền mặt: khách bấm "đã trả" chỉ là báo; thợ xác nhận đã nhận thì đơn mới tính là đã trả. */}
+            {mine && !isQRPayment(o) && !o.report?.paid ? (
+              <>
+                {o.bill?.cashClaimPending ? (
+                  <Text style={{ color: '#92400E', fontSize: 12.5, marginTop: 6, fontWeight: '700' }}>Khách báo đã trả tiền mặt — xác nhận nếu bạn đã nhận đủ.</Text>
+                ) : null}
+                <Btn
+                  title={`Đã nhận tiền mặt ${formatVND(cashToCollect(o))}`}
+                  icon="banknote"
+                  small
+                  style={{ marginTop: 10 }}
+                  onPress={() => u.confirm(
+                    'Xác nhận đã nhận tiền mặt?',
+                    `Bạn xác nhận đã nhận đủ ${formatVND(cashToCollect(o))} tiền mặt của khách cho đơn ${o.code}.`,
+                    () => a.confirmCashReceived(o.code),
+                    'Đã nhận',
+                  )}
+                />
+              </>
+            ) : null}
           </Card>
         ) : null}
 

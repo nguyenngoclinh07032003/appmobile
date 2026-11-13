@@ -22,35 +22,49 @@ export function VietQRPay({ requestId, onPaid, size = 220 }) {
   const [error, setError] = useState(null);
   const paidRef = useRef(false);
 
-  // Tạo (hoặc lấy lại) mã QR đúng số tiền còn phải trả.
-  const loadQr = async () => {
-    const res = await hrmssApi.createVietQr(requestId);
-    if (res.ok) { setQr(res.data); setError(null); return; }
-    if (res.code === 'ALREADY_PAID') return; // để vòng hỏi hóa đơn xử lý
-    setError(res.code === 'NOT_PAYABLE_YET' ? 'Đơn chưa đến bước thanh toán.' : res.message);
-  };
+  const qrRef = useRef(null);
+  const onPaidRef = useRef(onPaid);
+  onPaidRef.current = onPaid;
 
+  // Một vòng cho mỗi đơn: tạo (hoặc lấy lại) mã QR 1 lần, rồi hỏi hoá đơn mỗi 5 giây tới khi PAID.
+  // Trước đây effect phụ thuộc qr.payment_id nên mở màn là gọi tạo QR 2 lần và đặt lại vòng hỏi.
   useEffect(() => {
     if (!requestId) return undefined;
     let stop = false;
-    loadQr();
-    // Hỏi lại hóa đơn mỗi 5 giây tới khi PAID.
+    paidRef.current = false;
+    qrRef.current = null;
+    setQr(null); setBill(null); setError(null);
+    const loadQr = async () => {
+      const res = await hrmssApi.createVietQr(requestId);
+      if (stop) return;
+      if (res.ok) {
+        // Chỉ nhận ảnh QR https từ img.vietqr.io (không mở URL lạ do server trả về).
+        const url = String(res.data?.qr_image_url || '');
+        const safe = /^https:\/\/img\.vietqr\.io\//.test(url);
+        const data = { ...res.data, qr_image_url: safe ? url : null };
+        qrRef.current = data; setQr(data); setError(null); return;
+      }
+      if (res.code === 'ALREADY_PAID') return; // để vòng hỏi hóa đơn xử lý
+      setError(res.code === 'NOT_PAYABLE_YET' ? 'Đơn chưa đến bước thanh toán.' : res.message);
+    };
     const tick = async () => {
       const res = await hrmssApi.getBill(requestId);
       if (stop || !res.ok) return;
       setBill(res.data);
       const st = res.data.payment_status;
       if (st === 'PAID' || st === 'NOTHING_TO_PAY') {
-        if (!paidRef.current) { paidRef.current = true; onPaid?.(res.data); }
+        if (!paidRef.current) { paidRef.current = true; onPaidRef.current?.(res.data); }
         return;
       }
       // Chuyển thiếu: mã cũ đã dùng -> tạo mã mới cho phần còn lại.
-      if (st === 'PARTIALLY_PAID' && qr && Number(qr.amount) !== Number(res.data.remaining_amount)) loadQr();
+      const cur = qrRef.current;
+      if (st === 'PARTIALLY_PAID' && cur && Number(cur.amount) !== Number(res.data.remaining_amount)) loadQr();
     };
+    loadQr();
     const timer = setInterval(tick, 5000);
     tick();
     return () => { stop = true; clearInterval(timer); };
-  }, [requestId, qr?.payment_id]);
+  }, [requestId]);
 
   if (!requestId) return <Text style={{ color: C.muted, textAlign: 'center' }}>Đơn chưa đồng bộ với hệ thống, chưa tạo được mã QR.</Text>;
   if (bill?.payment_status === 'PAID') {
@@ -71,7 +85,7 @@ export function VietQRPay({ requestId, onPaid, size = 220 }) {
           Đã nhận {formatVND(bill.paid_amount)}, còn thiếu {formatVND(bill.remaining_amount)}. Quét mã mới để trả phần còn lại.
         </Text>
       ) : null}
-      <QrImage uri={qr.qr_image_url} size={size} />
+      {qr.qr_image_url ? <QrImage uri={qr.qr_image_url} size={size} /> : <Text style={{ color: C.muted }}>Chưa hiện được ảnh QR, chuyển khoản theo thông tin bên dưới.</Text>}
       <Text style={{ fontWeight: '800', color: C.red, fontSize: 16 }}>{formatVND(qr.amount)}</Text>
       <Text style={{ color: C.muted }}>Nội dung: <Text style={{ fontWeight: '800', color: C.ink }}>{qr.transfer_content}</Text> (giữ nguyên, không sửa)</Text>
       <Text style={{ color: C.muted }}>{qr.account_name || ''} · {qr.account_no}</Text>
