@@ -14,3 +14,5 @@ docker-compose.yml
 .dockerignore
 
 downloads
+.env
+.env.*

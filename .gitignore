@@ -14,3 +14,6 @@ Thumbs.db
 
 # APK files (upload to VPS via scp)
 downloads/*.apk
+
+# Docker env on VPS
+.env
