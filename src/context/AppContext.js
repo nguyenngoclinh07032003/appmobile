@@ -246,6 +246,27 @@ const switchCustomerSlice = (prev, nextAccount) => {
   }
   return { customerProfiles: profiles };
 };
+// Đăng xuất / xoá tài khoản / phiên hết hạn: xoá khỏi state (và localStorage) mọi dữ liệu của tài khoản vừa thoát
+// (địa chỉ, SĐT, đơn, thông báo, điểm, voucher). Chỉ giữ giỏ hàng, yêu thích, lịch sử tìm kiếm (dữ liệu riêng trên máy)
+// cho lần đăng nhập sau. Dữ liệu thật nạp lại từ server khi đăng nhập.
+const signedOutState = (p) => {
+  const profiles = { ...(p.customerProfiles || {}) };
+  const key = customerProfileKey(p.auth);
+  if (key) {
+    const cur = extractCustomerSlice(p);
+    profiles[key] = { ...makeCustomerSlice(), cart: cur.cart || [], favorites: cur.favorites || [], searches: cur.searches || [] };
+  }
+  return {
+    ...makeCustomerSlice(),
+    customerProfiles: profiles,
+    orders: [],
+    techNotifs: [],
+    techProfile: null,
+    auth: null,
+    role: 'customer',
+    user: { name: '', phone: '', email: '' },
+  };
+};
 
 const makeInitial = () => ({
   user: { name: '', phone: '', email: '' },
@@ -745,13 +766,17 @@ export function AppProvider({ children }) {
           .filter((j) => j.assignment_status === 'ACTIVE' && j.assignment_id)
           .map((j) => String(j.assignment_id))
           .slice(0, 10);
+        // Hoá đơn: việc đang làm + việc đã nộp biên bản còn chờ khách trả tiền (thợ cần biết số tiền mặt / xác nhận đã nhận).
+        const billJobIds = [...new Set([...activeJobIds, ...(jobsRes.ok && Array.isArray(jobsRes.data?.items) ? jobsRes.data.items : [])
+          .filter((j) => j.assignment_id && ['PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE', 'PENDING_REVIEW'].includes(j.request?.request_status))
+          .map((j) => String(j.assignment_id))])].slice(0, 15);
         const [photoLists, jobBills] = await Promise.all([
           Promise.all(activeJobIds.map((id) => hrmssApi.listJobPhotos(id).catch(() => null))),
           // Hoá đơn của việc (tiền mặt cần thu, giảm giá): GET /technician/jobs/:id/bill.
-          Promise.all(activeJobIds.map((id) => hrmssApi.getTechnicianJobBill(id).catch(() => null))),
+          Promise.all(billJobIds.map((id) => hrmssApi.getTechnicianJobBill(id).catch(() => null))),
         ]);
         const billByJob = new Map();
-        activeJobIds.forEach((id, i) => { if (jobBills[i]?.ok && jobBills[i].data?.bill) billByJob.set(id, jobBills[i].data); });
+        billJobIds.forEach((id, i) => { if (jobBills[i]?.ok && jobBills[i].data?.bill) billByJob.set(id, jobBills[i].data); });
         const evidenceByJob = new Map();
         activeJobIds.forEach((id, i) => {
           const res = photoLists[i];
@@ -876,6 +901,20 @@ export function AppProvider({ children }) {
       }
       syncFromBackend(s.auth);
     })();
+  }, []);
+
+  const inFlight = useRef(new Set()); // thao tác ghi đang chạy (chống bấm đúp)
+  // Phiên hết hạn / bị thu hồi (refresh token hết hạn): xoá dữ liệu tài khoản trên máy, về màn chính và báo đăng nhập lại.
+  // Trước đây token bị xoá nhưng app vẫn "đã đăng nhập", mọi thao tác chỉ báo "chưa đồng bộ".
+  useEffect(() => {
+    authTokens.onExpired(() => {
+      clearSession();
+      setS((prev) => (prev.auth ? { ...prev, ...signedOutState(prev) } : prev));
+      setStack([]);
+      setTab('home');
+      ui.alert('Phiên đăng nhập đã hết hạn', 'Vui lòng đăng nhập lại để tiếp tục.', '🔐');
+    });
+    return () => authTokens.onExpired(null);
   }, []);
 
   // Thao tác ghi: gọi server trước. Lỗi -> báo (mã lỗi tiếng Việt nếu có) + tải lại dữ liệu thật, trả false.
@@ -1099,8 +1138,14 @@ export function AppProvider({ children }) {
         ui.alert('Không nhận được', 'Việc không còn ở trạng thái chờ nhận.', 'ℹ️');
         return false;
       }
-      let acceptedAssignmentId = o0.dbAssignmentId || null;
-      if (!acceptedAssignmentId) {
+      // Việc hệ thống đã gán (có assignment) là của thợ rồi: không tự đổi trạng thái trên máy, chỉ tải lại từ server.
+      if (o0.dbAssignmentId) {
+        await syncFromBackend();
+        ui.toast('Việc đã được giao cho bạn', '👍');
+        return true;
+      }
+      let acceptedAssignmentId = null;
+      {
         if (!authTokens.get() || !o0.dbRequestId) {
           ui.alert('Không nhận được', 'Việc này chưa đồng bộ với hệ thống. Kéo làm mới danh sách việc rồi thử lại.', 'ℹ️');
           return false;
@@ -1358,7 +1403,7 @@ export function AppProvider({ children }) {
           PAYMENT_IN_PROGRESS: 'Đang có giao dịch chuyển khoản chờ xác nhận.',
           BANK_TRANSFER_AUTO_CONFIRMED: 'Chuyển khoản được hệ thống tự xác nhận khi tiền về.',
         },
-        toast: 'Đã ghi nhận thanh toán tiền mặt',
+        toast: 'Đã báo đã trả tiền mặt · chờ thợ xác nhận',
         icon: '✅',
       });
     },
@@ -1532,6 +1577,24 @@ export function AppProvider({ children }) {
         codes: { INVALID_VISIT_STATE: 'Check-in tại nhà khách trước khi gắn biên lai.', NOT_EXTERNAL_PURCHASE: 'Dòng này không phải linh kiện mua ngoài.' },
         toast: 'Đã gắn biên lai',
         icon: '🧾',
+      });
+    },
+    // Thợ xác nhận ĐÃ NHẬN tiền mặt: POST /technician/jobs/:id/payments/confirm-cash. Khách bấm "đã trả" chỉ là báo,
+    // đơn chỉ tính là đã trả khi thợ (hoặc văn phòng) xác nhận.
+    confirmCashReceived: async (code) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
+      const res = await hrmssApi.confirmCashReceived(o.dbAssignmentId);
+      return serverDone(res, {
+        title: 'Không xác nhận được',
+        codes: {
+          CUSTOMER_PAYS_BY_QR: 'Khách trả bằng chuyển khoản VietQR, không thu tiền mặt.',
+          ALREADY_PAID: 'Đơn đã được thanh toán đủ.',
+          NOT_PAYABLE_YET: 'Đơn chưa đến bước thanh toán.',
+          PAYMENT_IN_PROGRESS: 'Khách đang chuyển khoản, chờ ngân hàng xác nhận.',
+        },
+        toast: res.ok ? `Đã xác nhận nhận ${formatVND(res.data?.cash_collected || 0)} tiền mặt` : '',
+        icon: '💵',
       });
     },
     // Nhật ký sửa chữa: ghi chú gửi qua POST /technician/jobs/:id/progress (chỉ note).
@@ -1780,7 +1843,11 @@ export function AppProvider({ children }) {
         } else {
           const createdUser = beRes.data?.account;
           const loginRes = await hrmssApi.login({ identifier: cleanUsername, password: pw });
-          const userId = loginRes.data?.user_id || createdUser?.user_id || Date.now();
+          // Tạo tài khoản xong mà đăng nhập lỗi thì không vào trạng thái "đã đăng nhập" giả (không có token).
+          if (!loginRes.ok || !(loginRes.data?.user_id || createdUser?.user_id)) {
+            return { ok: false, error: 'Đã tạo tài khoản nhưng chưa đăng nhập được. Vui lòng đăng nhập lại.' };
+          }
+          const userId = loginRes.data?.user_id || createdUser?.user_id;
           const roleCode = String(loginRes.data?.role || createdUser?.role?.role_code || 'CUSTOMER').toUpperCase();
           const isTech = roleCode === 'TECHNICIAN' || roleCode === 'TECH' || payload.role === 'tech';
           backendAccount = upsertBackendAccount({
@@ -2031,7 +2098,7 @@ export function AppProvider({ children }) {
     logout: () => {
       hrmssApi.logout();
       clearSession();
-      up((p) => ({ ...switchCustomerSlice(p, null), auth: null, role: 'customer', techProfile: null }));
+      up((p) => signedOutState(p));
       setStack([]);
       setTab('home');
       ui.toast('Đã đăng xuất');
@@ -2052,14 +2119,13 @@ export function AppProvider({ children }) {
       if (currentId) deleteAccountById(currentId);
       hrmssApi.logout();
       clearSession();
-      up((p) => ({
-        ...switchCustomerSlice(p, null),
-        auth: null,
-        role: 'customer',
-        techProfile: null,
-        user: { name: '', phone: '', email: '' },
-        cart: [],
-      }));
+      up((p) => {
+        // Tài khoản đã xoá: bỏ luôn dữ liệu riêng trên máy (giỏ hàng, yêu thích) của nó.
+        const next = signedOutState(p);
+        const key = customerProfileKey(p.auth);
+        if (key) delete next.customerProfiles[key];
+        return next;
+      });
       setStack([]);
       setTab('home');
       ui.toast('Đã xoá tài khoản', '🗑️');
@@ -2075,6 +2141,20 @@ export function AppProvider({ children }) {
       ui.toast('Đã xoá dữ liệu trên thiết bị');
     },
   };
+  // Chống bấm đúp: cùng một thao tác ghi trên cùng một đơn đang chạy thì lần bấm sau bị bỏ qua
+  // (tránh đặt 2 đơn, nhận việc 2 lần, xác nhận trả tiền 2 lần...). Dùng ref nên chặn được cả 2 lần bấm trong cùng 1 nhịp.
+  ['placeOrder', 'acceptJob', 'declineJob', 'releaseJob', 'confirmPayment', 'switchToQRPayment', 'respondQuote',
+    'submitQuote', 'completeJob', 'cancelOrder', 'rateOrder', 'requestWarranty', 'redeem', 'remindQuote',
+    'startTravel', 'arrive', 'requestFollowUp', 'rejectWarrantyAsOutOfWarranty', 'uploadPartReceipt', 'confirmCashReceived'].forEach((name) => {
+    const fn = a[name];
+    if (typeof fn !== 'function') return;
+    a[name] = async (...args) => {
+      const key = `${name}:${typeof args[0] === 'object' ? 'new' : args[0]}`;
+      if (inFlight.current.has(key)) return false;
+      inFlight.current.add(key);
+      try { return await fn(...args); } finally { inFlight.current.delete(key); }
+    };
+  });
 
   const myCode = s.techProfile?.code || TECH_ME.code;
   const techRep = normalizeTechRep(s.techProfile || {});

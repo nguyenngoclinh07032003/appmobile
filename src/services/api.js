@@ -39,11 +39,17 @@ let currentToken = getStoredToken();
 
 // Refresh token của phiên mobile (POST /auth/mobile/login trả trong body, sống 7 ngày, đổi mới mỗi lần refresh).
 // - Bản native (iOS/Android): lưu bằng expo-secure-store (Keychain / Keystore) -> mở lại app vẫn còn phiên.
-// - Bản web (Expo web): localStorage để tải lại trang không phải đăng nhập lại.
+// - Bản web (Expo web): sessionStorage, MỖI TAB MỘT PHIÊN như session (authService). Trước đây để chung ở localStorage nên
+//   2 tab đăng nhập 2 tài khoản (Khách / Thợ) dùng nhầm refresh token của nhau. Tải lại trang trong cùng tab vẫn giữ phiên.
 const IS_NATIVE = Platform.OS === 'ios' || Platform.OS === 'android';
+const webRefreshStore = () => (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
 const readRefresh = () => {
   if (IS_NATIVE) return null; // native đọc bất đồng bộ qua authTokens.restore()
-  try { return typeof localStorage !== 'undefined' ? localStorage.getItem(APP_CONFIG.refreshTokenStorageKey) : null; } catch (e) { return null; }
+  try {
+    // Dọn bản cũ để chung trong localStorage.
+    if (typeof localStorage !== 'undefined') localStorage.removeItem(APP_CONFIG.refreshTokenStorageKey);
+    return webRefreshStore()?.getItem(APP_CONFIG.refreshTokenStorageKey) || null;
+  } catch (e) { return null; }
 };
 const writeRefresh = (token) => {
   if (IS_NATIVE) {
@@ -53,12 +59,15 @@ const writeRefresh = (token) => {
     return;
   }
   try {
-    if (typeof localStorage === 'undefined') return;
-    if (token) localStorage.setItem(APP_CONFIG.refreshTokenStorageKey, token);
-    else localStorage.removeItem(APP_CONFIG.refreshTokenStorageKey);
+    const store = webRefreshStore();
+    if (!store) return;
+    if (token) store.setItem(APP_CONFIG.refreshTokenStorageKey, token);
+    else store.removeItem(APP_CONFIG.refreshTokenStorageKey);
   } catch (e) { /* bỏ qua lỗi storage */ }
 };
 let currentRefresh = readRefresh();
+// Phiên hết hạn / bị thu hồi (refresh thất bại): app đăng ký hàm này để đưa người dùng về màn đăng nhập.
+let onSessionExpired = null;
 
 export const authTokens = {
   get: () => currentToken || getStoredToken(),
@@ -77,6 +86,8 @@ export const authTokens = {
     currentRefresh = null;
     writeRefresh(null);
   },
+  // Đăng ký hàm chạy khi phiên hết hạn (refresh token hết hạn / bị thu hồi).
+  onExpired: (fn) => { onSessionExpired = typeof fn === 'function' ? fn : null; },
   // Native: nạp refresh token đã lưu trong SecureStore vào bộ nhớ (gọi 1 lần khi mở app). Trả true nếu có.
   restore: async () => {
     if (!IS_NATIVE) return Boolean(authTokens.getRefresh());
@@ -102,7 +113,10 @@ async function refreshSession() {
           authTokens.setRefresh(res.data.refresh_token);
           return true;
         }
-        if (res.status === 401 || res.status === 400) authTokens.clear();
+        if (res.status === 401 || res.status === 400) {
+          authTokens.clear();
+          try { onSessionExpired?.(); } catch (e) { /* bỏ qua */ }
+        }
         return false;
       })
       .finally(() => { refreshing = null; });
@@ -210,30 +224,7 @@ async function rawRequest(endpoint, options = {}) {
     if (timer) clearTimeout(timer);
     const isTimeout = err?.name === 'AbortError';
 
-    // Nếu gọi local (5173 hoặc 5174) bị lỗi kết nối, tự động thử fallback sang Cloud Server.
-    // Khi đã chỉ định EXPO_PUBLIC_API_URL (backend test) thì không chuyển, để không ghi nhầm vào server thật.
-    if (baseUrl !== API_ENDPOINTS.cloud && !isTimeout && !API_URL_OVERRIDDEN) {
-      try {
-        const cloudUrl = `${API_ENDPOINTS.cloud}${cleanPath}`;
-        const cloudRes = await fetch(cloudUrl, {
-          method,
-          headers: reqHeaders,
-          body: body ? JSON.stringify(body) : undefined,
-        });
-        if (cloudRes.ok) {
-          const cloudData = await cloudRes.json();
-          return {
-            ok: true,
-            status: cloudRes.status,
-            code: cloudData?.code || 'OK',
-            message: cloudData?.message || 'Thành công (Cloud)',
-            data: cloudData?.data ?? cloudData,
-          };
-        }
-      } catch (fallbackErr) {
-        // Bỏ qua lỗi fallback
-      }
-    }
+    // Không tự gửi lại sang server khác khi lỗi mạng: tránh gửi Authorization ra host khác và ghi trùng (POST 2 lần).
 
     return {
       ok: false,
@@ -510,6 +501,10 @@ export const hrmssApi = {
     return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/follow-up`, {
       method: 'POST', body: { reason, ...(remainingWork ? { remaining_work: remainingWork } : {}) }, targetPort,
     });
+  },
+  // Thợ xác nhận đã nhận tiền mặt của khách (khách bấm 'đã trả' chỉ tạo khoản chờ xác nhận).
+  async confirmCashReceived(jobId, targetPort = null) {
+    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/payments/confirm-cash`, { method: 'POST', targetPort });
   },
   // Hóa đơn của việc (số tiền mặt cần thu).
   async getTechnicianJobBill(jobId, targetPort = null) {

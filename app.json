@@ -21,7 +21,14 @@
       "web"
     ],
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "HRMSS cần truy cập thư viện ảnh để bạn đính kèm ảnh thiết bị, ảnh minh chứng và biên lai.",
+          "cameraPermission": "HRMSS cần dùng camera để chụp ảnh thiết bị, ảnh minh chứng và biên lai."
+        }
+      ]
     ]
   }
 }

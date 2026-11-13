@@ -488,7 +488,7 @@ export function OrderScreen({ params }) {
                 <Text style={[ui.meta, { color: C.green, fontWeight: '700', marginTop: 2 }]}>Đã check-in đúng chính sách giờ hẹn</Text>
               ) : null}
             </View>
-            <IconBtn icon="phone-call" onPress={() => Linking.openURL(`tel:${o.tech.phone || ''}`).catch(() => {})} style={{ backgroundColor: C.greenSoft }} label="Gọi thợ" />
+            <IconBtn icon="phone-call" onPress={() => Linking.openURL(`tel:${String(o.tech.phone || '').replace(/[^\d+]/g, '')}`).catch(() => {})} style={{ backgroundColor: C.greenSoft }} label="Gọi thợ" />
           </Card>
         ) : active ? (
           <Card style={{ marginTop: 12, backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' }}>
@@ -708,6 +708,8 @@ export function OrderScreen({ params }) {
                   ? ((o.inspectionFee || 0) > 0 ? 'Cần thanh toán phí KT' : 'Đã huỷ (0đ)')
               : o.report?.paid
                     ? (isQRPayment(o) ? 'Đã chuyển khoản VietQR' : 'Đã thanh toán')
+                    : o.bill?.cashClaimPending
+                      ? 'Đã báo trả tiền mặt · chờ thợ xác nhận'
                     : o.status === 'partially_paid'
                       ? 'Đã trả một phần · Còn thiếu'
                       : o.status === 'pending_payment'
@@ -768,7 +770,7 @@ export function OrderScreen({ params }) {
                 )}
               </View>
             ) : null}
-            {['pending_payment', 'partially_paid'].includes(o.status) && !o.report?.paid && !isQRPayment(o) ? (
+            {['pending_payment', 'partially_paid'].includes(o.status) && !o.report?.paid && !isQRPayment(o) && !o.bill?.cashClaimPending ? (
               <Btn
                 title="Xác nhận đã thanh toán tiền mặt"
                 icon="banknote"
@@ -842,7 +844,7 @@ export function OrderScreen({ params }) {
         <View style={mx.dock}>
           {canEdit ? <Btn title="Sửa yêu cầu" icon="pencil" variant="soft" style={{ flex: 1 }} onPress={openEdit} /> : null}
           {canCancel ? <Btn title="Huỷ đơn" variant="dangerSoft" style={{ flex: 1 }} onPress={handlePressCancel} /> : null}
-          {['pending_payment', 'partially_paid'].includes(o.status) && !o.report?.paid && !isQRPayment(o) && o.kind !== 'warranty' && o.kind !== 'followup' ? (
+          {['pending_payment', 'partially_paid'].includes(o.status) && !o.report?.paid && !isQRPayment(o) && !o.bill?.cashClaimPending && o.kind !== 'warranty' && o.kind !== 'followup' ? (
             <Btn
               title="Xác nhận đã trả tiền"
               icon="credit-card"

@@ -201,6 +201,8 @@ export const mapBackendBill = (summary) => {
     paidAmount: Number(summary.paid_amount) || 0,
     remainingAmount: Number(summary.remaining_amount) || 0,
     paymentStatus: summary.payment_status || 'UNPAID', // UNPAID | PENDING | PARTIALLY_PAID | PAID | NOTHING_TO_PAY
+    // Khách đã báo trả tiền mặt, chờ thợ / văn phòng xác nhận đã nhận (chưa tính là đã trả).
+    cashClaimPending: Boolean(summary.cash_claim_pending),
     paymentMethod: summary.payment_method || null,
     cashToCollect: summary.cash_to_collect != null ? Number(summary.cash_to_collect) : null,
   };
