@@ -25,7 +25,7 @@ import { TrackingCard } from '../../components/order';
 import { tx } from './components/techStyles';
 import { useBusyRunner } from './components/useBusyRunner';
 import { useNextAction } from './components/nextAction';
-import { useQuoteDraft } from './components/useQuoteDraft';
+import { useQuoteDraft, isOnSiteQuote } from './components/useQuoteDraft';
 import { QuoteEditor } from './components/QuoteEditor';
 import { CompleteSheet } from './components/CompleteSheet';
 
@@ -1047,7 +1047,9 @@ export function TechJobScreen({ params }) {
   if (!o) return <View style={{ flex: 1 }}><TopBar title="Không tìm thấy công việc" /></View>;
   const meta = STATUS_META[o.status] || STATUS_META.pending;
   const step = techStepIndexOf(o.status);
-  const mine = o.tech?.code === (s.techProfile?.code || TECH_ME.code);
+  // Việc của mình: phân công đang ACTIVE (server xác nhận). So mã thợ chỉ để dự phòng: mã trong hồ sơ có thể
+  // chưa nạp / vừa đổi so với lúc tải việc -> khóa nhầm việc của chính mình ("do thợ khác phụ trách").
+  const mine = Boolean(o.assignmentActive) || o.tech?.code === (s.techProfile?.code || TECH_ME.code);
   const editable = mine || o.status === 'pending';
   const techDesc = TECH_STATUS_DESC[o.status] || '';
   const canRelease = mine && ['confirmed', 'onway', 'diagnosing', 'quoted', 'repairing'].includes(o.status);
@@ -1075,7 +1077,10 @@ export function TechJobScreen({ params }) {
 
   // ---- báo giá ----
   const qTotal = draft.total;
-  const diff = qTotal - bookedValue(o);
+  // Tại nhà khách form chỉ chứa phần phát sinh (cộng thêm vào giá đã đặt) -> phát sinh = tổng các dòng.
+  // Trước khi xuất phát báo giá thay giá đã đặt -> chênh lệch = tổng báo giá − giá đã đặt.
+  const onSiteQuote = isOnSiteQuote(o);
+  const diff = onSiteQuote ? qTotal : qTotal - bookedValue(o);
   const mats = MATERIALS.filter((m) => matAll || m.category === 'all' || cats.includes(m.category));
   const addPart = (m) => {
     if (matMode === 'usage') { a.addMaterial(o.code, m); setMatMode(null); return; }
@@ -1094,11 +1099,17 @@ export function TechJobScreen({ params }) {
       u.alert('Thiếu đề xuất', 'Ghi đề xuất xử lý trước khi gửi báo giá.', '🧾');
       return;
     }
+    const text = [symptoms, diag].filter(Boolean).join('. ');
+    // Tại nhà khách không có phát sinh: không gửi báo giá (nếu gửi, dịch vụ đã đặt bị tính 2 lần), chỉ ghi chẩn đoán rồi làm.
+    if (onSiteQuote && !draft.lines.length) {
+      run(K.quote, () => a.startRepairWithoutQuote(o.code, { diagnosis: text, symptoms, recommendation: reco }))
+        .then((res) => { if (succeeded(res)) draft.markSaved(); });
+      return;
+    }
     if (!draft.lines.length) {
       u.alert('Báo giá trống', 'Thêm ít nhất một dòng công / vật tư trước khi gửi.', '🧾');
       return;
     }
-    const text = [symptoms, diag].filter(Boolean).join('. ');
     run(K.quote, () => a.submitQuote(o.code, {
       diagnosis: text,
       symptoms,
@@ -1445,8 +1456,12 @@ export function TechJobScreen({ params }) {
                   Đã gửi {fmtDateTime(o.quote.at)}
                   {o.quote.remindedAt ? ` · Nhắc lần cuối ${fmtDateTime(o.quote.remindedAt)}` : ''}
                 </Text>
+                {/* Báo giá đang chờ khách duyệt (SENT): server không nhận báo giá mới (409 QUOTATION_PENDING) -> chỉ nhắc khách.
+                    Sửa lại báo giá khi khách đã yêu cầu báo giá lại. */}
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Btn title="Sửa báo giá / Phát sinh" icon="pencil" variant="outline" small style={{ flex: 1.15 }} onPress={() => a.reopenQuote(o.code)} />
+                  {o.quote.revisionRequested ? (
+                    <Btn title="Sửa báo giá theo yêu cầu khách" icon="pencil" variant="outline" small style={{ flex: 1.15 }} onPress={() => a.reopenQuote(o.code)} />
+                  ) : null}
                   <Btn title="Nhắc khách duyệt" icon="send" variant="soft" small style={{ flex: 1 }} onPress={() => a.remindQuote(o.code)} />
                 </View>
               </View>
@@ -1724,10 +1739,10 @@ export function TechJobScreen({ params }) {
       {mine && o.status === 'diagnosing' ? (
         <View style={tx.dock}>
           <View style={{ flex: 1 }}>
-            <Text style={ui.meta}>Tổng báo giá</Text>
+            <Text style={ui.meta}>{onSiteQuote ? 'Phát sinh thêm' : 'Tổng báo giá'}</Text>
             <Text style={[ui.price, { fontSize: 18 }]}>{formatVND(qTotal)}</Text>
           </View>
-          <Btn title={busyQuote ? 'Đang gửi…' : diff > 0 ? 'Gửi báo giá cho khách' : 'Xác nhận & bắt đầu'} style={{ flex: 2 }} disabled={busyQuote} onPress={sendQuote} />
+          <Btn title={busyQuote ? 'Đang gửi…' : draft.lines.length ? 'Gửi báo giá phát sinh' : 'Xác nhận & bắt đầu'} style={{ flex: 2 }} disabled={busyQuote} onPress={sendQuote} />
         </View>
       ) : null}
       {mine && o.status === 'repairing' ? (

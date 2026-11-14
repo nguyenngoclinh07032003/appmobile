@@ -8,6 +8,7 @@ import { useApp, bookedValue } from '../../../context';
 import { Tap, Btn, Card, Chip, Badge, Field, Stepper, ui, AppIcon } from '../../../components';
 import { pickImage, pickCamera } from '../../../utils/media';
 import { tx } from './techStyles';
+import { isOnSiteQuote } from './useQuoteDraft';
 
 export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, evidence }) {
   const { a, ui: u } = useApp();
@@ -29,6 +30,10 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
   const extraTotal = extraItems.reduce((sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 1), 0);
   const diff = extraTotal;
   const qTotal = draft.total;
+  // Tại nhà khách: báo giá chỉ gồm phần phát sinh, CỘNG THÊM vào giá đã đặt -> khách trả = đã đặt + phát sinh.
+  // Trước khi xuất phát: báo giá THAY giá đã đặt -> khách trả = tổng báo giá.
+  const onSite = isOnSiteQuote(o);
+  const customerPays = onSite ? booked + extraTotal : qTotal;
 
   const handleAddCustomFee = () => {
     const name = customFeeName.trim();
@@ -306,10 +311,17 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
           <Text style={{ color: diff > 0 ? C.orange : C.muted }}>Chi phí phát sinh thêm</Text>
           <Text style={{ fontWeight: '700', color: diff > 0 ? C.orange : C.green }}>{diff > 0 ? `+${formatVND(diff)}` : '0 đ'}</Text>
         </View>
-        <View style={tx.totalRow}><Text style={{ fontWeight: '800', color: C.ink, fontSize: 15 }}>Tổng báo giá</Text><Text style={[ui.price, { fontSize: 20 }]}>{formatVND(qTotal)}</Text></View>
+        <View style={tx.totalRow}>
+          <Text style={{ fontWeight: '800', color: C.ink, fontSize: 15 }}>{onSite ? 'Khách phải trả (tạm tính)' : 'Tổng báo giá'}</Text>
+          <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(customerPays)}</Text>
+        </View>
         <View style={[tx.note, { backgroundColor: diff > 0 ? C.goldSoft : C.greenSoft }]}>
           <Text style={{ color: diff > 0 ? C.goldInk : C.green, fontWeight: '700', lineHeight: 19 }}>
-            {diff > 0 ? `Phát sinh ${formatVND(diff)} → khách cần duyệt báo giá trên app trước khi làm.` : 'Không phát sinh thêm chi phí → đúng theo giá dịch vụ khách đã đặt ban đầu.'}
+            {diff > 0
+              ? `Phát sinh ${formatVND(diff)} → khách cần duyệt báo giá trên app trước khi làm.`
+              : onSite
+                ? 'Không có phát sinh → bấm "Xác nhận & bắt đầu" để sửa theo đúng dịch vụ khách đã đặt (không cần báo giá).'
+                : 'Không phát sinh thêm chi phí → đúng theo giá dịch vụ khách đã đặt ban đầu.'}
           </Text>
         </View>
       </Card>

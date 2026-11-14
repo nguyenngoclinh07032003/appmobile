@@ -106,7 +106,9 @@ const mapKnownStatus = (requestStatus, visitStatus, hasApprovedQuote = false, ha
     if (hasApprovedQuote) return 'repairing';
     return 'diagnosing';
   }
-  if (st === 'DIAGNOSED_PENDING_QUOTATION') return 'quoted';
+  // Chờ báo giá nhưng KHÔNG có báo giá SENT (khách vừa yêu cầu báo giá lại / thợ chưa gửi được):
+  // thợ cần lập lại báo giá -> 'diagnosing'; khách không thấy nút duyệt (server sẽ trả 404 QUOTATION_NOT_FOUND).
+  if (st === 'DIAGNOSED_PENDING_QUOTATION') return hasPendingQuote ? 'quoted' : 'diagnosing';
   if (st === 'READY_FOR_REPAIR') return 'repairing';
   if (st === 'PENDING_PAYMENT') return 'pending_payment';
   if (st === 'PARTIALLY_PAID_RECEIVABLE') return 'partially_paid';
@@ -256,7 +258,8 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     : [];
   const history = timeline.length > 0
     ? timeline.map((h) => ({
-        status: mapBackendStatusToAppStatus(h.new_status, null, quote?.approved, false),
+        // Lịch sử: bước DIAGNOSED_PENDING_QUOTATION luôn là bước "chờ duyệt báo giá" của đơn.
+        status: mapBackendStatusToAppStatus(h.new_status, null, quote?.approved, true),
         at: h.changed_at ? new Date(h.changed_at).getTime() : createdAt,
         note: h.reason || '',
       }))
@@ -375,7 +378,9 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     else if (job.completed_at) status = 'done';
     else return null;
   } else {
-    status = mapBackendStatusToAppStatus(rs, visit.visit_status, quote?.approved, hasPendingQuote);
+    // Đã ghi chẩn đoán mà đơn vẫn IN_PROGRESS = thợ xác nhận không có phát sinh, đang sửa (không cần báo giá).
+    const decidedNoQuote = (job.diagnoses || []).length > 0;
+    status = mapBackendStatusToAppStatus(rs, visit.visit_status, quote?.approved || decidedNoQuote, hasPendingQuote);
   }
   const statusUnknown = !isEnded && !isKnownBackendStatus(rs);
   // "Đang đến": đã bấm xuất phát (travel_started_at) mà chưa check-in (arrived_at) -> giữ đúng sau khi cài lại / đổi máy.
@@ -413,6 +418,8 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     code: req.request_code,
     dbRequestId: req.request_id,
     dbAssignmentId: job.assignment_id,
+    // GET /technician/jobs chỉ trả việc của chính thợ đang đăng nhập: phân công ACTIVE = việc mình đang phụ trách.
+    assignmentActive: job.assignment_status === 'ACTIVE',
     dbVisitNumber: visit.visit_number || 1,
     backendStatus: req.request_status,
     kind: kindOf(req),
@@ -581,7 +588,6 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         code: ro.code || lo.code,
         status: keepEditing ? lo.status : (keepOnway ? 'onway' : (keepRepairing ? 'repairing' : ro.status)),
         quoteEditing: keepEditing,
-        ...(keepEditing ? { quote: lo.quote } : {}),
         tracking: lo.tracking || ro.tracking,
         checkIn: lo.checkIn || ro.checkIn,
         chat: lo.chat?.length ? lo.chat : (ro.chat || []),
@@ -599,7 +605,8 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
           return [...base, ...localOnly];
         })(),
         materials: ro.materials !== undefined ? ro.materials : (lo.materials || []),
-        quote: ro.quote || lo.quote || null,
+        // Đang sửa lại báo giá thì giữ bản trên máy (trước đây dòng này ghi đè mất bản đang sửa).
+        quote: keepEditing ? lo.quote : (ro.quote || lo.quote || null),
         rating: ro.rating || lo.rating || null,
         report: ro.report || lo.report || null,
       });
