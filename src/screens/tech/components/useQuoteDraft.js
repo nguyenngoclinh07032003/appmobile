@@ -20,8 +20,14 @@ export const quoteSignature = (q) => {
   ].join('|');
 };
 
+// Thợ đã check-in tại nhà khách: mọi báo giá gửi lúc này là báo giá PHÁT SINH (server: SUPPLEMENTAL), được
+// CỘNG THÊM vào giá khách đã đặt -> chỉ chứa phần làm thêm, không chứa lại dịch vụ đã đặt (server trả 400
+// QUOTATION_DUPLICATES_BOOKED_SERVICE, bản server cũ thì tính tiền 2 lần).
+export const isOnSiteQuote = (o) => Boolean(o?.arrivedAt || o?.checkIn || ['diagnosing', 'repairing'].includes(o?.status));
+
 export function draftFromOrder(o) {
   const q = o?.quote;
+  const onSite = isOnSiteQuote(o);
   const tags = splitTags(q?.symptoms);
   let diagnosis = q?.diagnosis || '';
   // Lúc gửi, chẩn đoán được ghép "triệu chứng. kết luận" -> tách lại để không nhân đôi phần triệu chứng.
@@ -31,6 +37,15 @@ export function draftFromOrder(o) {
   const items = o?.items || [];
   const bookedNameSet = new Set(items.map((it) => String(it.name || '').trim().toLowerCase()));
   const bookedIdSet = new Set(items.map((it) => it.id));
+
+  // Tại nhà khách: chỉ nạp lại dòng của báo giá phát sinh khách vừa yêu cầu sửa; còn lại bắt đầu trống.
+  if (onSite) {
+    const revising = q?.revisionRequested && q.quotationType === 'SUPPLEMENTAL' ? (q.lines || []) : [];
+    const lines = revising
+      .filter((l) => !(l.type !== 'part' && !l.matId && bookedNameSet.has(String(l.name || '').trim().toLowerCase())))
+      .map((l, idx) => ({ ...l, key: l.matId || l.key || `q_${idx}`, isOriginal: false }));
+    return { tags, diagnosis, recommendation: q?.recommendation || '', lines };
+  }
 
   const lines = q?.lines?.length
     ? q.lines.map((l, idx) => {

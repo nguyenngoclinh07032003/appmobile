@@ -590,10 +590,8 @@ export const hrmssApi = {
   async submitQuotation(id, payload) {
     return apiRequest(`/technician/jobs/${id}/quotation`, {
       method: 'POST',
-      body: {
-        quotation_type: payload.quotation_type || 'INITIAL',
-        items: payload.items || [],
-      },
+      // Loại báo giá do server tự xác định (trước khi xuất phát / sau check-in), app không gửi.
+      body: { items: payload.items || [] },
     });
   },
   async recordMaterialUsage(id, { material_id, used_quantity = 1, notes = null }) {
