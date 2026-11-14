@@ -22,6 +22,10 @@ export const API_BASE_URL = ENV_API_URL || API_ENDPOINTS.cloud;
 // Môi trường hiển thị cho người phát triển: "production" khi đang trỏ server thật.
 export const API_ENV = API_URL_OVERRIDDEN ? 'custom' : 'production';
 
+// Cấu hình Socket.IO kết nối realtime
+export const SOCKET_BASE_URL = API_BASE_URL.replace(/\/api\/v1\/?$/, '');
+export const SOCKET_PATH = '/api/socket.io';
+
 // Chạy bản phát triển (expo start) mà vẫn trỏ server thật: cảnh báo rõ để tránh ghi dữ liệu thử lên server thật.
 if (typeof __DEV__ !== 'undefined' && __DEV__ && !API_URL_OVERRIDDEN) {
   // eslint-disable-next-line no-console

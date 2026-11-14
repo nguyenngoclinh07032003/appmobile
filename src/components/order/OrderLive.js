@@ -30,6 +30,18 @@ export function TrackingCard({ order, compact }) {
   aRef.current = a;
 
   useEffect(() => {
+    const reqId = o.dbRequestId || o.id;
+    if (reqId) {
+      aRef.current?.joinOrderRoom?.(reqId);
+    }
+    return () => {
+      if (reqId) {
+        aRef.current?.leaveOrderRoom?.(reqId);
+      }
+    };
+  }, [o.dbRequestId, o.id]);
+
+  useEffect(() => {
     if (!shouldTick) return undefined;
     let cancelled = false;
     let running = false;

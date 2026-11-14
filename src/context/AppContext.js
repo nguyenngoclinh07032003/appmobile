@@ -11,6 +11,15 @@ import {
 import { IS_WEB_STORAGE, readJsonSync, readJson, writeJson, removeItem as removeStorageItem } from '../services/storage';
 import { hrmssApi, authTokens } from '../services/api';
 import { playNotificationSound, isSoundMuted, toggleSoundMuted } from '../services/soundService';
+import {
+  initSocket,
+  disconnectSocket,
+  subscribeSocketEvent,
+  joinOrderRoom,
+  leaveOrderRoom,
+  sendTechLocation,
+  isSocketConnected,
+} from '../services/socketService';
 import { API_BASE_URL } from '../constants/config';
 import { authErrorMessage } from '../utils/authErrorMessages';
 import { readTechnicianSpecialties } from '../utils/techProfile';
@@ -972,11 +981,72 @@ export function AppProvider({ children }) {
     };
   }, [s.auth?.id]);
 
+  // Kết nối Socket.IO thời gian thực khi có người dùng đăng nhập
+  useEffect(() => {
+    const token = authTokens.get();
+    initSocket(token);
+
+    const unsubOrder = subscribeSocketEvent('order:update', () => {
+      syncFromBackend();
+      playNotificationSound('notification');
+    });
+
+    const unsubStatus = subscribeSocketEvent('order:status_update', () => {
+      syncFromBackend();
+      playNotificationSound('notification');
+    });
+
+    const unsubQuote = subscribeSocketEvent('order:quote_decision', () => {
+      syncFromBackend();
+      playNotificationSound('notification');
+    });
+
+    const unsubPayment = subscribeSocketEvent('payment:success', () => {
+      syncFromBackend();
+      playNotificationSound('success');
+      ui.toast('Đã nhận thanh toán thành công!', '💰');
+    });
+
+    const unsubLocation = subscribeSocketEvent('tech:location_update', (data) => {
+      if (!data?.requestId) return;
+      setS((prev) => {
+        const idx = prev.orders.findIndex(
+          (o) => String(o.dbRequestId) === String(data.requestId) || String(o.id) === String(data.requestId)
+        );
+        if (idx < 0) return prev;
+        const cur = prev.orders[idx];
+        const updated = {
+          ...cur,
+          tracking: {
+            ...(cur.tracking || {}),
+            lat: data.lat,
+            lng: data.lng,
+            etaMin: data.etaMin,
+            updatedAt: data.updatedAt || Date.now(),
+            label: 'Vị trí trực tiếp của thợ (Realtime)',
+          },
+        };
+        const next = [...prev.orders];
+        next[idx] = updated;
+        return { ...prev, orders: next };
+      });
+    });
+
+    return () => {
+      unsubOrder();
+      unsubStatus();
+      unsubQuote();
+      unsubPayment();
+      unsubLocation();
+    };
+  }, [s.auth?.id]);
+
   const inFlight = useRef(new Set()); // thao tác ghi đang chạy (chống bấm đúp)
   // Phiên hết hạn / bị thu hồi (refresh token hết hạn): xoá dữ liệu tài khoản trên máy, về màn chính và báo đăng nhập lại.
   // Trước đây token bị xoá nhưng app vẫn "đã đăng nhập", mọi thao tác chỉ báo "chưa đồng bộ".
   useEffect(() => {
     authTokens.onExpired(() => {
+      disconnectSocket();
       clearSession();
       setS((prev) => (prev.auth ? { ...prev, ...signedOutState(prev) } : prev));
       setStack([]);
@@ -1365,6 +1435,7 @@ export function AppProvider({ children }) {
         const loc = await getCheckInLocation();
         if (loc) {
           hrmssApi.updateTechnicianLocation({ latitude: loc.lat, longitude: loc.lng, location_accuracy: loc.accuracy, location_sharing_enabled: true }).catch(() => {});
+          sendTechLocation(o.dbRequestId || o.id, { lat: loc.lat, lng: loc.lng, etaMin: o.tracking?.etaMin || 15 });
           updateOrder(code, (ord) => ({ order: { ...ord, tracking: { ...(ord.tracking || {}), lat: loc.lat, lng: loc.lng, accuracy: loc.accuracy, updatedAt: Date.now(), label: 'Đang chia sẻ vị trí với khách' } } }));
         }
         return;
@@ -2194,6 +2265,7 @@ export function AppProvider({ children }) {
     clearSearches: () => up(() => ({ searches: [] })),
 
     logout: () => {
+      disconnectSocket();
       hrmssApi.logout();
       clearSession();
       up((p) => signedOutState(p));
@@ -2215,6 +2287,7 @@ export function AppProvider({ children }) {
       }
       const currentId = s.auth?.id;
       if (currentId) deleteAccountById(currentId);
+      disconnectSocket();
       hrmssApi.logout();
       clearSession();
       up((p) => {
@@ -2230,6 +2303,7 @@ export function AppProvider({ children }) {
       return true;
     },
     wipeLocalData: () => {
+      disconnectSocket();
       hrmssApi.logout();
       clearSession();
       storage.clear();
@@ -2245,6 +2319,12 @@ export function AppProvider({ children }) {
       return !next;
     },
     isSoundMuted,
+    // Socket.IO helpers
+    joinOrderRoom,
+    leaveOrderRoom,
+    sendTechLocation,
+    isSocketConnected,
+    subscribeSocketEvent,
   };
   // Chống bấm đúp: cùng một thao tác ghi trên cùng một đơn đang chạy thì lần bấm sau bị bỏ qua
   // (tránh đặt 2 đơn, nhận việc 2 lần, xác nhận trả tiền 2 lần...). Dùng ref nên chặn được cả 2 lần bấm trong cùng 1 nhịp.
