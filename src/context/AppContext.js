@@ -10,6 +10,7 @@ import {
 } from '../services/authService';
 import { IS_WEB_STORAGE, readJsonSync, readJson, writeJson, removeItem as removeStorageItem } from '../services/storage';
 import { hrmssApi, authTokens } from '../services/api';
+import { playNotificationSound, isSoundMuted, toggleSoundMuted } from '../services/soundService';
 import { API_BASE_URL } from '../constants/config';
 import { authErrorMessage } from '../utils/authErrorMessages';
 import { readTechnicianSpecialties } from '../utils/techProfile';
@@ -554,30 +555,42 @@ export function AppProvider({ children }) {
   }, [toastMsg]);
 
   const ui = {
-    toast: (text, icon = '✓', tone) => setToastMsg({ text, icon, tone, id: uid() }),
+    toast: (text, icon = '✓', tone) => {
+      playNotificationSound(tone === 'danger' ? 'alert' : 'success');
+      setToastMsg({ text, icon, tone, id: uid() });
+    },
     toastMsg,
-    dialog: (cfg) => setDialogCfg(cfg),
+    dialog: (cfg) => {
+      if (cfg && cfg.danger) playNotificationSound('alert');
+      setDialogCfg(cfg);
+    },
     dialogCfg,
     closeDialog: () => setDialogCfg(null),
-    confirm: (title, message, onOk, okLabel = 'Đồng ý', danger = false) => setDialogCfg({
-      title,
-      message,
-      danger,
-      tone: danger ? 'danger' : undefined,
-      fallbackTone: danger ? 'danger' : 'warning',
-      actions: [
-        { label: 'Huỷ', variant: 'ghost' },
-        { label: okLabel, variant: danger ? 'danger' : 'auto', onPress: onOk },
-      ],
-    }),
-    alert: (title, message, icon, tone) => setDialogCfg({
-      title,
-      message,
-      icon,
-      tone,
-      fallbackTone: 'warning',
-      actions: [{ label: 'Đã hiểu', variant: 'auto' }],
-    }),
+    confirm: (title, message, onOk, okLabel = 'Đồng ý', danger = false) => {
+      if (danger) playNotificationSound('alert');
+      setDialogCfg({
+        title,
+        message,
+        danger,
+        tone: danger ? 'danger' : undefined,
+        fallbackTone: danger ? 'danger' : 'warning',
+        actions: [
+          { label: 'Huỷ', variant: 'ghost' },
+          { label: okLabel, variant: danger ? 'danger' : 'auto', onPress: onOk },
+        ],
+      });
+    },
+    alert: (title, message, icon, tone) => {
+      playNotificationSound(tone === 'danger' ? 'alert' : 'notification');
+      setDialogCfg({
+        title,
+        message,
+        icon,
+        tone,
+        fallbackTone: 'warning',
+        actions: [{ label: 'Đã hiểu', variant: 'auto' }],
+      });
+    },
     call: () => setDialogCfg({
       icon: '📞',
       tone: 'info',
@@ -592,8 +605,14 @@ export function AppProvider({ children }) {
   };
 
   // ------------------------- Nghiệp vụ -------------------------
-  const pushNotif = (prev, n) => [{ id: uid(), at: Date.now(), read: false, ...n }, ...prev.notifications].slice(0, 50);
-  const pushTech = (prev, n) => [{ id: uid(), at: Date.now(), read: false, ...n }, ...(prev.techNotifs || [])].slice(0, 50);
+  const pushNotif = (prev, n) => {
+    playNotificationSound('notification');
+    return [{ id: uid(), at: Date.now(), read: false, ...n }, ...prev.notifications].slice(0, 50);
+  };
+  const pushTech = (prev, n) => {
+    playNotificationSound('notification');
+    return [{ id: uid(), at: Date.now(), read: false, ...n }, ...(prev.techNotifs || [])].slice(0, 50);
+  };
   const withStatus = (o, status, now, extra = {}) => ({ ...o, ...extra, status, history: [...o.history, { status, at: now }] });
   // Cập nhật 1 đơn + đẩy thông báo cho khách (đúng tài khoản đặt đơn) và/hoặc thợ
   const updateOrder = (code, fn) => up((p) => {
@@ -2219,6 +2238,13 @@ export function AppProvider({ children }) {
       setTab('home');
       ui.toast('Đã xoá dữ liệu trên thiết bị');
     },
+    playNotificationSound,
+    toggleSound: () => {
+      const next = toggleSoundMuted();
+      ui.toast(next ? 'Đã tắt âm thanh thông báo' : 'Đã bật âm thanh thông báo', next ? 'volume-x' : 'volume-2');
+      return !next;
+    },
+    isSoundMuted,
   };
   // Chống bấm đúp: cùng một thao tác ghi trên cùng một đơn đang chạy thì lần bấm sau bị bỏ qua
   // (tránh đặt 2 đơn, nhận việc 2 lần, xác nhận trả tiền 2 lần...). Dùng ref nên chặn được cả 2 lần bấm trong cùng 1 nhịp.

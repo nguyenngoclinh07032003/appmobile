@@ -334,6 +334,7 @@ export function PersonalScreen() {
         </Group>
         <Group title="Hỗ trợ khách hàng">
           <ListRow icon="shield-check" label="Tra cứu bảo hành" onPress={() => nav.warranty(s.user.phone || '')} />
+          <ListRow icon={a.isSoundMuted?.() ? 'volume-x' : 'volume-2'} label="Âm thanh thông báo" value={a.isSoundMuted?.() ? 'Tắt' : 'Bật'} onPress={() => a.toggleSound?.()} />
           <ListRow icon="headphones" label="Trợ giúp" onPress={() => nav.push('help')} />
           <ListRow icon="message-circle-more" label="Liên hệ hỗ trợ" value={HOTLINE} onPress={u.call} last />
         </Group>
