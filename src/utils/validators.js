@@ -97,3 +97,33 @@ export function validateContactName(name) {
   return '';
 }
 
+
+/**
+ * Đọc ngày sinh dạng DD/MM/YYYY (chấp nhận D/M/YYYY) -> 'YYYY-MM-DD'.
+ * Trả null nếu sai định dạng hoặc ngày không có thật (vd 31/02, 29/02 năm không nhuận), ngày ở tương lai hoặc trước 1900.
+ */
+export function parseDobToIso(dob) {
+  const m = String(dob || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || year < 1900) return null;
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return null;
+  if (check.getTime() > Date.now()) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/** Ngày sinh hợp lệ (DD/MM/YYYY, ngày có thật, không ở tương lai). allowEmpty: chuỗi rỗng coi là hợp lệ (xoá ngày sinh). */
+export function isValidDob(dob, { allowEmpty = false } = {}) {
+  if (!String(dob || '').trim()) return Boolean(allowEmpty);
+  return parseDobToIso(dob) !== null;
+}
+
+/** Thông báo lỗi ngày sinh ('' nếu hợp lệ). */
+export function validateDob(dob, { allowEmpty = true } = {}) {
+  if (!String(dob || '').trim()) return allowEmpty ? '' : 'Vui lòng nhập ngày sinh.';
+  if (!/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(String(dob).trim())) return 'Ngày sinh phải có dạng DD/MM/YYYY.';
+  return parseDobToIso(dob) ? '' : 'Ngày sinh không hợp lệ (ngày/tháng không có thật hoặc ở tương lai).';
+}

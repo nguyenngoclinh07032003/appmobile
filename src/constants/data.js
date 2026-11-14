@@ -426,7 +426,7 @@ export const voucherDiscount = (voucher, subtotal) => {
 // ---------------------------------------------------------------------------
 // Hồ sơ thợ khi chưa tải được từ backend: để trống, không dùng tên/SĐT giả.
 // Chuyên môn do admin gán, nạp từ GET /technician/profile (readTechnicianSpecialties): specialties, specialtyCategoryIds, acceptsAllCategories.
-export const TECH_ME = { name: '', code: '', rating: null, jobs: 0, phone: '', area: '', skills: [], specialties: [], specialtyCategoryIds: [], acceptsAllCategories: false };
+export const TECH_ME = { name: '', code: '', rating: null, jobs: 0, phone: '', area: 'Hà Nội', skills: [], specialties: [], specialtyCategoryIds: [], acceptsAllCategories: false };
 
 // Trạng thái đơn đầy đủ (khách ↔ thợ)
 export const STATUS_FLOW = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'pending_payment', 'partially_paid', 'pending_review', 'done'];

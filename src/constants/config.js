@@ -5,12 +5,8 @@ export const API_ENDPOINTS = {
   // Server Cloud VPS chính thức
   cloud: "https://server.hrmss.cyou/api/v1",
 
-  // Server Backend Localhost Port 8080
-  local8080: "http://localhost:5000/api/v1",
-
-  // Server Localhost Port 5174 / 5173
-  local5174: "http://localhost:5174/api/v1",
-  local5173: "http://localhost:5173/api/v1",
+  // Backend chạy trên máy (cổng 5000) — dùng qua EXPO_PUBLIC_API_URL, xem hướng dẫn bên dưới.
+  local5000: "http://localhost:5000/api/v1",
 };
 
 // Chọn server theo biến môi trường (Expo nhúng sẵn biến EXPO_PUBLIC_* lúc build):

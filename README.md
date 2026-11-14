@@ -1,104 +1,155 @@
-# App đặt thợ tại nhà (React Native / Expo)
+# Thợ Minh Đức — App đặt thợ tại nhà (React Native / Expo)
 
-Bản thiết kế lại: giao diện mới, các chức năng liên kết với nhau, dữ liệu được lưu lại khi tải lại trang (web).
+**Thợ Minh Đức** là ứng dụng di động/web (Expo, chạy Android · iOS · Web) của hệ thống **HRMSS**
+(CTY CP CÔNG NGHỆ & DỊCH VỤ HRMSS). Một app phục vụ hai vai trò: **Khách hàng** (đặt lịch, duyệt báo giá,
+thanh toán, đánh giá, bảo hành) và **Kỹ thuật viên/Thợ** (nhận việc, check-in, chẩn đoán, báo giá, cập nhật tiến độ,
+hoàn thành, thu tiền).
 
-## Chạy
+App **đã kết nối backend thật (HRMSS API)** — mặc định `https://server.hrmss.cyou/api/v1`. Đơn hàng, tài khoản,
+thanh toán, hoá đơn… đều đọc/ghi qua API. Bộ nhớ cục bộ (localStorage/sessionStorage trên web, SecureStore trên điện thoại)
+chỉ dùng để giữ phiên đăng nhập/token và cache hiển thị, không còn là nơi lưu dữ liệu nghiệp vụ.
+
+Phiên bản: **3.0.8** (`app.json` · `package.json` · `src/constants/appPolicy.js`).
+
+---
+
+## 1. Chạy ở máy phát triển
+
 ```bash
 npm install
-npx expo start        # bấm w để mở trên web, hoặc quét QR bằng Expo Go
+# (tuỳ chọn) trỏ tới backend khác server thật:
+cp .env.example .env.local     # rồi sửa EXPO_PUBLIC_API_URL trong .env.local
+npx expo start -c              # -c xoá cache để nhận biến môi trường mới; bấm w để mở web, hoặc quét QR bằng Expo Go
 ```
 
-## Đăng nhập / Phân quyền
-App yêu cầu đăng nhập. Vai trò gắn với tài khoản, không chuyển chéo trong cùng phiên.
+`.env.local` (không đưa lên git):
 
-| Vai trò | Tài khoản demo | Mật khẩu | Link gợi ý |
-|---|---|---|---|
-| Khách hàng | `khachhang` | `123456` | `http://localhost:8081/?role=customer` |
-| Thợ | `thohrmss` | `123456` | `http://localhost:8081/?role=tech` |
+```env
+# Bỏ trống / không đặt -> server thật https://server.hrmss.cyou/api/v1
+EXPO_PUBLIC_API_URL=http://localhost:5000/api/v1
+# Điện thoại thật cùng mạng LAN: dùng IP máy chạy backend, ví dụ http://192.168.1.10:5000/api/v1
+```
 
-Mở **2 tab** để chạy song song Khách + Thợ. Phiên đăng nhập lưu theo tab (`sessionStorage`), đơn hàng dùng chung (`localStorage`) nên cập nhật hai bên.
+> Khi chạy `expo start` mà không đặt `EXPO_PUBLIC_API_URL`, app gọi **server thật** và in cảnh báo trên console
+> (xem `src/constants/config.js`). Hãy dùng backend trên máy khi thử nghiệm để không ghi dữ liệu thử lên server thật.
 
-## Cấu trúc chuẩn React Native
-Dự án được tổ chức theo chuẩn kiến trúc module hóa của React Native:
+Đăng nhập bằng tài khoản đã đăng ký trên hệ thống HRMSS (đăng ký Khách ngay trong app; tài khoản Thợ do văn phòng cấp).
+Vai trò gắn với tài khoản, không chuyển chéo trong cùng phiên. Trên web, mỗi tab một phiên (`sessionStorage`) nên có thể
+mở song song một tab Khách và một tab Thợ.
+
+## 2. Build bản Web bằng Docker (VPS)
+
+```bash
+cp .env.vps.example .env       # sửa INFRA_NETWORK, EXPO_PUBLIC_API_URL (để trống = server thật)
+docker network ls              # network của Caddy (external) PHẢI tồn tại trước; nếu chưa: docker network create web
+docker compose up -d --build
+```
+
+- `Dockerfile`: stage 1 `node:22-alpine` chạy `npx expo export --platform web` → stage 2 `nginx:1.27-alpine` phục vụ file tĩnh.
+- `nginx.conf`: cache dài cho `/_expo/` (file có hash), SPA fallback về `index.html`, security headers
+  (`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`).
+- `docker-compose.yml`: không publish port; Caddy gọi `http://hrmss-app:80` qua network chung; `mem_limit: 256m`.
+- File APK: chép vào `./downloads/` trên VPS → tải tại `https://<domain>/download/<ten-file>.apk`
+  (chỉ phục vụ file trực tiếp, không liệt kê thư mục; không cần build lại).
+- Đổi `EXPO_PUBLIC_API_URL` thì phải build lại (biến được nhúng vào bundle lúc build).
+
+Build web không dùng Docker: `npm run build:web` (kết quả ở `dist/`).
+
+## 3. Build APK Android (EAS)
+
+```bash
+npm install -g eas-cli
+eas login
+npm run build:apk              # = eas build -p android --profile preview  (APK cài trực tiếp)
+eas build -p android --profile production   # AAB cho Google Play, versionCode tự tăng (autoIncrement)
+```
+
+- URL backend của bản build nằm trong `eas.json` → `build.<profile>.env.EXPO_PUBLIC_API_URL`
+  (mặc định `https://server.hrmss.cyou/api/v1`). Muốn build trỏ tới server khác: sửa giá trị này ở profile tương ứng
+  (hoặc khai báo biến môi trường trên EAS) rồi build lại.
+- `appVersionSource: local`: `version` (3.0.8) và `android.versionCode` lấy từ `app.json`; profile `production`
+  có `autoIncrement: true` nên EAS tự tăng `versionCode` trong `app.json` mỗi lần build.
+- Quyền: camera/thư viện ảnh (ảnh thiết bị, minh chứng, biên lai) và **vị trí khi đang dùng app**
+  (`ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION` — check-in tại nhà khách, chia sẻ vị trí khi thợ đang di chuyển).
+  App **không** xin vị trí nền.
+
+## 4. Cấu trúc thư mục
 
 ```
 src/
-├── components/          # Reusable UI components
-│   ├── common/          # Các UI component dùng chung (Button, Card, Input, Sheet, Dialog, Toast...)
-│   └── order/           # Live tracking & chat card (TrackingCard, ChatCard)
-├── constants/           # Dữ liệu tĩnh, cấu hình & chính sách nghiệp vụ
-│   ├── config.js        # Cấu hình API và kết nối Backend HRMSS
-│   ├── data.js          # Danh mục dịch vụ, giá, voucher, FAQ, linh kiện
-│   └── techPolicy.js    # Chính sách, điểm thưởng/phạt kỹ thuật viên
-├── context/             # State Management (React Context)
-│   └── AppContext.js    # Quản lý toàn bộ state toàn cục, giỏ hàng, đơn hàng, auth, thông báo
-├── navigation/          # Quản lý điều hướng & khung ứng dụng
-│   ├── AppNavigator.js  # Điều hướng stack/tab, Shell, khung điện thoại desktop
-│   ├── BottomNav.js     # Thanh điều hướng dưới đáy (Bottom navigation bar)
-│   └── routes.js        # Định nghĩa danh sách routes & tabs (Khách + Thợ)
-├── screens/             # Màn hình ứng dụng (phân chia theo domain / chức năng)
-│   ├── auth/            # Màn hình Đăng nhập / Đăng ký
-│   ├── home/            # Trang chủ Khách hàng
-│   ├── booking/         # Luồng đặt lịch (Chi tiết, Giỏ hàng, Thanh toán, Địa chỉ)
-│   ├── customer/        # Các tab chính (Dịch vụ, Thiết bị, Hoạt động, Cá nhân)
-│   ├── tech/            # App Thợ (Công việc, Lịch làm việc, Thông báo, Chi tiết việc)
-│   └── misc/            # Các màn hình phụ (Tìm kiếm, Đánh giá, Điểm thưởng, QR...)
-├── services/            # Giao tiếp API & đồng bộ dữ liệu
-│   ├── api.js           # Client gọi API Backend
-│   ├── authService.js   # Quản lý tài khoản, token & session
-│   └── syncService.js   # Đồng bộ dữ liệu 2 chiều Khách ↔ Thợ ↔ Backend
-├── theme/               # Bảng màu, typography, shadow, gradient
-│   ├── colors.js        # Màu sắc chủ đạo & màu theo danh mục
-│   └── theme.js         # Tokens, radii, shadows, gradients
-└── utils/               # Tiện ích bổ trợ
-    ├── geo.js           # Định vị GPS, tính khoảng cách, tiến trình thợ di chuyển
-    └── media.js         # Xử lý chọn ảnh & camera
+├── components/
+│   ├── common/          # UI dùng chung (Button, Card, Input, Sheet, Dialog, Toast, AppIcon, PseudoQR...)
+│   └── order/           # OrderLive (theo dõi thợ, chat), VietQRPay (thanh toán VietQR)
+├── constants/
+│   ├── appPolicy.js     # Hằng số chính sách: phiên bản, mật khẩu, OTP, bảo hành, huỷ miễn phí
+│   ├── config.js        # Cấu hình API backend HRMSS (EXPO_PUBLIC_API_URL)
+│   ├── data.js          # Danh mục dịch vụ, giá, hạng thành viên (TIERS), trạng thái đơn, FAQ
+│   └── techPolicy.js    # Chính sách thợ: thưởng/phạt, huỷ đơn
+├── context/AppContext.js  # State toàn cục: auth, đơn hàng, thông báo, giỏ hàng
+├── navigation/          # AppNavigator, BottomNav, routes (Khách + Thợ)
+├── screens/
+│   ├── auth/            # Đăng nhập / Đăng ký / OTP / Trang khách vãng lai
+│   ├── home/            # Trang chủ Khách
+│   ├── booking/         # Chi tiết dịch vụ, Giỏ hàng, Xác nhận đặt lịch, Địa chỉ
+│   ├── customer/        # Dịch vụ, Thiết bị, Hoạt động, Cá nhân
+│   ├── tech/            # App Thợ: Công việc, Lịch, Thông báo, Chi tiết việc
+│   └── misc/            # Tìm kiếm, Đánh giá, Điểm thưởng, Bảo hành...
+├── services/            # api.js (client HRMSS API), authService.js (phiên), syncService.js (map dữ liệu server ↔ app)
+├── theme/               # Màu, typography, shadow
+└── utils/               # geo (GPS, khoảng cách), media (ảnh), validators, techProfile, authErrorMessages
 ```
 
-*(Lưu ý: Các đường dẫn cũ ở thư mục gốc `src/*.js` và `src/screens/*.js` vẫn được giữ dưới dạng re-export tương thích 100%, không làm gián đoạn code hay thay đổi bất kỳ giao diện nào).*
+## 5. Trạng thái đơn
 
-## App Thợ (Technician) — theo sơ đồ ngữ cảnh HRMSS
-Mở: đăng nhập tài khoản Thợ (`0987654321 / 123456`) tại `?role=tech`. Khi đăng nhập, hệ thống tự thêm vài việc demo nếu chưa có đơn chờ. Hai app dùng chung dữ liệu đơn hàng nên cập nhật cho nhau.
+```
+pending → confirmed → onway → diagnosing → quoted → repairing
+        → pending_payment / partially_paid → pending_review → done
+```
 
-| Luồng trong sơ đồ | Màn hình |
+| Trạng thái | Ý nghĩa |
 |---|---|
-| Hệ thống → Thợ: *Assigned job information* | Công việc › Việc mới (Nhận việc / Từ chối kèm lý do) |
-| *Service location & customer contact* | Chi tiết công việc: gọi khách, mở Google Maps chỉ đường |
-| *Work schedule information* | Tab Lịch: 7 ngày tới, xếp theo khung giờ |
-| *Quotation information* | Báo giá: dịch vụ đã đặt + vật tư/linh kiện; có phát sinh → khách phải duyệt |
-| *Notification information* | Tab Thông báo: việc mới, khách duyệt/từ chối báo giá, huỷ đơn, đánh giá |
-| Thợ → Hệ thống: *Diagnosis information* | Chẩn đoán (chọn nhanh + mô tả) khi check-in tại nhà khách |
-| *Repair progress information* | Cập nhật tiến độ 25/50/75/100% kèm ghi chú |
-| *Material usage information* | Ghi nhận vật tư đã dùng (đối soát kho) |
-| *Repair evidence* | Ảnh trước/sau khi làm (web: chọn ảnh từ máy, nén và lưu cục bộ) |
-| *Job completion report* | Biên bản hoàn thành → khách nhận thông báo, được cộng điểm, đánh giá |
+| `pending` | Đã đặt lịch, chờ điều phối/thợ nhận |
+| `confirmed` | Thợ đã nhận đơn |
+| `onway` | Thợ đang di chuyển tới |
+| `diagnosing` | Đã check-in, đang kiểm tra/chẩn đoán |
+| `quoted` | Đã báo giá, chờ khách duyệt (khi có phát sinh) |
+| `repairing` | Đang thực hiện |
+| `pending_payment` / `partially_paid` | Đã hoàn thành, chờ thanh toán / mới trả một phần |
+| `pending_review` | Đã thanh toán, chờ văn phòng nghiệm thu |
+| `done` | Hoàn tất |
+| `warranty_pending` | Yêu cầu bảo hành đang chờ xử lý |
+| `out_of_warranty` | Ngoài thời hạn bảo hành |
+| `cancelled` | Đã huỷ |
 
-Trạng thái đơn: `pending` (chờ thợ nhận) → `confirmed` → `onway` → `diagnosing` → `quoted` (chờ khách duyệt, chỉ khi có phát sinh) → `repairing` → `done` / `cancelled`.
+## 6. Chính sách thống nhất (nguồn: `src/constants/appPolicy.js`, `src/constants/data.js`)
 
-> Chưa có backend: dữ liệu lưu trong `localStorage` của trình duyệt. Ảnh minh chứng chưa tải lên Cloudinary, email chưa gửi thật.
+- **Mật khẩu** tối thiểu **8 ký tự** (đăng ký, đặt lại, đổi mật khẩu).
+- **OTP email** hiệu lực **10 phút**.
+- **Bảo hành theo hạng thành viên**: Thành viên **60 ngày** · Bạc **75 ngày** · Vàng **90 ngày** · Kim cương **120 ngày**
+  (tối thiểu 60 ngày). Điểm: 10.000đ thanh toán = 1 điểm, đánh giá đơn +20 điểm.
+- **Huỷ miễn phí** khi đơn đang *chờ nhận* hoặc *đã nhận* **và** còn ≥ **60 phút** trước giờ hẹn.
+- **Thanh toán**: tiền mặt hoặc **VietQR** — mã QR do backend tạo (ảnh `img.vietqr.io`, đúng số tiền còn lại và nội dung
+  chuyển khoản), tiền về được **SePay webhook** báo cho backend; app kiểm tra hoá đơn mỗi 5 giây và tự chuyển trạng thái khi
+  đã đủ tiền.
 
-## Demo bảo vệ (Khách + Thợ)
-1. Mở 2 tab: `?role=customer` và `?role=tech`, đăng nhập tài khoản demo ở bảng trên.
-2. **Cá nhân** (khách) hoặc **Tài khoản** (thợ) → **Nạp kịch bản demo bảo vệ** (hoặc nút trên Trang chủ lần đầu).
-3. Có 4 đơn mẫu:
-   - `DMXDEMO1` — việc mới (thợ nhận)
-   - `DMXDEMO2` — đang đến + **theo dõi GPS mô phỏng** + chat
-   - `DMXDEMO3` — chờ khách **duyệt báo giá**
-   - `DMXDEMO4` — hoàn thành + **QR thanh toán demo** / biên lai
-4. Chat và vị trí thợ đồng bộ qua `localStorage` giữa hai tab.
+## 7. Cập nhật dữ liệu (realtime)
 
-## Các chức năng liên kết với nhau
-- **Thiết bị ↔ Dịch vụ ↔ Đơn hàng**: thêm thiết bị kèm lần bảo dưỡng gần nhất → app tính hạn bảo dưỡng, nhắc ở Trang chủ và hiện badge ở tab Thiết bị. "Đặt bảo dưỡng" mở đúng danh mục. Khi đơn cùng loại **hoàn thành**, lịch bảo dưỡng của thiết bị tự cập nhật.
-- **Đặt lịch**: Chi tiết / Giỏ hàng → Xác nhận (chưa có địa chỉ thì thêm ngay, lưu xong quay lại đúng màn thanh toán) → Đặt thành công → Theo dõi đơn.
-- **Theo dõi đơn**: dòng thời gian 6 bước, cập nhật trực tiếp từ app Thợ (nhận việc → đang đến → kiểm tra & báo giá → thực hiện → hoàn thành). Khách duyệt/từ chối báo giá, Huỷ đơn (chọn lý do), Đặt lại, Đánh giá.
-- **Điểm & voucher**: hoàn thành đơn được cộng điểm (10.000đ = 1 điểm), đánh giá +20 điểm → lên hạng (Thành viên / Bạc / Vàng / Kim cương) → đổi điểm lấy voucher → dùng ở bước thanh toán (huỷ đơn thì hoàn voucher).
-- **Bảo hành 60 ngày**: tra cứu theo SĐT/mã đơn, tự liệt kê đơn còn hạn, gửi yêu cầu bảo hành tạo đơn bảo hành liên kết với đơn gốc.
-- **Thông báo**: tự sinh khi đặt đơn, đổi trạng thái, đổi điểm, thêm thiết bị; bấm vào để mở đúng màn hình.
-- **Hồ sơ ↔ Địa chỉ**: tên/SĐT tự điền từ địa chỉ đầu tiên; nhiều địa chỉ, chọn mặc định.
-- **Tìm kiếm** không dấu (gõ "may giat" vẫn ra "Máy giặt"), lưu lịch sử tìm kiếm. **Yêu thích** (♡) ở mọi thẻ dịch vụ.
-- Toàn bộ `Alert` cũ (không hoạt động trên web) được thay bằng hộp thoại/toast trong app.
+Hiện tại app **chưa dùng WebSocket**; dữ liệu được làm mới bằng:
 
-## Ghi chú
-- Giá ở tab Lắp đặt / Sửa chữa / Trọn đời là giá tham khảo (demo).
-- Ảnh dịch vụ dùng emoji trên nền màu theo danh mục; có thể thay bằng ảnh thật trong `Media` (`src/ui.js`).
-- "Thoát tài khoản" xoá toàn bộ dữ liệu demo đã lưu.
+- Đồng bộ ngay sau mỗi thao tác (đặt đơn, nhận việc, báo giá, duyệt, thanh toán...).
+- Đồng bộ lại khi app quay lại foreground.
+- Polling định kỳ **30 giây** cho danh sách/chi tiết đơn.
+- Vị trí thợ khi đang di chuyển: **15 giây**/lần.
+- Hoá đơn khi đang ở màn thanh toán VietQR: **5 giây**/lần.
+
+WebSocket (Socket.IO) và push notification là **hướng phát triển** — xem `DANH_GIA_REALTIME_WEBSOCKET.md`.
+
+## 8. Tài liệu liên quan
+
+| File | Nội dung |
+|---|---|
+| `PHAN_TICH_API_LUONG_DICH_VU.md` | Phân tích API theo luồng dịch vụ |
+| `HUONG_DAN_BACKEND_DIEU_PHOI_THO.md` · `TECH_DISPATCHING_SPECIFICATION.md` | Thuật toán điều phối thợ |
+| `QUY_TRINH_BAO_GIA_VA_DONG_TIEN.md` | Báo giá, thanh toán, chia tiền |
+| `DANH_GIA_REALTIME_WEBSOCKET.md` | Đánh giá phương án realtime |
+| `BAO_CAO_THUYET_TRINH_DO_AN.md` | Nội dung thuyết trình đồ án |

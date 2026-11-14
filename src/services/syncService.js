@@ -6,6 +6,7 @@ import {
   resolveDbMaterialId,
   ensureServiceFromOrderItem,
 } from '../constants/data';
+import { toVnParts, vnDateKey } from '../utils/vnTime';
 
 // Tên hiển thị khi đơn đã có thợ nhưng chưa tải được thông tin thợ (GET /customer/requests/:id/tracking).
 const ASSIGNED_TECH_PLACEHOLDER = 'Thợ được phân công';
@@ -26,25 +27,23 @@ const ts = (iso) => (iso ? new Date(iso).getTime() : Date.now());
 
 const pad = (n) => String(n).padStart(2, '0');
 
+// Ngày / khung giờ hiển thị tính theo giờ Việt Nam (GMT+7) cố định — khớp buildPreferredTimeIso (+07:00), không phụ
+// thuộc múi giờ của máy.
 export const formatDateLabelFromIso = (isoStr) => {
-  const d = isoStr ? new Date(isoStr) : new Date();
-  if (Number.isNaN(d.getTime())) return 'Hôm nay';
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  const p = toVnParts(isoStr ? new Date(isoStr) : new Date());
+  if (!p) return 'Hôm nay';
+  return `${pad(p.day)}/${pad(p.month)}/${p.year}`;
 };
 
 export const formatDateKeyFromIso = (isoStr) => {
-  const d = isoStr ? new Date(isoStr) : new Date();
-  if (Number.isNaN(d.getTime())) {
-    const now = new Date();
-    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  }
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const p = isoStr ? toVnParts(new Date(isoStr)) : null;
+  return p ? `${p.year}-${pad(p.month)}-${pad(p.day)}` : vnDateKey(Date.now());
 };
 
 export const formatSlotFromIso = (isoStr) => {
-  const d = isoStr ? new Date(isoStr) : null;
-  if (!d || Number.isNaN(d.getTime())) return '08h00 - 10h00';
-  const h = d.getHours();
+  const p = isoStr ? toVnParts(new Date(isoStr)) : null;
+  if (!p) return '08h00 - 10h00';
+  const h = p.hour;
   if (h < 10) return '08h00 - 10h00';
   if (h < 12) return '10h00 - 12h00';
   if (h < 14) return '12h00 - 14h00';
@@ -90,7 +89,10 @@ export const mapBackendAddressToApp = (row) => {
   };
 };
 
-export const mapBackendStatusToAppStatus = (requestStatus, visitStatus, hasApprovedQuote = false, hasPendingQuote = false) => {
+// Trạng thái backend -> trạng thái app. Trạng thái lạ / thiếu (backend thêm trạng thái mới) trả `fallback`
+// (mặc định 'confirmed' — trạng thái trung tính, KHÔNG phải 'pending' để không lọt vào "việc mới" của thợ).
+// Dùng isKnownBackendStatus để biết có cần giữ trạng thái local trước đó hay không.
+const mapKnownStatus = (requestStatus, visitStatus, hasApprovedQuote = false, hasPendingQuote = false) => {
   const st = String(requestStatus || '').toUpperCase();
   const vs = String(visitStatus || '').toUpperCase();
   if (st === 'RECEIVED') return 'pending';
@@ -120,8 +122,14 @@ export const mapBackendStatusToAppStatus = (requestStatus, visitStatus, hasAppro
     return 'out_of_warranty';
   }
   if (st.startsWith('CANCELLED')) return 'cancelled';
-  return 'pending';
+  return null;
 };
+
+export const isKnownBackendStatus = (requestStatus) => mapKnownStatus(requestStatus) !== null;
+
+export const mapBackendStatusToAppStatus = (requestStatus, visitStatus, hasApprovedQuote = false, hasPendingQuote = false, fallback = 'confirmed') => (
+  mapKnownStatus(requestStatus, visitStatus, hasApprovedQuote, hasPendingQuote) ?? fallback
+);
 
 export const mapBackendItemsToAppItems = (rawItems = []) => {
   if (!Array.isArray(rawItems) || rawItems.length === 0) return [];
@@ -226,6 +234,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
   const booked = Math.max(0, goods - productDiscount - comboDiscount);
   const quote = mapBackendQuotationToAppQuote(req.quotations || [], [], booked, req.problem_description);
   const hasPendingQuote = (req.quotations || []).some((q) => q.quotation_status === 'SENT');
+  const statusUnknown = !isKnownBackendStatus(req.request_status);
   let status = mapBackendStatusToAppStatus(req.request_status, latestVisit?.visit_status, quote?.approved, hasPendingQuote);
   // "Đang đến": hành trình thật từ GET /customer/requests/:id/tracking.
   const journey = req.journey || null;
@@ -242,8 +251,11 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
   // Phí kiểm tra khi huỷ: chỉ lấy từ hoá đơn server (amount_due của đơn huỷ), không đoán.
   const inspectionFee = status === 'cancelled' && bill ? bill.amountDue : 0;
 
-  const history = Array.isArray(req.timeline) && req.timeline.length > 0
-    ? req.timeline.map((h) => ({
+  const timeline = Array.isArray(req.timeline)
+    ? req.timeline.filter((h) => isKnownBackendStatus(h.new_status))
+    : [];
+  const history = timeline.length > 0
+    ? timeline.map((h) => ({
         status: mapBackendStatusToAppStatus(h.new_status, null, quote?.approved, false),
         at: h.changed_at ? new Date(h.changed_at).getTime() : createdAt,
         note: h.reason || '',
@@ -264,6 +276,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     code: req.request_code,
     dbRequestId: req.request_id,
     backendStatus: req.request_status,
+    ...(statusUnknown ? { statusUnknown: true } : {}),
     kind: kindOf(req),
     outOfWarranty: Boolean(req.out_of_warranty),
     outOfWarrantyReason: req.out_of_warranty_reason || '',
@@ -341,15 +354,30 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
   const req = job.request;
   const visit = job.visit || {};
   const items = mapBackendItemsToAppItems(job.services || []);
-  const goods = items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.qty) || 1), 0);
+  const goods = Number(req.goods_amount) > 0 ? Number(req.goods_amount) : items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.qty) || 1), 0);
+  const productDiscount = Number(req.product_discount_amount) || 0;
+  const comboDiscount = Number(req.combo_discount_amount) || 0;
+  const booked = Math.max(0, goods - productDiscount - comboDiscount);
   const hasPendingQuote = (job.quotations || []).some((q) => q.quotation_status === 'SENT');
-  const quote = mapBackendQuotationToAppQuote(job.quotations || [], job.diagnoses || [], goods, req.problem_description);
+  const quote = mapBackendQuotationToAppQuote(job.quotations || [], job.diagnoses || [], booked, req.problem_description);
   const isEnded = job.assignment_status === 'ENDED';
-  let status = ['PENDING_REVIEW', 'READY_FOR_ACCEPTANCE', 'PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE'].includes(req.request_status)
-    ? mapBackendStatusToAppStatus(req.request_status)
-    : (isEnded && !req.request_status?.startsWith('CANCELLED')
-      ? 'done'
-      : mapBackendStatusToAppStatus(req.request_status, visit.visit_status, quote?.approved, hasPendingQuote));
+  const rs = String(req.request_status || '').toUpperCase();
+  const PAYMENT_STAGE = ['PENDING_REVIEW', 'READY_FOR_ACCEPTANCE', 'PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE'];
+  let status;
+  if (PAYMENT_STAGE.includes(rs)) {
+    status = mapBackendStatusToAppStatus(rs);
+  } else if (isEnded) {
+    // Phân công đã kết thúc: chỉ là "xong" khi đơn đã hoàn thành / nghiệm thu (hoặc chính thợ này đã nộp hoàn thành
+    // trước khi đơn chuyển sang bảo hành). Đơn bị huỷ -> 'cancelled'. Còn lại là thợ đã trả việc / bị thu hồi và đơn
+    // đang do thợ khác xử lý -> bỏ khỏi danh sách của thợ này.
+    if (rs === 'COMPLETED') status = 'done';
+    else if (rs.startsWith('CANCELLED')) status = 'cancelled';
+    else if (job.completed_at) status = 'done';
+    else return null;
+  } else {
+    status = mapBackendStatusToAppStatus(rs, visit.visit_status, quote?.approved, hasPendingQuote);
+  }
+  const statusUnknown = !isEnded && !isKnownBackendStatus(rs);
   // "Đang đến": đã bấm xuất phát (travel_started_at) mà chưa check-in (arrived_at) -> giữ đúng sau khi cài lại / đổi máy.
   if (status === 'confirmed' && job.travel_started_at && !job.arrived_at) status = 'onway';
   const bill = mapBackendBill(job.bill);
@@ -392,12 +420,12 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     warrantyDays: null,
     items,
     goods,
-    productDiscount: bill ? Math.max(0, goods - bill.bookedAmount) : 0,
-    comboDiscount: 0,
+    productDiscount,
+    comboDiscount,
     voucherDiscount: bill?.voucherDiscount || 0,
-    // Tiền thật từ GET /technician/jobs/:id/bill; chưa có hoá đơn thì tạm theo giá dịch vụ.
-    total: bill ? bill.amountDue : (quote?.approvedTotal ?? goods),
-    finalTotal: bill ? bill.amountDue : (quote?.approvedTotal ?? goods),
+    // Tiền thật từ GET /technician/jobs/:id/bill; chưa có hoá đơn thì tạm theo giá dịch vụ / báo giá đã duyệt.
+    total: bill ? bill.amountDue : (quote?.approvedTotal ?? (quote?.approved ? quote.total : goods)),
+    finalTotal: bill ? bill.amountDue : (quote?.approvedTotal ?? (quote?.approved ? quote.total : goods)),
     bill,
     cashToCollect: bill?.cashToCollect ?? null,
     paymentMethod: String(req.preferred_payment_method || '').toUpperCase() === 'BANK_TRANSFER' ? 'vietqr' : 'cash',
@@ -560,7 +588,16 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         // Ảnh, tiến độ lấy từ server; chỉ giữ bản trên máy khi server chưa trả trường này.
         evidence: ro.evidence !== undefined ? ro.evidence : (lo.evidence || []),
         progress: ro.progress !== undefined ? ro.progress : (lo.progress || []),
-        repairNotes: ro.repairNotes?.length ? ro.repairNotes : (lo.repairNotes || []),
+        repairNotes: (() => {
+          const deleted = new Set(lo.deletedRepairNoteIds || []);
+          const edited = lo.editedRepairNotes || {};
+          const base = (ro.repairNotes?.length ? ro.repairNotes : (lo.repairNotes || []))
+            .filter((n) => !deleted.has(n.id))
+            .map((n) => (edited[n.id] ? { ...n, text: edited[n.id] } : n));
+          const baseIds = new Set(base.map((n) => n.id));
+          const localOnly = (lo.repairNotes || []).filter((n) => !deleted.has(n.id) && !baseIds.has(n.id));
+          return [...base, ...localOnly];
+        })(),
         materials: ro.materials !== undefined ? ro.materials : (lo.materials || []),
         quote: ro.quote || lo.quote || null,
         rating: ro.rating || lo.rating || null,

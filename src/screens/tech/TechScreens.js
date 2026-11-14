@@ -5,24 +5,29 @@
 // Dùng chung dữ liệu đơn hàng với app Khách hàng (src/store.js) nên hai bên cập nhật cho nhau.
 // ===========================================================================
 import React, { useMemo, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Image, Linking, RefreshControl } from 'react-native';
-import { C, R, shadow, STATUS_META, toneOf, grad } from '../../theme';
+import { View, Text, ScrollView, Image, Linking, RefreshControl } from 'react-native';
+import { C, R, shadow, STATUS_META, toneOf } from '../../theme';
 import {
-  getService, formatVND, formatNumberInput, catIcon, catLabel, TECH_ME, MATERIALS, DIAG_TAGS, TIME_SLOTS, TECH_STATUS_DESC, TECH_ORDER_STEPS, techStepIndexOf, HOTLINE,
-  SAFETY_CHECKLIST_ITEMS,
+  getService, formatVND, catIcon, catLabel, TECH_ME, MATERIALS, TIME_SLOTS, TECH_STATUS_DESC, TECH_ORDER_STEPS, techStepIndexOf, HOTLINE,
 } from '../../constants/data';
+import { PASSWORD_MIN_LENGTH, BASE_WARRANTY_DAYS } from '../../constants';
 import {
   useApp, orderTotal, cashToCollect, bookedValue, isActiveOrder, dateKeyOf, todayKey, fmtDateTime, timeAgo,
-  TECH_POLICY, assessCancelAfterAccept, reputationTone, normalizeTechRep, slotStartTs, matchJobForTech, isQRPayment,
+  assessCancelAfterAccept, slotStartTs, matchJobForTech, isQRPayment,
 } from '../../context';
-import { getCheckInLocation } from '../../utils/geo';
 import { validateVietnamesePhone, validateContactName } from '../../utils';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, PageHead, Segmented, Chip, Badge, Stars, Field, Sheet, Radio, Checkbox,
-  EmptyState, StatusChip, Progress, Media, ListRow, Stepper, HScroll, ui, AppIcon, resolveSemanticTone,
+  EmptyState, Progress, Media, ListRow, Stepper, HScroll, ui, AppIcon, resolveSemanticTone,
 } from '../../components';
 import { pickImage, pickCamera } from '../../utils/media';
 import { TrackingCard } from '../../components/order';
+import { tx } from './components/techStyles';
+import { useBusyRunner } from './components/useBusyRunner';
+import { useNextAction } from './components/nextAction';
+import { useQuoteDraft } from './components/useQuoteDraft';
+import { QuoteEditor } from './components/QuoteEditor';
+import { CompleteSheet } from './components/CompleteSheet';
 
 const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const DECLINE_REASONS = ['Bận lịch khác', 'Ngoài khu vực phục vụ', 'Không đúng chuyên môn', 'Lý do khác'];
@@ -37,32 +42,13 @@ const callPhone = (phone) => Linking.openURL(`tel:${String(phone || '').replace(
 const openMap = (addr) => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr || '')}`).catch(() => {});
 // Thu nhập / chi trả cho thợ: backend chưa có bảng ví hay rút tiền, văn phòng đối soát ngoài app (không hiển thị số tự tính).
 
-// Hành động chính tiếp theo cho từng trạng thái
-function useNextAction() {
-  const { a, nav } = useApp();
-  return (o) => {
-    switch (o.status) {
-      case 'confirmed': {
-        if (o.quote && !o.quote.approved) {
-          return { label: 'Chờ khách đồng ý', icon: 'clock', variant: 'ghost', run: () => nav.push('tech-job', { code: o.code }) };
-        }
-        return { label: 'Bắt đầu di chuyển', icon: 'navigation', run: () => a.startTravel(o.code) };
-      };
-      case 'onway': return {
-        label: 'Check-in GPS',
-        icon: 'map-pin',
-        run: async () => {
-          const loc = await getCheckInLocation();
-          a.arrive(o.code, loc);
-        },
-      };
-      case 'diagnosing': return { label: 'Chẩn đoán & báo giá', icon: 'receipt-text', run: () => nav.push('tech-job', { code: o.code }) };
-      case 'quoted': return { label: 'Chờ khách duyệt', icon: 'clock', variant: 'ghost', run: () => nav.push('tech-job', { code: o.code }) };
-      case 'repairing': return { label: 'Cập nhật công việc', icon: 'wrench', run: () => nav.push('tech-job', { code: o.code }) };
-      default: return null;
-    }
-  };
-}
+// Mã các việc tôi đã từ chối — một nguồn dữ liệu (ưu tiên d.declinedCodes tính theo mã thợ hiện tại).
+const declinedCodesOf = (s, d) => {
+  const src = Array.isArray(d?.declinedCodes) ? d.declinedCodes : (Array.isArray(s?.declined) ? s.declined : []);
+  return [...new Set(src.map((x) => (x && typeof x === 'object' ? x.code : x)).filter(Boolean))];
+};
+// Đơn bị khách/văn phòng huỷ không phản ánh quyết định nhận việc của thợ.
+const cancelledNotByTech = (o) => o.status === 'cancelled' && !['tech', 'technician'].includes(String(o.cancelledBy || '').toLowerCase());
 
 function MetaLine({ icon, text, last }) {
   return (
@@ -74,9 +60,12 @@ function MetaLine({ icon, text, last }) {
 }
 
 // =========================================================== THẺ CÔNG VIỆC
-function JobCard({ o, compact, onDecline, canAccept = true }) {
+function JobCard({ o, compact, onDecline }) {
   const { s, a, nav } = useApp();
   const next = useNextAction()(o);
+  const { run, isBusy } = useBusyRunner();
+  const acceptKey = `accept:${o.code}`;
+  const accepting = isBusy(acceptKey);
   const svc0 = getService(o.items[0]?.id);
   const meta = STATUS_META[o.status] || STATUS_META.pending;
   const open = () => nav.push('tech-job', { code: o.code });
@@ -129,6 +118,17 @@ function JobCard({ o, compact, onDecline, canAccept = true }) {
                 <View style={[tx.payBox, { backgroundColor: C.greenSoft, borderWidth: 1, borderColor: '#A7F3D0' }]}>
                   <Text style={[tx.payLabel, { color: C.green }]}>Bảo hành</Text>
                   <Text style={[ui.price, { fontSize: 15, marginTop: 2, color: C.green }]}>0đ</Text>
+                </View>
+              );
+            }
+            if (o.status === 'quoted') {
+              const quoteAmount = o.quote?.total || orderTotal(o);
+              return (
+                <View style={[tx.payBox, { backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#FDE68A' }]}>
+                  <Text style={[tx.payLabel, { color: '#B45309', fontWeight: '800' }]}>Báo giá chờ duyệt</Text>
+                  <Text style={[ui.price, { fontSize: 14.5, marginTop: 2, color: '#B45309' }]}>
+                    {formatVND(quoteAmount)}
+                  </Text>
                 </View>
               );
             }
@@ -193,7 +193,7 @@ function JobCard({ o, compact, onDecline, canAccept = true }) {
               </View>
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <Btn title="Từ chối ca" small variant="dangerSoft" style={{ flex: 1 }} onPress={() => (onDecline ? onDecline(o) : null)} />
-                <Btn title="Tiếp nhận ca" icon="handshake" small style={{ flex: 1.45 }} disabled={!canAccept} onPress={() => a.acceptJob(o.code)} />
+                <Btn title={accepting ? 'Đang nhận…' : 'Tiếp nhận ca'} icon="handshake" small style={{ flex: 1.45 }} disabled={accepting} onPress={() => run(acceptKey, () => a.acceptJob(o.code))} />
               </View>
             </View>
           ) : (
@@ -206,7 +206,7 @@ function JobCard({ o, compact, onDecline, canAccept = true }) {
                 {compact ? (
                   <Btn title="Chi tiết" small variant="soft" onPress={open} />
                 ) : next ? (
-                  <Btn title={next.label} icon={next.icon} small variant={next.variant || 'soft'} onPress={next.run} />
+                  <Btn title={next.label} icon={next.icon} small variant={next.variant || 'soft'} disabled={Boolean(next.disabled)} onPress={next.run} />
                 ) : null}
               </View>
             </>
@@ -219,7 +219,7 @@ function JobCard({ o, compact, onDecline, canAccept = true }) {
 
 // =========================================================== TAB: VIỆC LÀM
 export function TechJobsScreen() {
-  const { s, a, d, nav } = useApp();
+  const { s, a, d, nav, ui: u } = useApp();
   const me = s.techProfile || TECH_ME;
   const [tab, setTab] = useState('new');
   const [newFilter, setNewFilter] = useState('all'); // 'all' | 'skill' | 'area'
@@ -232,6 +232,8 @@ export function TechJobsScreen() {
   const working = [...d.workingJobs].sort((x, y) => dateKeyOf(x).localeCompare(dateKeyOf(y)) || slotHour(x.slot) - slotHour(y.slot));
   const nextJob = working[0];
   const nextAct = useNextAction()(nextJob || { status: '' });
+  const { run, isBusy } = useBusyRunner();
+  const declining = declineTarget ? isBusy(`decline:${declineTarget.code}`) : false;
   const filteredNewJobs = d.newJobs.filter((o) => {
     if (newFilter === 'all') return true;
     const m = matchJobForTech(o, me);
@@ -252,7 +254,7 @@ export function TechJobsScreen() {
               <Text style={tx.techName} numberOfLines={1}>{me.name}</Text>
               <Text style={tx.techSub}>{me.code} · ★ {me.rating != null ? me.rating : '—'} ({me.ratingCount || 0} đánh giá dịch vụ)</Text>
             </View>
-            <IconBtn icon="🔔" dark badge={d.techUnread} onPress={() => nav.go('tech-notifs')} label="Thông báo" />
+            <IconBtn icon="bell" dark badge={d.techUnread} onPress={() => nav.go('tech-notifs')} label="Thông báo" />
           </View>
         </View>
 
@@ -296,13 +298,14 @@ export function TechJobsScreen() {
                 <Text style={tx.nextMeta} numberOfLines={1}>📅 {nextJob.dateLabel} · {nextJob.slot}</Text>
                 <Text style={tx.nextMeta} numberOfLines={1}>📍 {nextJob.address?.full}</Text>
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
-                  <Btn title="Gọi khách" icon="📞" small variant="primary" style={{ flex: 1 }} onPress={() => callPhone(nextJob.address?.phone)} />
+                  <Btn title="Gọi khách" icon="phone" small variant="primary" style={{ flex: 1 }} onPress={() => callPhone(nextJob.address?.phone)} />
                   <Btn
                     title={nextAct?.label || 'Xem chi tiết'}
-                    icon={nextAct?.icon || '🔧'}
+                    icon={nextAct?.icon || 'wrench'}
                     small
                     variant="soft"
                     style={{ flex: 1.15 }}
+                    disabled={Boolean(nextAct?.disabled)}
                     onPress={() => (nextAct ? nextAct.run() : nav.push('tech-job', { code: nextJob.code }))}
                   />
                 </View>
@@ -324,7 +327,7 @@ export function TechJobsScreen() {
             <HScroll contentContainerStyle={{ gap: 8, paddingTop: 10 }}>
               <Chip label={`Tất cả (${d.newJobs.length})`} on={newFilter === 'all'} onPress={() => setNewFilter('all')} />
               <Chip label="✓ Đúng chuyên môn" on={newFilter === 'skill'} onPress={() => setNewFilter('skill')} />
-              <Chip label={`📍 Trong khu vực (${me.area || 'Của tôi'})`} on={newFilter === 'area'} onPress={() => setNewFilter('area')} />
+              <Chip label={`📍 Trong khu vực (${me.area?.trim() || 'Hà Nội'})`} on={newFilter === 'area'} onPress={() => setNewFilter('area')} />
             </HScroll>
           ) : null}
           <View style={{ marginTop: 14 }}>
@@ -348,7 +351,6 @@ export function TechJobsScreen() {
               <JobCard
                 key={o.code}
                 o={o}
-                canAccept={true}
                 onDecline={(job) => { setReason(DECLINE_REASONS[0]); setReasonNote(''); setDeclineTarget(job); }}
               />
             ))}
@@ -358,18 +360,23 @@ export function TechJobsScreen() {
 
       <Sheet
         visible={!!declineTarget}
-        onClose={() => setDeclineTarget(null)}
+        onClose={() => { if (!declining) setDeclineTarget(null); }}
         title="Lý do từ chối"
         footer={(
           <Btn
-            title="Xác nhận từ chối"
+            title={declining ? 'Đang gửi…' : 'Xác nhận từ chối'}
             variant="danger"
-            onPress={() => {
+            disabled={declining}
+            onPress={async () => {
               if (!declineTarget) return;
+              const target = declineTarget;
               const note = reason === 'Lý do khác' ? reasonNote.trim() : '';
-              if (reason === 'Lý do khác' && note.length < 3) return;
-              a.declineJob(declineTarget.code, note ? `${reason}: ${note}` : reason);
-              setDeclineTarget(null);
+              if (reason === 'Lý do khác' && note.length < 3) {
+                u.alert('Thiếu lý do', 'Vui lòng mô tả ngắn lý do từ chối.', 'pencil');
+                return;
+              }
+              const res = await run(`decline:${target.code}`, () => a.declineJob(target.code, note ? `${reason}: ${note}` : reason));
+              if (res !== undefined && res !== false) setDeclineTarget(null);
             }}
           />
         )}
@@ -418,8 +425,9 @@ export function TechScheduleScreen() {
     dt.setDate(dt.getDate() + i);
     return { key: todayKey(i), label: i === 0 ? 'Hôm nay' : i === 1 ? 'Ngày mai' : WEEKDAYS[dt.getDay()], dd: String(dt.getDate()).padStart(2, '0') };
   });
-  // Lịch gồm việc của tôi (trừ đã huỷ) + việc mới chưa nhận
-  const all = [...d.myJobs.filter((o) => o.status !== 'cancelled'), ...d.newJobs.filter((o) => !d.myJobs.includes(o))];
+  // Lịch gồm việc của tôi (trừ đã huỷ) + việc mới chưa nhận (so theo mã đơn, không theo tham chiếu object)
+  const myCodes = new Set(d.myJobs.map((o) => o.code));
+  const all = [...d.myJobs.filter((o) => o.status !== 'cancelled'), ...d.newJobs.filter((o) => !myCodes.has(o.code))];
   const key = days[day].key;
   const dayJobs = all
     .filter((o) => dateKeyOf(o) === key)
@@ -453,7 +461,7 @@ export function TechScheduleScreen() {
         </View>
         {dayJobs.length === 0 ? (
           <EmptyState
-            icon="📅"
+            icon="calendar"
             title="Không có lịch trong ngày"
             body="Ngày này chưa có việc. Kiểm tra Việc mới hoặc chọn ngày khác."
             action="Xem việc mới"
@@ -528,14 +536,14 @@ export function TechNotifsScreen() {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
         {filtered.length === 0 ? (
           <EmptyState
-            icon="🔔"
+            icon="bell"
             title={filter === 'unread' ? 'Đã đọc hết' : 'Chưa có thông báo'}
             body="Việc mới được giao, khách duyệt/từ chối báo giá, huỷ đơn hay đánh giá sẽ hiện ở đây."
             action="Về trang công việc"
             onAction={() => nav.go('tech-jobs')}
           />
         ) : filtered.map((n) => {
-          const sem = resolveSemanticTone({ tone: n.tone, title: n.title, message: n.body, icon: n.icon, fallback: 'warning' });
+          const sem = resolveSemanticTone({ tone: n.tone, title: n.title, message: n.body, icon: n.icon, fallback: 'info' });
           return (
             <Tap
               key={n.id}
@@ -574,7 +582,7 @@ export function TechAccountScreen() {
   const [name, setName] = useState(me.name || '');
   const [phone, setPhone] = useState(me.phone || '');
   const [dob, setDob] = useState(me.dob || s.user?.dob || s.auth?.dob || '');
-  const [area, setArea] = useState(me.area || TECH_ME.area);
+  const [area, setArea] = useState(me.area || 'Hà Nội');
 
   const done = d.myJobs.filter((o) => o.status === 'done');
   const rated = done.filter((o) => o.rating);
@@ -582,20 +590,23 @@ export function TechAccountScreen() {
     ? Number(me.rating).toFixed(1)
     : (rated.length ? (rated.reduce((sum, o) => sum + o.rating.stars, 0) / rated.length).toFixed(1) : '—');
   const backendReviews = Array.isArray(me.reviews) ? me.reviews : [];
-  const accepted = d.myJobs.length;
-  const declined = (d.declinedCodes || s.declined || []).length;
+  // Tỉ lệ nhận việc = đã nhận / (đã nhận + đã từ chối). Đơn bị khách/văn phòng huỷ không tính.
+  const acceptedJobs = d.myJobs.filter((o) => !cancelledNotByTech(o));
+  const acceptedCodes = new Set(d.myJobs.map((o) => o.code));
+  const accepted = acceptedJobs.length;
+  const declined = declinedCodesOf(s, d).filter((code) => !acceptedCodes.has(code)).length;
   const rate = accepted + declined ? Math.round((accepted / (accepted + declined)) * 100) : 100;
   const completedCount = done.length;
   const refreshProfile = async () => {
     setRefreshing(true);
-    try { await a.syncFromBackend(); } finally { setRefreshing(false); }
+    try { await Promise.resolve(a.syncFromBackend()); } catch (_e) { /* giữ dữ liệu cũ */ } finally { setRefreshing(false); }
   };
 
   const openProfile = () => {
     setName(me.name || '');
     setPhone(me.phone || '');
     setDob(me.dob || s.user?.dob || s.auth?.dob || '');
-    setArea(me.area || TECH_ME.area);
+    setArea(me.area || 'Hà Nội');
     setShowProfile(true);
   };
 
@@ -617,7 +628,7 @@ export function TechAccountScreen() {
                 <Badge text="Kỹ thuật viên" fg={C.primary} bg="#fff" />
               </View>
             </View>
-            <IconBtn icon="✏️" dark onPress={openProfile} label="Sửa hồ sơ" />
+            <IconBtn icon="pencil" dark onPress={openProfile} label="Sửa hồ sơ" />
           </View>
         </View>
 
@@ -690,11 +701,11 @@ export function TechAccountScreen() {
               ) : (
                 <Text style={[ui.meta, { marginTop: 10 }]}>Nhận mọi loại dịch vụ</Text>
               )}
-              <Text style={[ui.meta, { marginTop: 10 }]}>📍 Khu vực phục vụ: {me.area || TECH_ME.area}</Text>
+              <Text style={[ui.meta, { marginTop: 10 }]}>📍 Khu vực phục vụ: {me.area?.trim() || 'Hà Nội'}</Text>
             </Card>
           ) : (
             <Card style={{ marginTop: 14 }}>
-              <Text style={[ui.meta, { marginTop: 2 }]}>📍 Khu vực phục vụ: {me.area || TECH_ME.area}</Text>
+              <Text style={[ui.meta, { marginTop: 2 }]}>📍 Khu vực phục vụ: {me.area?.trim() || 'Hà Nội'}</Text>
             </Card>
           )}
 
@@ -811,7 +822,7 @@ export function TechAccountScreen() {
           keyboardType="numeric"
           placeholder="DD/MM/YYYY (VD: 15/08/1995)"
         />
-        <Field label="Khu vực phục vụ" value={area} onChangeText={setArea} placeholder="Quận / huyện" />
+        <Field label="Khu vực phục vụ" value={area} onChangeText={setArea} placeholder="Ví dụ: Hà Nội" />
         {me.specialtiesAvailable ? (
           <>
             <Text style={[ui.fieldLabel, { marginTop: 12 }]}>Chuyên môn</Text>
@@ -836,15 +847,21 @@ export function TechAccountScreen() {
             title="Cập nhật mật khẩu"
             onPress={async () => {
               if (newPw !== newPw2) { u.alert('Không khớp', 'Mật khẩu mới nhập lại chưa khớp.', '🔐'); return; }
-              const res = await a.changePassword({ currentPassword: curPw, newPassword: newPw });
-              if (!res.ok) { u.alert('Không đổi được', res.error, '🔐'); return; }
+              if (String(newPw).length < PASSWORD_MIN_LENGTH) { u.alert('Mật khẩu quá ngắn', `Mật khẩu mới cần ít nhất ${PASSWORD_MIN_LENGTH} ký tự.`, '🔐'); return; }
+              let res = null;
+              try {
+                res = await Promise.resolve(a.changePassword({ currentPassword: curPw, newPassword: newPw }));
+              } catch (e) {
+                res = { ok: false, error: (e && e.message) || 'Vui lòng thử lại.' };
+              }
+              if (!res?.ok) { u.alert('Không đổi được', res?.error || 'Vui lòng thử lại.', '🔐'); return; }
               setShowPw(false);
             }}
           />
         )}
       >
         <Field label="Mật khẩu hiện tại" value={curPw} onChangeText={setCurPw} secureTextEntry placeholder="••••••" style={{ marginTop: -8 }} />
-        <Field label="Mật khẩu mới" value={newPw} onChangeText={setNewPw} secureTextEntry placeholder="Ít nhất 6 ký tự" />
+        <Field label="Mật khẩu mới" value={newPw} onChangeText={setNewPw} secureTextEntry placeholder={`Ít nhất ${PASSWORD_MIN_LENGTH} ký tự`} />
         <Field label="Nhập lại mật khẩu mới" value={newPw2} onChangeText={setNewPw2} secureTextEntry placeholder="Nhập lại" />
       </Sheet>
     </View>
@@ -859,6 +876,7 @@ function ReceiptCard({ o, editable }) {
   const parts = o.externalParts || [];
   if (!parts.length) return null;
   const attach = async (part) => {
+    if (busyId) return;
     let uri = await pickCamera();
     if (uri === null) uri = await pickImage();
     if (uri == null) {
@@ -866,7 +884,13 @@ function ReceiptCard({ o, editable }) {
       return;
     }
     setBusyId(part.itemId);
-    await a.uploadPartReceipt(o.code, part.itemId, uri).finally(() => setBusyId(null));
+    try {
+      await Promise.resolve(a.uploadPartReceipt(o.code, part.itemId, uri));
+    } catch (e) {
+      u.alert('Không tải được biên lai', (e && e.message) || 'Vui lòng thử lại.', '📷');
+    } finally {
+      setBusyId(null);
+    }
   };
   return (
     <Card style={{ marginTop: 12 }}>
@@ -917,16 +941,23 @@ function ProcedureCard({ o, editable }) {
   };
   const finish = async (st) => {
     const missing = (st.measures || []).filter((m) => String(measures[m.key] ?? '').trim() === '' || Number.isNaN(Number(measures[m.key])));
-    if (missing.length) { u.alert('Thiếu chỉ số đo', `Nhập số cho: ${missing.map((m) => m.label).join(', ')}.`, '📏'); return; }
+    if (missing.length) { u.alert('Thiếu chỉ số đo', `Nhập số cho: ${missing.map((m) => m.label).join(', ')}.`, 'ruler'); return; }
     if (st.require_photo && !photos.length && !(st.photo_ids || []).length) { u.alert('Thiếu ảnh', 'Bước này cần ít nhất 1 ảnh.', '📷'); return; }
+    if (busy) return;
     setBusy(true);
-    const res = await a.completeProcedureStep(o.code, st, {
-      checkedItems: checked,
-      measurements: Object.fromEntries(Object.entries(measures).map(([k, v]) => [k, Number(v)])),
-      photoUris: photos,
-    });
-    setBusy(false);
-    if (!res.ok) { u.alert('Chưa xong bước', res.error, '⚠️'); return; }
+    let res = null;
+    try {
+      res = await Promise.resolve(a.completeProcedureStep(o.code, st, {
+        checkedItems: checked,
+        measurements: Object.fromEntries(Object.entries(measures).map(([k, v]) => [k, Number(v)])),
+        photoUris: photos,
+      }));
+    } catch (e) {
+      res = { ok: false, error: (e && e.message) || 'Vui lòng thử lại.' };
+    } finally {
+      setBusy(false);
+    }
+    if (!res?.ok) { u.alert('Chưa xong bước', res?.error || 'Vui lòng thử lại.', '⚠️'); return; }
     setOpenId(null);
     u.toast(`Đã xong bước ${st.step_no}`, '✅');
   };
@@ -992,29 +1023,17 @@ export function TechJobScreen({ params }) {
   const { s, a, d, nav, ui: u } = useApp();
   const o = s.orders.find((x) => x.code === params.code);
   const cats = useMemo(() => [...new Set((o?.items || []).map((it) => getService(it.id)?.category).filter(Boolean))], [o]);
-  const [tags, setTags] = useState(() => (o?.quote?.symptoms ? o.quote.symptoms.split(',').map((x) => x.trim()).filter(Boolean) : []));
-  const [diagnosis, setDiagnosis] = useState(() => o?.quote?.diagnosis || '');
-  const [recommendation, setRecommendation] = useState(() => o?.quote?.recommendation || '');
-  const [showCustomFee, setShowCustomFee] = useState(false);
-  const [customFeeName, setCustomFeeName] = useState('');
-  const [customFeePrice, setCustomFeePrice] = useState('');
-  const [customFeeType, setCustomFeeType] = useState('labor'); // 'labor' | 'part'
-  const [signature, setSignature] = useState(() => o?.report?.customerSignature || '');
-  const [lines, setLines] = useState(() => {
-    if (o?.quote?.lines?.length) {
-      return o.quote.lines.map((l, idx) => ({ ...l, key: l.matId || l.key || `q_${idx}` }));
-    }
-    return (o?.items || []).map((it) => {
-      const sv = getService(it.id);
-      return { key: it.id, type: 'labor', name: sv?.name || 'Dịch vụ', qty: it.qty, price: o?.kind === 'warranty' ? 0 : sv?.price || 0 };
-    });
-  });
+  const draft = useQuoteDraft(o);
+  const next = useNextAction({ inDetail: true })(o);
+  const { run, isBusy } = useBusyRunner();
   const [matMode, setMatMode] = useState(null); // 'quote' | 'usage'
   const [showPreQuote, setShowPreQuote] = useState(false);
   const [matAll, setMatAll] = useState(false);
   const [percent, setPercent] = useState(50);
   const [progressNote, setProgressNote] = useState('');
   const [repairNote, setRepairNote] = useState('');
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [editingNoteText, setEditingNoteText] = useState('');
   const [showDecline, setShowDecline] = useState(false);
   const [showRelease, setShowRelease] = useState(false);
   const [reason, setReason] = useState(DECLINE_REASONS[0]);
@@ -1023,60 +1042,49 @@ export function TechJobScreen({ params }) {
   const [releaseNote, setReleaseNote] = useState('');
   const [showDone, setShowDone] = useState(false);
   const [summary, setSummary] = useState('');
-  const [paid, setPaid] = useState(true);
-  const [forceDone, setForceDone] = useState(false);
-  const [safetyChecks, setSafetyChecks] = useState(() => [...SAFETY_CHECKLIST_ITEMS]);
 
   if (!o) return <View style={{ flex: 1 }}><TopBar title="Không tìm thấy công việc" /></View>;
   const meta = STATUS_META[o.status] || STATUS_META.pending;
   const step = techStepIndexOf(o.status);
-  const next = nextActionFor(o, a, nav);
   const mine = o.tech?.code === (s.techProfile?.code || TECH_ME.code);
   const editable = mine || o.status === 'pending';
   const techDesc = TECH_STATUS_DESC[o.status] || '';
   const canRelease = mine && ['confirmed', 'onway', 'diagnosing', 'quoted', 'repairing'].includes(o.status);
   const releaseAssess = canRelease ? assessCancelAfterAccept(o) : null;
+  const iDeclined = declinedCodesOf(s, d).includes(o.code);
+
+  // Cờ đang xử lý (chống bấm đúp)
+  const K = {
+    accept: `accept:${o.code}`,
+    decline: `decline:${o.code}`,
+    quote: `quote:${o.code}`,
+    progress: `progress:${o.code}`,
+    note: `note:${o.code}`,
+    cash: `cash:${o.code}`,
+    release: `release:${o.code}`,
+  };
+  const busyAccept = isBusy(K.accept);
+  const busyDecline = isBusy(K.decline);
+  const busyQuote = isBusy(K.quote);
+  const busyProgress = isBusy(K.progress);
+  const busyNote = isBusy(K.note);
+  const busyCash = isBusy(K.cash);
+  const busyRelease = isBusy(K.release);
+  const succeeded = (res) => res !== undefined && res !== false && !(res && typeof res === 'object' && res.ok === false);
 
   // ---- báo giá ----
-  const qTotal = lines.reduce((sum, l) => sum + l.price * l.qty, 0);
-  const booked = bookedValue(o);
-  const diff = qTotal - booked;
+  const qTotal = draft.total;
+  const diff = qTotal - bookedValue(o);
   const mats = MATERIALS.filter((m) => matAll || m.category === 'all' || cats.includes(m.category));
   const addPart = (m) => {
     if (matMode === 'usage') { a.addMaterial(o.code, m); setMatMode(null); return; }
-    setLines((p) => (p.some((l) => l.key === m.id) ? p.map((l) => (l.key === m.id ? { ...l, qty: l.qty + 1 } : l)) : [...p, { key: m.id, type: 'part', matId: m.id, name: m.name, unit: m.unit, qty: 1, price: m.price }]));
+    draft.setLines((p) => (p.some((l) => l.key === m.id) ? p.map((l) => (l.key === m.id ? { ...l, qty: l.qty + 1 } : l)) : [...p, { key: m.id, type: 'part', matId: m.id, name: m.name, unit: m.unit, qty: 1, price: m.price }]));
     setMatMode(null);
   };
-  const handleAddCustomFee = () => {
-    const name = customFeeName.trim();
-    const priceNum = parseInt(String(customFeePrice).replace(/[^0-9]/g, ''), 10);
-    if (!name) {
-      u.alert('Thiếu nội dung', 'Vui lòng nhập tên hoặc nội dung chi phí phát sinh.', '⚠️');
-      return;
-    }
-    if (!priceNum || priceNum <= 0) {
-      u.alert('Giá không hợp lệ', 'Vui lòng nhập số tiền phát sinh lớn hơn 0đ.', '⚠️');
-      return;
-    }
-    const newFeeLine = {
-      key: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      type: customFeeType,
-      name,
-      price: priceNum,
-      qty: 1,
-      unit: customFeeType === 'labor' ? 'lần' : 'cái',
-      isCustom: true,
-    };
-    setLines((prev) => [...prev, newFeeLine]);
-    setCustomFeeName('');
-    setCustomFeePrice('');
-    setShowCustomFee(false);
-    u.toast(`Đã thêm phát sinh: ${name} (+${formatVND(priceNum)})`, '✅');
-  };
   const sendQuote = () => {
-    const symptoms = tags.join(', ');
-    const diag = diagnosis.trim();
-    const reco = recommendation.trim();
+    const symptoms = draft.tags.join(', ');
+    const diag = draft.diagnosis.trim();
+    const reco = draft.recommendation.trim();
     if (!symptoms && !diag) {
       u.alert('Thiếu chẩn đoán', 'Chọn triệu chứng hoặc nhập kết luận chẩn đoán trước khi gửi.', '🔍');
       return;
@@ -1085,18 +1093,38 @@ export function TechJobScreen({ params }) {
       u.alert('Thiếu đề xuất', 'Ghi đề xuất xử lý trước khi gửi báo giá.', '🧾');
       return;
     }
+    if (!draft.lines.length) {
+      u.alert('Báo giá trống', 'Thêm ít nhất một dòng công / vật tư trước khi gửi.', '🧾');
+      return;
+    }
     const text = [symptoms, diag].filter(Boolean).join('. ');
-    a.submitQuote(o.code, {
+    run(K.quote, () => a.submitQuote(o.code, {
       diagnosis: text,
       symptoms,
       recommendation: reco,
-      lines: lines.map(({ key, ...l }) => l),
+      lines: draft.lines.map(({ key, ...l }) => l),
+    })).then((res) => {
+      if (succeeded(res)) { draft.markSaved(); setShowPreQuote(false); }
+    });
+  };
+  const submitProgress = () => {
+    const note = progressNote.trim();
+    if (!note) { u.alert('Thiếu nội dung', 'Ghi ngắn công việc đã làm cho mốc tiến độ này.', '📝'); return; }
+    run(K.progress, () => a.addProgress(o.code, { note, percent })).then((res) => {
+      if (succeeded(res)) setProgressNote('');
+    });
+  };
+  const submitRepairNote = () => {
+    const note = repairNote.trim();
+    if (!note) { u.alert('Thiếu nội dung', 'Nhập ghi chú công việc đã làm.', '📝'); return; }
+    run(K.note, () => a.addRepairNote(o.code, note)).then((res) => {
+      if (succeeded(res)) setRepairNote('');
     });
   };
 
   const evidence = o.evidence || [];
   const openComplete = () => {
-    const pendingSteps = (o.procedure?.services || []).flatMap((sv) => sv.steps).filter((st) => st.is_required && st.status === 'PENDING');
+    const pendingSteps = (o.procedure?.services || []).flatMap((sv) => sv.steps || []).filter((st) => st.is_required && st.status === 'PENDING');
     if (pendingSteps.length) {
       u.alert('Chưa xong các bước thực hiện', `Còn ${pendingSteps.length} bước bắt buộc chưa xong:\n${pendingSteps.map((st) => `• Bước ${st.step_no}: ${st.title}`).join('\n')}`, '📋');
       return;
@@ -1121,7 +1149,7 @@ export function TechJobScreen({ params }) {
           ) : null}
           {o.status !== 'cancelled' && step >= 0 ? <Text style={[ui.meta, { color: meta.fg, marginTop: 6 }]}>Bước {step + 1}/{TECH_ORDER_STEPS.length}: {TECH_ORDER_STEPS[step].label}</Text> : null}
         </View>
-        {o.status === 'pending' && o.dispatchNote && (d.declinedCodes || s.declined || []).includes(o.code) ? (
+        {o.status === 'pending' && iDeclined ? (
           <View style={tx.offline}><Text style={{ color: C.orange, fontWeight: '700' }}>Bạn đã từ chối việc này. Vẫn có thể nhận lại nếu còn trống lịch.</Text></View>
         ) : null}
         {o.status === 'onway' ? <TrackingCard order={o} compact /> : null}
@@ -1176,14 +1204,15 @@ export function TechJobScreen({ params }) {
                   <Text style={{ color: '#92400E', fontSize: 12.5, marginTop: 6, fontWeight: '700' }}>Khách báo đã trả tiền mặt — xác nhận nếu bạn đã nhận đủ.</Text>
                 ) : null}
                 <Btn
-                  title={`Đã nhận tiền mặt ${formatVND(cashToCollect(o))}`}
+                  title={busyCash ? 'Đang xác nhận…' : `Đã nhận tiền mặt ${formatVND(cashToCollect(o))}`}
                   icon="banknote"
                   small
+                  disabled={busyCash}
                   style={{ marginTop: 10 }}
                   onPress={() => u.confirm(
                     'Xác nhận đã nhận tiền mặt?',
                     `Bạn xác nhận đã nhận đủ ${formatVND(cashToCollect(o))} tiền mặt của khách cho đơn ${o.code}.`,
-                    () => a.confirmCashReceived(o.code),
+                    () => run(K.cash, () => a.confirmCashReceived(o.code)),
                     'Đã nhận',
                   )}
                 />
@@ -1263,7 +1292,7 @@ export function TechJobScreen({ params }) {
           <Text style={tx.h}>Lịch hẹn & yêu cầu</Text>
           {o.customerTierLabel ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-              <Badge text={`👑 Khách hạng ${o.customerTierLabel} · BH ${o.warrantyDays || 60} ngày`} fg={C.primary} bg={C.primarySoft} />
+              <Badge text={`👑 Khách hạng ${o.customerTierLabel} · BH ${o.warrantyDays || BASE_WARRANTY_DAYS} ngày`} fg={C.primary} bg={C.primarySoft} />
             </View>
           ) : null}
           <Text style={tx.info}>📅 {o.dateLabel} · {o.slot}</Text>
@@ -1383,213 +1412,27 @@ export function TechJobScreen({ params }) {
 
         {/* ===== Chẩn đoán & báo giá ===== */}
         {(o.status === 'diagnosing' || (o.status === 'confirmed' && showPreQuote)) && mine ? (
-          <>
-            {o.kind === 'warranty' ? (
-              <Card style={{ marginTop: 12, backgroundColor: '#FEF2F2', borderColor: '#FECACA' }}>
-                <Text style={[tx.h, { color: '#B91C1C', marginBottom: 4 }]}>🛡️ Thẩm định bảo hành tại chỗ</Text>
-                <Text style={{ color: '#7F1D1D', fontSize: 13, lineHeight: 19 }}>
-                  Nếu thiết bị bị rơi vỡ, chập cháy nguồn điện ngoài hoặc tác động của bên thứ 3, KTV bấm từ chối bảo hành để chuyển sang Báo giá sửa có phí.
-                </Text>
-                <View style={{ marginTop: 10 }}>
-                  <Btn
-                    title="Từ chối bảo hành (Do lỗi người dùng) → Báo giá có phí"
-                    variant="dangerSoft"
-                    onPress={() => {
-                      u.dialog({
-                        icon: '⚠️',
-                        title: 'Xác nhận ngoài bảo hành?',
-                        message: 'Thiết bị hư hỏng do tác động bên ngoài hoặc lỗi người dùng. Đơn sẽ chuyển sang luồng Sửa chữa có phí.',
-                        actions: [
-                          { label: 'Huỷ', variant: 'ghost' },
-                          {
-                            label: 'Xác nhận chuyển',
-                            variant: 'danger',
-                            onPress: () => a.rejectWarrantyAsOutOfWarranty(o.code, 'Thiết bị rơi vỡ/hư hỏng do ngoại lực bên ngoài'),
-                          },
-                        ],
-                      });
-                    }}
-                  />
-                </View>
-              </Card>
-            ) : null}
-            {o.quote?.revisionRequested ? (
-              <Card style={{ marginTop: 12, backgroundColor: '#FFFBEB', borderColor: '#F5D77A' }}>
-                <Text style={[tx.h, { color: C.goldInk, marginBottom: 4 }]}>🔄 Khách yêu cầu điều chỉnh báo giá</Text>
-                <Text style={{ color: C.goldInk, lineHeight: 20 }}>
-                  Lý do: <Text style={{ fontWeight: '800' }}>{o.quote.rejectReason || 'Cần trao đổi lại phương án / chi phí'}</Text>
-                </Text>
-                <Text style={[ui.meta, { color: C.goldInk, marginTop: 4 }]}>
-                  Hãy điều chỉnh lại vật tư / phương án bên dưới và gửi lại báo giá mới cho khách.
-                </Text>
-              </Card>
-            ) : null}
-            <Card style={{ marginTop: 12 }}>
-              <Text style={tx.h}>🔍 Triệu chứng thiết bị</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {[...cats.flatMap((c) => DIAG_TAGS[c] || []), ...DIAG_TAGS.all].map((t) => (
-                  <Chip key={t} label={t} on={tags.includes(t)} onPress={() => setTags((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]))} />
-                ))}
-              </View>
-              <Field label="Kết luận chẩn đoán" multiline value={diagnosis} onChangeText={setDiagnosis} placeholder="Nguyên nhân / tình trạng thực tế…" />
-              <Field label="Đề xuất xử lý" multiline value={recommendation} onChangeText={setRecommendation} placeholder="VD: Vệ sinh dàn lạnh + kiểm tra gas…" />
-              <Text style={[tx.fl, { marginTop: 8 }]}>Ảnh minh chứng chẩn đoán</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {evidence.filter((e) => e.stage === 'diagnosis').map((e) => (
-                  <View key={e.id} style={tx.thumb}>
-                    {e.uri ? <Image source={{ uri: e.uri }} style={{ width: '100%', height: '100%' }} /> : <Text style={{ fontSize: 26 }}>🖼️</Text>}
-                    <Tap style={tx.thumbX} onPress={() => a.removeEvidence(o.code, e.id)}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>✕</Text></Tap>
-                  </View>
-                ))}
-                <Tap
-                  style={[tx.thumb, tx.thumbAdd]}
-                  onPress={async () => {
-                    let uri = await pickCamera();
-                    if (uri === null) uri = await pickImage();
-                    if (uri == null) {
-                      if (uri === null) u.alert('Chưa hỗ trợ camera', 'Trên web/mobile browser hãy cho phép camera hoặc chọn ảnh thư viện.', '📷');
-                      return;
-                    }
-                    a.addEvidence(o.code, { uri, stage: 'diagnosis', note: 'Minh chứng chẩn đoán' });
-                  }}
-                >
-                  <Text style={{ fontSize: 22, color: C.primary }}>＋</Text>
-                  <Text style={{ fontSize: 10, color: C.primary, fontWeight: '700' }}>Thêm ảnh</Text>
-                </Tap>
-              </View>
-            </Card>
-            <Card style={{ marginTop: 12 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={tx.h}>🧾 Báo giá</Text>
-                <Badge
-                  text={diff > 0 ? `+${formatVND(diff)} phát sinh` : 'Đúng giá gốc'}
-                  fg={diff > 0 ? C.orange : C.green}
-                  bg={diff > 0 ? C.orangeSoft : C.greenSoft}
-                />
-              </View>
-              {lines.map((l) => (
-                <View key={l.key} style={tx.lineRow}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <Text style={{ color: C.ink, fontWeight: '700' }} numberOfLines={2}>{l.type === 'part' ? '🔩 ' : '🛠 '}{l.name}</Text>
-                      {l.isCustom ? <Badge text="Phát sinh" fg={C.orange} bg={C.orangeSoft} /> : null}
-                    </View>
-                    <Text style={ui.meta}>{formatVND(l.price)}{l.unit ? ` / ${l.unit}` : ''}</Text>
-                  </View>
-                  {l.type === 'part' || l.isCustom ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Stepper value={l.qty} onChange={(q) => setLines((p) => p.map((x) => (x.key === l.key ? { ...x, qty: q } : x)))} />
-                      <Tap onPress={() => setLines((p) => p.filter((x) => x.key !== l.key))} hitSlop={8} style={{ padding: 4 }}>
-                        <Text style={{ color: C.red, fontSize: 13, fontWeight: '700' }}>✕</Text>
-                      </Tap>
-                    </View>
-                  ) : <Text style={{ color: C.ink2, fontWeight: '800' }}>x{l.qty}</Text>}
-                </View>
-              ))}
-
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                <Tap style={[tx.addLine, { flex: 1, marginTop: 0, flexDirection: 'row', gap: 5 }]} onPress={() => setMatMode('quote')}>
-                  <AppIcon name="plus" size={14} color={C.primary} strokeWidth={2.5} />
-                  <Text style={{ color: C.primary, fontWeight: '700', fontSize: 13 }}>Vật tư kho ({mats.length})</Text>
-                </Tap>
-                <Tap
-                  style={[
-                    tx.addLine,
-                    { flex: 1, marginTop: 0, flexDirection: 'row', gap: 5, borderColor: '#F59E0B', backgroundColor: showCustomFee ? '#FEF3C7' : '#FFFBEB' },
-                  ]}
-                  onPress={() => setShowCustomFee((v) => !v)}
-                >
-                  <AppIcon name="plus" size={14} color="#D97706" strokeWidth={2.5} />
-                  <Text style={{ color: '#D97706', fontWeight: '700', fontSize: 13 }}>Phí phát sinh</Text>
-                </Tap>
-              </View>
-
-              {/* Form nhập chi phí phát sinh */}
-              {showCustomFee ? (
-                <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1' }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>📝 Nhập chi phí phát sinh thực tế</Text>
-                    <Tap onPress={() => setShowCustomFee(false)} hitSlop={8}><Text style={{ color: C.muted, fontWeight: '700' }}>Đóng</Text></Tap>
-                  </View>
-
-                  {/* Chọn loại: Công thợ phát sinh hay Vật tư ngoài */}
-                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-                    <Tap
-                      style={{
-                        flex: 1,
-                        paddingVertical: 7,
-                        borderRadius: R.sm,
-                        borderWidth: 1,
-                        borderColor: customFeeType === 'labor' ? C.primary : '#E2E8F0',
-                        backgroundColor: customFeeType === 'labor' ? C.primarySoft : '#fff',
-                        alignItems: 'center',
-                      }}
-                      onPress={() => setCustomFeeType('labor')}
-                    >
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: customFeeType === 'labor' ? C.primary : C.muted }}>🛠 Công phát sinh</Text>
-                    </Tap>
-                    <Tap
-                      style={{
-                        flex: 1,
-                        paddingVertical: 7,
-                        borderRadius: R.sm,
-                        borderWidth: 1,
-                        borderColor: customFeeType === 'part' ? C.primary : '#E2E8F0',
-                        backgroundColor: customFeeType === 'part' ? C.primarySoft : '#fff',
-                        alignItems: 'center',
-                      }}
-                      onPress={() => setCustomFeeType('part')}
-                    >
-                      <Text style={{ fontSize: 12, fontWeight: '700', color: customFeeType === 'part' ? C.primary : C.muted }}>🔩 Vật tư ngoài</Text>
-                    </Tap>
-                  </View>
-
-                  <Field
-                    label="Nội dung / Tên chi phí phát sinh"
-                    placeholder={customFeeType === 'labor' ? 'Ví dụ: Hàn vá ống đồng lổ mọt, Gia cố bas treo...' : 'Ví dụ: Dây đồng Thái Lan 2m, Cầu dao phụ Panasonic...'}
-                    value={customFeeName}
-                    onChangeText={setCustomFeeName}
-                  />
-
-                  <View style={{ marginTop: 8 }}>
-                    <Field
-                      label="Số tiền phát sinh (VNĐ)"
-                      placeholder="Ví dụ: 150.000"
-                      value={customFeePrice}
-                      onChangeText={(t) => setCustomFeePrice(formatNumberInput(t))}
-                      keyboardType="numeric"
-                    />
-                  </View>
-
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                    <Btn title="Hủy" variant="ghost" small style={{ flex: 1 }} onPress={() => { setShowCustomFee(false); setCustomFeeName(''); setCustomFeePrice(''); }} />
-                    <Btn title="Thêm vào báo giá" small style={{ flex: 1.6 }} onPress={handleAddCustomFee} />
-                  </View>
-                </View>
-              ) : null}
-
-              <View style={tx.totalRow}><Text style={{ color: C.muted }}>Giá khách đã đặt</Text><Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(booked)}</Text></View>
-              <View style={tx.totalRow}><Text style={{ fontWeight: '800', color: C.ink, fontSize: 15 }}>Tổng báo giá</Text><Text style={[ui.price, { fontSize: 20 }]}>{formatVND(qTotal)}</Text></View>
-              <View style={[tx.note, { backgroundColor: diff > 0 ? C.goldSoft : C.greenSoft }]}>
-                <Text style={{ color: diff > 0 ? C.goldInk : C.green, fontWeight: '700', lineHeight: 19 }}>
-                  {diff > 0 ? `Phát sinh ${formatVND(diff)} → khách cần duyệt báo giá trên app trước khi làm.` : 'Không phát sinh chi phí → có thể bắt đầu làm ngay.'}
-                </Text>
-              </View>
-            </Card>
-          </>
+          <QuoteEditor o={o} draft={draft} cats={cats} matsCount={mats.length} onOpenMaterials={() => setMatMode('quote')} evidence={evidence} />
         ) : null}
 
         {/* ===== Báo giá đã gửi ===== */}
         {o.quote && !(o.status === 'diagnosing' && o.quote.revisionRequested) ? (
           <Card style={{ marginTop: 12 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={tx.h}>🧾 Chẩn đoán & báo giá</Text>
-              <Badge text={o.quote.approved ? 'Đã duyệt' : o.status === 'quoted' ? 'Chờ khách duyệt' : 'Bị từ chối'} fg={o.quote.approved ? C.green : o.status === 'quoted' ? C.goldInk : C.red} bg={o.quote.approved ? C.greenSoft : o.status === 'quoted' ? C.goldSoft : C.redSoft} />
-            </View>
+            {(() => {
+              // Báo giá trước khi đi (status confirmed) chưa duyệt và chưa bị từ chối = đang chờ khách.
+              const waiting = !o.quote.approved && (o.status === 'quoted' || (o.status === 'confirmed' && !o.quote.rejectReason && !o.quote.revisionRequested));
+              return (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={tx.h}>🧾 Chẩn đoán & báo giá</Text>
+                  <Badge text={o.quote.approved ? 'Đã duyệt' : waiting ? 'Chờ khách duyệt' : 'Bị từ chối'} fg={o.quote.approved ? C.green : waiting ? C.goldInk : C.red} bg={o.quote.approved ? C.greenSoft : waiting ? C.goldSoft : C.redSoft} />
+                </View>
+              );
+            })()}
             <Text style={[tx.info, { marginBottom: 6 }]}>{o.quote.diagnosis}</Text>
-            {o.quote.lines.map((l, i) => (
+            {(o.quote.lines || []).map((l, i) => (
               <View key={`${l.name}-${i}`} style={tx.qRow}>
-                <Text style={{ flex: 1, color: C.ink2 }} numberOfLines={1}>{l.type === 'part' ? '🔩' : '🛠'} {l.name} x{l.qty}</Text>
+                <AppIcon name={l.type === 'part' ? 'settings' : 'hammer'} size={13} color={C.ink2} style={{ marginTop: 2 }} />
+                <Text style={{ flex: 1, color: C.ink2 }} numberOfLines={1}>{l.name} x{l.qty}</Text>
                 <Text style={{ color: C.ink, fontWeight: '700' }}>{formatVND(l.price * l.qty)}</Text>
               </View>
             ))}
@@ -1602,8 +1445,8 @@ export function TechJobScreen({ params }) {
                   {o.quote.remindedAt ? ` · Nhắc lần cuối ${fmtDateTime(o.quote.remindedAt)}` : ''}
                 </Text>
                 <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Btn title="Sửa báo giá / Phát sinh" icon="✏️" variant="outline" small style={{ flex: 1.15 }} onPress={() => a.reopenQuote(o.code)} />
-                  <Btn title="Nhắc khách duyệt" icon="📨" variant="soft" small style={{ flex: 1 }} onPress={() => a.remindQuote(o.code)} />
+                  <Btn title="Sửa báo giá / Phát sinh" icon="pencil" variant="outline" small style={{ flex: 1.15 }} onPress={() => a.reopenQuote(o.code)} />
+                  <Btn title="Nhắc khách duyệt" icon="send" variant="soft" small style={{ flex: 1 }} onPress={() => a.remindQuote(o.code)} />
                 </View>
               </View>
             ) : null}
@@ -1645,7 +1488,7 @@ export function TechJobScreen({ params }) {
                   {[25, 50, 75, 100].map((v) => <Chip key={v} label={`${v}%`} on={percent === v} onPress={() => setPercent(v)} style={{ flex: 1, justifyContent: 'center' }} />)}
                 </View>
                 <Field value={progressNote} onChangeText={setProgressNote} placeholder="VD: Đã vệ sinh xong dàn lạnh" style={{ marginTop: 10 }} />
-                <Btn title="Cập nhật tiến độ" variant="soft" small style={{ marginTop: 10 }} onPress={() => { a.addProgress(o.code, { note: progressNote.trim(), percent }); setProgressNote(''); }} />
+                <Btn title={busyProgress ? 'Đang gửi…' : 'Cập nhật tiến độ'} variant="soft" small style={{ marginTop: 10 }} disabled={busyProgress || !progressNote.trim()} onPress={submitProgress} />
               </View>
             ) : null}
           </Card>
@@ -1654,17 +1497,83 @@ export function TechJobScreen({ params }) {
         {/* Nhật ký ghi chú sửa chữa */}
         {(o.status === 'repairing' && mine) || (o.repairNotes || []).length ? (
           <Card style={{ marginTop: 12 }}>
-            <Text style={tx.h}>📝 Ghi chú sửa chữa</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={tx.h}>📝 Ghi chú sửa chữa</Text>
+              {(o.repairNotes || []).length > 0 ? (
+                <Badge text={`${(o.repairNotes || []).length} ghi chú`} fg={C.ink2} bg="#F1F5F9" />
+              ) : null}
+            </View>
             {(o.repairNotes || []).map((n) => (
-              <View key={n.id} style={tx.progRow}>
-                <Text style={{ color: C.ink, fontWeight: '600', lineHeight: 20 }}>{n.text}</Text>
-                <Text style={ui.meta}>{fmtDateTime(n.at)}</Text>
+              <View key={n.id} style={[tx.progRow, { borderBottomWidth: 1, borderBottomColor: '#F1F5F9', paddingBottom: 10, marginBottom: 8 }]}>
+                {editingNoteId === n.id ? (
+                  <View style={{ marginTop: 4, padding: 10, backgroundColor: '#F8FAFC', borderRadius: R.md, borderWidth: 1, borderColor: '#CBD5E1' }}>
+                    <Field
+                      value={editingNoteText}
+                      onChangeText={setEditingNoteText}
+                      multiline
+                      placeholder="Nội dung ghi chú sửa chữa…"
+                    />
+                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                      <Btn title="Huỷ" variant="ghost" small onPress={() => setEditingNoteId(null)} />
+                      <Btn
+                        title="Lưu"
+                        small
+                        onPress={() => {
+                          a.updateRepairNote(o.code, n.id, editingNoteText);
+                          setEditingNoteId(null);
+                        }}
+                      />
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: C.ink, fontWeight: '600', lineHeight: 20 }}>{n.text}</Text>
+                      <Text style={[ui.meta, { marginTop: 2 }]}>{fmtDateTime(n.at)}</Text>
+                    </View>
+                    {mine ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                        <Tap
+                          style={{ padding: 6, borderRadius: 6, backgroundColor: '#F1F5F9' }}
+                          hitSlop={6}
+                          onPress={() => {
+                            setEditingNoteId(n.id);
+                            setEditingNoteText(n.text);
+                          }}
+                        >
+                          <AppIcon name="pencil" size={13} color={C.ink2} />
+                        </Tap>
+                        <Tap
+                          style={{ padding: 6, borderRadius: 6, backgroundColor: '#FEF2F2' }}
+                          hitSlop={6}
+                          onPress={() => {
+                            u.dialog({
+                              icon: 'trash-2',
+                              title: 'Xoá ghi chú này?',
+                              message: 'Bạn có chắc muốn xoá dòng ghi chú này?',
+                              actions: [
+                                { label: 'Huỷ', variant: 'ghost' },
+                                {
+                                  label: 'Xác nhận xoá',
+                                  variant: 'danger',
+                                  onPress: () => a.deleteRepairNote(o.code, n.id),
+                                },
+                              ],
+                            });
+                          }}
+                        >
+                          <AppIcon name="trash-2" size={13} color={C.red} />
+                        </Tap>
+                      </View>
+                    ) : null}
+                  </View>
+                )}
               </View>
             ))}
             {o.status === 'repairing' && mine ? (
               <View style={{ marginTop: 6 }}>
-                <Field value={repairNote} onChangeText={setRepairNote} placeholder="Công việc đã làm / phát hiện thêm…" multiline />
-                <Btn title="Lưu ghi chú" variant="soft" small style={{ marginTop: 10 }} onPress={() => { a.addRepairNote(o.code, repairNote); setRepairNote(''); }} />
+                <Field value={repairNote} onChangeText={setRepairNote} placeholder="Thêm ghi chú công việc đã làm / phát hiện thêm…" multiline />
+                <Btn title={busyNote ? 'Đang lưu…' : '＋ Thêm ghi chú mới'} variant="soft" small style={{ marginTop: 10 }} disabled={busyNote || !repairNote.trim()} onPress={submitRepairNote} />
               </View>
             ) : null}
           </Card>
@@ -1780,8 +1689,8 @@ export function TechJobScreen({ params }) {
       {/* ===== Thanh hành động ===== */}
       {o.status === 'pending' ? (
         <View style={tx.dock}>
-          <Btn title="Từ chối ca" variant="ghost" style={{ flex: 1 }} onPress={() => { setReason(DECLINE_REASONS[0]); setReasonNote(''); setShowDecline(true); }} />
-          <Btn title="Tiếp nhận ca" icon="handshake" style={{ flex: 2 }} onPress={() => a.acceptJob(o.code)} />
+          <Btn title="Từ chối ca" variant="ghost" style={{ flex: 1 }} disabled={busyAccept || busyDecline} onPress={() => { setReason(DECLINE_REASONS[0]); setReasonNote(''); setShowDecline(true); }} />
+          <Btn title={busyAccept ? 'Đang nhận…' : 'Tiếp nhận ca'} icon="handshake" style={{ flex: 2 }} disabled={busyAccept || busyDecline} onPress={() => run(K.accept, () => a.acceptJob(o.code))} />
         </View>
       ) : null}
       {o.status === 'quoted' && mine ? (
@@ -1798,10 +1707,10 @@ export function TechJobScreen({ params }) {
         <View style={tx.dock}>
           <Btn title="Trả việc" variant="dangerSoft" style={{ flex: 1 }} onPress={() => { setReleaseReason(RELEASE_REASONS[0]); setReleaseNote(''); setShowRelease(true); }} />
           {o.status === 'confirmed' && showPreQuote ? (
-            <Btn title="Gửi báo giá trước khi đi" icon="receipt-text" style={{ flex: 2 }} onPress={sendQuote} />
-          ) : (
-            <Btn title={next.label} icon={next.icon} variant={next.variant || 'primary'} style={{ flex: 2 }} onPress={next.run} />
-          )}
+            <Btn title={busyQuote ? 'Đang gửi…' : 'Gửi báo giá trước khi đi'} icon="receipt-text" style={{ flex: 2 }} disabled={busyQuote} onPress={sendQuote} />
+          ) : next ? (
+            <Btn title={next.label} icon={next.icon} variant={next.variant || 'primary'} style={{ flex: 2 }} disabled={Boolean(next.disabled)} onPress={next.run} />
+          ) : null}
         </View>
       ) : null}
       {mine && o.status === 'diagnosing' ? (
@@ -1817,7 +1726,7 @@ export function TechJobScreen({ params }) {
             <Text style={ui.meta}>Tổng báo giá</Text>
             <Text style={[ui.price, { fontSize: 18 }]}>{formatVND(qTotal)}</Text>
           </View>
-          <Btn title={diff > 0 ? 'Gửi báo giá cho khách' : 'Xác nhận & bắt đầu'} style={{ flex: 2 }} onPress={sendQuote} />
+          <Btn title={busyQuote ? 'Đang gửi…' : diff > 0 ? 'Gửi báo giá cho khách' : 'Xác nhận & bắt đầu'} style={{ flex: 2 }} disabled={busyQuote} onPress={sendQuote} />
         </View>
       ) : null}
       {mine && o.status === 'repairing' ? (
@@ -1828,7 +1737,7 @@ export function TechJobScreen({ params }) {
             style={{ flex: 1 }}
             onPress={() => {
               u.dialog({
-                icon: '📅',
+                icon: 'calendar',
                 title: 'Yêu cầu hẹn tái khám',
                 message: 'Chưa thể hoàn thành ca trong hôm nay? Chọn lý do để Quản lý kỹ thuật Minh Đức xếp lịch quay lại.',
                 actions: [
@@ -1869,20 +1778,22 @@ export function TechJobScreen({ params }) {
       </Sheet>
       <Sheet
         visible={showDecline}
-        onClose={() => setShowDecline(false)}
+        onClose={() => { if (!busyDecline) setShowDecline(false); }}
         title="Lý do từ chối"
         footer={(
           <Btn
-            title="Xác nhận từ chối"
+            title={busyDecline ? 'Đang gửi…' : 'Xác nhận từ chối'}
             variant="danger"
-            onPress={() => {
+            disabled={busyDecline}
+            onPress={async () => {
               const note = reason === 'Lý do khác' ? reasonNote.trim() : '';
               if (reason === 'Lý do khác' && note.length < 3) {
                 u.alert('Thiếu lý do', 'Vui lòng mô tả ngắn lý do từ chối.', '✏️');
                 return;
               }
+              const res = await run(K.decline, () => a.declineJob(o.code, note ? `${reason}: ${note}` : reason));
+              if (!succeeded(res)) return;
               setShowDecline(false);
-              a.declineJob(o.code, note ? `${reason}: ${note}` : reason);
               nav.back();
             }}
           />
@@ -1901,20 +1812,21 @@ export function TechJobScreen({ params }) {
       </Sheet>
       <Sheet
         visible={showRelease}
-        onClose={() => setShowRelease(false)}
+        onClose={() => { if (!busyRelease) setShowRelease(false); }}
         title="Trả việc sau khi nhận"
         footer={(
           <Btn
-            title={releaseAssess?.free ? 'Trả việc (hợp lệ)' : 'Xác nhận trả việc'}
+            title={busyRelease ? 'Đang gửi…' : releaseAssess?.free ? 'Trả việc (hợp lệ)' : 'Xác nhận trả việc'}
             variant="danger"
-            onPress={() => {
+            disabled={busyRelease}
+            onPress={async () => {
               const note = releaseReason === 'Lý do khác' ? releaseNote.trim() : '';
               if (releaseReason === 'Lý do khác' && note.length < 3) {
                 u.alert('Thiếu lý do', 'Vui lòng mô tả ngắn lý do trả việc.', '✏️');
                 return;
               }
-              setShowRelease(false);
-              a.releaseJob(o.code, note ? `${releaseReason}: ${note}` : releaseReason).then((res) => { if (res?.ok) nav.back(); });
+              const res = await run(K.release, () => a.releaseJob(o.code, note ? `${releaseReason}: ${note}` : releaseReason));
+              if (res?.ok) { setShowRelease(false); nav.back(); }
             }}
           />
         )}
@@ -1940,430 +1852,13 @@ export function TechJobScreen({ params }) {
           <Field label="Mô tả ngắn" value={releaseNote} onChangeText={setReleaseNote} placeholder="VD: Tai nạn giao thông, không kịp đến…" style={{ marginTop: 8 }} />
         ) : null}
       </Sheet>
-      <Sheet
+      <CompleteSheet
+        o={o}
         visible={showDone}
-        onClose={() => { setShowDone(false); setForceDone(false); }}
-        title="Biên bản nghiệm thu & hoàn thành"
-        footer={(
-          <Btn
-            title="Gửi biên bản & hoàn thành"
-            onPress={() => {
-              if (!summary.trim()) {
-                u.alert('Thiếu nội dung', 'Ghi ngắn công việc đã làm trước khi gửi biên bản.', '📝');
-                return;
-              }
-              if (safetyChecks.length < SAFETY_CHECKLIST_ITEMS.length) {
-                u.alert('Chưa đủ checklist an toàn', 'Vui lòng kiểm tra và xác nhận đủ 4 tiêu chuẩn an toàn kỹ thuật Minh Đức trước khi bàn giao.', '⚡');
-                return;
-              }
-              const hasAfter = evidence.some((e) => e.stage === 'after');
-              if (!hasAfter && !forceDone) {
-                u.alert('Thiếu ảnh sau khi làm', 'Nên thêm ảnh “Sau khi làm” làm minh chứng. Tick xác nhận nếu khách đồng ý bỏ qua.', '📷');
-                return;
-              }
-              a.completeJob(o.code, {
-                summary: summary.trim(),
-                paid: isQRPayment(o) ? Boolean(o.report?.paid) : (orderTotal(o) > 0 ? paid : true),
-                safetyChecklist: safetyChecks,
-                customerSignature: signature || null,
-              }).then((ok) => {
-                if (ok) { setShowDone(false); setForceDone(false); }
-              });
-            }}
-          />
-        )}
-      >
-        <Field label="Nội dung công việc đã làm" multiline value={summary} onChangeText={setSummary} style={{ marginTop: -8 }} />
-        <Text style={[ui.fieldLabel, { marginTop: 10, marginBottom: 6 }]}>⚡ Checklist an toàn kỹ thuật & nghiệm thu chuẩn Minh Đức</Text>
-        <View style={{ padding: 10, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, marginBottom: 10, gap: 6 }}>
-          {SAFETY_CHECKLIST_ITEMS.map((item) => {
-            const checked = safetyChecks.includes(item);
-            return (
-              <Checkbox
-                key={item}
-                on={checked}
-                onPress={() => setSafetyChecks((prev) => (checked ? prev.filter((x) => x !== item) : [...prev, item]))}
-                label={item}
-              />
-            );
-          })}
-        </View>
-
-        <Text style={[ui.fieldLabel, { marginTop: 6, marginBottom: 6 }]}>✍️ Chữ ký điện tử của khách hàng</Text>
-        <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1', marginBottom: 10 }}>
-          <Text style={[ui.meta, { marginBottom: 8 }]}>Khách hàng xác nhận nghiệm thu đạt yêu cầu kỹ thuật & bàn giao thiết bị:</Text>
-          <View style={{ height: 75, borderRadius: R.sm, backgroundColor: '#fff', borderWidth: 1.5, borderStyle: 'dashed', borderColor: signature ? C.green : '#94A3B8', alignItems: 'center', justifyContent: 'center' }}>
-            {signature ? (
-              <View style={{ alignItems: 'center' }}>
-                <Text style={{ fontSize: 22, fontStyle: 'italic', fontWeight: '900', color: C.navy, letterSpacing: 2 }}>{signature}</Text>
-                <Text style={{ fontSize: 10, color: C.green, fontWeight: '700', marginTop: 2 }}>✓ Đã ký xác thực điện tử lúc {new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</Text>
-              </View>
-            ) : (
-              <Text style={{ color: C.muted, fontStyle: 'italic', fontSize: 13 }}>Chưa có chữ ký của khách</Text>
-            )}
-          </View>
-          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-            <Btn
-              title={signature ? "Ký lại" : "✍️ Khách ký xác nhận"}
-              variant="outline"
-              small
-              style={{ flex: 1 }}
-              onPress={() => setSignature(o.address?.name || 'Khách hàng ký')}
-            />
-            {signature ? (
-              <Btn title="Xóa" variant="ghost" small onPress={() => setSignature('')} />
-            ) : null}
-          </View>
-        </View>
-        {orderTotal(o) > 0 ? (
-          isQRPayment(o) ? (
-            <View
-              style={{
-                padding: 12,
-                borderRadius: R.md,
-                backgroundColor: o.report?.paid ? C.greenSoft : '#FFFBEB',
-                borderWidth: 1.5,
-                borderColor: o.report?.paid ? '#A7F3D0' : '#FDE68A',
-                marginTop: 4,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <AppIcon name={o.report?.paid ? 'check-circle-2' : 'qr-code'} size={18} color={o.report?.paid ? C.green : C.orange} strokeWidth={2.3} />
-                <Text style={{ fontWeight: '800', color: o.report?.paid ? C.green : C.goldInk, fontSize: 13.5, flex: 1 }}>
-                  {o.report?.paid
-                    ? `Khách đã chuyển khoản VietQR (${formatVND(orderTotal(o))})`
-                    : `Khách chuyển khoản QR (${formatVND(orderTotal(o))}) — KHÔNG THU TIỀN`}
-                </Text>
-              </View>
-              <Text style={{ fontSize: 12, color: o.report?.paid ? '#065F46' : C.goldInk, marginTop: 4, lineHeight: 18 }}>
-                {o.report?.paid
-                  ? 'Hệ thống đã xác nhận thanh toán QR từ khách hàng. Bạn chỉ cần gửi biên bản hoàn thành.'
-                  : 'Đơn này khách chọn Chuyển khoản VietQR trên App Khách hàng. Kỹ thuật viên không được thu tiền mặt — sau khi gửi biên bản, mã QR sẽ hiển thị trên máy khách để quét.'}
-              </Text>
-            </View>
-          ) : (
-            <Checkbox on={paid} onPress={() => setPaid(!paid)} label={`Đã thu tiền mặt ${formatVND(cashToCollect(o))} (${o.payment})`} />
-          )
-        ) : null}
-        {!evidence.some((e) => e.stage === 'after') ? (
-          <View style={[tx.note, { backgroundColor: C.orangeSoft, marginTop: 14 }]}>
-            <Text style={{ color: C.orange, fontWeight: '700', marginBottom: 8 }}>⚠ Chưa có ảnh “Sau khi làm”.</Text>
-            <Checkbox on={forceDone} onPress={() => setForceDone(!forceDone)} label="Khách đồng ý hoàn thành không kèm ảnh sau" />
-          </View>
-        ) : null}
-        <Text style={[ui.meta, { marginTop: 12 }]}>Sau khi gửi, khách nhận thông báo hoàn thành và có thể đánh giá.</Text>
-      </Sheet>
+        onClose={() => setShowDone(false)}
+        initialSummary={summary}
+        evidence={evidence}
+      />
     </View>
   );
 }
-
-// Phiên bản không dùng hook (gọi sau early-return ở TechJobScreen)
-function nextActionFor(o, a, nav) {
-  if (o.status === 'confirmed') return { label: 'Bắt đầu di chuyển', icon: 'navigation', run: () => a.startTravel(o.code) };
-  if (o.status === 'onway') {
-    return {
-      label: 'Đã đến nơi (check-in GPS)',
-      icon: 'map-pin',
-      run: async () => {
-        const loc = await getCheckInLocation();
-        a.arrive(o.code, loc);
-      },
-    };
-  }
-  return { label: '', run: () => nav.back() };
-}
-
-const tx = StyleSheet.create({
-  header: {
-    backgroundColor: C.navy,
-    ...grad.navyHero,
-    paddingHorizontal: 16,
-    paddingTop: 18,
-    paddingBottom: 48,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    overflow: 'hidden',
-  },
-  blob: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.07)' },
-  goldBar: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    backgroundColor: C.primary,
-    opacity: 0.9,
-  },
-  avatar: {
-    width: 58,
-    height: 58,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadow.sm,
-  },
-  hello: { color: 'rgba(255,255,255,0.68)', fontSize: 12, fontWeight: '600', letterSpacing: 0.2 },
-  techName: { color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: -0.3 },
-  techSub: { color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 3, fontWeight: '600' },
-  stats: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    marginTop: -30,
-    borderRadius: R.lg,
-    paddingVertical: 6,
-    ...shadow.md,
-    borderWidth: 1,
-    borderColor: 'rgba(228,234,243,0.95)',
-  },
-  statItem: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 14, marginHorizontal: 2 },
-  statSplit: { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: C.line },
-  statOn: { backgroundColor: C.primarySoft },
-  statV: { fontSize: 18, fontWeight: '900', color: C.ink, letterSpacing: -0.3 },
-  statL: { fontSize: 10, color: C.muted, marginTop: 3, fontWeight: '700' },
-  nextCard: {
-    marginTop: 16,
-    backgroundColor: C.navy2,
-    ...grad.navyCard,
-    borderColor: C.navy2,
-    padding: 0,
-    overflow: 'hidden',
-    ...shadow.lg,
-  },
-  nextAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: '#FFFFFF' },
-  nextEyebrow: { color: '#FFFFFF', fontWeight: '800', fontSize: 11, letterSpacing: 0.8 },
-  nextTitle: { color: '#fff', fontWeight: '900', fontSize: 17, marginTop: 6, lineHeight: 23, letterSpacing: -0.2 },
-  nextMeta: { color: 'rgba(255,255,255,0.78)', fontSize: 13, marginTop: 5, fontWeight: '500' },
-  offline: {
-    backgroundColor: C.orangeSoft,
-    borderRadius: R.md,
-    padding: 14,
-    marginBottom: 12,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: '#F6D9A8',
-  },
-  cardHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  cardCode: { fontWeight: '800', fontSize: 13, flexShrink: 1 },
-  cardStatus: { fontWeight: '800', fontSize: 12 },
-  payBox: {
-    alignItems: 'flex-end',
-    backgroundColor: '#FFF5F4',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  payLabel: { fontSize: 10, color: C.muted, fontWeight: '700' },
-  metaBlock: {
-    marginTop: 12,
-    backgroundColor: '#F6F8FC',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  metaLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 6 },
-  metaIcon: {
-    width: 22,
-    height: 22,
-    borderRadius: 8,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 1,
-  },
-  cardFoot: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E8EEF5',
-  },
-  name: { fontSize: 15, fontWeight: '800', color: C.ink, lineHeight: 20, letterSpacing: -0.2 },
-  info: { fontSize: 13, color: C.ink2, lineHeight: 19, flex: 1, fontWeight: '500' },
-  sec: { fontSize: 15, fontWeight: '800', color: C.ink, marginBottom: 12 },
-  day: {
-    width: 66,
-    height: 78,
-    borderRadius: R.md,
-    borderWidth: 1.5,
-    borderColor: C.line,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadow.sm,
-  },
-  dayOn: { backgroundColor: C.navy, borderColor: C.navy, ...shadow.md },
-  dayLabel: { fontSize: 11, color: C.muted, fontWeight: '700' },
-  dayNum: { fontSize: 22, color: C.ink, fontWeight: '900', marginTop: 2, letterSpacing: -0.5 },
-  dayDot: { width: 6, height: 6, borderRadius: 3, marginTop: 4 },
-  slotRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
-  slotTime: { width: 52, fontSize: 11, color: C.muted, fontWeight: '700', paddingTop: 8, textAlign: 'right' },
-  slotEmpty: {
-    height: 44,
-    borderRadius: R.md,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderColor: C.line,
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    marginBottom: 8,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-  },
-  daySummary: { marginBottom: 12 },
-  histRow: { flexDirection: 'row', gap: 12, alignItems: 'stretch' },
-  histRail: { width: 14, alignItems: 'center' },
-  histDot: { width: 12, height: 12, borderRadius: 6, marginTop: 3, borderWidth: 2, borderColor: '#fff', ...shadow.sm },
-  histLine: { width: 2, flex: 1, backgroundColor: '#E2E8F0', marginTop: 2, minHeight: 16 },
-  incomeHead: { backgroundColor: C.greenSoft, borderRadius: R.md, padding: 16, marginBottom: 8 },
-  incomeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E8EEF5',
-  },
-  notif: {
-    flexDirection: 'row',
-    gap: 12,
-    padding: 14,
-    backgroundColor: '#fff',
-    borderRadius: R.lg,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#EEF2F7',
-    ...shadow.sm,
-  },
-  notifUnread: { backgroundColor: '#F5F9FF', borderColor: '#D6E4FF' },
-  notifTitle: { fontSize: 14, fontWeight: '800', color: C.ink2, lineHeight: 19 },
-  notifBody: { fontSize: 13, color: C.muted, lineHeight: 18, marginTop: 2 },
-  dot: { width: 9, height: 9, borderRadius: 5, backgroundColor: C.primary, marginTop: 6 },
-  kpis: { flexDirection: 'row', gap: 10, marginHorizontal: 16, marginTop: -34 },
-  kpi: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: R.lg,
-    padding: 12,
-    alignItems: 'center',
-    ...shadow.md,
-    borderWidth: 1,
-    borderColor: 'rgba(228,234,243,0.95)',
-  },
-  kpiV: { fontSize: 18, fontWeight: '900', color: C.ink, marginTop: 6, letterSpacing: -0.3 },
-  kpiL: { fontSize: 11, color: C.muted, fontWeight: '700', marginTop: 2 },
-  h: { fontSize: 16, fontWeight: '800', color: C.ink, marginBottom: 12, letterSpacing: -0.2 },
-  reviewRow: { paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E8EEF5' },
-  menu: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 18,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#EEF2F7',
-  },
-  hero: { borderRadius: R.lg, padding: 18, borderWidth: 1, borderColor: 'rgba(15,23,42,0.04)' },
-  heroLabel: { fontSize: 21, fontWeight: '900', letterSpacing: -0.3 },
-  heroDesc: { fontSize: 13, marginTop: 6, fontWeight: '600', opacity: 0.88, lineHeight: 19 },
-  stepBar: { flex: 1, height: 6, borderRadius: 3 },
-  addrBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 12,
-    backgroundColor: '#F6F8FC',
-    borderRadius: R.md,
-    padding: 12,
-  },
-  svcRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#F6F8FC',
-    borderRadius: R.md,
-    padding: 12,
-  },
-  lineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E8EEF5',
-  },
-  addLine: {
-    height: 46,
-    borderRadius: R.md,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: '#B9CEF8',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-    backgroundColor: C.primarySoft,
-  },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
-  note: { borderRadius: R.md, padding: 12, marginTop: 12 },
-  qRow: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
-  progRow: {
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E8EEF5',
-  },
-  fl: { fontSize: 13, fontWeight: '700', color: C.ink2, marginBottom: 8 },
-  thumb: {
-    width: 78,
-    height: 78,
-    borderRadius: 16,
-    backgroundColor: '#EEF2F7',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  thumbAdd: {
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: '#B9CEF8',
-    backgroundColor: C.primarySoft,
-  },
-  thumbX: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  option: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 13,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E8EEF5',
-  },
-  dock: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#fff',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.line,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 16,
-    ...shadow.md,
-  },
-});

@@ -4,6 +4,27 @@
 >
 > Ký hiệu: ✅ **Đã có API** (app đang gọi) · 🟡 **Có API nhưng thiếu dữ liệu** · 🔴 **Chưa có API — app đang giả lập trên máy** · 📌 **Để fix cứng**
 
+> [!NOTE]
+> **Ghi chú thống nhất (cập nhật 11/2026)** — các mục dưới đây đã được **kiểm chứng bằng grep trong `src/`** (app đã chạy với backend thật HRMSS API); các bảng phía sau giữ nguyên nội dung phân tích gốc, chỗ nào đã thay đổi được ghi chú *(cập nhật 11/2026)* ngay trong dòng.
+>
+> | Mục | Hiện trạng đã kiểm chứng trong code |
+> | :--- | :--- |
+> | Thanh toán VietQR | ✅ **QR thật**: `POST /customer/requests/:id/payments/vietqr` (`api.js` `createVietQr`), component `VietQRPay` hiển thị ảnh `img.vietqr.io` do backend trả, hỏi `getBill` **mỗi 5 giây**; tiền về do **SePay webhook** báo backend. `PseudoQR` **chỉ còn dùng ở phiếu bảo hành** (`MiscScreens.js`). |
+> | Đổi sang VietQR giữa chừng | ✅ `PATCH /customer/requests/:id/payment-method` (`api.js`) |
+> | Phương thức thanh toán khi đặt | ✅ gửi `preferred_payment_method` khi tạo yêu cầu (`AppContext.js`), map lại trong `syncService.js` |
+> | Vị trí thợ | ✅ GPS thật qua `expo-location` (`utils/geo.js`), gửi `PUT /technician/jobs/location`; khách đọc `GET /customer/requests/:id/tracking`; chu kỳ **15 giây** (`OrderLive.js`) |
+> | Check-in | 🟡 vẫn gọi `PATCH /technician/jobs/:id/start` kèm vị trí; geofence thống nhất **≤ 200 m** do BE kiểm tra |
+> | Trễ hẹn & đền bù | ✅ app đọc kết quả lateness từ server (`lateCompensation` map từ dữ liệu BE) |
+> | Sửa yêu cầu khi chưa có thợ | ✅ `updatePendingRequest` gọi `updateCustomerRequest` (API) |
+> | Nhắc khách duyệt báo giá | ✅ `remindQuote` gọi `remindQuotation` (API) |
+> | Thông báo | ✅ `GET /notifications`, `PATCH /notifications/:id/read`, `PATCH /notifications/read-all` (`api.js`) |
+> | Ảnh minh chứng / bước thực hiện | ✅ `POST/GET/PATCH/DELETE /uploads`, procedure steps (`AppContext.js`) |
+> | Văn phòng duyệt | ✅ không còn `setTimeout` tự duyệt; luồng `pending_payment` → `pending_review` → `done` |
+> | Thu nhập thợ | ⚪ backend **chưa có bảng ví**; app **không hiển thị số tự tính** (`TechScreens.js`), văn phòng đối soát ngoài app. Quy tắc: 70% công + 15% hoa hồng vật tư kho + hoàn 100% vật tư ngoài |
+> | Realtime | Đồng bộ khi thao tác + khi quay lại app + polling; WebSocket là hướng phát triển |
+>
+> Quy ước chung: bảo hành theo hạng **60/75/90/120 ngày**; mã đơn tiền tố `HRM`; mật khẩu ≥ 8 ký tự; OTP 10 phút.
+
 ---
 
 ## 0. Nguyên tắc chia API / fix cứng
@@ -165,7 +186,7 @@ flowchart LR
 | 3.8 | **Voucher** (`THO20`, `MINHDUC10`, voucher đổi điểm) | 🔴 `VOUCHERS` cứng + `voucherDiscount()` tính ở app | `GET /customer/vouchers` (ví voucher); `POST /vouchers/validate { code, service_ids, subtotal }` |
 | 3.9 | **Giảm giá theo hạng thành viên** (Vàng −5%, Kim cương −10% vật tư; BH 60/75/90/120 ngày) | 🔴 `TIERS` cứng + `tierOf(lifetimePoints)` ở app | `GET /customer/membership` → `{ tier, lifetime_points, points, warranty_days, part_discount_percent, next_tier }` |
 | 3.10 | **Tổng tiền dự kiến** | 🔴 app tự cộng: giá − giảm SP − combo − voucher | **API mới quan trọng:** `POST /customer/requests/quote-preview { items, voucher_code, address_id }` → `{ goods, product_discount, combo_discount, voucher_discount, total, lines[] }`. App **chỉ hiển thị** |
-| 3.11 | **Phương thức thanh toán** (VietQR / Tiền mặt) | 🔴 chỉ lưu chuỗi `payment`, không gửi API; syncService luôn gán cứng `'Chuyển khoản VietQR (MBBank)'` | Thêm `payment_method: VIETQR \| CASH` vào `POST /customer/requests`; BE trả lại đúng giá trị |
+| 3.11 | **Phương thức thanh toán** (VietQR / Tiền mặt) | ~~🔴 chỉ lưu chuỗi `payment`, không gửi API~~ → ✅ *(cập nhật 11/2026)* gửi `preferred_payment_method` khi tạo yêu cầu, `syncService` map lại theo giá trị BE | Thêm `payment_method: VIETQR \| CASH` vào `POST /customer/requests`; BE trả lại đúng giá trị |
 
 ---
 
@@ -191,7 +212,7 @@ flowchart LR
 | Thành phần | Hiện trạng | Đề xuất |
 | :--- | :--- | :--- |
 | Danh sách đơn / chi tiết đơn | ✅ `GET /customer/requests?status=ALL` · có sẵn `getCustomerRequestDetail` nhưng **chưa dùng** | Màn chi tiết đơn nên gọi `GET /customer/requests/:id` để lấy timeline, báo giá, ảnh, vật tư đầy đủ |
-| **Sửa yêu cầu** (đổi ngày/giờ, mô tả, ảnh) khi chưa có thợ | 🔴 `updatePendingRequest` chỉ sửa local | `PATCH /customer/requests/:id` — chỉ cho phép khi `RECEIVED` |
+| **Sửa yêu cầu** (đổi ngày/giờ, mô tả, ảnh) khi chưa có thợ | ~~🔴 `updatePendingRequest` chỉ sửa local~~ → ✅ *(cập nhật 11/2026)* gọi `updateCustomerRequest` (API) | `PATCH /customer/requests/:id` — chỉ cho phép khi `RECEIVED` |
 | **Huỷ đơn** | ✅ `PATCH /customer/requests/:id/cancel` | BE quyết định **phí kiểm tra** và trả `cancellation_fee` — hiện app **đoán phí 100.000đ bằng regex đọc chuỗi `reason`** (rất dễ sai) |
 
 ---
@@ -218,8 +239,8 @@ flowchart LR
 | Thành phần | Hiện trạng | Đề xuất |
 | :--- | :--- | :--- |
 | Bấm “Bắt đầu di chuyển” → trạng thái `onway` | 🔴 chỉ đổi local + gửi 1 lần toạ độ | `PATCH /technician/jobs/:id/travel` → BE đổi visit sang `EN_ROUTE`, lưu `travel_started_at`, push cho khách |
-| Gửi vị trí | ✅ `PUT /technician/jobs/location` — nhưng toạ độ là **giả** (đích + 0.018) | App lấy GPS thật (`expo-location`), gửi mỗi 10–15 giây |
-| Khách xem bản đồ / ETA | 🔴 `tickTracking` + `advanceTracking()` **mô phỏng** tiến độ | `GET /customer/requests/:id/tracking` → `{ lat, lng, eta_min, distance_km, updated_at }` hoặc **WebSocket** `ws /realtime?request_id=` |
+| Gửi vị trí | ✅ `PUT /technician/jobs/location` — *(cập nhật 11/2026)* toạ độ **GPS thật** qua `expo-location` (`utils/geo.js`), chỉ khi đang dùng app | Chu kỳ thống nhất **15 giây** |
+| Khách xem bản đồ / ETA | ✅ *(cập nhật 11/2026)* `tickTracking` đọc `GET /customer/requests/:id/tracking` mỗi 15 giây (`OrderLive.js`) | `{ lat, lng, eta_min, distance_km, updated_at }`; **WebSocket** là hướng phát triển |
 | Cảnh báo quá giờ hẹn | 📌 `TECH_POLICY.lateGraceMin` cứng | Chính sách lấy từ `GET /config`; BE trả cờ `is_late` |
 
 ---
@@ -244,7 +265,7 @@ flowchart LR
 | Báo giá trước khi xuất phát (pre-visit quote) | 🟡 dùng chung quotation | Thêm `quotation_type: PRE_VISIT` |
 | Khách nhận báo giá | 🔴 notification local | Push từ BE |
 | **Khách Đồng ý / Từ chối** | ✅ `POST /customer/requests/:id/quotation-decision` | Thêm `decision: REVISION_REQUESTED` (khách yêu cầu sửa báo giá — đang có trong UI) |
-| Thợ nhắc khách duyệt | 🔴 `remindQuote` local | `POST /technician/jobs/:id/quotation/remind` (BE giới hạn 1 lần / 5 phút) |
+| Thợ nhắc khách duyệt | ~~🔴 `remindQuote` local~~ → ✅ *(cập nhật 11/2026)* gọi `remindQuotation` (API) | `POST /technician/jobs/:id/quotation/remind` (BE giới hạn 1 lần / 5 phút) |
 | Thợ mở lại báo giá để sửa | 🔴 `reopenQuote` local | `POST /technician/jobs/:id/quotation` với `quotation_type: REVISED` |
 
 ---
@@ -267,7 +288,7 @@ flowchart LR
 | :--- | :--- | :--- |
 | Nộp biên bản: tóm tắt, checklist an toàn 4 mục, chữ ký khách | 🟡 `PATCH /technician/jobs/:id/complete` gửi `work_performed`, `testing_result`, `handover_result` — **chữ ký không gửi** | Thêm `safety_checklist[]`, `customer_signature_file_id` |
 | Trạng thái chờ nghiệm thu `pending_review` | 🟡 đã map `PENDING_REVIEW / READY_FOR_ACCEPTANCE` → `pending_review` | — |
-| **Văn phòng duyệt** | 🔴 **app tự duyệt sau 3,5 giây** bằng `setTimeout` (demo) | Khi BE có màn admin: `PATCH /admin/requests/:id/acceptance { decision: APPROVED\|REJECTED, note }`. App **bỏ `setTimeout`**, chờ push / polling trạng thái |
+| **Văn phòng duyệt** | ~~🔴 app tự duyệt sau 3,5 giây bằng `setTimeout`~~ → ✅ *(cập nhật 11/2026)* đã bỏ `setTimeout`; đơn chờ ở `pending_review` tới khi văn phòng nghiệm thu → `done` | Khi BE có màn admin: `PATCH /admin/requests/:id/acceptance { decision: APPROVED\|REJECTED, note }`. App **bỏ `setTimeout`**, chờ push / polling trạng thái |
 | Cộng điểm tích luỹ cho khách, cộng uy tín cho thợ | 🔴 tính ở app (`floor(total/10000)` điểm) | BE cộng khi đơn `COMPLETED`, trả trong `GET /customer/membership` và `GET /technician/me` |
 
 ---
@@ -276,9 +297,9 @@ flowchart LR
 
 | Thành phần | Hiện trạng | Đề xuất |
 | :--- | :--- | :--- |
-| Hiển thị mã VietQR | 🔴 `PseudoQR` vẽ QR **giả** từ chuỗi `MINHDUC\|code\|amount` | `POST /customer/requests/:id/payments { method: VIETQR }` → `{ payment_id, qr_data (chuẩn EMVCo/VietQR), bank, account_no, account_name, amount, transfer_content, expires_at }` |
+| Hiển thị mã VietQR | ~~🔴 `PseudoQR` vẽ QR giả~~ → ✅ *(cập nhật 11/2026)* `VietQRPay` gọi `POST /customer/requests/:id/payments/vietqr`, hiển thị ảnh `img.vietqr.io` do BE trả, hỏi `getBill` mỗi 5 giây; SePay webhook báo tiền về. `PseudoQR` chỉ còn ở **phiếu bảo hành** | `{ payment_id, qr_image_url, account_no, account_name, amount, transfer_content }` |
 | Xác nhận đã nhận tiền chuyển khoản | 🔴 `confirmPayment` bấm tay ở app | **Webhook ngân hàng/cổng (Casso, SePay, PayOS…) → BE**; app nhận push hoặc polling `GET /payments/:id` |
-| Khách đổi sang VietQR giữa chừng → khoá thu tiền mặt của thợ | 🔴 `switchToQRPayment` local | `PATCH /customer/requests/:id/payment-method { method }` |
+| Khách đổi sang VietQR giữa chừng → khoá thu tiền mặt của thợ | ~~🔴 `switchToQRPayment` local~~ → ✅ *(cập nhật 11/2026)* gọi API | `PATCH /customer/requests/:id/payment-method { method }` |
 | Thợ xác nhận đã thu tiền mặt | 🔴 cờ `paid` local | `POST /technician/jobs/:id/cash-collected { amount }` |
 | Trạng thái đã thanh toán | 🟡 app suy `paid = request_status === 'COMPLETED'` | BE trả rõ `payment_status: UNPAID\|PENDING\|PAID\|PARTIAL`, `paid_at`, `paid_by` |
 | Phí kiểm tra khi huỷ sau khi thợ tới | 🔴 regex đọc chuỗi lý do | Trả `cancellation_fee` (Bước 5) |
@@ -303,7 +324,7 @@ flowchart LR
 
 | Thành phần | Hiện trạng | Đề xuất |
 | :--- | :--- | :--- |
-| Thông báo Khách / Thợ | 🔴 **toàn bộ sinh ở app** (`pushNotif`, `pushTech`) + mock data | `GET /notifications?cursor=`, `PATCH /notifications/:id/read`, `PATCH /notifications/read-all`, `DELETE /notifications` |
+| Thông báo Khách / Thợ | ~~🔴 toàn bộ sinh ở app~~ → ✅ *(cập nhật 11/2026)* app gọi `GET /notifications`, `PATCH /notifications/:id/read`, `PATCH /notifications/read-all` | `GET /notifications?cursor=`, `PATCH /notifications/:id/read`, `PATCH /notifications/read-all`, `DELETE /notifications` |
 | Push khi app đóng | 🔴 không có | `POST /devices/push-token { token, platform }` + BE gửi qua Expo Push / FCM |
 | Cập nhật trạng thái đơn tức thì giữa 2 máy | 🔴 phụ thuộc state chung trên cùng máy | WebSocket / SSE kênh `request:<id>` **hoặc** polling `GET /customer/requests/:id` mỗi 15s khi đang mở đơn |
 
@@ -313,7 +334,7 @@ flowchart LR
 
 | Thành phần | Hiện trạng | Đề xuất |
 | :--- | :--- | :--- |
-| Thu nhập (70% công + 15% hoa hồng vật tư kho + 100% hoàn vật tư ngoài) | 🔴 tính ở app `TechScreens.js` | `GET /technician/wallet` → `{ balance, pending, items[] }` — **BE tính** |
+| Thu nhập (70% công + 15% hoa hồng vật tư kho + 100% hoàn vật tư ngoài) | ~~🔴 tính ở app `TechScreens.js`~~ → ⚪ *(cập nhật 11/2026)* app **không còn hiển thị số tự tính**; BE chưa có bảng ví, văn phòng đối soát ngoài app | `GET /technician/wallet` → `{ balance, pending, items[] }` — **BE tính** |
 | Rút tiền | 🔴 `requestPayout` local | `POST /technician/payouts { amount, bank_name, account_number, account_holder }` |
 
 ---
@@ -329,7 +350,7 @@ flowchart LR
 | `DIAGNOSED_PENDING_QUOTATION` / quote `SENT` | `quoted` | Thợ gửi báo giá | |
 | `READY_FOR_REPAIR` / `IN_PROGRESS` + quote `APPROVED` | `repairing` | Khách đồng ý | |
 | `PENDING_REVIEW` / `READY_FOR_ACCEPTANCE` | `pending_review` | Thợ nộp biên bản | |
-| `PENDING_PAYMENT` | `done` + chưa trả | Văn phòng duyệt | Nên thêm app status riêng `awaiting_payment` |
+| `PENDING_PAYMENT` | `done` + chưa trả | Văn phòng duyệt | Nên thêm app status riêng `awaiting_payment` — ✅ *(cập nhật 11/2026)* app đã có `pending_payment` / `partially_paid` |
 | `COMPLETED` | `done` + đã trả | Webhook thanh toán | |
 | `FOLLOW_UP_SCHEDULED` | `repairing` + cờ tái khám | Thợ hẹn tái khám | 🔴 BE cần thêm |
 | `WARRANTY_PENDING` | `warranty_pending` | Khách gửi BH | 🔴 BE cần thêm |
@@ -377,6 +398,6 @@ flowchart LR
 | **P0** | Upload ảnh + evidence + **các bước thực hiện (procedure)** | Khách và Văn phòng không thấy minh chứng/tiến độ nếu khác máy; quy trình hứa với khách chưa được thợ thực hiện có kiểm soát |
 | **P0** | Trạng thái `EN_ROUTE`, check-in có kiểm tra GPS, tính trễ ở BE | Đền bù trễ ảnh hưởng tiền |
 | **P1** | Notifications + push token; tracking realtime | Trải nghiệm 2 phía |
-| **P1** | Payment VietQR thật + webhook | Hiện chỉ là QR giả + bấm tay |
+| **P1** | Payment VietQR thật + webhook | ✅ *(cập nhật 11/2026)* Đã có: QR thật do BE tạo + SePay webhook; app hỏi hoá đơn mỗi 5 giây |
 | **P1** | Admin duyệt nghiệm thu / bảo hành (bỏ `setTimeout` giả lập) | Đúng WF2, WF4 |
 | **P2** | Thiết bị khách, voucher, membership, rewards, ví thợ, `/config`, slot trống | Hiện chạy local được, chuyển dần |

@@ -15,30 +15,53 @@ import {
   TimeRangeSlider, minutesToSlotStr, minutesToTimeStr, resolveSemanticTone,
 } from '../../components';
 import { pickImage, validateVietnamesePhone, validateContactName } from '../../utils';
+import {
+  nextDays, minSelectableMinute, isDayOutOfSlots, clampToDay, parseSlotToMinutes, dayIndexOfKey, dobError,
+  MAX_DAY_MINUTE, LEAD_MINUTES, SLOT_STEP_MINUTES, DEFAULT_SLOT_MINUTE,
+} from '../../utils/dateTime';
+import {
+  APP_VERSION, PASSWORD_MIN_LENGTH, OTP_TTL_MINUTES, BASE_WARRANTY_DAYS, FREE_CANCEL_MIN_BEFORE,
+} from '../../constants';
+import {
+  callAction, errorText, isOk, useBusy, NotFoundView,
+} from '../shared/actionHelpers';
 import { TrackingCard, VietQRPay } from '../../components/order';
 
-const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-const nextDays = (n) => Array.from({ length: n }, (_, i) => {
-  const d = new Date();
-  d.setDate(d.getDate() + i);
-  return {
-    label: i === 0 ? 'Hôm nay' : i === 1 ? 'Ngày mai' : WEEKDAYS[d.getDay()],
-    ddmm: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`,
-    key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
-  };
-});
 const newAttId = () => `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+// "60 phút" → "1 tiếng" cho câu chữ chính sách huỷ.
+const FREE_CANCEL_TEXT = FREE_CANCEL_MIN_BEFORE % 60 === 0 ? `${FREE_CANCEL_MIN_BEFORE / 60} tiếng` : `${FREE_CANCEL_MIN_BEFORE} phút`;
+// Một số thông báo (techPolicy) còn ghi cứng số hotline cũ → thay bằng HOTLINE hiện hành.
+const withHotline = (t) => (t ? String(t).replace(/1900\s?6868/g, HOTLINE) : t);
 
 // =========================================================== TÌM KIẾM
 export function SearchScreen() {
   const { s, a, nav } = useApp();
   const [q, setQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
+
+  // Debounce 250ms để tối ưu hiệu năng lọc danh sách khi người dùng gõ phím liên tục
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQ(q);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [q]);
+
   const results = useMemo(() => {
-    const t = normalize(q.trim());
+    const t = normalize(debouncedQ.trim());
     if (!t) return [];
     return ALL_SERVICES.filter((x) => normalize(`${x.name} ${catLabel(x.category)}`).includes(t));
-  }, [q]);
-  const pick = (text) => { setQ(text); a.addSearch(text); };
+  }, [debouncedQ, s.catalogVersion]); // catalogVersion đổi khi danh mục backend nạp xong → tìm lại trên dữ liệu mới
+  const pick = (text) => {
+    setQ(text);
+    setDebouncedQ(text);
+    a.addSearch(text);
+  };
+
+  const handleClear = () => {
+    setQ('');
+    setDebouncedQ('');
+  };
 
   return (
     <View style={{ flex: 1 }}>
@@ -56,7 +79,7 @@ export function SearchScreen() {
             style={mx.searchInput}
             returnKeyType="search"
           />
-          {q ? <Tap onPress={() => setQ('')} hitSlop={8}><AppIcon name="x" size={16} color={C.faint} /></Tap> : null}
+          {q ? <Tap onPress={handleClear} hitSlop={8}><AppIcon name="x" size={16} color={C.faint} /></Tap> : null}
         </View>
       </View>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }} keyboardShouldPersistTaps="handled">
@@ -193,31 +216,30 @@ export function OrderScreen({ params }) {
   const [showEdit, setShowEdit] = useState(false);
   const [editNote, setEditNote] = useState('');
 
-  const parseSlotToMinutes = (slotStr) => {
-    if (!slotStr) return 14 * 60;
-    const match = String(slotStr).match(/^(\d{1,2})h(\d{2})?/);
-    if (!match) return 14 * 60;
-    const h = parseInt(match[1], 10) || 14;
-    const m = parseInt(match[2] || '0', 10) || 0;
-    return h * 60 + m;
-  };
-
   const [editDayIdx, setEditDayIdx] = useState(1);
-  const [editMinutes, setEditMinutes] = useState(14 * 60);
-  const [editSlot, setEditSlot] = useState(() => minutesToSlotStr(14 * 60));
+  const [editMinutes, setEditMinutes] = useState(DEFAULT_SLOT_MINUTE);
+  const [editSlot, setEditSlot] = useState(() => minutesToSlotStr(DEFAULT_SLOT_MINUTE));
   const [editAtts, setEditAtts] = useState([]);
-  const o = s.orders.find((x) => x.code === params.code);
-  if (!o) return <View style={{ flex: 1 }}><TopBar title="Không tìm thấy đơn" /></View>;
+  // Cờ busy chống bấm đúp cho các thao tác gửi lên máy chủ.
+  const [quoteBusy, runQuote] = useBusy();
+  const [cancelBusy, runCancel] = useBusy();
+  const [editBusy, runEdit] = useBusy();
+  const [payBusy, runPay] = useBusy();
+  const o = (s.orders || []).find((x) => x.code === params?.code);
+  if (!o) return <NotFoundView onBack={() => (nav.stack.length ? nav.back() : nav.activity())} />;
   const meta = STATUS_META[o.status] || STATUS_META.pending;
   const curIdx = o.status === 'cancelled' ? -1 : stepIndexOf(o.status);
-  const at = (k) => [...o.history].reverse().find((h) => h.status === k)?.at;
-  const winfo = warrantyInfo(o, s.orders, s.lifetimePoints);
+  const at = (k) => [...(o.history || [])].reverse().find((h) => h.status === k)?.at;
+  const winfo = warrantyInfo(o, s.orders, s.lifetimePoints || 0);
+  const tierWarrantyDays = tierOf(s.lifetimePoints || 0).cur?.warrantyDays || BASE_WARRANTY_DAYS;
   const partDisc = tierPartDiscountAmount(o);
-  const orderCats = [...new Set(o.items.map((it) => getService(it.id)?.category).filter(Boolean))];
+  const orderItems = o.items || [];
+  const orderCats = [...new Set(orderItems.map((it) => getService(it.id)?.category).filter(Boolean))];
   const refMaterials = MATERIALS.filter((m) => orderCats.includes(m.category) || m.category === 'all');
   const canCancel = ['pending', 'confirmed'].includes(o.status);
   const cancelStatus = getCancellationWindowStatus(o);
   const canEdit = o.status === 'pending';
+  const quoteLines = o.quote?.lines || [];
 
   const handlePressCancel = () => {
     const status = getCancellationWindowStatus(o);
@@ -225,10 +247,10 @@ export function OrderScreen({ params }) {
       u.dialog({
         icon: '⚠️',
         title: 'Không thể huỷ đơn',
-        message: status.reason || 'Quý khách không thể huỷ đơn khi còn dưới 1 tiếng trước giờ hẹn với thợ. Để huỷ hoặc dời lịch gấp, vui lòng gọi Hotline 1900 6868.',
+        message: withHotline(status.reason) || `Quý khách không thể tự huỷ đơn khi còn dưới ${FREE_CANCEL_TEXT} trước giờ hẹn với thợ. Để huỷ hoặc dời lịch gấp, vui lòng gọi Hotline ${HOTLINE}.`,
         actions: [
           { label: 'Đóng', variant: 'ghost' },
-          { label: 'Gọi Hotline 1900 6868', onPress: u.call },
+          { label: `Gọi Hotline ${HOTLINE}`, onPress: u.call },
         ],
       });
       return;
@@ -236,23 +258,16 @@ export function OrderScreen({ params }) {
     setShowCancel(true);
   };
   const active = isActiveOrder(o);
-  const reorder = () => nav.push('checkout', { items: o.items.map(({ id, qty }) => ({ id, qty })) });
+  const reorder = () => nav.push('checkout', { items: orderItems.map(({ id, qty }) => ({ id, qty })) });
   const evidence = o.evidence || [];
   const editDays = nextDays(7);
-  const now = new Date();
-  const nowTotalM = now.getHours() * 60 + now.getMinutes();
-  const getMinSelectableEdit = (dIdx) => {
-    if (dIdx > 0) return 8 * 60;
-    return Math.max(8 * 60, Math.ceil((nowTotalM + 45) / 15) * 15);
-  };
-  const minAvailEdit = getMinSelectableEdit(editDayIdx);
-  const isTodayOutOfSlotsEdit = editDayIdx === 0 && minAvailEdit >= 20 * 60;
+  const minAvailEdit = minSelectableMinute(editDayIdx);
+  const isTodayOutOfSlotsEdit = isDayOutOfSlots(editDayIdx);
 
   const handleEditDaySelect = (i) => {
     setEditDayIdx(i);
-    const newMin = getMinSelectableEdit(i);
-    if (i === 0 && newMin >= 20 * 60) return;
-    const clamped = Math.min(Math.max(editMinutes, newMin), 20 * 60);
+    if (isDayOutOfSlots(i)) return;
+    const clamped = clampToDay(editMinutes, i);
     setEditMinutes(clamped);
     setEditSlot(minutesToSlotStr(clamped));
   };
@@ -263,15 +278,15 @@ export function OrderScreen({ params }) {
   };
 
   const openEdit = () => {
-    const days = nextDays(7);
-    const idx = Math.max(0, days.findIndex((d) => d.key === o.dateKey));
-    const dIdx = idx >= 0 ? idx : 1;
+    // Ngày hẹn hiện tại nằm ngoài 7 ngày tới (hoặc hôm nay đã hết giờ) → mặc định Ngày mai.
+    let dIdx = dayIndexOfKey(editDays, o.dateKey, 1);
+    if (isDayOutOfSlots(dIdx)) dIdx = 1;
     setEditDayIdx(dIdx);
     const mins = parseSlotToMinutes(o.slot);
-    const minAvail = getMinSelectableEdit(dIdx);
-    const clamped = Math.min(Math.max(mins, minAvail), 20 * 60);
+    const clamped = clampToDay(mins, dIdx);
     setEditMinutes(clamped);
-    setEditSlot(o.slot || minutesToSlotStr(clamped));
+    // Giờ cũ bị kẹp (đã quá gần/quá muộn) thì hiển thị đúng ca mới, không giữ nhãn ca cũ.
+    setEditSlot(clamped === mins && o.slot ? o.slot : minutesToSlotStr(clamped));
     setEditNote(o.note || '');
     setEditAtts([...(o.attachments || [])]);
     setShowEdit(true);
@@ -283,25 +298,67 @@ export function OrderScreen({ params }) {
     if (!uri) return;
     setEditAtts((p) => [...p, { id: newAttId(), uri, at: Date.now() }]);
   };
-  const saveEdit = async () => {
+  const saveEdit = () => runEdit(async () => {
     if (editDayIdx === 0 && isTodayOutOfSlotsEdit) {
       u.alert('Hết giờ phục vụ', 'Hôm nay thợ đã kết thúc nhận ca. Quý khách vui lòng chọn Ngày mai.', '⏰');
       return;
     }
     if (editDayIdx === 0 && editMinutes < minAvailEdit) {
-      u.alert('Giờ hẹn quá gần', 'Vui lòng chọn khung giờ cách hiện tại ít nhất 45 phút để thợ kịp di chuyển.', '⏰');
+      u.alert('Giờ hẹn quá gần', `Vui lòng chọn khung giờ cách hiện tại ít nhất ${LEAD_MINUTES} phút để thợ kịp di chuyển.`, '⏰');
       return;
     }
     const day = editDays[editDayIdx];
-    const ok = await a.updatePendingRequest(o.code, {
-      note: editNote,
-      slot: editSlot,
-      dateLabel: `${day.label} (${day.ddmm})`,
-      dateKey: day.key,
-      attachments: editAtts,
-    });
-    if (ok) setShowEdit(false);
-  };
+    try {
+      const ok = await callAction(a.updatePendingRequest, o.code, {
+        note: editNote,
+        slot: editSlot,
+        dateLabel: `${day.label} (${day.ddmm})`,
+        dateKey: day.key,
+        attachments: editAtts,
+      });
+      if (isOk(ok)) setShowEdit(false);
+    } catch (e) {
+      u.alert('Không lưu được', errorText(e, 'Không cập nhật được yêu cầu. Vui lòng thử lại.'), '⚠️');
+    }
+  });
+
+  const respondQuote = (decision, why) => runQuote(async () => {
+    try {
+      await callAction(a.respondQuote, o.code, decision, why);
+    } catch (e) {
+      u.alert('Chưa gửi được phản hồi', errorText(e, 'Không gửi được phản hồi báo giá. Vui lòng thử lại.'), '⚠️');
+    }
+  });
+
+  const cancelOrder = () => runCancel(async () => {
+    try {
+      await callAction(a.cancelOrder, o.code, reason);
+      // Thành công hoặc bị từ chối (context đã báo lý do) đều đóng sheet; chỉ giữ lại khi lỗi bất ngờ để thử lại.
+      setShowCancel(false);
+    } catch (e) {
+      u.alert('Không huỷ được', errorText(e, 'Không gửi được yêu cầu huỷ. Vui lòng thử lại.'), '⚠️');
+    }
+  });
+
+  // Xác nhận đã trả tiền mặt: số tiền luôn là phần còn lại phải trả (amountRemaining), một nơi duy nhất.
+  const confirmCash = () => u.confirm(
+    'Xác nhận đã thanh toán?',
+    `Hình thức: ${o.payment || 'Tiền mặt tại nhà'}. Số tiền ${formatVND(amountRemaining(o))}.`,
+    () => runPay(async () => {
+      try {
+        await callAction(a.confirmPayment, o.code);
+      } catch (e) {
+        u.alert('Chưa xác nhận được', errorText(e, 'Không gửi được xác nhận thanh toán. Vui lòng thử lại.'), '⚠️');
+      }
+    }),
+    'Xác nhận',
+  );
+
+  const requestWarranty = () => u.confirm('Gửi yêu cầu bảo hành?', 'Thợ sẽ quay lại kiểm tra miễn phí.', () => {
+    callAction(a.requestWarranty, o.code)
+      .then((c) => { if (c) nav.push('order', { code: c }); })
+      .catch((e) => u.alert('Chưa gửi được', errorText(e, 'Không gửi được yêu cầu bảo hành. Vui lòng thử lại.'), '⚠️'));
+  }, 'Gửi');
 
   return (
     <View style={{ flex: 1 }}>
@@ -365,7 +422,7 @@ export function OrderScreen({ params }) {
               <Text style={[mx.tlTitle, { color: '#A21CAF' }]}>🛡️ Văn phòng đang thẩm định bảo hành</Text>
             </View>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-              Yêu cầu bảo hành đã được gửi. Văn phòng Minh Đức đang đối chiếu lỗi với nhật ký sửa chữa gốc và thời hạn bảo hành 60 ngày.
+              Yêu cầu bảo hành đã được gửi. Văn phòng Minh Đức đang đối chiếu lỗi với nhật ký sửa chữa gốc và thời hạn bảo hành theo hạng thành viên (từ {BASE_WARRANTY_DAYS} ngày).
             </Text>
           </Card>
         ) : null}
@@ -381,54 +438,138 @@ export function OrderScreen({ params }) {
         ) : null}
 
         {/* ===== Báo giá chờ duyệt (khách duyệt / từ chối) ===== */}
-        {o.status === 'quoted' && o.quote ? (
-          <Card style={{ marginTop: 12, borderColor: '#F5D77A', backgroundColor: '#FFFBEB' }}>
-            {(() => {
-              const isOnSite = Boolean(o.arrivedAt || o.checkIn || o.history?.some((h) => h.status === 'diagnosing'));
-              return (
-                <View style={{ marginBottom: 10, padding: 10, borderRadius: R.sm, backgroundColor: C.greenSoft }}>
-                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.green, lineHeight: 18 }}>
-                    {isOnSite
-                      ? 'Thợ đã đến kiểm tra thực tế tại nhà bạn. Bạn có thể đồng ý để thợ sửa hoặc từ chối & huỷ đơn hoàn toàn MIỄN PHÍ (0đ).'
-                      : 'Báo giá trước khi thợ xuất phát. Bạn đồng ý thì thợ mới đi. Huỷ lúc này hoàn toàn MIỄN PHÍ (0đ).'}
-                  </Text>
-                </View>
-              );
-            })()}
-            <Text style={mx.tlTitle}>Báo giá từ thợ {o.tech?.name}</Text>
-            {o.quote.symptoms ? <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 6 }]}>Triệu chứng: {o.quote.symptoms}</Text> : null}
-            <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 4 }]}>Chẩn đoán: {o.quote.diagnosis}</Text>
-            {o.quote.recommendation ? <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 4 }]}>Đề xuất: {o.quote.recommendation}</Text> : null}
-            <View style={{ marginTop: 10 }}>
-              {o.quote.lines.map((l, i) => (
-                <View key={`${l.name}-${i}`} style={{ flexDirection: 'row', paddingVertical: 4, gap: 8, alignItems: 'center' }}>
-                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <Text style={{ color: C.ink2 }} numberOfLines={2}>
-                      {l.type === 'part' ? '🔩' : '🛠'} {l.name} x{l.qty}
-                    </Text>
-                    {l.isCustom ? <Badge text="Phát sinh" fg={C.orange} bg={C.orangeSoft} /> : null}
+        {o.status === 'quoted' && o.quote ? (() => {
+          const isOnSite = Boolean(o.arrivedAt || o.checkIn || o.history?.some((h) => h.status === 'diagnosing'));
+          const lines = o.quote.lines || [];
+          const bookedIds = new Set((o.items || []).map((it) => it.id));
+          const bookedNames = new Set((o.items || []).map((it) => String(it.name || '').trim().toLowerCase()));
+          const isBooked = (l) => l.isOriginal || (!l.matId && l.type !== 'part' && (bookedIds.has(l.key) || bookedNames.has(String(l.name || '').trim().toLowerCase())));
+
+          const laborItems = lines.filter((l) => isBooked(l));
+          const partItems = lines.filter((l) => (l.type === 'part' || Boolean(l.matId)) && !isBooked(l));
+          const customItems = lines.filter((l) => !isBooked(l) && l.type !== 'part' && !l.matId);
+          const extraAmount = [...partItems, ...customItems].reduce(
+            (sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 1),
+            0
+          );
+          const bookedBase = o.quote.booked != null ? o.quote.booked : bookedValue(o);
+          const finalAfterQuote = Math.max(0, bookedBase + extraAmount - (partDisc || 0) - (o.voucherDiscount || 0));
+
+          return (
+            <Card style={{ marginTop: 12, borderColor: '#F5D77A', backgroundColor: '#FFFBEB' }}>
+              <View style={{ marginBottom: 10, padding: 10, borderRadius: R.sm, backgroundColor: C.greenSoft }}>
+                <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.green, lineHeight: 18 }}>
+                  {isOnSite
+                    ? 'Thợ đã đến kiểm tra thực tế tại nhà bạn. Bạn có thể đồng ý để thợ sửa hoặc từ chối & huỷ đơn hoàn toàn MIỄN PHÍ (0đ).'
+                    : 'Báo giá trước khi thợ xuất phát. Bạn đồng ý thì thợ mới đi. Huỷ lúc này hoàn toàn MIỄN PHÍ (0đ).'}
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={mx.tlTitle}>Báo giá từ thợ {o.tech?.name}</Text>
+                <Badge
+                  text={extraAmount > 0 ? `+${formatVND(extraAmount)} phát sinh` : 'Không phát sinh (0đ)'}
+                  fg={extraAmount > 0 ? C.orange : C.green}
+                  bg={extraAmount > 0 ? C.orangeSoft : C.greenSoft}
+                />
+              </View>
+
+              {o.quote.symptoms ? <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 6 }]}>Triệu chứng: {o.quote.symptoms}</Text> : null}
+              <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 4 }]}>Chẩn đoán: {o.quote.diagnosis}</Text>
+              {o.quote.recommendation ? <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 4 }]}>Đề xuất: {o.quote.recommendation}</Text> : null}
+
+              {/* Danh sách dịch vụ ban đầu */}
+              <View style={{ marginTop: 12 }}>
+                <Text style={{ fontSize: 13, fontWeight: '800', color: C.ink, marginBottom: 4 }}>
+                  🛠️ Dịch vụ kỹ thuật ban đầu ({laborItems.length})
+                </Text>
+                {laborItems.map((l, i) => (
+                  <View key={`labor_${l.name}_${i}`} style={{ flexDirection: 'row', paddingVertical: 4, justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={{ color: C.ink, fontWeight: '600', fontSize: 13.5 }} numberOfLines={2}>
+                        {l.name}
+                      </Text>
+                      <Text style={[ui.meta, { fontSize: 12 }]}>
+                        {formatVND(l.price)} x{l.qty} {l.unit || 'lần'}
+                      </Text>
+                    </View>
+                    <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(l.price * l.qty)}</Text>
                   </View>
-                  <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(l.price * l.qty)}</Text>
+                ))}
+              </View>
+
+              {/* Danh sách vật tư / linh kiện thay thế (nếu có) */}
+              {partItems.length ? (
+                <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#FEF3C7' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: C.ink, marginBottom: 4 }}>
+                    🔩 Linh kiện / Vật tư kho ({partItems.length})
+                  </Text>
+                  {partItems.map((l, i) => (
+                    <View key={`part_${l.name}_${i}`} style={{ flexDirection: 'row', paddingVertical: 4, justifyContent: 'space-between', alignItems: 'center' }}>
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <Text style={{ color: C.ink, fontWeight: '600', fontSize: 13.5 }} numberOfLines={2}>{l.name}</Text>
+                          <Badge text="Vật tư kho" fg={C.primary} bg={C.primarySoft} />
+                        </View>
+                        <Text style={[ui.meta, { fontSize: 12 }]}>
+                          {formatVND(l.price)} x{l.qty} {l.unit || 'cái'}
+                        </Text>
+                      </View>
+                      <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(l.price * l.qty)}</Text>
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </View>
-            <Bill l="Giá bạn đã đặt" v={formatVND(o.quote.booked)} />
-            <Bill l="Phát sinh" v={`+${formatVND(o.quote.total - o.quote.booked)}`} />
-            {partDisc ? <Bill l={`Đặc quyền hạng ${o.customerTierLabel || ''} (−${o.tierPartDiscountPercent}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
-            {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
-            <View style={mx.totalRow}>
-              <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>Tổng sau báo giá</Text>
-              <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(orderTotal(o))}</Text>
-            </View>
-            <Tap onPress={() => setShowMatPrice(true)} style={{ marginTop: 10 }}>
-              <Text style={ui.link}>Đối chiếu bảng giá vật tư niêm yết Minh Đức ›</Text>
-            </Tap>
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
-              <Btn title="Báo giá lại / Huỷ" variant="dangerSoft" style={{ flex: 1.1 }} onPress={() => { setRejectMode('revise'); setShowReject(true); }} />
-              <Btn title="Đồng ý báo giá" style={{ flex: 1.9 }} onPress={() => a.respondQuote(o.code, true)} />
-            </View>
-          </Card>
-        ) : null}
+              ) : null}
+
+              {/* Danh sách chi phí phát sinh tại chỗ (nếu có) */}
+              {customItems.length ? (
+                <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#FEF3C7' }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: C.orange, marginBottom: 4 }}>
+                    📝 Chi phí phát sinh tại hiện trường ({customItems.length})
+                  </Text>
+                  {customItems.map((l, i) => (
+                    <View key={`custom_${l.name}_${i}`} style={{ flexDirection: 'row', paddingVertical: 4, justifyContent: 'space-between', alignItems: 'center' }}>
+                      <View style={{ flex: 1, paddingRight: 8 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <Text style={{ color: C.ink, fontWeight: '600', fontSize: 13.5 }} numberOfLines={2}>{l.name}</Text>
+                          <Badge text={l.type === 'labor' ? 'Công thêm' : 'Vật tư ngoài'} fg={C.orange} bg={C.orangeSoft} />
+                        </View>
+                        <Text style={[ui.meta, { fontSize: 12 }]}>
+                          {formatVND(l.price)} x{l.qty}
+                        </Text>
+                      </View>
+                      <Text style={{ fontWeight: '700', color: C.orange }}>+{formatVND(l.price * l.qty)}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              {/* Tổng kết chi tiết minh bạch */}
+              <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#FDE68A' }}>
+                <Bill l="Giá dịch vụ đã đặt" v={formatVND(bookedBase)} />
+                {extraAmount > 0 ? (
+                  <Bill l="Chi phí phát sinh thêm" v={`+${formatVND(extraAmount)}`} />
+                ) : (
+                  <Bill l="Chi phí phát sinh" v="0 đ (Đúng giá gốc, không phát sinh)" green />
+                )}
+                {partDisc ? <Bill l={`Đặc quyền hạng ${o.customerTierLabel || ''} (−${o.tierPartDiscountPercent}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
+                {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
+                <View style={mx.totalRow}>
+                  <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>Tổng thanh toán sau báo giá</Text>
+                  <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(finalAfterQuote)}</Text>
+                </View>
+              </View>
+
+              <Tap onPress={() => setShowMatPrice(true)} style={{ marginTop: 10 }}>
+                <Text style={ui.link}>Đối chiếu bảng giá vật tư niêm yết Minh Đức ›</Text>
+              </Tap>
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+                <Btn title="Báo giá lại / Huỷ" variant="dangerSoft" style={{ flex: 1.1 }} disabled={quoteBusy} onPress={() => { setRejectMode('revise'); setShowReject(true); }} />
+                <Btn title={quoteBusy ? 'Đang gửi…' : 'Đồng ý báo giá'} style={{ flex: 1.9 }} disabled={quoteBusy} onPress={() => respondQuote(true)} />
+              </View>
+            </Card>
+          );
+        })() : null}
 
         {o.status !== 'cancelled' ? (
           <Card style={{ marginTop: 12 }}>
@@ -502,7 +643,7 @@ export function OrderScreen({ params }) {
             <View style={{ marginTop: 8, gap: 4 }}>
               <Text style={{ color: '#0284C7', fontSize: 12, fontWeight: '600' }}>✓ Đúng chuyên môn kỹ thuật thiết bị</Text>
               <Text style={{ color: '#0284C7', fontSize: 12, fontWeight: '600' }}>✓ Phân bổ thợ khu vực {o.address?.district || 'của bạn'}</Text>
-              <Text style={{ color: '#0284C7', fontSize: 12, fontWeight: '600' }}>✓ Cam kết bảo hành 60 ngày sau dịch vụ</Text>
+              <Text style={{ color: '#0284C7', fontSize: 12, fontWeight: '600' }}>✓ Cam kết bảo hành {tierWarrantyDays} ngày sau dịch vụ</Text>
             </View>
           </Card>
         ) : null}
@@ -512,13 +653,13 @@ export function OrderScreen({ params }) {
           {['pending', 'confirmed'].includes(o.status) && !cancelStatus.allowed ? (
             <View style={{ marginVertical: 6, padding: 8, borderRadius: 8, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A' }}>
               <Text style={{ fontSize: 11.5, color: '#92400E', lineHeight: 16 }}>
-                Đã sát giờ hẹn (dưới 1 tiếng): Quý khách không thể tự huỷ đơn để bảo đảm lịch trình của thợ. Vui lòng gọi 1900 6868 nếu cần hỗ trợ.
+                Đã sát giờ hẹn (dưới {FREE_CANCEL_TEXT}): Quý khách không thể tự huỷ đơn để bảo đảm lịch trình của thợ. Vui lòng gọi {HOTLINE} nếu cần hỗ trợ.
               </Text>
             </View>
           ) : ['pending', 'confirmed'].includes(o.status) ? (
             <View style={{ marginVertical: 6, padding: 8, borderRadius: 8, backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD' }}>
               <Text style={{ fontSize: 11.5, color: '#0369A1', lineHeight: 16 }}>
-                Quý khách có thể huỷ đơn miễn phí trước giờ hẹn tối thiểu 1 tiếng.
+                Quý khách có thể huỷ đơn miễn phí trước giờ hẹn tối thiểu {FREE_CANCEL_TEXT}.
               </Text>
             </View>
           ) : null}
@@ -553,38 +694,98 @@ export function OrderScreen({ params }) {
         </Card>
 
         <Text style={mx.sec}>Dịch vụ</Text>
-        {o.items.map((it) => {
+        {orderItems.map((it) => {
           const svc = getService(it.id);
           return svc ? <ServiceRow key={it.id} item={svc} right={<Text style={{ fontWeight: '800', color: C.ink2 }}>x{it.qty}</Text>} /> : null;
         })}
 
         {/* ===== Thông tin thợ gửi lên ===== */}
-        {o.quote && o.status !== 'quoted' ? (
-          <Card style={{ marginTop: 4 }}>
-            <Text style={mx.tlTitle}>Kết quả chẩn đoán kỹ thuật</Text>
-            {o.quote.symptoms ? <Text style={[ui.meta, { marginTop: 6 }]}>Triệu chứng: {o.quote.symptoms}</Text> : null}
-            <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>{o.quote.diagnosis}</Text>
-            {o.quote.recommendation ? <Text style={[ui.meta, { marginTop: 6 }]}>Đề xuất: {o.quote.recommendation}</Text> : null}
-            {o.quote.lines.map((l, i) => (
-              <View key={`${l.name}-${i}`} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <Text style={[ui.meta, { fontSize: 13, color: C.ink2 }]} numberOfLines={2}>
-                    {l.type === 'part' ? '🔩' : '🛠'} {l.name} x{l.qty}
-                  </Text>
-                  {l.isCustom ? <Badge text="Phát sinh" fg={C.orange} bg={C.orangeSoft} /> : null}
-                </View>
-                <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.ink }]}>{formatVND(l.price * l.qty)}</Text>
+        {o.quote && o.status !== 'quoted' ? (() => {
+          const lines = o.quote.lines || [];
+          const bookedIds = new Set((o.items || []).map((it) => it.id));
+          const bookedNames = new Set((o.items || []).map((it) => String(it.name || '').trim().toLowerCase()));
+          const isBooked = (l) => l.isOriginal || (!l.matId && l.type !== 'part' && (bookedIds.has(l.key) || bookedNames.has(String(l.name || '').trim().toLowerCase())));
+
+          const laborItems = lines.filter((l) => isBooked(l));
+          const partItems = lines.filter((l) => (l.type === 'part' || Boolean(l.matId)) && !isBooked(l));
+          const customItems = lines.filter((l) => !isBooked(l) && l.type !== 'part' && !l.matId);
+          const extraAmount = [...partItems, ...customItems].reduce(
+            (sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 1),
+            0
+          );
+          return (
+            <Card style={{ marginTop: 4 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={mx.tlTitle}>Kết quả chẩn đoán kỹ thuật</Text>
+                <Badge
+                  text={extraAmount > 0 ? `+${formatVND(extraAmount)} phát sinh` : 'Không phát sinh (0đ)'}
+                  fg={extraAmount > 0 ? C.orange : C.green}
+                  bg={extraAmount > 0 ? C.orangeSoft : C.greenSoft}
+                />
               </View>
-            ))}
-            {o.quote.rejectReason ? (
-              <Text style={[ui.meta, { color: o.quote.revisionRequested && o.status === 'diagnosing' ? C.orange : C.red, fontWeight: '700', marginTop: 4 }]}>
-                {o.quote.revisionRequested && o.status === 'diagnosing'
-                  ? `Bạn đã yêu cầu thợ điều chỉnh báo giá: ${o.quote.rejectReason}`
-                  : `Bạn đã từ chối báo giá: ${o.quote.rejectReason}`}
-              </Text>
-            ) : null}
-          </Card>
-        ) : null}
+              {o.quote.symptoms ? <Text style={[ui.meta, { marginTop: 6 }]}>Triệu chứng: {o.quote.symptoms}</Text> : null}
+              <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>{o.quote.diagnosis}</Text>
+              {o.quote.recommendation ? <Text style={[ui.meta, { marginTop: 6 }]}>Đề xuất: {o.quote.recommendation}</Text> : null}
+
+              {/* Danh sách dịch vụ */}
+              <View style={{ marginTop: 8 }}>
+                <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.ink, marginBottom: 2 }}>
+                  🛠️ Dịch vụ kỹ thuật ({laborItems.length})
+                </Text>
+                {laborItems.map((l, i) => (
+                  <View key={`d_labor_${l.name}_${i}`} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
+                    <Text style={[ui.meta, { fontSize: 13, color: C.ink2, flex: 1, paddingRight: 6 }]} numberOfLines={2}>
+                      {l.name} x{l.qty} {l.unit || 'lần'}
+                    </Text>
+                    <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.ink }]}>{formatVND(l.price * l.qty)}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {/* Danh sách vật tư (nếu có) */}
+              {partItems.length ? (
+                <View style={{ marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.ink, marginBottom: 2 }}>
+                    🔩 Vật tư thay thế ({partItems.length})
+                  </Text>
+                  {partItems.map((l, i) => (
+                    <View key={`d_part_${l.name}_${i}`} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
+                      <Text style={[ui.meta, { fontSize: 13, color: C.ink2, flex: 1, paddingRight: 6 }]} numberOfLines={2}>
+                        {l.name} x{l.qty} {l.unit || 'cái'}
+                      </Text>
+                      <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.ink }]}>{formatVND(l.price * l.qty)}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              {/* Danh sách chi phí phát sinh (nếu có) */}
+              {customItems.length ? (
+                <View style={{ marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.orange, marginBottom: 2 }}>
+                    📝 Chi phí phát sinh tại hiện trường ({customItems.length})
+                  </Text>
+                  {customItems.map((l, i) => (
+                    <View key={`d_custom_${l.name}_${i}`} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
+                      <Text style={[ui.meta, { fontSize: 13, color: C.ink2, flex: 1, paddingRight: 6 }]} numberOfLines={2}>
+                        {l.name} x{l.qty}
+                      </Text>
+                      <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.orange }]}>+{formatVND(l.price * l.qty)}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+
+              {o.quote.rejectReason ? (
+                <Text style={[ui.meta, { color: o.quote.revisionRequested && o.status === 'diagnosing' ? C.orange : C.red, fontWeight: '700', marginTop: 8 }]}>
+                  {o.quote.revisionRequested && o.status === 'diagnosing'
+                    ? `Bạn đã yêu cầu thợ điều chỉnh báo giá: ${o.quote.rejectReason}`
+                    : `Bạn đã từ chối báo giá: ${o.quote.rejectReason}`}
+                </Text>
+              ) : null}
+            </Card>
+          );
+        })() : null}
         {(o.progress || []).length ? (
           <Card style={{ marginTop: 12 }}>
             <Text style={mx.tlTitle}>Tiến độ thi công</Text>
@@ -770,19 +971,7 @@ export function OrderScreen({ params }) {
                 )}
               </View>
             ) : null}
-            {['pending_payment', 'partially_paid'].includes(o.status) && !o.report?.paid && !isQRPayment(o) && !o.bill?.cashClaimPending ? (
-              <Btn
-                title="Xác nhận đã thanh toán tiền mặt"
-                icon="banknote"
-                style={{ marginTop: 12 }}
-                onPress={() => u.confirm(
-                  'Xác nhận đã thanh toán?',
-                  `Hình thức: ${o.payment || 'Tiền mặt tại nhà'}. Số tiền ${formatVND(amountRemaining(o))}.`,
-                  () => a.confirmPayment(o.code),
-                  'Xác nhận',
-                )}
-              />
-            ) : null}
+            {/* Nút "Xác nhận đã trả tiền" chỉ đặt ở thanh dưới (dock) để tránh hai nút trùng chức năng. */}
             {isPaid(o) && ['done', 'pending_review'].includes(o.status) ? (
               <View style={{ marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: C.greenSoft }}>
                 <Text style={{ fontWeight: '800', color: C.green }}>🧾 Đã thanh toán</Text>
@@ -800,7 +989,7 @@ export function OrderScreen({ params }) {
               <IconBox icon="shield-check" size={40} bg={winfo.ok ? C.greenSoft : C.primarySoft} radius={13} />
               <View style={{ flex: 1 }}>
                 <Text style={mx.tlTitle}>
-                  Bảo hành {winfo.totalDays || 60} ngày{o.customerTierLabel ? ` · Hạng ${o.customerTierLabel}` : ''}
+                  Bảo hành {winfo.totalDays || tierWarrantyDays} ngày{o.customerTierLabel ? ` · Hạng ${o.customerTierLabel}` : ''}
                 </Text>
                 <Text style={[ui.meta, winfo.ok && { color: C.green, fontWeight: '700' }]}>{winfo.text}</Text>
               </View>
@@ -819,7 +1008,7 @@ export function OrderScreen({ params }) {
                   variant="soft"
                   small
                   style={{ flex: 1 }}
-                  onPress={() => u.confirm('Gửi yêu cầu bảo hành?', 'Thợ sẽ quay lại kiểm tra miễn phí.', () => { a.requestWarranty(o.code).then((c) => { if (c) nav.push('order', { code: c }); }); }, 'Gửi')}
+                  onPress={requestWarranty}
                 />
               </View>
             ) : null}
@@ -846,16 +1035,12 @@ export function OrderScreen({ params }) {
           {canCancel ? <Btn title="Huỷ đơn" variant="dangerSoft" style={{ flex: 1 }} onPress={handlePressCancel} /> : null}
           {['pending_payment', 'partially_paid'].includes(o.status) && !o.report?.paid && !isQRPayment(o) && !o.bill?.cashClaimPending && o.kind !== 'warranty' && o.kind !== 'followup' ? (
             <Btn
-              title="Xác nhận đã trả tiền"
+              title={payBusy ? 'Đang gửi…' : 'Xác nhận đã trả tiền'}
               icon="credit-card"
               variant="soft"
               style={{ flex: 1.15, paddingHorizontal: 10 }}
-              onPress={() => u.confirm(
-                'Xác nhận đã thanh toán?',
-                `Hình thức: ${o.payment || 'Tiền mặt'}. Số tiền ${formatVND(orderTotal(o))}.`,
-                () => a.confirmPayment(o.code),
-                'Xác nhận',
-              )}
+              disabled={payBusy}
+              onPress={confirmCash}
             />
           ) : null}
           {o.status === 'done' && !o.rating && o.kind !== 'warranty' ? <Btn title="Đánh giá" icon="star" variant="gold" style={{ flex: 1, paddingHorizontal: 10 }} onPress={() => nav.push('rate', { code: o.code })} /> : null}
@@ -892,7 +1077,7 @@ export function OrderScreen({ params }) {
             title="🛠️ Yêu cầu bảo hành miễn phí"
             onPress={() => {
               setShowCertificate(false);
-              u.confirm('Gửi yêu cầu bảo hành?', 'Thợ sẽ quay lại kiểm tra miễn phí.', () => { a.requestWarranty(o.code).then((c) => { if (c) nav.push('order', { code: c }); }); }, 'Gửi');
+              requestWarranty();
             }}
           />
         ) : <Btn title="Đóng phiếu" onPress={() => setShowCertificate(false)} />}
@@ -906,7 +1091,7 @@ export function OrderScreen({ params }) {
             Đơn gốc: {o.code} · Hoàn thành: {fmtDateTime(o.doneAt || o.createdAt)}
           </Text>
           <View style={{ backgroundColor: '#fff', padding: 10, borderRadius: 16, marginTop: 12 }}>
-            <PseudoQR value={`MINHDUC-WARRANTY|${o.code}|${o.address?.phone || ''}|${winfo.totalDays || 60}D`} size={130} />
+            <PseudoQR value={`MINHDUC-WARRANTY|${o.code}|${o.address?.phone || ''}|${winfo.totalDays || tierWarrantyDays}D`} size={130} />
           </View>
           <Badge
             text={winfo.ok ? `🛡️ Còn ${winfo.daysLeft}/${winfo.totalDays} ngày bảo hành (đến ${fmtDate(winfo.until)})` : winfo.text}
@@ -948,12 +1133,12 @@ export function OrderScreen({ params }) {
         visible={showCancel}
         onClose={() => setShowCancel(false)}
         title="Lý do huỷ đơn"
-        footer={<Btn title="Xác nhận huỷ" variant="danger" onPress={() => { setShowCancel(false); a.cancelOrder(o.code, reason); }} />}
+        footer={<Btn title={cancelBusy ? 'Đang huỷ…' : 'Xác nhận huỷ'} variant="danger" disabled={cancelBusy} onPress={cancelOrder} />}
       >
         <View style={{ backgroundColor: '#F0F4FA', borderRadius: R.md, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: '#DCE5F5' }}>
           <Text style={{ fontSize: 12.5, color: C.ink, fontWeight: '700', marginBottom: 2 }}>Chính sách huỷ đơn</Text>
           <Text style={{ fontSize: 12, color: C.ink2, lineHeight: 17 }}>
-            Quý khách được huỷ đơn miễn phí trước giờ hẹn tối thiểu 1 tiếng. Nếu còn dưới 1 tiếng trước giờ hẹn, tính năng huỷ đơn sẽ bị khoá để bảo đảm lịch trình của thợ.
+            Quý khách được huỷ đơn miễn phí trước giờ hẹn tối thiểu {FREE_CANCEL_TEXT}. Nếu còn dưới {FREE_CANCEL_TEXT} trước giờ hẹn, tính năng huỷ đơn sẽ bị khoá để bảo đảm lịch trình của thợ.
           </Text>
         </View>
         {CANCEL_REASONS.map((r) => (
@@ -969,11 +1154,12 @@ export function OrderScreen({ params }) {
         title="Phản hồi báo giá"
         footer={(
           <Btn
-            title={rejectMode === 'revise' ? 'Gửi yêu cầu báo giá lại' : 'Xác nhận từ chối & huỷ đơn'}
+            title={quoteBusy ? 'Đang gửi…' : rejectMode === 'revise' ? 'Gửi yêu cầu báo giá lại' : 'Xác nhận từ chối & huỷ đơn'}
             variant={rejectMode === 'revise' ? 'primary' : 'danger'}
+            disabled={quoteBusy}
             onPress={() => {
               setShowReject(false);
-              a.respondQuote(o.code, rejectMode === 'revise' ? 'revise' : false, rejectReason);
+              respondQuote(rejectMode === 'revise' ? 'revise' : false, rejectReason);
             }}
           />
         )}
@@ -1032,7 +1218,7 @@ export function OrderScreen({ params }) {
         visible={showEdit}
         onClose={() => setShowEdit(false)}
         title="Sửa yêu cầu dịch vụ"
-        footer={<Btn title="Lưu thay đổi" onPress={saveEdit} />}
+        footer={<Btn title={editBusy ? 'Đang lưu…' : 'Lưu thay đổi'} disabled={editBusy} onPress={saveEdit} />}
       >
         <Text style={[ui.meta, { marginBottom: 8 }]}>Chỉ sửa được khi đơn còn chờ thợ nhận.</Text>
         <Text style={{ fontWeight: '800', color: C.ink, marginBottom: 8 }}>Ngày hẹn</Text>
@@ -1048,8 +1234,8 @@ export function OrderScreen({ params }) {
           value={editMinutes}
           onChange={handleEditTimeChange}
           minMinutes={minAvailEdit}
-          maxMinutes={20 * 60}
-          step={15}
+          maxMinutes={MAX_DAY_MINUTE}
+          step={SLOT_STEP_MINUTES}
           isToday={editDayIdx === 0}
           onSelectTomorrow={() => handleEditDaySelect(1)}
         />
@@ -1094,19 +1280,25 @@ const Bill = ({ l, v, green }) => (
 // =========================================================== ĐÁNH GIÁ
 const QUICK_TAGS = ['Đúng giờ', 'Tay nghề tốt', 'Thân thiện', 'Sạch sẽ', 'Giá hợp lý', 'Tư vấn tận tình'];
 export function RateScreen({ params }) {
-  const { s, a, nav } = useApp();
-  const o = s.orders.find((x) => x.code === params.code);
+  const { s, a, nav, ui: u } = useApp();
+  const o = (s.orders || []).find((x) => x.code === params?.code);
   const [stars, setStars] = useState(5);
   const [tags, setTags] = useState([]);
   const [text, setText] = useState('');
-  if (!o) return null;
-  const svc = getService(o.items[0]?.id);
+  const [sending, runSend] = useBusy();
+  if (!o) return <NotFoundView title="Không tìm thấy đơn" body="Không tìm thấy đơn cần đánh giá. Đơn có thể đã được đánh giá hoặc chưa đồng bộ." onBack={() => nav.back()} />;
+  const svc = getService(o.items?.[0]?.id);
   const LABEL = ['', 'Rất tệ', 'Chưa hài lòng', 'Bình thường', 'Hài lòng', 'Tuyệt vời!'];
-  const submit = () => {
+  const submit = () => runSend(async () => {
     const full = [tags.join(', '), text.trim()].filter(Boolean).join('. ');
-    a.rateOrder(o.code, stars, full);
-    nav.back();
-  };
+    try {
+      const res = await callAction(a.rateOrder, o.code, stars, full);
+      // Chỉ rời màn khi gửi thành công; thất bại thì context đã báo lỗi, giữ nguyên nội dung để thử lại.
+      if (isOk(res)) nav.back();
+    } catch (e) {
+      u.alert('Chưa gửi được đánh giá', errorText(e, 'Không gửi được đánh giá. Vui lòng thử lại.'), '⚠️');
+    }
+  });
   return (
     <View style={{ flex: 1 }}>
       <TopBar title="Đánh giá dịch vụ" sub={o.code} />
@@ -1123,18 +1315,95 @@ export function RateScreen({ params }) {
           {QUICK_TAGS.map((t) => <Chip key={t} label={t} on={tags.includes(t)} onPress={() => setTags((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]))} />)}
         </View>
         <Field label="Nhận xét thêm" multiline value={text} onChangeText={setText} placeholder="Chia sẻ trải nghiệm của bạn…" />
-        <View style={mx.bonus}><Text style={{ color: C.goldInk, fontWeight: '700' }}>🎁 Nhận ngay +20 điểm thưởng khi gửi đánh giá</Text></View>
+        <View style={mx.bonus}><Text style={{ color: C.goldInk, fontWeight: '700' }}>🎁 Nhận ngay +{s.policy?.loyalty?.review_bonus_points ?? 20} điểm thưởng khi gửi đánh giá</Text></View>
       </ScrollView>
-      <View style={mx.dock}><Btn title="Gửi đánh giá" style={{ flex: 1 }} onPress={submit} /></View>
+      <View style={mx.dock}><Btn title={sending ? 'Đang gửi…' : 'Gửi đánh giá'} style={{ flex: 1 }} disabled={sending} onPress={submit} /></View>
     </View>
   );
 }
 
 // =========================================================== QUYỀN LỢI
+const HISTORY_INITIAL_COUNT = 3;
+const HISTORY_TABS = [
+  { id: 'all', label: 'Tất cả', test: () => true },
+  { id: 'earn', label: '+ Đã nhận', test: (h) => h.delta > 0 },
+  { id: 'redeem', label: '- Đã đổi', test: (h) => h.delta < 0 },
+];
+const matchHistoryFilter = (h, filter) => (HISTORY_TABS.find((t) => t.id === filter) || HISTORY_TABS[0]).test(h);
+
+function HistoryFilterTabs({ list, value, onChange, style }) {
+  return (
+    <View style={[{ flexDirection: 'row', gap: 6 }, style]}>
+      {HISTORY_TABS.map((tab) => {
+        const on = value === tab.id;
+        return (
+          <Tap
+            key={tab.id}
+            onPress={() => onChange(tab.id)}
+            style={{
+              paddingVertical: 5,
+              paddingHorizontal: 10,
+              borderRadius: R.pill,
+              backgroundColor: on ? C.primary : '#F1F5F9',
+            }}
+          >
+            <Text style={{ fontSize: 11.5, fontWeight: on ? '800' : '600', color: on ? '#fff' : C.ink2 }}>
+              {tab.label} ({list.filter(tab.test).length})
+            </Text>
+          </Tap>
+        );
+      })}
+    </View>
+  );
+}
+
+function PointHistoryRow({ h, last, singleLine, onPress }) {
+  const isEarn = h.delta > 0;
+  const title = String(h.title || '');
+  const isReview = h.type === 'review' || /đánh giá/i.test(title);
+  const isBonus = h.type === 'bonus' || /tân thủ|đăng ký/i.test(title);
+  const iconName = isEarn ? (isReview ? 'star' : (isBonus ? 'sparkles' : 'receipt-text')) : 'gift';
+  const iconBg = isEarn ? (isReview ? '#FEF9C3' : (isBonus ? '#F3E8FF' : '#E0F2FE')) : '#FFEDD5';
+  const iconFg = isEarn ? (isReview ? '#CA8A04' : (isBonus ? '#9333EA' : '#0284C7')) : '#EA580C';
+  return (
+    <Tap
+      onPress={onPress}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+        borderBottomWidth: last ? 0 : 1,
+        borderBottomColor: '#F1F5F9',
+      }}
+    >
+      <IconBox icon={iconName} size={38} bg={iconBg} color={iconFg} radius={11} />
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontWeight: '700', color: C.ink, fontSize: 13 }} numberOfLines={singleLine ? 1 : undefined}>
+          {title}
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+          <Text style={{ fontSize: 11, color: C.muted }}>{fmtDateTime(h.at)}</Text>
+          {h.orderCode ? (
+            <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: C.primary }}>#{h.orderCode}</Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+      <Text style={{ fontWeight: '900', fontSize: 14, color: isEarn ? '#16A34A' : '#EA580C' }}>
+        {isEarn ? `+${h.delta}` : h.delta} điểm
+      </Text>
+    </Tap>
+  );
+}
+
 export function RewardsScreen({ params }) {
   const { s, a, nav, ui: u, setPendingVoucher } = useApp();
-  const { cur, next } = tierOf(s.lifetimePoints);
-  const progress = next ? (s.lifetimePoints - cur.min) / (next.min - cur.min) : 1;
+  const lp = s.lifetimePoints || 0;
+  const { cur, next } = tierOf(lp);
+  const progress = next ? (lp - cur.min) / (next.min - cur.min) : 1;
   const [selectedTierId, setSelectedTierId] = useState(params?.tierId || null);
   const activeTier = TIERS.find((t) => t.id === selectedTierId) || null;
   const previewTier = activeTier || cur;
@@ -1151,6 +1420,19 @@ export function RewardsScreen({ params }) {
       u.toast(`Chọn dịch vụ, mã ${v.code} sẽ tự áp dụng`, '🎟️');
       nav.services();
     }
+  };
+
+  // Lịch sử điểm lấy từ backend (s.pointHistory); dùng chung cho danh sách rút gọn và Sheet "Toàn bộ".
+  const historyList = s.pointHistory || [];
+  const totalEarned = historyList.filter((h) => h.delta > 0).reduce((sum, h) => sum + h.delta, 0);
+  const totalSpent = Math.abs(historyList.filter((h) => h.delta < 0).reduce((sum, h) => sum + h.delta, 0));
+  const filteredHistory = historyList.filter((h) => matchHistoryFilter(h, historyFilter));
+  const displayHistory = historyExpanded ? filteredHistory : filteredHistory.slice(0, HISTORY_INITIAL_COUNT);
+  const hasMoreHistory = filteredHistory.length > HISTORY_INITIAL_COUNT;
+  const openHistoryOrder = (h, fromSheet) => {
+    if (!h.orderCode) return;
+    if (fromSheet) setShowHistorySheet(false);
+    nav.push('order', { code: h.orderCode });
   };
   return (
     <View style={{ flex: 1 }}>
@@ -1188,7 +1470,7 @@ export function RewardsScreen({ params }) {
 
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12.5, fontWeight: '600' }}>
-              Điểm tích luỹ xét hạng: <Text style={{ color: '#fff', fontWeight: '800' }}>{s.lifetimePoints} điểm</Text>
+              Điểm tích luỹ xét hạng: <Text style={{ color: '#fff', fontWeight: '800' }}>{lp} điểm</Text>
             </Text>
             <View style={{ backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 }}>
               <Text style={{ color: '#BAE6FD', fontSize: 10.5, fontWeight: '800' }}>
@@ -1199,7 +1481,7 @@ export function RewardsScreen({ params }) {
           <Progress value={progress} color="#FFFFFF" style={{ marginTop: 8, backgroundColor: 'rgba(255,255,255,0.25)', height: 6 }} />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 7 }}>
             <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 11.5, fontWeight: '600', flex: 1 }}>
-              {next ? `Cần thêm ${next.min - s.lifetimePoints} điểm để lên hạng ${next.label}` : '👑 Bạn đã đạt thứ hạng cao nhất (Kim cương)!'}
+              {next ? `Cần thêm ${next.min - lp} điểm để lên hạng ${next.label}` : '👑 Bạn đã đạt thứ hạng cao nhất (Kim cương)!'}
             </Text>
             <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
               Đổi voucher không trừ điểm hạng
@@ -1215,7 +1497,7 @@ export function RewardsScreen({ params }) {
         <View style={mx.tiers}>
           {TIERS.map((t) => {
             const isCurrent = cur.id === t.id;
-            const unlocked = s.lifetimePoints >= t.min;
+            const unlocked = lp >= t.min;
             const isSelected = previewTier.id === t.id;
             return (
               <Tap
@@ -1250,10 +1532,10 @@ export function RewardsScreen({ params }) {
               <Badge text={`👑 Hạng ${previewTier.label}`} fg={previewTier.color} bg={previewTier.bg || C.primarySoft} />
               {cur.id === previewTier.id ? (
                 <Badge text="Hạng của bạn" fg={C.green} bg={C.greenSoft} />
-              ) : s.lifetimePoints >= previewTier.min ? (
+              ) : lp >= previewTier.min ? (
                 <Badge text="✓ Đã mở khoá" fg={C.green} bg={C.greenSoft} />
               ) : (
-                <Badge text={`Cần thêm ${previewTier.min - s.lifetimePoints} điểm`} fg={C.orange} bg={C.orangeSoft} />
+                <Badge text={`Cần thêm ${previewTier.min - lp} điểm`} fg={C.orange} bg={C.orangeSoft} />
               )}
             </View>
             <Text style={{ fontSize: 12, fontWeight: '800', color: C.primary }}>Chi tiết ›</Text>
@@ -1281,7 +1563,15 @@ export function RewardsScreen({ params }) {
                 <Text style={mx.tlTitle}>{r.title}</Text>
                 <Text style={[ui.meta, { color: C.goldInk, fontWeight: '700' }]}>{r.cost} điểm</Text>
               </View>
-              <Btn title="Đổi" small variant={enough ? 'gold' : 'ghost'} onPress={() => u.confirm('Đổi voucher?', `Dùng ${r.cost} điểm để đổi ${r.title.toLowerCase()}.`, () => a.redeem(r.id), 'Đổi ngay')} />
+              <Btn
+                title="Đổi"
+                small
+                variant={enough ? 'gold' : 'ghost'}
+                disabled={!enough}
+                onPress={() => u.confirm('Đổi voucher?', `Dùng ${r.cost} điểm để đổi ${String(r.title || '').toLowerCase()}.`, () => {
+                  callAction(a.redeem, r.id).catch((e) => u.alert('Chưa đổi được', errorText(e, 'Không đổi được voucher. Vui lòng thử lại.'), '⚠️'));
+                }, 'Đổi ngay')}
+              />
             </Card>
           );
         })}
@@ -1310,197 +1600,101 @@ export function RewardsScreen({ params }) {
         </Card>
 
         {/* 4. LỊCH SỬ ĐIỂM THƯỞNG (THIẾT KẾ GỌN GÀNG, KHÔNG BỊ TRÀN DÀI) */}
-        {(() => {
-          const fallbackEntries = s.orders
-            .filter((o) => o.status === 'done' && o.kind !== 'warranty')
-            .flatMap((o) => {
-              const earned = Math.max(1, Math.floor(orderTotal(o) / 10000));
-              const arr = [{ id: `ord_${o.code}`, title: `Hoàn thành đơn ${o.code}`, delta: earned, at: o.doneAt || o.createdAt, orderCode: o.code, type: 'order' }];
-              if (o.rating) {
-                arr.unshift({ id: `rate_${o.code}`, title: `Đánh giá dịch vụ đơn ${o.code}`, delta: 20, at: (o.doneAt || o.createdAt) + 60000, orderCode: o.code, type: 'review' });
-              }
-              return arr;
-            });
-          const historyList = (s.pointHistory || []);
-          const totalEarned = historyList.filter((h) => h.delta > 0).reduce((sum, h) => sum + h.delta, 0);
-          const totalSpent = Math.abs(historyList.filter((h) => h.delta < 0).reduce((sum, h) => sum + h.delta, 0));
+        <View style={{ marginTop: 12 }}>
+          <SectionTitle
+            title="Lịch sử điểm thưởng"
+            action={historyList.length > 0 ? `Toàn bộ (${historyList.length})` : null}
+            onAction={() => setShowHistorySheet(true)}
+          />
 
-          const filteredList = historyList.filter((h) => {
-            if (historyFilter === 'earn') return h.delta > 0;
-            if (historyFilter === 'redeem') return h.delta < 0;
-            return true;
-          });
-
-          const INITIAL_COUNT = 3;
-          const displayList = historyExpanded ? filteredList : filteredList.slice(0, INITIAL_COUNT);
-          const hasMore = filteredList.length > INITIAL_COUNT;
-
-          const renderHistoryRow = (h, i, arr) => {
-            const isEarn = h.delta > 0;
-            const isReview = h.type === 'review' || /đánh giá/i.test(h.title);
-            const isBonus = h.type === 'bonus' || /tân thủ|đăng ký/i.test(h.title);
-
-            const iconName = isEarn
-              ? (isReview ? 'star' : (isBonus ? 'sparkles' : 'receipt-text'))
-              : 'gift';
-
-            const iconBg = isEarn
-              ? (isReview ? '#FEF9C3' : (isBonus ? '#F3E8FF' : '#E0F2FE'))
-              : '#FFEDD5';
-
-            const iconFg = isEarn
-              ? (isReview ? '#CA8A04' : (isBonus ? '#9333EA' : '#0284C7'))
-              : '#EA580C';
-
-            return (
-              <Tap
-                key={h.id || i}
-                onPress={() => (h.orderCode ? nav.push('order', { code: h.orderCode }) : null)}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 12,
-                  paddingVertical: 12,
-                  paddingHorizontal: 14,
-                  borderBottomWidth: i < arr.length - 1 ? 1 : 0,
-                  borderBottomColor: '#F1F5F9',
-                }}
-              >
-                <IconBox icon={iconName} size={38} bg={iconBg} color={iconFg} radius={11} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '700', color: C.ink, fontSize: 13 }} numberOfLines={1}>
-                    {h.title}
-                  </Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                    <Text style={{ fontSize: 11, color: C.muted }}>{fmtDateTime(h.at)}</Text>
-                    {h.orderCode ? (
-                      <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
-                        <Text style={{ fontSize: 10, fontWeight: '700', color: C.primary }}>#{h.orderCode}</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                </View>
-                <Text style={{ fontWeight: '900', fontSize: 14, color: isEarn ? '#16A34A' : '#EA580C' }}>
-                  {isEarn ? `+${h.delta}` : h.delta} điểm
-                </Text>
-              </Tap>
-            );
-          };
-
-          return (
-            <View style={{ marginTop: 12 }}>
-              <SectionTitle
-                title="Lịch sử điểm thưởng"
-                action={historyList.length > 0 ? `Toàn bộ (${historyList.length})` : null}
-                onAction={() => setShowHistorySheet(true)}
-              />
-
-              {/* Thẻ thống kê 2 chỉ số: Tích luỹ & Đã dùng */}
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-                <View
-                  style={{
-                    flex: 1,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 8,
-                    backgroundColor: '#F0FDF4',
-                    borderWidth: 1,
-                    borderColor: '#DCFCE7',
-                    paddingVertical: 9,
-                    paddingHorizontal: 12,
-                    borderRadius: 12,
-                  }}
-                >
-                  <IconBox icon="trending-up" size={30} bg="#DCFCE7" color="#16A34A" radius={8} />
-                  <View>
-                    <Text style={{ fontSize: 10.5, color: '#15803D', fontWeight: '600' }}>Tổng tích luỹ</Text>
-                    <Text style={{ fontSize: 14, fontWeight: '900', color: '#16A34A' }}>+{totalEarned} điểm</Text>
-                  </View>
-                </View>
-
-                <View
-                  style={{
-                    flex: 1,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 8,
-                    backgroundColor: '#FFF7ED',
-                    borderWidth: 1,
-                    borderColor: '#FFEDD5',
-                    paddingVertical: 9,
-                    paddingHorizontal: 12,
-                    borderRadius: 12,
-                  }}
-                >
-                  <IconBox icon="gift" size={30} bg="#FFEDD5" color="#EA580C" radius={8} />
-                  <View>
-                    <Text style={{ fontSize: 10.5, color: '#C2410C', fontWeight: '600' }}>Đã đổi voucher</Text>
-                    <Text style={{ fontSize: 14, fontWeight: '900', color: '#EA580C' }}>-{totalSpent} điểm</Text>
-                  </View>
-                </View>
+          {/* Thẻ thống kê 2 chỉ số: Tích luỹ & Đã dùng */}
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+            <View
+              style={{
+                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                backgroundColor: '#F0FDF4',
+                borderWidth: 1,
+                borderColor: '#DCFCE7',
+                paddingVertical: 9,
+                paddingHorizontal: 12,
+                borderRadius: 12,
+              }}
+            >
+              <IconBox icon="trending-up" size={30} bg="#DCFCE7" color="#16A34A" radius={8} />
+              <View>
+                <Text style={{ fontSize: 10.5, color: '#15803D', fontWeight: '600' }}>Tổng tích luỹ</Text>
+                <Text style={{ fontSize: 14, fontWeight: '900', color: '#16A34A' }}>+{totalEarned} điểm</Text>
               </View>
-
-              {/* Bộ lọc tab mini: Tất cả | Đã nhận | Đã đổi */}
-              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
-                {[
-                  { id: 'all', label: `Tất cả (${historyList.length})` },
-                  { id: 'earn', label: `+ Đã nhận (${historyList.filter((h) => h.delta > 0).length})` },
-                  { id: 'redeem', label: `- Đã đổi (${historyList.filter((h) => h.delta < 0).length})` },
-                ].map((tab) => {
-                  const on = historyFilter === tab.id;
-                  return (
-                    <Tap
-                      key={tab.id}
-                      onPress={() => setHistoryFilter(tab.id)}
-                      style={{
-                        paddingVertical: 5,
-                        paddingHorizontal: 10,
-                        borderRadius: R.pill,
-                        backgroundColor: on ? C.primary : '#F1F5F9',
-                      }}
-                    >
-                      <Text style={{ fontSize: 11.5, fontWeight: on ? '800' : '600', color: on ? '#fff' : C.ink2 }}>
-                        {tab.label}
-                      </Text>
-                    </Tap>
-                  );
-                })}
-              </View>
-
-              {/* Danh sách rút gọn tối đa 3 dòng */}
-              {filteredList.length === 0 ? (
-                <Card style={{ backgroundColor: '#F8FAFC', padding: 16, alignItems: 'center' }}>
-                  <Text style={ui.meta}>Không có giao dịch nào trong mục này.</Text>
-                </Card>
-              ) : (
-                <Card style={{ padding: 0, overflow: 'hidden' }}>
-                  {displayList.map((h, i) => renderHistoryRow(h, i, displayList))}
-
-                  {/* Nút Xem thêm / Thu gọn trực tiếp */}
-                  {hasMore && (
-                    <Tap
-                      onPress={() => setHistoryExpanded(!historyExpanded)}
-                      style={{
-                        paddingVertical: 11,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexDirection: 'row',
-                        gap: 6,
-                        backgroundColor: '#F8FAFC',
-                        borderTopWidth: 1,
-                        borderTopColor: '#F1F5F9',
-                      }}
-                    >
-                      <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.primary }}>
-                        {historyExpanded ? 'Thu gọn danh sách ▲' : `Xem thêm (${filteredList.length - INITIAL_COUNT} giao dịch khác) ▼`}
-                      </Text>
-                    </Tap>
-                  )}
-                </Card>
-              )}
             </View>
-          );
-        })()}
+
+            <View
+              style={{
+                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                backgroundColor: '#FFF7ED',
+                borderWidth: 1,
+                borderColor: '#FFEDD5',
+                paddingVertical: 9,
+                paddingHorizontal: 12,
+                borderRadius: 12,
+              }}
+            >
+              <IconBox icon="gift" size={30} bg="#FFEDD5" color="#EA580C" radius={8} />
+              <View>
+                <Text style={{ fontSize: 10.5, color: '#C2410C', fontWeight: '600' }}>Đã đổi voucher</Text>
+                <Text style={{ fontSize: 14, fontWeight: '900', color: '#EA580C' }}>-{totalSpent} điểm</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Bộ lọc tab mini: Tất cả | Đã nhận | Đã đổi */}
+          <HistoryFilterTabs list={historyList} value={historyFilter} onChange={setHistoryFilter} style={{ marginBottom: 10 }} />
+
+          {/* Danh sách rút gọn tối đa HISTORY_INITIAL_COUNT dòng */}
+          {filteredHistory.length === 0 ? (
+            <Card style={{ backgroundColor: '#F8FAFC', padding: 16, alignItems: 'center' }}>
+              <Text style={ui.meta}>Không có giao dịch nào trong mục này.</Text>
+            </Card>
+          ) : (
+            <Card style={{ padding: 0, overflow: 'hidden' }}>
+              {displayHistory.map((h, i) => (
+                <PointHistoryRow
+                  key={h.id || i}
+                  h={h}
+                  last={i === displayHistory.length - 1}
+                  singleLine
+                  onPress={() => openHistoryOrder(h, false)}
+                />
+              ))}
+
+              {/* Nút Xem thêm / Thu gọn trực tiếp */}
+              {hasMoreHistory && (
+                <Tap
+                  onPress={() => setHistoryExpanded(!historyExpanded)}
+                  style={{
+                    paddingVertical: 11,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexDirection: 'row',
+                    gap: 6,
+                    backgroundColor: '#F8FAFC',
+                    borderTopWidth: 1,
+                    borderTopColor: '#F1F5F9',
+                  }}
+                >
+                  <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.primary }}>
+                    {historyExpanded ? 'Thu gọn danh sách ▲' : `Xem thêm (${filteredHistory.length - HISTORY_INITIAL_COUNT} giao dịch khác) ▼`}
+                  </Text>
+                </Tap>
+              )}
+            </Card>
+          )}
+        </View>
       </ScrollView>
 
       {/* Sheet xem toàn bộ lịch sử điểm thưởng */}
@@ -1510,109 +1704,20 @@ export function RewardsScreen({ params }) {
         title="Lịch sử giao dịch điểm"
         footer={<Btn title="Đóng" variant="ghost" onPress={() => setShowHistorySheet(false)} />}
       >
-        {(() => {
-          const fallbackEntries = s.orders
-            .filter((o) => o.status === 'done' && o.kind !== 'warranty')
-            .flatMap((o) => {
-              const earned = Math.max(1, Math.floor(orderTotal(o) / 10000));
-              const arr = [{ id: `ord_${o.code}`, title: `Hoàn thành đơn ${o.code}`, delta: earned, at: o.doneAt || o.createdAt, orderCode: o.code, type: 'order' }];
-              if (o.rating) {
-                arr.unshift({ id: `rate_${o.code}`, title: `Đánh giá dịch vụ đơn ${o.code}`, delta: 20, at: (o.doneAt || o.createdAt) + 60000, orderCode: o.code, type: 'review' });
-              }
-              return arr;
-            });
-          const historyList = (s.pointHistory || []);
-          const filtered = historyList.filter((h) => {
-            if (historyFilter === 'earn') return h.delta > 0;
-            if (historyFilter === 'redeem') return h.delta < 0;
-            return true;
-          });
-
-          return (
-            <View>
-              {/* Bộ lọc trong Sheet */}
-              <View style={{ flexDirection: 'row', gap: 6, marginBottom: 12 }}>
-                {[
-                  { id: 'all', label: `Tất cả (${historyList.length})` },
-                  { id: 'earn', label: `+ Đã nhận (${historyList.filter((h) => h.delta > 0).length})` },
-                  { id: 'redeem', label: `- Đã đổi (${historyList.filter((h) => h.delta < 0).length})` },
-                ].map((tab) => {
-                  const on = historyFilter === tab.id;
-                  return (
-                    <Tap
-                      key={tab.id}
-                      onPress={() => setHistoryFilter(tab.id)}
-                      style={{
-                        paddingVertical: 5,
-                        paddingHorizontal: 10,
-                        borderRadius: R.pill,
-                        backgroundColor: on ? C.primary : '#F1F5F9',
-                      }}
-                    >
-                      <Text style={{ fontSize: 11.5, fontWeight: on ? '800' : '600', color: on ? '#fff' : C.ink2 }}>
-                        {tab.label}
-                      </Text>
-                    </Tap>
-                  );
-                })}
-              </View>
-
-              <Card style={{ padding: 0, overflow: 'hidden' }}>
-                {filtered.map((h, i, arr) => {
-                  const isEarn = h.delta > 0;
-                  const isReview = h.type === 'review' || /đánh giá/i.test(h.title);
-                  const isBonus = h.type === 'bonus' || /tân thủ|đăng ký/i.test(h.title);
-                  const iconName = isEarn
-                    ? (isReview ? 'star' : (isBonus ? 'sparkles' : 'receipt-text'))
-                    : 'gift';
-                  const iconBg = isEarn
-                    ? (isReview ? '#FEF9C3' : (isBonus ? '#F3E8FF' : '#E0F2FE'))
-                    : '#FFEDD5';
-                  const iconFg = isEarn
-                    ? (isReview ? '#CA8A04' : (isBonus ? '#9333EA' : '#0284C7'))
-                    : '#EA580C';
-
-                  return (
-                    <Tap
-                      key={h.id || i}
-                      onPress={() => {
-                        if (h.orderCode) {
-                          setShowHistorySheet(false);
-                          nav.push('order', { code: h.orderCode });
-                        }
-                      }}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 12,
-                        paddingVertical: 12,
-                        paddingHorizontal: 14,
-                        borderBottomWidth: i < arr.length - 1 ? 1 : 0,
-                        borderBottomColor: '#F1F5F9',
-                      }}
-                    >
-                      <IconBox icon={iconName} size={38} bg={iconBg} color={iconFg} radius={11} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontWeight: '700', color: C.ink, fontSize: 13 }}>{h.title}</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                          <Text style={{ fontSize: 11, color: C.muted }}>{fmtDateTime(h.at)}</Text>
-                          {h.orderCode ? (
-                            <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
-                              <Text style={{ fontSize: 10, fontWeight: '700', color: C.primary }}>#{h.orderCode}</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                      </View>
-                      <Text style={{ fontWeight: '900', fontSize: 14, color: isEarn ? '#16A34A' : '#EA580C' }}>
-                        {isEarn ? `+${h.delta}` : h.delta} điểm
-                      </Text>
-                    </Tap>
-                  );
-                })}
-              </Card>
-            </View>
-          );
-        })()}
+        <View>
+          {/* Bộ lọc trong Sheet */}
+          <HistoryFilterTabs list={historyList} value={historyFilter} onChange={setHistoryFilter} style={{ marginBottom: 12 }} />
+          <Card style={{ padding: 0, overflow: 'hidden' }}>
+            {filteredHistory.map((h, i) => (
+              <PointHistoryRow
+                key={h.id || i}
+                h={h}
+                last={i === filteredHistory.length - 1}
+                onPress={() => openHistoryOrder(h, true)}
+              />
+            ))}
+          </Card>
+        </View>
       </Sheet>
 
       <Sheet
@@ -1621,7 +1726,7 @@ export function RewardsScreen({ params }) {
         title={activeTier ? `Hạng ${activeTier.label} (${activeTier.min}+ điểm)` : 'Quyền lợi hạng'}
         footer={activeTier ? (
           <Btn
-            title={s.lifetimePoints >= activeTier.min ? 'Đặt dịch vụ với đặc quyền của bạn' : `Đặt dịch vụ tích thêm ${activeTier.min - s.lifetimePoints} điểm`}
+            title={lp >= activeTier.min ? 'Đặt dịch vụ với đặc quyền của bạn' : `Đặt dịch vụ tích thêm ${activeTier.min - lp} điểm`}
             onPress={() => {
               setSelectedTierId(null);
               nav.services();
@@ -1664,22 +1769,22 @@ export function RewardsScreen({ params }) {
                   text={
                     cur.id === activeTier.id
                       ? '🎯 Hạng hiện tại của bạn'
-                      : s.lifetimePoints >= activeTier.min
+                      : lp >= activeTier.min
                         ? '✓ Đã đạt hạng này'
-                        : `🔒 Còn thiếu ${activeTier.min - s.lifetimePoints} điểm`
+                        : `🔒 Còn thiếu ${activeTier.min - lp} điểm`
                   }
-                  fg={s.lifetimePoints >= activeTier.min ? C.green : C.orange}
+                  fg={lp >= activeTier.min ? C.green : C.orange}
                   bg="#fff"
                 />
               </View>
               <Text style={{ color: C.ink, fontWeight: '700', marginTop: 6, lineHeight: 19 }}>{activeTier.summary}</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                <Badge text={`🛡️ Bảo hành ${activeTier.warrantyDays || 60} ngày`} fg={C.navy} bg="#fff" />
-                <Badge text={`📊 Tích luỹ của bạn: ${s.lifetimePoints}/${activeTier.min || 0} điểm`} fg={C.ink2} bg="#fff" />
+                <Badge text={`🛡️ Bảo hành ${activeTier.warrantyDays || BASE_WARRANTY_DAYS} ngày`} fg={C.navy} bg="#fff" />
+                <Badge text={`📊 Tích luỹ của bạn: ${lp}/${activeTier.min || 0} điểm`} fg={C.ink2} bg="#fff" />
               </View>
               {activeTier.min > 0 ? (
                 <Progress
-                  value={Math.min(1, s.lifetimePoints / activeTier.min)}
+                  value={Math.min(1, lp / activeTier.min)}
                   color={activeTier.color}
                   style={{ marginTop: 10, backgroundColor: 'rgba(255,255,255,0.65)' }}
                 />
@@ -1726,49 +1831,65 @@ export function RewardsScreen({ params }) {
 // =========================================================== HỒ SƠ
 export function ProfileScreen() {
   const { s, a, d, nav, ui: u } = useApp();
-  const [name, setName] = useState(s.user.name || '');
-  const [phone, setPhone] = useState(s.user.phone || '');
-  const [dob, setDob] = useState(s.user.dob || s.auth?.dob || '15/08/1995');
-  const [email, setEmail] = useState(s.user.email || '');
+  const [name, setName] = useState(s.user?.name || '');
+  const [phone, setPhone] = useState(s.user?.phone || '');
+  // Không tự điền ngày sinh giả: chưa có thì để trống cho khách tự nhập.
+  const [dob, setDob] = useState(s.user?.dob || s.auth?.dob || '');
+  // Email là tài khoản đăng nhập, không sửa ở màn này → chỉ hiển thị, không validate.
+  const email = s.user?.email || s.auth?.email || '';
   const [err, setErr] = useState({});
   const [showPw, setShowPw] = useState(false);
   const [curPw, setCurPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [newPw2, setNewPw2] = useState('');
+  const [pwErr, setPwErr] = useState('');
   const [showOtp, setShowOtp] = useState(false);
   const [otpInput, setOtpInput] = useState('');
   const [otpErr, setOtpErr] = useState('');
-  const [otpHint, setOtpHint] = useState('');
+  // Chỉ lưu cờ "đã gửi mã", không giữ mã OTP trả về từ API ở client.
+  const [otpSent, setOtpSent] = useState(false);
   const [otpSending, setOtpSending] = useState(false);
+  const [otpVerifying, runVerify] = useBusy();
+  const [pwSaving, runPw] = useBusy();
+  const [saving, runSave] = useBusy();
 
   const sendOtp = async () => {
+    if (otpSending) return;
     setOtpSending(true);
     setOtpErr('');
     try {
-      const res = await a.sendEmailOtp();
+      const res = (await callAction(a.sendEmailOtp)) || {};
       if (res.ok) {
         if (res.alreadyVerified) setShowOtp(false);
-        else if (res.otpCode) setOtpHint(res.otpCode);
+        else setOtpSent(true);
       } else {
-        setOtpErr(res.error || 'Không thể gửi mã OTP.');
+        setOtpErr(errorText(res, 'Không thể gửi mã OTP.'));
       }
+    } catch (e) {
+      setOtpErr(errorText(e, 'Không thể gửi mã OTP. Vui lòng thử lại.'));
     } finally {
       setOtpSending(false);
     }
   };
 
-  const verifyOtp = async () => {
-    const res = await a.verifyEmailOtp(otpInput);
-    if (res.ok) {
-      setShowOtp(false);
-      setOtpInput('');
-      setOtpHint('');
-    } else {
-      setOtpErr(res.error || 'Mã OTP không chính xác.');
+  const verifyOtp = () => runVerify(async () => {
+    if (otpInput.length !== 6) { setOtpErr('Vui lòng nhập đủ 6 chữ số của mã OTP.'); return; }
+    setOtpErr('');
+    try {
+      const res = (await callAction(a.verifyEmailOtp, otpInput)) || {};
+      if (res.ok) {
+        setShowOtp(false);
+        setOtpInput('');
+        setOtpSent(false);
+      } else {
+        setOtpErr(errorText(res, 'Mã OTP không chính xác.'));
+      }
+    } catch (e) {
+      setOtpErr(errorText(e, 'Không xác thực được mã OTP. Vui lòng thử lại.'));
     }
-  };
+  });
 
-  const save = async () => {
+  const save = () => runSave(async () => {
     const e = {};
     const nameErr = validateContactName(name);
     if (nameErr) e.name = nameErr;
@@ -1776,34 +1897,36 @@ export function ProfileScreen() {
       const phoneErr = validateVietnamesePhone(phone);
       if (phoneErr) e.phone = phoneErr;
     }
-    if (dob && dob.trim()) {
-      const match = dob.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      if (!match) {
-        e.dob = 'Ngày sinh theo định dạng DD/MM/YYYY (VD: 15/08/1995).';
-      } else {
-        const dNum = parseInt(match[1], 10);
-        const mNum = parseInt(match[2], 10);
-        const yNum = parseInt(match[3], 10);
-        const nowYear = new Date().getFullYear();
-        if (mNum < 1 || mNum > 12 || dNum < 1 || dNum > 31) {
-          e.dob = 'Ngày hoặc tháng sinh không hợp lệ.';
-        } else if (yNum < 1920 || yNum > nowYear - 5) {
-          e.dob = `Năm sinh không hợp lệ (1920 - ${nowYear - 5}).`;
-        }
-      }
-    }
-    if (email && !/^\S+@\S+\.\S+$/.test(email)) e.email = 'Email không hợp lệ.';
+    const dErr = dobError(dob);
+    if (dErr) e.dob = dErr;
     setErr(e);
     if (Object.keys(e).length) return;
-    if (await a.updateUser({ name: name.trim(), phone, dob: dob.trim() })) nav.back();
-  };
-  const savePw = async () => {
-    if (newPw !== newPw2) { u.alert('Không khớp', 'Mật khẩu mới nhập lại chưa khớp.', '🔐'); return; }
-    const res = await a.changePassword({ currentPassword: curPw, newPassword: newPw });
-    if (!res.ok) { u.alert('Không đổi được', res.error, '🔐'); return; }
+    try {
+      const ok = await callAction(a.updateUser, { name: name.trim(), phone, dob: dob.trim() });
+      if (isOk(ok)) nav.back();
+    } catch (ex) {
+      u.alert('Không lưu được', errorText(ex, 'Không lưu được thông tin. Vui lòng thử lại.'), '⚠️');
+    }
+  });
+
+  const closePw = () => {
     setShowPw(false);
-    setCurPw(''); setNewPw(''); setNewPw2('');
+    setCurPw(''); setNewPw(''); setNewPw2(''); setPwErr('');
   };
+  const savePw = () => runPw(async () => {
+    if (!curPw || !newPw || !newPw2) { setPwErr('Vui lòng nhập đủ mật khẩu hiện tại, mật khẩu mới và nhập lại.'); return; }
+    if (newPw.length < PASSWORD_MIN_LENGTH) { setPwErr(`Mật khẩu mới cần tối thiểu ${PASSWORD_MIN_LENGTH} ký tự.`); return; }
+    if (newPw !== newPw2) { setPwErr('Mật khẩu mới nhập lại chưa khớp.'); return; }
+    if (newPw === curPw) { setPwErr('Mật khẩu mới phải khác mật khẩu hiện tại.'); return; }
+    setPwErr('');
+    try {
+      const res = (await callAction(a.changePassword, { currentPassword: curPw, newPassword: newPw })) || {};
+      if (!res.ok) { setPwErr(errorText(res, 'Không đổi được mật khẩu.')); return; }
+      closePw();
+    } catch (ex) {
+      setPwErr(errorText(ex, 'Không đổi được mật khẩu. Vui lòng thử lại.'));
+    }
+  });
   return (
     <View style={{ flex: 1 }}>
       <TopBar title="Thông tin cá nhân" />

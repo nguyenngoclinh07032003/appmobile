@@ -3,6 +3,13 @@
 > **Mục tiêu:** Thay thế cơ chế "Random nhận việc thuần túy" sang "Điều phối thông minh theo nghiệp vụ thợ công ty", tối ưu hóa quãng đường, đúng chuyên môn và cân bằng tải công việc.  
 > **Phiên bản:** 2.0 (Đầy đủ thuật toán, CSDL, Code mẫu & Đặc tả API) | **Ngày cập nhật:** 08/11/2026  
 
+> [!NOTE]
+> **Ghi chú thống nhất (cập nhật 11/2026)**
+> - Trọng số: **Workload 0.40 / Distance 0.35 / Rating 0.25**; ngưỡng top candidate **Score ≥ 0.88 × Score cao nhất** (tức chênh lệch ≤ 12%), tối đa 3 thợ, chọn ngẫu nhiên; mô hình **gán trực tiếp** (không có chợ việc/giật đơn).
+> - Hai ngưỡng khác nhau: **`max_active_jobs = 3`** (lọc cứng — việc đang mở `assigned`/`confirmed`) và **`N_max_daily = 5`** (chấm điểm workload — tổng việc trong ngày, kể cả đã hoàn thành).
+> - Code/SQL mẫu đã sửa: điều kiện khu vực `(t.service_area = $3 OR distance <= $radius)`; `calculateDistance(...) ?? 3.5` (thống nhất 3.5 km, dùng `??` thay `||`); UNIQUE lịch dùng **partial index** loại trừ `cancelled`/`declined`; thêm trạng thái `declined`.
+> - Mã đơn tiền tố `HRM` (ví dụ `HRM261108-03`); địa bàn ví dụ Hà Nội (Cầu Giấy); bảo hành theo hạng 60/75/90/120 ngày. Push notification/WebSocket là hướng phát triển (app hiện đồng bộ khi thao tác, khi quay lại app và polling).
+
 ---
 
 ## 📌 MỤC LỤC
@@ -30,7 +37,7 @@ Hệ thống Thợ HRMSS là mô hình **Dịch vụ kỹ thuật tại nhà c�
 |---|---|---|---|
 | **Yêu cầu kỹ năng** | Không phân biệt chuyên môn | Bắt buộc đúng tay nghề (Điện lạnh, Máy giặt, Bình nước nóng...) | Thợ sửa máy giặt bị random đi làm vệ sinh máy lạnh $\rightarrow$ Không làm được. |
 | **Lịch hẹn** | Tức thời (đi ngay 5-10 phút) | Hẹn theo khung giờ cố định (`10h00 - 12h00`, `14h00 - 16h00`) | Giao việc trùng khung giờ thợ đang có đơn $\rightarrow$ Chắc chắn trễ hẹn hoặc bùng việc. |
-| **Khu vực hoạt động** | Tự do di chuyển toàn thành phố | Phụ trách theo cụm Quận/Huyện hoặc bán kính $R \le 7\text{ km}$ | Thợ ở Q.12 bị random giao đơn ở Q.7 $\rightarrow$ Kẹt xe, chi phí xăng xe cao, khách chờ đợi. |
+| **Khu vực hoạt động** | Tự do di chuyển toàn thành phố | Phụ trách theo cụm Quận/Huyện hoặc bán kính $R \le 7\text{ km}$ | Thợ ở Long Biên bị random giao đơn ở Cầu Giấy (Hà Nội) $\rightarrow$ Kẹt xe, chi phí xăng xe cao, khách chờ đợi. |
 | **Chế độ lao động** | Đối tác tự do (Freelancer) | Kỹ thuật viên chính thức (Lương + KPI + Thưởng năng suất) | Một số thợ quá tải (5-6 việc/ngày), thợ khác ngồi chơi cả ngày $\rightarrow$ Mất cân bằng thu nhập. |
 
 ---
@@ -40,7 +47,7 @@ Hệ thống Thợ HRMSS là mô hình **Dịch vụ kỹ thuật tại nhà c�
 Thay vì "Random bừa" trên toàn bộ danh sách thợ, Backend triển khai mô hình **Smart Weighted Dispatching** gồm:
 1. **Lọc cứng (Hard Filter):** Loại bỏ 100% thợ không đủ điều kiện (sai chuyên môn, trùng lịch, quá xa, quá tải).
 2. **Chấm điểm tối ưu (Scoring):** Chấm điểm các thợ còn lại theo: **Cân bằng tải công việc (40%) + Khoảng cách di chuyển (35%) + Đánh giá sao (25%)**.
-3. **Random có kiểm soát (Controlled Randomization):** Lấy ra **Top 2 hoặc Top 3 thợ có điểm số cao nhất** rồi random trong nhóm này.
+3. **Random có kiểm soát (Controlled Randomization):** Lấy ra **tối đa 3 thợ có Score ≥ 0.88 × Score cao nhất** rồi random trong nhóm này.
    - *Lợi ích:* Vừa đảm bảo tính khách quan/ngẫu nhiên (tránh khiếu nại thiên vị nội bộ), vừa đảm bảo người nhận việc luôn là người làm tốt nhất, gần nhất và công bằng nhất.
 
 ---
@@ -55,7 +62,7 @@ flowchart TD
         B1["1. Đúng chuyên môn thiết bị (Skill Match)"]
         B2["2. Nằm trong khu vực phụ trách (Zone / Distance <= 7km)"]
         B3["3. Khung giờ hẹn chưa có lịch (Time-slot Conflict Free)"]
-        B4["4. Đang giữ < 3 việc song song (Capacity Limit)"]
+        B4["4. Đang giữ < 3 việc đang mở (max_active_jobs)"]
     end
     
     B --> HardFilters
@@ -73,11 +80,11 @@ flowchart TD
     D --> Scoring
     Scoring --> E["Xếp hạng danh sách thợ theo Score giảm dần"]
     E --> F["GIAI ĐOẠN 3: RANDOM CÓ KIỂM SOÁT"]
-    F --> G["Lấy Top 2 - 3 thợ có điểm cao nhất (chênh lệch <= 12%)"]
+    F --> G["Lấy tối đa 3 thợ có Score >= 0.88 x Score cao nhất"]
     G --> H["🎲 Random ngẫu nhiên 1 thợ trong nhóm Top"]
     H --> I["Gán đơn + Tạo lịch phân công (Status: 'assigned')"]
     I --> J["Kích hoạt đếm ngược 15 phút (Assignment TTL)"]
-    J --> K["Bắn Push Notification đến App Thợ"]
+    J --> K["Thông báo đến App Thợ (hiện: đồng bộ/polling; push là hướng phát triển)"]
 ```
 
 ---
@@ -92,7 +99,7 @@ $$\forall t_i \in T, \quad t_i \in T_{valid} \iff \big(C_{skill} \land C_{area} 
 1. $C_{skill}$: $Order.category \in t_i.skills$
 2. $C_{area}$: $Distance(t_i.station, Order.customer\_location) \le 7\text{ km}$ hoặc $t_i.area = Order.district$
 3. $C_{time}$: Không tồn tại lịch làm việc của $t_i$ trùng với $(Order.date, Order.time\_slot)$
-4. $C_{capacity}$: Số việc đang xử lý của $t_i < 3$ việc.
+4. $C_{capacity}$: Số việc đang mở (`assigned`/`confirmed`) của $t_i < max\_active\_jobs = 3$. *(Khác với $N_{max\_daily} = 5$ dùng để chấm điểm workload.)*
 
 ---
 
@@ -104,7 +111,7 @@ $$Score(t_i) = 0.40 \times S_{workload}(t_i) + 0.35 \times S_{distance}(t_i, Ord
 #### ① Điểm cân bằng tải công việc ($S_{workload}$ - Trọng số 40%):
 Nguyên tắc: Thợ càng ít việc trong ngày thì điểm càng cao để kéo đều việc cho mọi người.
 $$S_{workload}(t_i) = \max\left(0, \; \left(1 - \frac{N_{today}(t_i)}{N_{max\_daily}}\right) \times 100\right)$$
-*(Với $N_{max\_daily} = 5$ đơn/ngày. Thợ chưa có đơn nào: điểm 100; Thợ đã làm 3 đơn: điểm 40).*
+*(Với $N_{max\_daily} = 5$ đơn/ngày; $N_{today}$ = tổng việc được giao trong ngày, kể cả đã hoàn thành, trừ huỷ/từ chối. Thợ chưa có đơn nào: điểm 100; Thợ đã làm 3 đơn: điểm 40).*
 
 #### ② Điểm khoảng cách di chuyển ($S_{distance}$ - Trọng số 35%):
 Nguyên tắc: Càng gần nhà khách hàng càng được điểm cao, giảm thời gian di chuyển.
@@ -139,7 +146,7 @@ CREATE TABLE technicians (
     name VARCHAR(100) NOT NULL,
     phone VARCHAR(20) NOT NULL,
     skills JSONB NOT NULL,                         -- mảng chuyên môn: ["may-lanh", "tu-lanh", "may-giat"]
-    service_area VARCHAR(100) NOT NULL,            -- khu vực trực: "Bình Thạnh", "Quận 1"
+    service_area VARCHAR(100) NOT NULL,            -- khu vực trực: "Cầu Giấy", "Đống Đa"
     station_lat DOUBLE PRECISION,                  -- tọa độ trạm đóng quân
     station_lng DOUBLE PRECISION,
     max_active_jobs INT DEFAULT 3,                 -- tối đa số việc song song
@@ -158,10 +165,13 @@ CREATE TABLE technician_schedules (
     order_id INT NOT NULL,
     work_date DATE NOT NULL,                      -- ngày làm việc: '2026-11-08'
     time_slot VARCHAR(50) NOT NULL,               -- khung giờ: '14h00 - 16h00'
-    status VARCHAR(20) DEFAULT 'assigned',        -- 'assigned', 'confirmed', 'completed', 'cancelled'
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT unique_tech_slot UNIQUE(tech_id, work_date, time_slot)
+    status VARCHAR(20) DEFAULT 'assigned',        -- 'assigned', 'confirmed', 'completed', 'declined', 'cancelled'
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+-- Chỉ 1 lịch HIỆU LỰC / thợ / khung giờ; lịch huỷ hoặc bị từ chối không chặn việc gán lại.
+CREATE UNIQUE INDEX unique_tech_slot_active
+    ON technician_schedules(tech_id, work_date, time_slot)
+    WHERE status NOT IN ('cancelled', 'declined');
 CREATE INDEX idx_sched_tech_date ON technician_schedules(tech_id, work_date);
 
 -- 3. Bảng Nhật ký điều phối để theo dõi & đối soát (Dispatch Logs)
@@ -193,47 +203,70 @@ interface OrderPayload {
   category: string;        // vd: "may-lanh"
   bookingDate: string;     // vd: "2026-11-08"
   timeSlot: string;        // vd: "14h00 - 16h00"
-  district: string;        // vd: "Bình Thạnh"
+  district: string;        // vd: "Cầu Giấy"
   customerLat?: number;
   customerLng?: number;
 }
 
-export async function smartDispatchOrder(order: OrderPayload) {
+const MAX_DAILY_JOBS = 5;      // N_max_daily: chỉ dùng chấm điểm workload
+const R_MAX_KM = 7;            // bán kính chuẩn (fallback mở rộng 12 km)
+const DEFAULT_DIST_KM = 3.5;   // thống nhất 3.5 km khi thiếu toạ độ
+
+export async function smartDispatchOrder(order: OrderPayload, radiusKm = R_MAX_KM) {
+  const hasGps = order.customerLat != null && order.customerLng != null;
+
   // BƯỚC 1: LỌC CỨNG (Hard Constraints Query)
+  //  - today_count : tổng việc trong ngày (trừ huỷ/từ chối)  -> workload = N_today / 5
+  //  - active_count: việc đang mở assigned/confirmed         -> lọc cứng < max_active_jobs (3)
+  //  - Khu vực: cùng service_area HOẶC trạm trong bán kính radiusKm (Haversine)
   const candidateResult = await db.query(`
-    SELECT t.*, 
-      (SELECT COUNT(*) FROM technician_schedules s 
-       WHERE s.tech_id = t.id AND s.work_date = $1 AND s.status IN ('assigned', 'confirmed')) as active_count
+    SELECT t.*,
+      (SELECT COUNT(*) FROM technician_schedules s
+        WHERE s.tech_id = t.id AND s.work_date = $1
+          AND s.status NOT IN ('cancelled', 'declined')) AS today_count,
+      (SELECT COUNT(*) FROM technician_schedules s
+        WHERE s.tech_id = t.id AND s.work_date = $1
+          AND s.status IN ('assigned', 'confirmed')) AS active_count
     FROM technicians t
     WHERE t.is_active = TRUE
       AND t.skills ? $2
-      AND t.service_area = $3
+      AND (
+        t.service_area = $3
+        OR ($5::float8 IS NOT NULL AND t.station_lat IS NOT NULL AND
+            6371 * 2 * ASIN(SQRT(
+              POWER(SIN(RADIANS(t.station_lat - $5) / 2), 2) +
+              COS(RADIANS($5)) * COS(RADIANS(t.station_lat)) *
+              POWER(SIN(RADIANS(t.station_lng - $6) / 2), 2)
+            )) <= $7)
+      )
       AND NOT EXISTS (
         SELECT 1 FROM technician_schedules s
-        WHERE s.tech_id = t.id 
-          AND s.work_date = $1 
+        WHERE s.tech_id = t.id
+          AND s.work_date = $1
           AND s.time_slot = $4
           AND s.status IN ('assigned', 'confirmed')
       )
-  `, [order.bookingDate, order.category, order.district, order.timeSlot]);
+  `, [order.bookingDate, order.category, order.district, order.timeSlot,
+      hasGps ? order.customerLat : null, hasGps ? order.customerLng : null, radiusKm]);
 
-  // Lọc ngưỡng việc song song (< 3 việc)
-  const eligibleTechs = candidateResult.rows.filter(t => t.active_count < t.max_active_jobs);
+  // Lọc ngưỡng việc đang mở (< max_active_jobs, mặc định 3)
+  const eligibleTechs = candidateResult.rows.filter(t => Number(t.active_count) < t.max_active_jobs);
 
   // Kịch bản ngoại lệ: Không có thợ nào thỏa mãn
   if (eligibleTechs.length === 0) {
     console.warn(`[Dispatch] Không có thợ khả dụng cho đơn ${order.orderCode} -> Chuyển Fallback`);
-    return handleFallback(order);
+    return handleFallback(order); // mở rộng 7 -> 12 km, rồi chuyển Admin gán tay
   }
 
   // BƯỚC 2: CHẤM ĐIỂM TỐI ƯU CÓ TRỌNG SỐ (Weighted Scoring)
   const scoredTechs = eligibleTechs.map(tech => {
-    // 1. Điểm cân bằng tải (tối đa 5 việc/ngày)
-    const workloadScore = Math.max(0, (1 - (tech.active_count / 5)) * 100);
+    // 1. Điểm cân bằng tải: N_today / N_max_daily (5)
+    const workloadScore = Math.max(0, (1 - (Number(tech.today_count) / MAX_DAILY_JOBS)) * 100);
 
-    // 2. Điểm khoảng cách (giả lập 3.0km nếu chưa có tọa độ GPS chi tiết)
-    const distanceKm = getDistanceKm(tech.station_lat, tech.station_lng, order.customerLat, order.customerLng) || 3.0;
-    const distanceScore = Math.max(0, 100 - (distanceKm / 7) * 100);
+    // 2. Điểm khoảng cách: calculateDistance trả null khi thiếu toạ độ -> 3.5 km.
+    //    Dùng ?? (không dùng ||) để 0 km hợp lệ không bị thay bằng 3.5.
+    const distanceKm = calculateDistance(tech.station_lat, tech.station_lng, order.customerLat, order.customerLng) ?? DEFAULT_DIST_KM;
+    const distanceScore = Math.max(0, 100 - (distanceKm / R_MAX_KM) * 100);
 
     // 3. Điểm đánh giá (Rating)
     const ratingScore = (Number(tech.rating || 5.0) / 5.0) * 100;
@@ -246,7 +279,7 @@ export async function smartDispatchOrder(order: OrderPayload) {
   // Sắp xếp điểm giảm dần
   scoredTechs.sort((a, b) => b.totalScore - a.totalScore);
 
-  // BƯỚC 3: RANDOM CÓ KIỂM SOÁT TRONG TOP 2 - 3
+  // BƯỚC 3: RANDOM CÓ KIỂM SOÁT TRONG TOP ≤ 3 (ngưỡng 0.88)
   const topScore = scoredTechs[0].totalScore;
   const topCandidates = scoredTechs.filter(t => t.totalScore >= topScore * 0.88).slice(0, 3);
   const selectedTech = topCandidates[Math.floor(Math.random() * topCandidates.length)];
@@ -264,7 +297,7 @@ export async function smartDispatchOrder(order: OrderPayload) {
     VALUES ($1, $2, $3, $4)
   `, [order.orderId, selectedTech.id, JSON.stringify(scoredTechs), expiresAt]);
 
-  // BƯỚC 5: GỬI PUSH NOTIFICATION ĐẾN MOBILE APP CỦA THỢ
+  // BƯỚC 5: GỬI PUSH NOTIFICATION ĐẾN MOBILE APP CỦA THỢ (hướng phát triển — hiện app thợ nhận việc qua đồng bộ/polling)
   await sendPushNotification(selectedTech.id, {
     title: 'Việc mới được phân công!',
     body: `Đơn ${order.orderCode} tại ${order.district}. Bạn có 15 phút để bấm Tiếp nhận ca.`,
@@ -288,7 +321,7 @@ export async function smartDispatchOrder(order: OrderPayload) {
   "success": true,
   "data": [
     {
-      "order_code": "DMX261108-01",
+      "order_code": "HRM261108-01",
       "service_name": "Vệ sinh máy lạnh treo tường (Inverter)",
       "category": "may-lanh",
       "booking_date": "2026-11-08",
@@ -296,12 +329,12 @@ export async function smartDispatchOrder(order: OrderPayload) {
       "customer": {
         "name": "Nguyễn Văn A",
         "phone_masked": "0912***456",
-        "address": "123 Điện Biên Phủ, Phường 15, Bình Thạnh, TP.HCM",
+        "address": "123 Trần Duy Hưng, Trung Hoà, Cầu Giấy, Hà Nội",
         "distance_km": 2.8
       },
       "assigned_at": "2026-11-08T11:15:00Z",
       "expires_at": "2026-11-08T11:30:00Z",
-      "dispatch_note": "Hệ thống tự động phân công theo chuyên môn Điện lạnh & khu vực Bình Thạnh"
+      "dispatch_note": "Hệ thống tự động phân công theo chuyên môn Điện lạnh & khu vực Cầu Giấy"
     }
   ]
 }
@@ -316,7 +349,7 @@ export async function smartDispatchOrder(order: OrderPayload) {
   "success": true,
   "message": "Đã tiếp nhận ca làm việc thành công",
   "order": {
-    "order_code": "DMX261108-01",
+    "order_code": "HRM261108-01",
     "status": "confirmed",
     "customer_full_phone": "0912345678"
   }
@@ -365,5 +398,5 @@ Phía Mobile App (React Native) hiện tại đã được cấu trúc và thi�
   - Thẻ đơn hiển thị rõ nhãn: `📋 CA ĐƯỢC PHÂN CÔNG`, đếm ngược `⏳ Còn 14:30 tiếp nhận`, hiển thị lý do điều phối minh bạch: `✓ Đúng chuyên môn`, `✓ Thuộc khu vực phụ trách`, `✓ Khung giờ hẹn trống`.
   - Nút bấm chuẩn tác phong công ty: `[ Tiếp nhận ca ]` và `[ Từ chối ca ]`.
 - **Phía App Khách:**
-  - Hiển thị thẻ: `⚙️ Hệ thống đang điều phối Kỹ thuật viên chuyên trách...` kèm 3 cam kết doanh nghiệp (Đúng chuyên môn, Đúng hẹn, Bảo hành 60 ngày).
+  - Hiển thị thẻ: `⚙️ Hệ thống đang điều phối Kỹ thuật viên chuyên trách...` kèm 3 cam kết doanh nghiệp (Đúng chuyên môn, Đúng hẹn, Bảo hành theo hạng 60/75/90/120 ngày).
   - Khi đã có thợ nhận: Hiện huy hiệu `KTV chuyên trách` cùng số sao uy tín và nút gọi điện thoại trực tiếp.

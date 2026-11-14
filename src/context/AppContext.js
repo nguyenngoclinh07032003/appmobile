@@ -1,13 +1,14 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { BackHandler, Linking, Platform } from 'react-native';
+import React, { createContext, useContext, useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { BackHandler, Linking, Platform, AppState } from 'react-native';
 import {
   getService, TECH_ME, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech, CATEGORIES, SERVICES,
   tierOf, comboDiscountFor, syncCatalogFromBackend, syncPolicyFromBackend, resolveDbServiceId, PAYMENT_METHODS,
 } from '../constants/data';
 export { matchJobForTech, comboDiscountFor } from '../constants/data';
 import {
-  getSession, clearSession, urlRoleHint, setSession, upsertBackendAccount, deleteAccountById,
+  getSession, clearSession, urlRoleHint, setSession, upsertBackendAccount, deleteAccountById, hydrateAuthStore,
 } from '../services/authService';
+import { IS_WEB_STORAGE, readJsonSync, readJson, writeJson, removeItem as removeStorageItem } from '../services/storage';
 import { hrmssApi, authTokens } from '../services/api';
 import { API_BASE_URL } from '../constants/config';
 import { authErrorMessage } from '../utils/authErrorMessages';
@@ -20,7 +21,16 @@ const isoToDob = (iso) => {
 };
 const dobToIso = (dob) => {
   const m = String(dob || '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : null;
+  if (!m) return null;
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const year = Number(m[3]);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1900 || year > new Date().getFullYear()) {
+    return null;
+  }
+  const maxDays = new Date(year, month, 0).getDate();
+  if (day > maxDays) return null;
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 };
 // Lỗi mạng: ghi rõ địa chỉ server app đang gọi (sai địa chỉ / server tắt thì nhìn là thấy).
 const networkError = (res) => (res?.code === 'TIMEOUT'
@@ -86,7 +96,12 @@ export const orderTotal = (o) => {
   if (o?.bill) return Math.max(0, Number(o.bill.amountDue) || 0);
   if (o.kind === 'warranty' || o.kind === 'followup') return 0;
   if (o.status === 'cancelled') return o.inspectionFee || 0;
-  if (o.quote?.approvedTotal != null) return Math.max(0, o.quote.approvedTotal - (o.voucherDiscount || 0));
+  const quoteAmount = o.quote?.approvedTotal != null
+    ? o.quote.approvedTotal
+    : ((o.quote?.approved || ['repairing', 'pending_payment', 'partially_paid', 'pending_review', 'done'].includes(o.status)) && o.quote?.total != null
+      ? o.quote.total
+      : null);
+  if (quoteAmount != null) return Math.max(0, quoteAmount - (o.voucherDiscount || 0));
   const base = o.finalTotal != null ? o.finalTotal : o.total;
   return Math.max(0, Number(base) || 0);
 };
@@ -180,7 +195,7 @@ const mergeTechProfile = (prev, account) => {
     code,
     rating: same?.rating ?? TECH_ME.rating,
     jobs: same?.jobs ?? 0,
-    area: same?.area || TECH_ME.area,
+    area: same?.area || TECH_ME.area || 'Hà Nội',
     skills: same?.skills || [],
     reputation: rep.reputation,
     lockedUntil: rep.lockedUntil,
@@ -222,7 +237,8 @@ const isOrderOfCustomer = (o, phone, accountId = null) => {
   if (!phone) return Boolean(accountId && o?.customerAccountId === accountId);
   const p = String(phone).trim();
   const op = String(o?.customerPhone || o?.address?.phone || '').trim();
-  return !op || op === p;
+  if (op) return op === p;
+  return Boolean(accountId && o?.customerAccountId === accountId);
 };
 // Khi đổi tài khoản khách hàng: lưu dữ liệu khách cũ vào customerProfiles[oldKey], nạp dữ liệu khách mới
 const switchCustomerSlice = (prev, nextAccount) => {
@@ -293,16 +309,25 @@ const makeInitial = () => ({
 const storage = {
   load() {
     try {
-      if (typeof localStorage === 'undefined') return null;
-      const raw = localStorage.getItem(KEY);
-      return raw ? JSON.parse(raw) : null;
+      if (IS_WEB_STORAGE) {
+        return readJsonSync(KEY, 'local');
+      }
+      return null;
     } catch (e) { return null; }
   },
   save(s) {
-    try { if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, JSON.stringify(s)); } catch (e) { /* bỏ qua */ }
+    try {
+      if (IS_WEB_STORAGE) {
+        writeJson(KEY, s, 'local');
+      }
+    } catch (e) { /* bỏ qua */ }
   },
   clear() {
-    try { if (typeof localStorage !== 'undefined') localStorage.removeItem(KEY); } catch (e) { /* bỏ qua */ }
+    try {
+      if (IS_WEB_STORAGE) {
+        removeStorageItem(KEY, 'local');
+      }
+    } catch (e) { /* bỏ qua */ }
   },
 };
 
@@ -397,9 +422,13 @@ export function AppProvider({ children }) {
       return;
     }
     lastWritten.current = raw;
-    try {
-      if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, raw);
-    } catch (e) { /* quota / private mode */ }
+    if (IS_WEB_STORAGE) {
+      try {
+        if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, raw);
+      } catch (e) { /* quota / private mode */ }
+    } else {
+      writeJson(KEY, payload, 'local');
+    }
   }, [s]);
 
   // Đồng bộ đơn hàng giữa tab Khách ↔ Thợ trên cùng trình duyệt
@@ -433,30 +462,20 @@ export function AppProvider({ children }) {
         skipSaveOnce.current = true;
         lastWritten.current = e.newValue;
         setS((prev) => {
-          const activeCustPhone = prev.auth?.role === 'customer' ? prev.auth.phone : null;
+          const sessKey = customerProfileKey(prev.auth);
           const mergedProfiles = { ...(prev.customerProfiles || {}), ...(incoming.customerProfiles || {}) };
-          const custSlice = (activeCustPhone && mergedProfiles[activeCustPhone])
+          const custSlice = (sessKey && mergedProfiles[sessKey])
             ? {
-              ...mergedProfiles[activeCustPhone],
-              notifications: mergeNotifs(prev.notifications, mergedProfiles[activeCustPhone].notifications),
+              ...mergedProfiles[sessKey],
+              notifications: mergeNotifs(prev.notifications, mergedProfiles[sessKey].notifications),
             }
             : {};
           return {
             ...prev,
-            ...incoming,
             ...custSlice,
             customerProfiles: mergedProfiles,
             orders: mergeOrders(prev.orders, incoming.orders),
-            notifications: activeCustPhone
-              ? (custSlice.notifications || mergeNotifs(prev.notifications, incoming.notifications))
-              : mergeNotifs(prev.notifications, incoming.notifications),
             techNotifs: mergeNotifs(prev.techNotifs, incoming.techNotifs),
-            auth: prev.auth,
-            role: prev.auth?.role || incoming.role || prev.role,
-            user: prev.auth
-              ? { name: prev.auth.name || '', phone: prev.auth.phone || '', email: prev.auth.email || '' }
-              : (incoming.user || prev.user),
-            techProfile: prev.auth?.role === 'tech' ? prev.techProfile : (incoming.techProfile || null),
           };
         });
       } catch (err) { /* bỏ qua */ }
@@ -787,7 +806,7 @@ export function AppProvider({ children }) {
           const base = p.techProfile || mergeTechProfile(null, acc);
           const techProf = {
             ...base,
-            ...(profRes.ok ? { area: profRes.data?.work_area || '' } : {}),
+            ...(profRes.ok ? { area: profRes.data?.work_area || 'Hà Nội' } : { area: 'Hà Nội' }),
             specialtiesAvailable: Boolean(specialtyInfo?.available),
             specialties: specialtyInfo?.specialties || [],
             specialtyCategoryIds: specialtyInfo?.categoryIds || [],
@@ -890,6 +909,17 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     (async () => {
+      if (!IS_WEB_STORAGE) {
+        await hydrateAuthStore();
+        const savedNative = await readJson(KEY, 'local');
+        if (savedNative) {
+          up((p) => ({
+            ...savedNative,
+            auth: getSession() || p.auth,
+            role: getSession()?.role || savedNative.role || p.role,
+          }));
+        }
+      }
       // Bản native lưu phiên trong SecureStore (sessionStorage/localStorage không có trên điện thoại):
       // mở lại app mà chưa có phiên trên máy -> dùng refresh token đã lưu để vào lại, không phải đăng nhập lại.
       if (!s.auth) {
@@ -902,6 +932,26 @@ export function AppProvider({ children }) {
       syncFromBackend(s.auth);
     })();
   }, []);
+
+  // Tự động đồng bộ khi app quay lại foreground và định kỳ mỗi 30s khi đang đăng nhập
+  useEffect(() => {
+    const onAppStateChange = (nextState) => {
+      if (nextState === 'active') {
+        syncFromBackend();
+      }
+    };
+    const sub = AppState.addEventListener('change', onAppStateChange);
+    let timer = null;
+    if (s.auth) {
+      timer = setInterval(() => {
+        syncFromBackend();
+      }, 30000);
+    }
+    return () => {
+      sub.remove();
+      if (timer) clearInterval(timer);
+    };
+  }, [s.auth?.id]);
 
   const inFlight = useRef(new Set()); // thao tác ghi đang chạy (chống bấm đúp)
   // Phiên hết hạn / bị thu hồi (refresh token hết hạn): xoá dữ liệu tài khoản trên máy, về màn chính và báo đăng nhập lại.
@@ -1089,7 +1139,7 @@ export function AppProvider({ children }) {
         service_id: resolveDbServiceId(it.id),
         quantity: Math.min(20, Math.max(1, Number(it.qty) || 1)),
       }));
-      const method = PAYMENT_METHODS.find((m) => m.label === payload.payment)?.apiMethod || 'CASH';
+      const method = PAYMENT_METHODS.find((m) => m.label === payload.payment || m.id === payload.payment)?.apiMethod || 'CASH';
       const res = await hrmssApi.createCustomerRequest({
         service_address_id: String(address.dbAddressId),
         preferred_time: buildPreferredTimeIso(payload.dateKey, payload.slot),
@@ -1164,34 +1214,19 @@ export function AppProvider({ children }) {
         }
         acceptedAssignmentId = res.data?.job?.assignment_id || null;
       }
-      let result = 'missing';
-      let targetOrder = null;
       up((p) => {
         const tech0 = p.techProfile || TECH_ME;
         const o = p.orders.find((x) => x.code === code);
-        if (!o || o.status !== 'pending') { result = 'bad'; return {}; }
+        if (!o || o.status !== 'pending') return {};
         const tech = { ...normalizeTechRep(tech0), ...tech0 };
         const now = Date.now();
-        result = 'ok';
-        targetOrder = o;
         return {
           orders: p.orders.map((x) => (x.code === code
             ? withStatus(o, 'confirmed', now, { tech: { ...tech }, dispatchNote: null, acceptedAt: now, dbAssignmentId: acceptedAssignmentId || o.dbAssignmentId })
             : x)),
-          notifications: pushNotif(p, {
-            icon: '👷',
-            title: `Thợ ${tech.name} đã nhận đơn ${code}`,
-            body: 'Thợ sẽ gọi cho bạn trước khi đến.',
-            link: { name: 'order', params: { code } },
-          }),
           ...clearDeclined(p, tech0.code, code),
         };
       });
-      void targetOrder;
-      if (result !== 'ok') {
-        ui.alert('Không nhận được', 'Việc không còn ở trạng thái chờ nhận.', 'ℹ️');
-        return false;
-      }
       ui.toast('Đã nhận việc', '👍');
       syncFromBackend();
       return true;
@@ -1442,7 +1477,8 @@ export function AppProvider({ children }) {
       if (!Array.isArray(lines) || !lines.length) { ui.alert('Thiếu hạng mục', 'Thêm ít nhất 1 hạng mục vào báo giá.', '🧾'); return false; }
       const aid = o.dbAssignmentId;
       const isPre = o.status === 'confirmed';
-      if (!isPre) {
+      const isSupplemental = Boolean(o.quote && (o.quote.approved || o.status === 'repairing'));
+      if (!isPre && !isSupplemental) {
         const findings = (diagnosis && String(diagnosis).trim().length >= 5) ? String(diagnosis).trim() : 'Đã kiểm tra thực tế thiết bị tại nhà khách hàng';
         await hrmssApi.startTechnicianJob(aid).catch(() => null); // đã bắt đầu rồi thì server trả lỗi, bỏ qua
         const dRes = await hrmssApi.submitDiagnosis(aid, {
@@ -1604,7 +1640,50 @@ export function AppProvider({ children }) {
       const o = s.orders.find((x) => x.code === code);
       if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
       const res = await hrmssApi.addJobProgress(o.dbAssignmentId, { note });
+      if (res.ok) {
+        updateOrder(code, (ord) => ({
+          order: {
+            ...ord,
+            repairNotes: [...(ord.repairNotes || []), { id: `note_${Date.now()}`, text: note, at: Date.now() }],
+          },
+        }));
+      }
       return serverDone(res, { title: 'Không lưu được ghi chú', toast: 'Đã lưu ghi chú sửa chữa', icon: '📝' });
+    },
+    updateRepairNote: (code, noteId, nextText) => {
+      const clean = String(nextText || '').trim();
+      if (!clean) {
+        ui.alert('Thiếu nội dung', 'Nội dung ghi chú không được để trống.', '✏️');
+        return false;
+      }
+      updateOrder(code, (ord) => {
+        const nextNotes = (ord.repairNotes || []).map((n) => (n.id === noteId ? { ...n, text: clean } : n));
+        const editedMap = { ...(ord.editedRepairNotes || {}), [noteId]: clean };
+        return {
+          order: {
+            ...ord,
+            repairNotes: nextNotes,
+            editedRepairNotes: editedMap,
+          },
+        };
+      });
+      ui.toast('Đã cập nhật ghi chú', '✏️');
+      return true;
+    },
+    deleteRepairNote: (code, noteId) => {
+      updateOrder(code, (ord) => {
+        const nextNotes = (ord.repairNotes || []).filter((n) => n.id !== noteId);
+        const deletedList = [...(ord.deletedRepairNoteIds || []), noteId];
+        return {
+          order: {
+            ...ord,
+            repairNotes: nextNotes,
+            deletedRepairNoteIds: deletedList,
+          },
+        };
+      });
+      ui.toast('Đã xoá ghi chú', '🗑️');
+      return true;
     },
     // Khách sửa đơn còn chờ: PATCH /customer/requests/:id; ảnh mới tải lên POST /uploads (request_id).
     updatePendingRequest: async (code, patch) => {
@@ -1849,7 +1928,7 @@ export function AppProvider({ children }) {
           }
           const userId = loginRes.data?.user_id || createdUser?.user_id;
           const roleCode = String(loginRes.data?.role || createdUser?.role?.role_code || 'CUSTOMER').toUpperCase();
-          const isTech = roleCode === 'TECHNICIAN' || roleCode === 'TECH' || payload.role === 'tech';
+          const isTech = roleCode === 'TECHNICIAN' || roleCode === 'TECH';
           backendAccount = upsertBackendAccount({
             id: `be-${userId}`,
             role: isTech ? 'tech' : 'customer',

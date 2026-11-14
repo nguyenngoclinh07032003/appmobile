@@ -8,6 +8,8 @@ services:
     image: hrmss-app:latest
     container_name: hrmss-app
     restart: unless-stopped
+    # Giới hạn bộ nhớ nhẹ cho container nginx phục vụ file tĩnh (Compose Specification hỗ trợ mem_limit)
+    mem_limit: 256m
     # Không publish port ra ngoài; Caddy trong infra gọi qua network chung: http://hrmss-app:80
     expose:
       - "80"
@@ -19,6 +21,9 @@ services:
 
 networks:
   infra:
+    # YÊU CẦU: network này phải TỒN TẠI TRƯỚC (external) - thường do stack Caddy trong folder infra tạo.
+    # Nếu chưa có, compose sẽ báo lỗi "network ... declared as external, but could not be found".
+    # Tạo thủ công nếu cần: docker network create web
     external: true
     # Tên network mà Caddy trong folder infra đang dùng (xem bằng: docker network ls)
     name: ${INFRA_NETWORK:-web}

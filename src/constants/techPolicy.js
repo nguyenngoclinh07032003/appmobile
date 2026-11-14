@@ -1,4 +1,5 @@
 /** Chính sách kỷ luật / uy tín thợ — hạn chế hủy sau nhận & đến muộn */
+import { vnTimestamp } from '../utils/vnTime.js';
 
 export const TECH_POLICY = {
   reputationDefault: 100,
@@ -18,6 +19,7 @@ const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
 export const slotStartTs = (order) => {
   // Giờ hẹn thật từ server (preferred_time) — khung giờ hiển thị chỉ làm tròn để xem.
+  // Không có thì tính từ ngày + khung giờ theo giờ Việt Nam (GMT+7, khớp buildPreferredTimeIso), không theo múi giờ máy.
   if (order?.preferredTimeAt) return order.preferredTimeAt;
   if (!order?.dateKey || !order?.slot) return null;
   const parts = String(order.dateKey).split('-').map(Number);
@@ -27,10 +29,11 @@ export const slotStartTs = (order) => {
   const minute = match && match[2] ? parseInt(match[2], 10) : 0;
   if (Number.isNaN(hour)) return null;
   const [y, m, d] = parts;
-  return new Date(y, m - 1, d, hour, minute, 0, 0).getTime();
+  return vnTimestamp(y, m, d, hour, minute);
 };
 
 export const slotEndTs = (order) => {
+  if (order?.preferredTimeEndAt) return order.preferredTimeEndAt;
   if (!order?.dateKey || !order?.slot) return null;
   const parts = String(order.dateKey).split('-').map(Number);
   if (parts.length < 3 || parts.some((x) => Number.isNaN(x))) return null;
@@ -39,7 +42,7 @@ export const slotEndTs = (order) => {
     const hour = parseInt(matchRange[1], 10);
     const minute = matchRange[2] ? parseInt(matchRange[2], 10) : 0;
     const [y, m, d] = parts;
-    return new Date(y, m - 1, d, hour, minute, 0, 0).getTime();
+    return vnTimestamp(y, m, d, hour, minute);
   }
   const start = slotStartTs(order);
   return start ? start + 2 * 60 * 60 * 1000 : null;
@@ -195,58 +198,9 @@ export const assessLateness = (order, now = Date.now()) => {
   };
 };
 
-export const applyTechPenalty = (profile, { points = 0, lockMs = 0, violation }) => {
-  const cur = normalizeTechRep(profile);
-  const reputation = clamp(cur.reputation - (points || 0), TECH_POLICY.reputationMin, TECH_POLICY.reputationMax);
-  const lockedUntil = Math.max(cur.lockedUntil || 0, lockMs ? Date.now() + lockMs : 0);
-  const violations = violation
-    ? [{ id: `${Date.now().toString(36)}`, at: Date.now(), ...violation, points }, ...cur.violations].slice(0, 40)
-    : cur.violations;
-  let cancelAfterAcceptCount = cur.cancelAfterAcceptCount;
-  let lateCount = cur.lateCount;
-  if (violation?.type === 'cancel_after_accept') cancelAfterAcceptCount += 1;
-  if (violation?.type === 'late_arrival') lateCount += 1;
-
-  // Tái phạm hủy sau nhận trong 30 ngày → khóa dài
-  const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-  const recentCancels = violations.filter((v) => v.type === 'cancel_after_accept' && v.at >= monthAgo).length;
-  const strikeLock = recentCancels >= 3 ? Date.now() + TECH_POLICY.cancelStrikeLockMs : 0;
-
-  return {
-    ...profile,
-    reputation,
-    lockedUntil: Math.max(lockedUntil, strikeLock),
-    violations,
-    cancelAfterAcceptCount,
-    lateCount,
-  };
-};
-
-export const applyTechBonus = (profile, points = 1) => {
-  const cur = normalizeTechRep(profile);
-  return {
-    ...profile,
-    reputation: clamp(cur.reputation + points, TECH_POLICY.reputationMin, TECH_POLICY.reputationMax),
-  };
-};
-
 export const reputationTone = (score) => {
   if (score >= 85) return { label: 'Tốt', fg: '#15803D', bg: '#DCFCE7' };
   if (score >= 70) return { label: 'Ổn', fg: '#A16207', bg: '#FEF3C7' };
   if (score >= TECH_POLICY.lockBelow) return { label: 'Cảnh báo', fg: '#C2410C', bg: '#FFEDD5' };
   return { label: 'Bị hạn chế', fg: '#B91C1C', bg: '#FEE2E2' };
-};
-
-export const mintWalletVoucher = (template) => {
-  if (!template) return null;
-  const code = `${template.prefix}${String(Date.now()).slice(-4)}`;
-  return {
-    code,
-    label: template.label,
-    discount: template.discount,
-    percent: template.percent,
-    max: template.max,
-    min: template.min || 0,
-    wallet: true,
-  };
 };

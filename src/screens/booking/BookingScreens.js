@@ -3,7 +3,7 @@ import { View, Text, ScrollView, StyleSheet, Image } from 'react-native';
 import { C, R, shadow } from '../../theme';
 import {
   getService, formatVND, discountOf, isEstimate, isClean, durationText, featureFor, stepsFor, videoFor,
-  COMMITMENTS, ALL_SERVICES, TIME_SLOTS, PAYMENTS, PAYMENT_METHODS, noteFor, voucherDiscount, normalize,
+  COMMITMENTS, ALL_SERVICES, PAYMENTS, PAYMENT_METHODS, noteFor, voucherDiscount, normalize,
   catLabel, catIcon, MATERIALS, SITE_CONDITIONS, tierOf, comboDiscountFor, CATEGORIES,
 } from '../../constants/data';
 import { useApp, cartTotal, fmtDate } from '../../context';
@@ -11,21 +11,25 @@ import { hrmssApi } from '../../services/api';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Media, Badge, Stars, Stepper, Sheet, Radio, Field,
   SelectRow, Segmented, Checkbox, EmptyState, ServiceCard, Price, Chip, ui, HScroll, AppIcon,
-  TimeRangeSlider, minutesToSlotStr, minutesToTimeStr,
+  TimeRangeSlider, minutesToSlotStr,
 } from '../../components';
 import { pickImage, validateVietnamesePhone, validateStreetAddress, validateContactName } from '../../utils';
+import {
+  nextDays, minSelectableMinute, MAX_DAY_MINUTE, LEAD_MINUTES, SLOT_STEP_MINUTES, DEFAULT_SLOT_MINUTE,
+} from '../../utils/dateTime';
+import { OTP_TTL_MINUTES, BASE_WARRANTY_DAYS } from '../../constants';
+import {
+  callAction, errorText, useBusy, NotFoundView,
+} from '../shared/actionHelpers';
 
-const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-const nextDays = (n) => Array.from({ length: n }, (_, i) => {
-  const d = new Date();
-  d.setDate(d.getDate() + i);
-  return {
-    label: i === 0 ? 'Hôm nay' : i === 1 ? 'Ngày mai' : WEEKDAYS[d.getDay()],
-    ddmm: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`,
-    key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
-  };
-});
 const COMMIT_ICON = ['clock', 'award', 'handshake', 'smile'];
+// Điểm trung bình hiển thị 1 chữ số thập phân (4.666… → 4.7).
+const fmtRating = (v) => (v == null || Number.isNaN(Number(v)) ? '' : Number(v).toFixed(1));
+// Id người dùng backend của tài khoản đang đăng nhập (auth.id dạng "be-<user_id>").
+const authUserId = (auth) => {
+  const raw = auth?.userId ?? auth?.user_id ?? auth?.id;
+  return raw == null ? '' : String(raw).replace(/^be-/, '');
+};
 
 // CHI TIẾT DỊCH VỤ
 export function DetailScreen({ params }) {
@@ -36,8 +40,9 @@ export function DetailScreen({ params }) {
   const [showMatPrice, setShowMatPrice] = useState(false);
   useEffect(() => {
     if (!service?.dbId) return;
-    a.loadServiceReviews(service.dbId);
-    a.loadServiceDetail(service.dbId);
+    // Tải nền: lỗi mạng không được làm vỡ màn hình (đã có dữ liệu dự phòng).
+    callAction(a.loadServiceReviews, service.dbId).catch(() => {});
+    callAction(a.loadServiceDetail, service.dbId).catch(() => {});
   }, [service?.dbId]);
   if (!service) return <View style={{ flex: 1 }}><TopBar title="Không tìm thấy" /></View>;
   const curTier = tierOf(s.lifetimePoints || 0).cur;
@@ -46,11 +51,15 @@ export function DetailScreen({ params }) {
   const reviewData = (s.serviceReviews || {})[service.dbId] || null;
   const ratingAvg = reviewData?.summary?.rating_average ?? null;
   const ratingCount = reviewData?.summary?.rating_count || 0;
+  const myId = authUserId(s.auth);
   const reviews = (reviewData?.items || []).map((r) => ({
     name: r.customer_display_name || 'Khách hàng',
     stars: r.rating,
     date: r.created_at ? fmtDate(new Date(r.created_at).getTime()) : '',
     text: r.review_text || '',
+    // Đánh dấu "Bạn" khi backend báo is_mine hoặc user id người viết khớp tài khoản đang đăng nhập.
+    mine: r.is_mine === true || r.mine === true
+      || (!!myId && [r.user_id, r.customer_user_id, r.reviewer_user_id].some((x) => x != null && String(x) === myId)),
   }));
   const related = ALL_SERVICES.filter((x) => x.category === service.category && x.id !== service.id).slice(0, 6);
   const video = videoFor(service);
@@ -83,7 +92,7 @@ export function DetailScreen({ params }) {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
             {ratingAvg != null ? <Stars value={Math.round(ratingAvg)} size={13} /> : null}
             <Text style={ui.meta}>
-              {ratingCount ? `${ratingAvg} · ${ratingCount.toLocaleString('vi-VN')} đánh giá` : 'Chưa có đánh giá'}
+              {ratingCount ? `${fmtRating(ratingAvg)} · ${ratingCount.toLocaleString('vi-VN')} đánh giá` : 'Chưa có đánh giá'}
             </Text>
           </View>
           <View style={bx.priceRow}>
@@ -93,7 +102,7 @@ export function DetailScreen({ params }) {
 
           <View style={bx.trust}>
             {[
-              { i: 'shield-check', t: 'Bảo hành', v: `${curTier.warrantyDays || 60} ngày` },
+              { i: 'shield-check', t: 'Bảo hành', v: `${curTier.warrantyDays || BASE_WARRANTY_DAYS} ngày` },
               { i: 'timer', t: 'Thời gian', v: isClean(service) ? durationText(service.id) : 'Theo khảo sát' },
               { i: 'navigation', t: 'Phí đi lại', v: 'Miễn phí' },
             ].map((x) => (
@@ -179,7 +188,7 @@ export function DetailScreen({ params }) {
           <Card style={{ marginTop: 12 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={bx.h}>Đánh giá khách hàng</Text>
-              {ratingCount ? <Text style={[ui.meta, { fontWeight: '700' }]}>★ {ratingAvg}/5</Text> : null}
+              {ratingCount ? <Text style={[ui.meta, { fontWeight: '700' }]}>★ {fmtRating(ratingAvg)}/5</Text> : null}
             </View>
             {reviews.length === 0 ? <Text style={bx.p}>Chưa có nhận xét. Hãy là người đầu tiên đánh giá sau khi dùng dịch vụ!</Text> : reviews.slice(0, 5).map((r, i) => (
               <View key={`${r.name}-${i}`} style={bx.review}>
@@ -378,31 +387,20 @@ export function CheckoutScreen({ params }) {
   const [showEmailOtp, setShowEmailOtp] = useState(false);
   const [emailOtpInput, setEmailOtpInput] = useState('');
   const [emailOtpErr, setEmailOtpErr] = useState('');
-  const [sentOtpHint, setSentOtpHint] = useState('');
+  // Chỉ lưu cờ "đã gửi mã" — tuyệt đối không giữ mã OTP trả về từ API ở client.
+  const [otpSent, setOtpSent] = useState(false);
   const [otpSending, setOtpSending] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
 
   const days = nextDays(7);
-  const now = new Date();
-  const nowH = now.getHours();
-  const nowM = now.getMinutes();
-  const nowTotalM = nowH * 60 + nowM;
-
-  const MIN_DAY_MINUTE = 8 * 60; // 08:00
-  const MAX_DAY_MINUTE = 20 * 60; // 20:00
-
-  // Đảm bảo thợ có ít nhất 45 phút chuẩn bị và di chuyển nếu đặt trong ngày hôm nay
-  const getMinSelectable = (dIdx) => {
-    if (dIdx > 0) return MIN_DAY_MINUTE;
-    return Math.max(MIN_DAY_MINUTE, Math.ceil((nowTotalM + 45) / 15) * 15);
-  };
+  const getMinSelectable = (dIdx) => minSelectableMinute(dIdx);
 
   const [dayIdx, setDayIdx] = useState(1);
   const [timeMinutes, setTimeMinutes] = useState(() => {
     const minM = getMinSelectable(1);
-    return Math.min(Math.max(14 * 60, minM), MAX_DAY_MINUTE);
+    return Math.min(Math.max(DEFAULT_SLOT_MINUTE, minM), MAX_DAY_MINUTE);
   });
-  const [slot, setSlot] = useState(() => minutesToSlotStr(14 * 60));
+  const [slot, setSlot] = useState(() => minutesToSlotStr(DEFAULT_SLOT_MINUTE));
 
   const minAvailable = getMinSelectable(dayIdx);
   const isTodayOutOfSlots = dayIdx === 0 && minAvailable >= MAX_DAY_MINUTE;
@@ -482,48 +480,63 @@ export function CheckoutScreen({ params }) {
     u.toast(`Đã áp dụng ${v.code}`, '🎟️');
   };
 
+  // Giảm dịch vụ/số lượng làm tạm tính dưới mức tối thiểu → tự bỏ mã và báo khách (không giữ mã không hợp lệ).
+  useEffect(() => {
+    if (!voucher || !voucher.min || subtotal >= voucher.min) return;
+    const dropped = voucher.code;
+    setVoucher(null);
+    setVoucherInput('');
+    u.toast(`Đã bỏ mã ${dropped}: đơn chưa đạt tối thiểu ${formatVND(voucher.min)}`, '🎟️');
+  }, [subtotal, voucher]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleSendEmailOtp = async () => {
+    if (otpSending) return;
     setOtpSending(true);
     setEmailOtpErr('');
     try {
-      const res = await a.sendEmailOtp();
+      const res = (await callAction(a.sendEmailOtp)) || {};
       if (res.ok) {
         if (res.alreadyVerified) {
           setShowEmailOtp(false);
-        } else if (res.otpCode) {
-          setSentOtpHint(res.otpCode);
+        } else {
+          setOtpSent(true);
         }
       } else {
-        setEmailOtpErr(res.error || 'Không thể gửi mã OTP.');
+        setEmailOtpErr(errorText(res, 'Không thể gửi mã OTP.'));
       }
+    } catch (e) {
+      setEmailOtpErr(errorText(e, 'Không thể gửi mã OTP. Vui lòng thử lại.'));
     } finally {
       setOtpSending(false);
     }
   };
 
   const handleVerifyEmailOtp = async () => {
+    if (otpVerifying) return;
+    if (emailOtpInput.length !== 6) { setEmailOtpErr('Vui lòng nhập đủ 6 chữ số của mã OTP.'); return; }
     setOtpVerifying(true);
     setEmailOtpErr('');
     try {
-      const res = await a.verifyEmailOtp(emailOtpInput);
+      const res = (await callAction(a.verifyEmailOtp, emailOtpInput)) || {};
       if (res.ok) {
         setShowEmailOtp(false);
         setEmailOtpInput('');
-        setSentOtpHint('');
+        setOtpSent(false);
       } else {
-        setEmailOtpErr(res.error || 'Mã OTP không chính xác.');
+        setEmailOtpErr(errorText(res, 'Mã OTP không chính xác.'));
       }
+    } catch (e) {
+      setEmailOtpErr(errorText(e, 'Không xác thực được mã OTP. Vui lòng thử lại.'));
     } finally {
       setOtpVerifying(false);
     }
   };
 
-  const [placing, setPlacing] = useState(false);
-  const confirm = async () => {
-    if (placing) return;
+  const [placing, runPlacing] = useBusy();
+  const confirm = () => runPlacing(async () => {
     if (s.auth?.role === 'customer' && !s.auth.emailVerified) {
       setShowEmailOtp(true);
-      if (!sentOtpHint) handleSendEmailOtp();
+      if (!otpSent) handleSendEmailOtp();
       return;
     }
     if (!d.address) {
@@ -538,23 +551,32 @@ export function CheckoutScreen({ params }) {
       return;
     }
     if (dayIdx === 0 && timeMinutes < minAvailable) {
-      u.alert('Giờ hẹn quá gần', 'Vui lòng chọn khung giờ cách hiện tại ít nhất 45 phút để thợ kịp di chuyển.', '⏰');
+      u.alert('Giờ hẹn quá gần', `Vui lòng chọn khung giờ cách hiện tại ít nhất ${LEAD_MINUTES} phút để thợ kịp di chuyển.`, '⏰');
       return;
     }
 
-    setPlacing(true);
-    const code = await a.placeOrder({
-      items: lines.map(({ id, qty }) => ({ id, qty })),
-      device: { category: lines[0]?.svc?.category || null },
-      siteCondition: selectedSite,
-      comboDiscount: combo.amount,
-      comboLabel: combo.label,
-      goods, productDiscount, voucher: voucher ? { ...voucher } : null, voucherDiscount: vDiscount, total,
-      dateLabel: `${days[dayIdx].label} (${days[dayIdx].ddmm})`, dateKey: days[dayIdx].key, slot, payment, note, workerCode: '',
-      attachments, fromCart: !!params.fromCart,
-    }).finally(() => setPlacing(false));
-    if (code) nav.replace('success', { code });
-  };
+    // Chỉ gửi voucher khi thực sự đủ điều kiện (có giảm giá với tạm tính hiện tại).
+    const usableVoucher = voucher && vDiscount > 0 ? { ...voucher } : null;
+    try {
+      const code = await callAction(a.placeOrder, {
+        items: lines.map(({ id, qty }) => ({ id, qty })),
+        device: { category: lines[0]?.svc?.category || null },
+        siteCondition: selectedSite,
+        comboDiscount: combo.amount,
+        comboLabel: combo.label,
+        goods,
+        productDiscount,
+        voucher: usableVoucher,
+        voucherDiscount: usableVoucher ? vDiscount : 0,
+        total: usableVoucher ? total : subtotal,
+        dateLabel: `${days[dayIdx].label} (${days[dayIdx].ddmm})`, dateKey: days[dayIdx].key, slot, payment, note, workerCode: '',
+        attachments, fromCart: !!params.fromCart,
+      });
+      if (code) nav.replace('success', { code });
+    } catch (e) {
+      u.alert('Chưa đặt được lịch', errorText(e, 'Không gửi được yêu cầu đặt lịch. Vui lòng kiểm tra kết nối và thử lại.'), '⚠️');
+    }
+  });
 
   if (!lines.length) {
     return (
@@ -583,7 +605,7 @@ export function CheckoutScreen({ params }) {
             }}
             onPress={() => {
               setShowEmailOtp(true);
-              if (!sentOtpHint) handleSendEmailOtp();
+              if (!otpSent) handleSendEmailOtp();
             }}
           >
             <IconBox icon="mail" size={42} bg="#FEF3C7" radius={13} />
@@ -642,7 +664,7 @@ export function CheckoutScreen({ params }) {
           onChange={handleTimeChange}
           minMinutes={minAvailable}
           maxMinutes={MAX_DAY_MINUTE}
-          step={15}
+          step={SLOT_STEP_MINUTES}
           isToday={dayIdx === 0}
           onSelectTomorrow={() => handleDaySelect(1)}
         />
@@ -774,7 +796,7 @@ export function CheckoutScreen({ params }) {
           <View style={{ marginTop: 10, padding: 10, borderRadius: R.md, backgroundColor: curTier.bg || C.primarySoft, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Badge text={curTier.label} fg={curTier.color} bg="#FFFFFF" />
             <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: curTier.color, lineHeight: 17 }}>
-              Bảo hành tiêu chuẩn {curTier.warrantyDays || 60} ngày
+              Bảo hành tiêu chuẩn {curTier.warrantyDays || BASE_WARRANTY_DAYS} ngày
               {curTier.partDiscountPercent ? ` · Giảm ${curTier.partDiscountPercent}% vật tư phát sinh` : ''}
             </Text>
           </View>
@@ -788,7 +810,8 @@ export function CheckoutScreen({ params }) {
           <Text style={[bx.price, { fontSize: 20 }]}>{formatVND(total)}</Text>
         </View>
         <Btn
-          title={s.auth?.role === 'customer' && !s.auth.emailVerified ? 'Xác thực Email để đặt lịch' : 'Xác nhận đặt lịch'}
+          title={placing ? 'Đang gửi yêu cầu…' : s.auth?.role === 'customer' && !s.auth.emailVerified ? 'Xác thực Email để đặt lịch' : 'Xác nhận đặt lịch'}
+          disabled={placing}
           onPress={confirm}
         />
       </View>
@@ -821,7 +844,7 @@ export function CheckoutScreen({ params }) {
         >
           <Text style={{ fontSize: 12.5, color: '#1E40AF', fontWeight: '700' }}>Kiểm tra hộp thư Email</Text>
           <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
-            Mã xác thực 6 chữ số đã được gửi tới {s.user?.email || s.auth?.email} (hiệu lực 5 phút).
+            Mã xác thực 6 chữ số {otpSent ? 'đã được gửi' : 'sẽ được gửi'} tới {s.user?.email || s.auth?.email} (hiệu lực {OTP_TTL_MINUTES} phút).
           </Text>
         </View>
         <Field
@@ -833,7 +856,7 @@ export function CheckoutScreen({ params }) {
           error={emailOtpErr}
         />
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-          <Text style={ui.meta}>Mã có hiệu lực trong 5 phút</Text>
+          <Text style={ui.meta}>Mã có hiệu lực trong {OTP_TTL_MINUTES} phút</Text>
           <Tap onPress={handleSendEmailOtp} disabled={otpSending}>
             <Text style={ui.link}>{otpSending ? 'Đang gửi...' : 'Gửi lại mã OTP'}</Text>
           </Tap>
@@ -1035,9 +1058,14 @@ export function CheckoutScreen({ params }) {
                       <View style={{ alignItems: 'flex-end', gap: 4 }}>
                         <Stepper
                           value={curQty}
+                          min={items.length > 1 ? 0 : 1}
                           onChange={(q) => {
                             if (q <= 0) {
-                              setItems((p) => p.filter((it) => it.id !== svc.id));
+                              if (items.length <= 1) {
+                                u.toast('Đơn cần ít nhất 1 dịch vụ', 'ℹ️');
+                                return;
+                              }
+                              setItems((p) => (p.length <= 1 ? p : p.filter((it) => it.id !== svc.id)));
                             } else {
                               setItems((p) => p.map((it) => (it.id === svc.id ? { ...it, qty: q } : it)));
                             }
@@ -1084,8 +1112,17 @@ const Row = ({ l, v, green }) => (
 // =========================================================== ĐẶT THÀNH CÔNG
 export function SuccessScreen({ params }) {
   const { s, nav } = useApp();
-  const o = s.orders.find((x) => x.code === params.code);
-  if (!o) return null;
+  const o = (s.orders || []).find((x) => x.code === params?.code);
+  if (!o) {
+    return (
+      <NotFoundView
+        title="Không tìm thấy đơn"
+        body="Đơn vừa đặt chưa hiển thị (có thể đang đồng bộ). Bạn có thể xem lại trong tab Hoạt động."
+        onBack={() => nav.go('home')}
+      />
+    );
+  }
+  const paymentLabel = String(o.payment || '');
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingTop: 40, paddingBottom: 32 }}>
       <View style={bx.successIcon}><AppIcon name="check" size={48} color="#fff" strokeWidth={3} /></View>
@@ -1094,7 +1131,7 @@ export function SuccessScreen({ params }) {
       <Card style={{ marginTop: 24 }}>
         <Row l="Thời gian" v={`${o.dateLabel}`} />
         <Row l="Khung giờ" v={o.slot} />
-        <Row l="Thanh toán" v={o.payment.length > 24 ? `${o.payment.slice(0, 24)}…` : o.payment} />
+        <Row l="Thanh toán" v={paymentLabel.length > 24 ? `${paymentLabel.slice(0, 24)}…` : (paymentLabel || '—')} />
         <View style={bx.totalRow}>
           <Text style={{ fontWeight: '800', color: C.ink }}>Tổng thanh toán</Text>
           <Text style={[bx.price, { fontSize: 20 }]}>{formatVND(o.total)}</Text>
@@ -1146,17 +1183,30 @@ export function AddressesScreen({ params }) {
 export function AddressFormScreen({ params }) {
   const { s, a, nav } = useApp();
   const initial = params.id ? s.addresses.find((x) => x.id === params.id) : null;
-  const [name, setName] = useState(initial?.name || s.user.name || '');
+  const [name, setName] = useState(initial?.name || s.user?.name || '');
   const [gender, setGender] = useState(initial?.gender || 'Nam');
-  const [phone, setPhone] = useState(initial?.phone || s.user.phone || '');
+  const [phone, setPhone] = useState(initial?.phone || s.user?.phone || '');
   // Phường/xã Hà Nội sau sáp nhập: lấy từ backend (GET /locations/hanoi/wards), lưu ward_code.
   const [ward, setWard] = useState(initial?.wardCode ? { code: initial.wardCode, name: initial.wardName || initial.area } : null);
   const [wards, setWards] = useState([]);
+  const [wardsState, setWardsState] = useState('loading'); // loading | ready | error
   const [wardQuery, setWardQuery] = useState('');
-  const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    hrmssApi.getHanoiWards().then((res) => { if (res.ok) setWards(res.data?.items || []); });
+  const [saving, runSaving] = useBusy();
+  const loadWards = React.useCallback(async () => {
+    setWardsState('loading');
+    try {
+      const res = await callAction(hrmssApi.getHanoiWards.bind(hrmssApi));
+      if (res?.ok) {
+        setWards(res.data?.items || []);
+        setWardsState('ready');
+      } else {
+        setWardsState('error');
+      }
+    } catch (e) {
+      setWardsState('error');
+    }
   }, []);
+  useEffect(() => { loadWards(); }, [loadWards]);
   const area = ward?.name || '';
   // Sửa địa chỉ cũ: chỉ lấy phần số nhà + đường (bỏ ", Phường X, Thành phố Hà Nội" backend đã ghép).
   const initialStreet = initial ? String(initial.street || initial.full || '').split(',')[0].trim() : '';
@@ -1179,16 +1229,21 @@ export function AddressFormScreen({ params }) {
 
     setErr(e);
     if (Object.keys(e).length) return;
-    setSaving(true);
-    const res = await a.saveAddress({ id: initial?.id, name: name.trim(), gender, phone: phone.trim(), area, wardCode: ward.code, wardName: ward.name, street: street.trim(), isDefault });
-    setSaving(false);
-    if (!res.ok) { setErr((prev) => ({ ...prev, area: res.error })); return; }
-    const id = res.id;
-    if (params.useNow) {
-      a.selectAddress(id);
-      if (nav.stack.some((x) => x.name === 'checkout')) { nav.popTo('checkout'); return; }
-    }
-    nav.back();
+    await runSaving(async () => {
+      let res;
+      try {
+        res = (await callAction(a.saveAddress, { id: initial?.id, name: name.trim(), gender, phone: phone.trim(), area, wardCode: ward.code, wardName: ward.name, street: street.trim(), isDefault })) || {};
+      } catch (ex) {
+        res = { ok: false, error: errorText(ex, 'Không lưu được địa chỉ. Vui lòng thử lại.') };
+      }
+      if (!res.ok) { setErr((prev) => ({ ...prev, area: errorText(res, 'Không lưu được địa chỉ. Vui lòng thử lại.') })); return; }
+      const id = res.id;
+      if (params.useNow) {
+        if (id) a.selectAddress(id);
+        if (nav.stack.some((x) => x.name === 'checkout')) { nav.popTo('checkout'); return; }
+      }
+      nav.back();
+    });
   };
 
   return (
@@ -1267,7 +1322,14 @@ export function AddressFormScreen({ params }) {
       <View style={bx.dockCol}><Btn title={saving ? 'Đang lưu…' : 'Lưu địa chỉ'} disabled={saving} onPress={save} /></View>
       <Sheet visible={showArea} onClose={() => setShowArea(false)} title="Chọn phường/xã (Hà Nội)">
         <Field label="Tìm phường/xã" value={wardQuery} onChangeText={setWardQuery} placeholder="VD: cau giay, dong da" />
-        {wards.length === 0 ? <Text style={ui.meta}>Đang tải danh sách phường/xã…</Text> : null}
+        {wardsState === 'loading' ? <Text style={ui.meta}>Đang tải danh sách phường/xã…</Text> : null}
+        {wardsState === 'error' ? (
+          <View style={{ paddingVertical: 12, gap: 8 }}>
+            <Text style={[ui.meta, { color: C.red }]}>Không tải được danh sách phường/xã. Kiểm tra kết nối mạng.</Text>
+            <Btn title="Thử lại" small variant="soft" onPress={loadWards} style={{ alignSelf: 'flex-start' }} />
+          </View>
+        ) : null}
+        {wardsState === 'ready' && wards.length === 0 ? <Text style={ui.meta}>Chưa có dữ liệu phường/xã.</Text> : null}
         {wards
           .filter((w) => !wardQuery.trim() || normalize(w.name).includes(normalize(wardQuery.trim())))
           .slice(0, 60)
