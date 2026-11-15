@@ -809,12 +809,23 @@ export const mapRedeemOption = (v) => (v ? {
 } : null);
 
 // Sổ điểm (GET /customer/loyalty -> history[]).
-export const mapPointHistory = (h) => (h ? {
-  id: `pt-db-${h.point_transaction_id}`,
-  title: h.title || '',
-  delta: Number(h.points_delta) || 0,
-  at: ts(h.created_at),
-  type: h.reason_type ? String(h.reason_type).toLowerCase() : null,
-} : null);
+// Lịch sử điểm: gắn mã đơn (#REQ-...) để dòng lịch sử hiện badge và bấm mở được đơn.
+export const mapPointHistory = (h, orders = []) => {
+  if (!h) return null;
+  const requestId = h.request_id ?? null;
+  const order = requestId != null
+    ? (orders || []).find((o) => String(o.dbRequestId) === String(requestId))
+    : null;
+  const fromTitle = String(h.title || '').match(/(REQ-\d+|HRM[\w-]+|BH-[\w-]+)/)?.[1] || null;
+  return {
+    id: `pt-db-${h.point_transaction_id}`,
+    title: h.title || '',
+    delta: Number(h.points_delta) || 0,
+    at: ts(h.created_at),
+    type: h.reason_type ? String(h.reason_type).toLowerCase() : null,
+    requestId,
+    orderCode: order?.code || fromTitle,
+  };
+};
 
 export { resolveDbMaterialId };

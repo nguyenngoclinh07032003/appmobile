@@ -1087,6 +1087,9 @@ export function AppProvider({ children }) {
   const statusToastRef = useRef(null); // thông báo đổi trạng thái đơn vừa phát hiện khi đồng bộ (hiện toast sau khi cập nhật)
   const syncingRef = useRef(false);
   const lastSyncAt = useRef(0);
+  // Sync bắt buộc (sau thao tác: hoàn thành đơn, thanh toán, đổi điểm...) gọi lúc đang có sync khác chạy:
+  // không bỏ đi mà xếp hàng chạy ngay khi sync hiện tại xong (nếu không sẽ thấy điểm / trạng thái cũ).
+  const pendingForceSyncRef = useRef(null);
 
   const syncFromBackend = async (overrideAccount = null, force = false) => {
     const acc = overrideAccount || s.auth;
@@ -1095,7 +1098,10 @@ export function AppProvider({ children }) {
     // Chống gọi dồn dập (throttling): tối thiểu 3 giây giữa 2 lần sync, trừ khi gọi trực tiếp với force = true
     const now = Date.now();
     if (!force && now - lastSyncAt.current < 3000) return;
-    if (syncingRef.current) return;
+    if (syncingRef.current) {
+      if (force) pendingForceSyncRef.current = acc;
+      return;
+    }
     syncingRef.current = true;
     lastSyncAt.current = now;
 
@@ -1399,7 +1405,7 @@ export function AppProvider({ children }) {
                     points: Number(loyalty.points) || 0,
                     lifetimePoints: Number(loyalty.lifetime_points) || 0,
                     pointHistory: (loyalty.history || [])
-                      .map(mapPointHistory)
+                      .map((h) => mapPointHistory(h, nextOrders))
                       .filter(Boolean),
                   }
                 : {}),
@@ -1638,6 +1644,11 @@ export function AppProvider({ children }) {
       }
     } finally {
       syncingRef.current = false;
+      const queued = pendingForceSyncRef.current;
+      if (queued) {
+        pendingForceSyncRef.current = null;
+        setTimeout(() => { syncFromBackend(queued, true); }, 0);
+      }
     }
   };
 
@@ -2278,7 +2289,7 @@ export function AppProvider({ children }) {
           ? p.cart.filter((c) => !payload.items.some((it) => it.id === c.id))
           : p.cart,
       }));
-      syncFromBackend();
+      syncFromBackend(null, true);
       return dbReq.request_code;
     },
 
@@ -2310,7 +2321,7 @@ export function AppProvider({ children }) {
       }
       // Việc hệ thống đã gán (có assignment) là của thợ rồi: không tự đổi trạng thái trên máy, chỉ tải lại từ server.
       if (o0.dbAssignmentId) {
-        await syncFromBackend();
+        await syncFromBackend(null, true);
         ui.toast("Việc đã được giao cho bạn", "👍");
         return true;
       }
@@ -2339,7 +2350,7 @@ export function AppProvider({ children }) {
             msg || (res.status > 0 ? res.message : networkError(res)),
             "ℹ️",
           );
-          syncFromBackend();
+          syncFromBackend(null, true);
           return false;
         }
         acceptedAssignmentId = res.data?.job?.assignment_id || null;
@@ -2365,7 +2376,7 @@ export function AppProvider({ children }) {
         };
       });
       ui.toast("Đã nhận việc", "👍");
-      syncFromBackend();
+      syncFromBackend(null, true);
       return true;
     },
     // Từ chối việc chưa nhận → không phạt uy tín (chỉ ẩn với đúng thợ này)
@@ -2432,7 +2443,7 @@ export function AppProvider({ children }) {
           : "Đã trả việc cho điều phối",
         "↩️",
       );
-      syncFromBackend();
+      syncFromBackend(null, true);
       return { ok: true, release: rel };
     },
     // Nhắc khách duyệt báo giá đang chờ
@@ -2546,7 +2557,7 @@ export function AppProvider({ children }) {
             (res.status > 0 ? res.message : networkError(res)),
           "⚠️",
         );
-        syncFromBackend();
+        syncFromBackend(null, true);
         return false;
       }
       const now = Date.now();
@@ -2625,7 +2636,7 @@ export function AppProvider({ children }) {
               },
         },
       }));
-      if (res.data?.journey?.arrived_at) syncFromBackend();
+      if (res.data?.journey?.arrived_at) syncFromBackend(null, true);
     },
     // Check-in: PATCH /technician/jobs/:id/arrive với GPS thật. Backend kiểm tra bán kính, tính trễ, phát voucher bồi thường.
     arrive: async (code, checkIn = null) => {
@@ -2694,7 +2705,7 @@ export function AppProvider({ children }) {
           msg || (res.status > 0 ? res.message : networkError(res)),
           "📍",
         );
-        syncFromBackend();
+        syncFromBackend(null, true);
         return false;
       }
       const lateness = res.data?.lateness || {};
@@ -2728,7 +2739,7 @@ export function AppProvider({ children }) {
           },
         }),
       }));
-      syncFromBackend();
+      syncFromBackend(null, true);
       if (lateness.tier && lateness.tier !== "ok") {
         ui.alert(
           `Check-in muộn ${lateness.minutes_late} phút`,
@@ -2784,7 +2795,7 @@ export function AppProvider({ children }) {
             "Chuyển khoản được hệ thống tự xác nhận khi tiền về. Vui lòng đợi ít phút.",
             "🏦",
           );
-        syncFromBackend();
+        syncFromBackend(null, true);
         return mode === "webhook";
       }
       const res = await hrmssApi.confirmCashPayment(o.dbRequestId);
@@ -2969,7 +2980,7 @@ export function AppProvider({ children }) {
             : "Báo giá này đã được xử lý. Đang tải lại đơn.",
           "ℹ️",
         );
-        syncFromBackend();
+        syncFromBackend(null, true);
         return false;
       }
       const approve = decision === true || decision === "approve";
@@ -3421,7 +3432,7 @@ export function AppProvider({ children }) {
           : "Đã hoàn thành · Chờ khách thanh toán",
         "✅",
       );
-      syncFromBackend();
+      syncFromBackend(null, true);
       return true;
     },
     // Thợ kết luận ngoài bảo hành: POST /technician/jobs/:id/out-of-warranty (đơn chuyển sang sửa có phí).
@@ -3833,7 +3844,7 @@ export function AppProvider({ children }) {
           msg || (res.status > 0 ? res.message : networkError(res)),
           "⚠️",
         );
-        syncFromBackend();
+        syncFromBackend(null, true);
         return false;
       }
       up((p) => {
@@ -3869,7 +3880,7 @@ export function AppProvider({ children }) {
         };
       });
       ui.toast("Đã huỷ đơn hàng");
-      syncFromBackend();
+      syncFromBackend(null, true);
       return true;
     },
     // Đánh giá: POST /customer/requests/:id/review. Điểm thưởng, điểm TB của thợ do server tính; app tải lại.
@@ -3948,7 +3959,7 @@ export function AppProvider({ children }) {
         }));
       }
       ui.toast("Đã gửi yêu cầu bảo hành · Chờ Văn phòng thẩm định", "🛡️");
-      syncFromBackend();
+      syncFromBackend(null, true);
       return created?.code || null;
     },
 
@@ -3983,7 +3994,7 @@ export function AppProvider({ children }) {
           : p.myVouchers,
       }));
       ui.toast(v ? `Đã nhận voucher ${v.code}` : "Đổi điểm thành công", "🎁");
-      syncFromBackend();
+      syncFromBackend(null, true);
       return true;
     },
 
