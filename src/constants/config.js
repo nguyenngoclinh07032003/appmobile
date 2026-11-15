@@ -35,7 +35,7 @@ if (typeof __DEV__ !== 'undefined' && __DEV__ && !API_URL_OVERRIDDEN) {
 export const APP_CONFIG = {
   apiBaseUrl: API_BASE_URL,
   endpoints: API_ENDPOINTS,
-  timeoutMs: 8000,
+  timeoutMs: 15000,
   tokenStorageKey: "tho-hrmss-jwt-token",
   refreshTokenStorageKey: "tho-hrmss-refresh-token",
 };
