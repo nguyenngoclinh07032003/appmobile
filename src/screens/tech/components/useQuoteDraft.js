@@ -38,12 +38,24 @@ export function draftFromOrder(o) {
   const bookedNameSet = new Set(items.map((it) => String(it.name || '').trim().toLowerCase()));
   const bookedIdSet = new Set(items.map((it) => it.id));
 
-  // Tại nhà khách: chỉ nạp lại dòng của báo giá phát sinh khách vừa yêu cầu sửa; còn lại bắt đầu trống.
+  // Tại nhà khách: nạp dịch vụ ban đầu để hiển thị đầy đủ, và nạp các dòng phát sinh (nếu có).
   if (onSite) {
-    const revising = q?.revisionRequested && q.quotationType === 'SUPPLEMENTAL' ? (q.lines || []) : [];
-    const lines = revising
-      .filter((l) => !(l.type !== 'part' && !l.matId && bookedNameSet.has(String(l.name || '').trim().toLowerCase())))
-      .map((l, idx) => ({ ...l, key: l.matId || l.key || `q_${idx}`, isOriginal: false }));
+    const bookedLines = items.map((it) => ({
+      key: it.id,
+      type: 'labor',
+      name: it.name || getService(it.id)?.name || 'Dịch vụ',
+      qty: Math.max(1, Number(it.qty) || 1),
+      price: o?.kind === 'warranty' ? 0 : (it.price != null ? Number(it.price) : (getService(it.id)?.price || 0)),
+      unit: 'lần',
+      isOriginal: true,
+    }));
+    const revising = (q?.lines || []).filter((l) => !l.isOriginal);
+    const lines = [
+      ...bookedLines,
+      ...revising
+        .filter((l) => !(l.type !== 'part' && !l.matId && bookedNameSet.has(String(l.name || '').trim().toLowerCase())))
+        .map((l, idx) => ({ ...l, key: l.matId || l.key || `q_${idx}`, isOriginal: false })),
+    ];
     return { tags, diagnosis, recommendation: q?.recommendation || '', lines };
   }
 

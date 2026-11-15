@@ -779,46 +779,57 @@ export function AppProvider({ children }) {
   const catalogFetchedAt = useRef(0);
   const finishedOrderCache = useRef(new Map()); // request_id -> { status, technician, journey, bill }
   const statusToastRef = useRef(null); // thông báo đổi trạng thái đơn vừa phát hiện khi đồng bộ (hiện toast sau khi cập nhật)
-  const syncFromBackend = async (overrideAccount = null) => {
-    if (Date.now() - catalogFetchedAt.current >= 10 * 60 * 1000) {
-      try {
-        const [catRes, svcRes, cfgRes, matRes] = await Promise.all([
-          hrmssApi.getServiceCategories(),
-          hrmssApi.getServices(),
-          hrmssApi.getPublicConfig(),
-          hrmssApi.getPublicMaterials(),
-        ]);
-        if (catRes.ok && svcRes.ok) catalogFetchedAt.current = Date.now();
-        const catItems = catRes.ok ? (Array.isArray(catRes.data?.items) ? catRes.data.items : (Array.isArray(catRes.data) ? catRes.data : null)) : null;
-        if (catItems) syncCatalogFromBackend({ categories: catItems });
-        if (svcRes.ok && Array.isArray(svcRes.items)) {
-          syncCatalogFromBackend({ services: svcRes.items });
-          // Giỏ hàng / yêu thích của bản cũ có mã dịch vụ mẫu: bỏ những món không còn trong danh mục.
-          up((p) => ({
-            cart: (p.cart || []).filter((it) => getService(it.id) && !getService(it.id).hidden),
-            favorites: (p.favorites || []).filter((id) => getService(id) && !getService(id).hidden),
-            catalogVersion: Date.now(),
-          }));
-          setSvc((p) => (p.category && CATEGORIES.some((c) => c.id === p.category) ? p : { ...p, category: (CATEGORIES.find((c) => SERVICES.some((x) => x.category === c.id)) || CATEGORIES[0])?.id || null }));
-        }
-        if (matRes.ok && Array.isArray(matRes.data?.items)) syncCatalogFromBackend({ materials: matRes.data.items });
-        if (cfgRes.ok && cfgRes.data) {
-          syncPolicyFromBackend(cfgRes.data);
-          const tech = cfgRes.data.technician || {};
-          const late = (cfgRes.data.lateness?.tiers || []).reduce((m, t) => ({ ...m, [t.tier]: t.max_minutes }), {});
-          if (tech.max_active_jobs != null) TECH_POLICY.maxActiveJobs = Number(tech.max_active_jobs);
-          if (tech.free_release_minutes != null) TECH_POLICY.freeCancelMs = Number(tech.free_release_minutes) * 60000;
-          if (tech.near_slot_minutes != null) TECH_POLICY.nearSlotMs = Number(tech.near_slot_minutes) * 60000;
-          if (late.ok != null) TECH_POLICY.lateGraceMin = Number(late.ok);
-          if (late.soft != null) TECH_POLICY.lateMidMin = Number(late.soft);
-          if (late.mid != null) TECH_POLICY.lateSevereMin = Number(late.mid);
-          up(() => ({ policy: cfgRes.data }));
-        }
-      } catch (e) { /* mất mạng: giữ dữ liệu cũ */ }
-    }
+  const syncingRef = useRef(false);
+  const lastSyncAt = useRef(0);
 
+  const syncFromBackend = async (overrideAccount = null, force = false) => {
     const acc = overrideAccount || s.auth;
     if (!acc || !authTokens.get()) return;
+
+    // Chống gọi dồn dập (throttling): tối thiểu 3 giây giữa 2 lần sync, trừ khi gọi trực tiếp với force = true
+    const now = Date.now();
+    if (!force && now - lastSyncAt.current < 3000) return;
+    if (syncingRef.current) return;
+    syncingRef.current = true;
+    lastSyncAt.current = now;
+
+    try {
+      if (Date.now() - catalogFetchedAt.current >= 10 * 60 * 1000) {
+        try {
+          const [catRes, svcRes, cfgRes, matRes] = await Promise.all([
+            hrmssApi.getServiceCategories(),
+            hrmssApi.getServices(),
+            hrmssApi.getPublicConfig(),
+            hrmssApi.getPublicMaterials(),
+          ]);
+          if (catRes.ok && svcRes.ok) catalogFetchedAt.current = Date.now();
+          const catItems = catRes.ok ? (Array.isArray(catRes.data?.items) ? catRes.data.items : (Array.isArray(catRes.data) ? catRes.data : null)) : null;
+          if (catItems) syncCatalogFromBackend({ categories: catItems });
+          if (svcRes.ok && Array.isArray(svcRes.items)) {
+            syncCatalogFromBackend({ services: svcRes.items });
+            // Giỏ hàng / yêu thích của bản cũ có mã dịch vụ mẫu: bỏ những món không còn trong danh mục.
+            up((p) => ({
+              cart: (p.cart || []).filter((it) => getService(it.id) && !getService(it.id).hidden),
+              favorites: (p.favorites || []).filter((id) => getService(id) && !getService(id).hidden),
+              catalogVersion: Date.now(),
+            }));
+            setSvc((p) => (p.category && CATEGORIES.some((c) => c.id === p.category) ? p : { ...p, category: (CATEGORIES.find((c) => SERVICES.some((x) => x.category === c.id)) || CATEGORIES[0])?.id || null }));
+          }
+          if (matRes.ok && Array.isArray(matRes.data?.items)) syncCatalogFromBackend({ materials: matRes.data.items });
+          if (cfgRes.ok && cfgRes.data) {
+            syncPolicyFromBackend(cfgRes.data);
+            const tech = cfgRes.data.technician || {};
+            const late = (cfgRes.data.lateness?.tiers || []).reduce((m, t) => ({ ...m, [t.tier]: t.max_minutes }), {});
+            if (tech.max_active_jobs != null) TECH_POLICY.maxActiveJobs = Number(tech.max_active_jobs);
+            if (tech.free_release_minutes != null) TECH_POLICY.freeCancelMs = Number(tech.free_release_minutes) * 60000;
+            if (tech.near_slot_minutes != null) TECH_POLICY.nearSlotMs = Number(tech.near_slot_minutes) * 60000;
+            if (late.ok != null) TECH_POLICY.lateGraceMin = Number(late.ok);
+            if (late.soft != null) TECH_POLICY.lateMidMin = Number(late.soft);
+            if (late.mid != null) TECH_POLICY.lateSevereMin = Number(late.mid);
+            up(() => ({ policy: cfgRes.data }));
+          }
+        } catch (e) { /* mất mạng: giữ dữ liệu cũ */ }
+      }
 
     if (acc.role === 'customer') {
       try {
@@ -1048,7 +1059,10 @@ export function AppProvider({ children }) {
         });
       } catch (e) { /* bỏ qua */ }
     }
-  };
+  } finally {
+    syncingRef.current = false;
+  }
+};
 
   // Mô tả + các bước thực hiện chuẩn của một dịch vụ (màn chi tiết dịch vụ).
   const loadServiceDetail = async (serviceDbId) => {
@@ -1171,7 +1185,7 @@ export function AppProvider({ children }) {
     let lastReauth = 0;
     const syncSoon = () => {
       clearTimeout(syncTimer);
-      syncTimer = setTimeout(() => syncRef.current?.(), 400);
+      syncTimer = setTimeout(() => syncRef.current?.(null, true), 500);
     };
 
     const unsubs = [
@@ -1212,8 +1226,12 @@ export function AppProvider({ children }) {
         const res = await hrmssApi.getMe().catch(() => null);
         if (res?.ok) reconnectSocket();
       }),
-      // Vừa kết nối lại sau khi mất mạng: tải lại để bù sự kiện bị lỡ.
-      subscribeSocketEvent('connection_change', (c) => { if (c?.connected) syncSoon(); }),
+      // Vừa kết nối lại sau khi mất mạng: tải lại để bù sự kiện bị lỡ (chặn loop reconnect liên tục).
+      subscribeSocketEvent('connection_change', (c) => {
+        if (c?.connected && Date.now() - lastSyncAt.current >= 4000) {
+          syncSoon();
+        }
+      }),
     ];
 
     return () => {
@@ -1270,11 +1288,11 @@ export function AppProvider({ children }) {
   const serverDone = (res, { title = 'Không thực hiện được', codes = {}, toast, icon = '✓' } = {}) => {
     if (!res?.ok) {
       ui.alert(title, codes[res?.code] || (res?.status > 0 ? res.message : networkError(res)), '⚠️');
-      syncFromBackend();
+      syncFromBackend(null, true);
       return false;
     }
     if (toast) ui.toast(toast, icon);
-    syncFromBackend();
+    syncFromBackend(null, true);
     return true;
   };
   // Ghi chẩn đoán của lần đến hiện tại. Gửi lại cùng nội dung (báo giá lỗi rồi bấm gửi lại) thì không ghi thêm bản
@@ -1810,7 +1828,13 @@ export function AppProvider({ children }) {
         const dRes = await saveDiagnosisOnce(o, { diagnosis, symptoms, recommendation, needsQuotation: true });
         if (dRes && !dRes.ok) return serverDone(dRes, { title: 'Không lưu được chẩn đoán' });
       }
-      const items = lines.map((l) => (l.type === 'part'
+      const hasExtra = lines.some((l) => !l.isOriginal);
+      // Tại nhà khách: nếu không có phát sinh thêm, chuyển sang xác nhận chẩn đoán và bắt đầu làm (không gửi báo giá trùng)
+      if (!isPre && !hasExtra) {
+        return a.startRepairWithoutQuote(code, { diagnosis, symptoms, recommendation });
+      }
+      const sendLines = (!isPre || isSupplemental) ? lines.filter((l) => !l.isOriginal) : lines;
+      const items = sendLines.map((l) => (l.type === 'part'
         ? {
             item_type: 'MATERIAL',
             ...(l.isCustom ? { external_purchase: true } : { material_id: resolveDbMaterialId(l.matId, l.name) }),

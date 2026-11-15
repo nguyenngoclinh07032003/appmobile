@@ -154,29 +154,85 @@ export const mapBackendItemsToAppItems = (rawItems = []) => {
   });
 };
 
-export const mapBackendQuotationToAppQuote = (quotations = [], diagnoses = [], goodsTotal = 0, problemDesc = '') => {
+export const mapBackendQuotationToAppQuote = (
+  quotations = [],
+  diagnoses = [],
+  goodsTotal = 0,
+  problemDesc = '',
+  orderDiscount = 0,
+  bookedItems = [],
+) => {
   if (!Array.isArray(quotations) || quotations.length === 0) return null;
   const latestQuote = quotations[quotations.length - 1];
   const latestDiag = Array.isArray(diagnoses) && diagnoses.length > 0 ? diagnoses[diagnoses.length - 1] : null;
-  const lines = (latestQuote.items || []).map((qi) => ({
-    type: qi.item_type === 'MATERIAL' ? 'part' : 'service',
-    matId: qi.material_id ? `m-db-${qi.material_id}` : undefined,
-    name: qi.description_snapshot || 'Hạng mục dịch vụ',
-    unit: qi.item_type === 'MATERIAL' ? 'cái' : 'lần',
-    qty: Number(qi.quantity) || 1,
-    price: Number(qi.unit_price) || 0,
-    dbItemId: qi.quotation_item_id || null,
-    isCustom: Boolean(qi.is_external_purchase), // linh kiện thợ mua ngoài
-    receiptId: qi.receipt_attachment_id || null,
-  }));
-  const qTotal = Number(latestQuote.total_amount) || lines.reduce((sum, l) => sum + l.price * l.qty, 0);
+
+  const bookedIds = new Set((bookedItems || []).map((it) => String(it.id || it.service_id || it.key)));
+  const bookedNames = new Set(
+    (bookedItems || []).map((it) => String(it.name || it.service_name || '').trim().toLowerCase()).filter(Boolean),
+  );
+
+  const isBookedItem = (qi) => {
+    if (qi.item_type === 'MATERIAL' || qi.material_id || qi.is_external_purchase) return false;
+    const nameClean = String(qi.description_snapshot || '').trim().toLowerCase();
+    return (
+      Boolean(qi.request_service_id) ||
+      (qi.service_id && bookedIds.has(String(qi.service_id))) ||
+      bookedNames.has(nameClean) ||
+      [...bookedNames].some((bn) => nameClean.includes(bn) || bn.includes(nameClean))
+    );
+  };
+
+  const rawLines = (latestQuote.items || []).map((qi) => {
+    const booked = isBookedItem(qi);
+    return {
+      type: qi.item_type === 'MATERIAL' ? 'part' : 'service',
+      matId: qi.material_id ? `m-db-${qi.material_id}` : undefined,
+      name: qi.description_snapshot || 'Hạng mục dịch vụ',
+      unit: qi.item_type === 'MATERIAL' ? 'cái' : 'lần',
+      qty: Number(qi.quantity) || 1,
+      price: Number(qi.unit_price) || 0,
+      dbItemId: qi.quotation_item_id || null,
+      isCustom: Boolean(qi.is_external_purchase), // linh kiện thợ mua ngoài
+      receiptId: qi.receipt_attachment_id || null,
+      isOriginal: booked,
+    };
+  });
+
+  const isSupplemental = latestQuote.quotation_type === 'SUPPLEMENTAL';
+  let lines = rawLines;
+  if (isSupplemental) {
+    const hasOriginal = rawLines.some((l) => l.isOriginal);
+    if (!hasOriginal && Array.isArray(bookedItems) && bookedItems.length > 0) {
+      const originalLines = bookedItems.map((it, idx) => ({
+        key: it.id || `orig_${idx}`,
+        type: 'service',
+        name: it.name || 'Dịch vụ',
+        unit: 'lần',
+        qty: Math.max(1, Number(it.qty) || 1),
+        price: Number(it.price) || 0,
+        isOriginal: true,
+      }));
+      lines = [...originalLines, ...rawLines];
+    }
+  }
+
+  const disc = Math.max(0, Number(orderDiscount) || 0);
+  const extraLines = lines.filter((l) => !l.isOriginal);
+  const extraTotal = extraLines.reduce((sum, l) => sum + l.price * l.qty, 0);
+
+  const bookedBase = Number(goodsTotal) || 0;
+  const qTotal = isSupplemental
+    ? Math.max(0, bookedBase + extraTotal)
+    : Math.max(0, (Number(latestQuote.total_amount) || lines.reduce((s, l) => s + l.price * l.qty, 0)) - disc);
+
   const isApproved = latestQuote.quotation_status === 'APPROVED' || latestQuote.customer_decision === 'APPROVED';
   // Tổng các báo giá đã duyệt như backend (shared/pricing/bill.js): báo giá ban đầu thay tiền đặt, phát sinh cộng thêm.
   const approvedList = quotations.filter((q) => q.quotation_status === 'APPROVED');
   const sumOf = (list) => list.reduce((s, q) => s + (Number(q.total_amount) || 0), 0);
   const initialApproved = approvedList.filter((q) => q.quotation_type !== 'SUPPLEMENTAL');
+  const initialBase = initialApproved.length ? Math.max(0, sumOf(initialApproved) - disc) : bookedBase;
   const approvedTotal = approvedList.length
-    ? (initialApproved.length ? sumOf(initialApproved) : goodsTotal) + sumOf(approvedList.filter((q) => q.quotation_type === 'SUPPLEMENTAL'))
+    ? initialBase + sumOf(approvedList.filter((q) => q.quotation_type === 'SUPPLEMENTAL'))
     : null;
   return {
     dbQuotationId: latestQuote.quotation_id,
@@ -190,8 +246,10 @@ export const mapBackendQuotationToAppQuote = (quotations = [], diagnoses = [], g
     symptoms: latestDiag?.symptoms || '',
     recommendation: latestDiag?.repair_recommendation || '',
     lines,
+    rawTotal: latestQuote.total_amount != null ? Number(latestQuote.total_amount) : qTotal,
     total: qTotal,
-    booked: goodsTotal,
+    extraAmount: extraTotal,
+    booked: bookedBase,
     needsApproval: !isApproved,
     approved: isApproved,
     at: latestQuote.sent_at ? new Date(latestQuote.sent_at).getTime() : Date.now(),
@@ -238,7 +296,14 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
   const productDiscount = Number(req.product_discount_amount) || 0;
   const comboDiscount = Number(req.combo_discount_amount) || 0;
   const booked = Math.max(0, goods - productDiscount - comboDiscount);
-  const quote = mapBackendQuotationToAppQuote(req.quotations || [], [], booked, req.problem_description);
+  const quote = mapBackendQuotationToAppQuote(
+    req.quotations || [],
+    [],
+    booked,
+    req.problem_description,
+    productDiscount + comboDiscount,
+    items,
+  );
   const hasPendingQuote = (req.quotations || []).some((q) => q.quotation_status === 'SENT');
   const statusUnknown = !isKnownBackendStatus(req.request_status);
   let status = mapBackendStatusToAppStatus(req.request_status, latestVisit?.visit_status, quote?.approved, hasPendingQuote);
@@ -364,11 +429,18 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
   const visit = job.visit || {};
   const items = mapBackendItemsToAppItems(job.services || []);
   const goods = Number(req.goods_amount) > 0 ? Number(req.goods_amount) : items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.qty) || 1), 0);
-  const productDiscount = Number(req.product_discount_amount) || 0;
-  const comboDiscount = Number(req.combo_discount_amount) || 0;
+  const productDiscount = Number(req.product_discount_amount) || Number(job.bill?.bill?.product_discount_amount) || 0;
+  const comboDiscount = Number(req.combo_discount_amount) || Number(job.bill?.bill?.combo_discount_amount) || 0;
   const booked = Math.max(0, goods - productDiscount - comboDiscount);
   const hasPendingQuote = (job.quotations || []).some((q) => q.quotation_status === 'SENT');
-  const quote = mapBackendQuotationToAppQuote(job.quotations || [], job.diagnoses || [], booked, req.problem_description);
+  const quote = mapBackendQuotationToAppQuote(
+    job.quotations || [],
+    job.diagnoses || [],
+    booked,
+    req.problem_description,
+    productDiscount + comboDiscount,
+    items,
+  );
   // Phân công còn hiệu lực với thợ này. Mọi trạng thái khác (ENDED, EXPIRED, TIMEOUT, RELEASED, REASSIGNED, REVOKED...)
   // = việc không còn được giao cho thợ -> chỉ giữ lại nếu chính thợ này đã làm xong.
   const LIVE_ASSIGNMENT = ['ACTIVE', 'PENDING', 'PENDING_ACK', 'ASSIGNED', 'ACCEPTED'];
@@ -441,10 +513,11 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     goods,
     productDiscount,
     comboDiscount,
+    comboLabel: req.combo_label || job.bill?.bill?.combo_label || '',
     voucherDiscount: bill?.voucherDiscount || 0,
     // Tiền thật từ GET /technician/jobs/:id/bill; chưa có hoá đơn thì tạm theo giá dịch vụ / báo giá đã duyệt.
-    total: bill ? bill.amountDue : (quote?.approvedTotal ?? (quote?.approved ? quote.total : goods)),
-    finalTotal: bill ? bill.amountDue : (quote?.approvedTotal ?? (quote?.approved ? quote.total : goods)),
+    total: bill ? bill.amountDue : (quote?.approvedTotal ?? (quote?.approved ? quote.total : (Number(req.estimated_total) > 0 ? Number(req.estimated_total) : booked))),
+    finalTotal: bill ? bill.amountDue : (quote?.approvedTotal ?? (quote?.approved ? quote.total : (Number(req.estimated_total) > 0 ? Number(req.estimated_total) : booked))),
     bill,
     cashToCollect: bill?.cashToCollect ?? null,
     paymentMethod: String(req.preferred_payment_method || '').toUpperCase() === 'BANK_TRANSFER' ? 'vietqr' : 'cash',
@@ -583,6 +656,12 @@ export const mapBackendPhotoToEvidence = (row) => ({
 });
 
 export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = []) => {
+  // Nếu remoteOrders rỗng nhưng localOrders đang có dữ liệu (do lỗi mạng tạm thời hoặc server lag 1 nhịp):
+  // Giữ lại localOrders để tránh màn hình bị chớp tắt, trắng xoá dữ liệu.
+  if ((!remoteOrders || remoteOrders.length === 0) && Array.isArray(localOrders) && localOrders.length > 0) {
+    return localOrders;
+  }
+
   const byKey = new Map();
   const keyOf = (o) => (o?.dbRequestId ? `db-${o.dbRequestId}` : o?.code);
 
@@ -633,7 +712,12 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         quote: keepEditing ? lo.quote : (ro.quote || lo.quote || null),
         rating: ro.rating || lo.rating || null,
         report: ro.report || lo.report || null,
+        // Bảo toàn cờ đã thông báo quá hạn tiếp nhận để tránh vòng lặp thông báo/refresh
+        expiredNotified: lo.expiredNotified !== undefined ? lo.expiredNotified : ro.expiredNotified,
       });
+    } else if (lo.localOnly) {
+      // Đơn vừa tạo offline / localOnly chưa kịp sync lên server thì vẫn giữ lại
+      byKey.set(k, lo);
     }
     // Đơn chỉ có trên máy (chưa từng lưu lên server) bị bỏ: mọi đơn đều tạo qua backend.
   });

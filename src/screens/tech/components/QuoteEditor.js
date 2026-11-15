@@ -27,14 +27,16 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
   const customLines = lines.filter((l) => !l.isOriginal && (l.isCustom || (l.type !== 'part' && !l.matId)));
 
   // Phát sinh thực tế: tất cả các dòng không thuộc dịch vụ gốc đã đặt ban đầu
+  const onSite = isOnSiteQuote(o);
   const extraItems = lines.filter((l) => !l.isOriginal);
   const extraTotal = extraItems.reduce((sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 1), 0);
-  const diff = extraTotal;
+  const prodDisc = Number(o.productDiscount) || 0;
+  const comboDisc = Number(o.comboDiscount) || 0;
   const qTotal = draft.total;
-  // Tại nhà khách: báo giá chỉ gồm phần phát sinh, CỘNG THÊM vào giá đã đặt -> khách trả = đã đặt + phát sinh.
-  // Trước khi xuất phát: báo giá THAY giá đã đặt -> khách trả = tổng báo giá.
-  const onSite = isOnSiteQuote(o);
-  const customerPays = onSite ? booked + extraTotal : qTotal;
+  const netTotal = Math.max(0, qTotal - prodDisc - comboDisc);
+  // Tại nhà khách: chênh lệch = phát sinh thêm. Trước khi xuất phát: chênh lệch = tổng sau giảm - đã đặt.
+  const diff = onSite ? extraTotal : Math.max(0, netTotal - booked);
+  const customerPays = onSite ? booked + extraTotal : netTotal;
 
   const handleAddCustomFee = () => {
     const name = customFeeName.trim();
@@ -165,6 +167,18 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
             </View>
           </View>
         ))}
+        {o.productDiscount ? (
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, paddingHorizontal: 4 }}>
+            <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Giảm giá dịch vụ</Text>
+            <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.green }]}>-{formatVND(o.productDiscount)}</Text>
+          </View>
+        ) : null}
+        {o.comboDiscount ? (
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, paddingHorizontal: 4 }}>
+            <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Ưu đãi {o.comboLabel || 'Combo nhiều máy (-5%)'}</Text>
+            <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.green }]}>-{formatVND(o.comboDiscount)}</Text>
+          </View>
+        ) : null}
 
         {/* 2. Vật tư thay thế (nếu có) */}
         {partLines.length ? (
@@ -266,6 +280,24 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
           </View>
         ) : null}
 
+        {(o.productDiscount || o.comboDiscount) ? (
+          <View style={tx.totalRow}>
+            <Text style={{ color: C.muted }}>Tổng tiền dịch vụ</Text>
+            <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(o.goods || (booked + (o.productDiscount || 0) + (o.comboDiscount || 0)))}</Text>
+          </View>
+        ) : null}
+        {o.productDiscount ? (
+          <View style={tx.totalRow}>
+            <Text style={{ color: C.green }}>Giảm giá dịch vụ</Text>
+            <Text style={{ fontWeight: '700', color: C.green }}>-{formatVND(o.productDiscount)}</Text>
+          </View>
+        ) : null}
+        {o.comboDiscount ? (
+          <View style={tx.totalRow}>
+            <Text style={{ color: C.green }}>Ưu đãi {o.comboLabel || 'Combo nhiều máy (-5%)'}</Text>
+            <Text style={{ fontWeight: '700', color: C.green }}>-{formatVND(o.comboDiscount)}</Text>
+          </View>
+        ) : null}
         <View style={tx.totalRow}><Text style={{ color: C.muted }}>Giá khách đã đặt</Text><Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(booked)}</Text></View>
         <View style={tx.totalRow}>
           <Text style={{ color: diff > 0 ? C.orange : C.muted }}>Chi phí phát sinh thêm</Text>

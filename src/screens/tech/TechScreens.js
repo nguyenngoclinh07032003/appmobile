@@ -1090,10 +1090,15 @@ export function TechJobScreen({ params }) {
 
   // ---- báo giá ----
   const qTotal = draft.total;
-  // Tại nhà khách form chỉ chứa phần phát sinh (cộng thêm vào giá đã đặt) -> phát sinh = tổng các dòng.
-  // Trước khi xuất phát báo giá thay giá đã đặt -> chênh lệch = tổng báo giá − giá đã đặt.
   const onSiteQuote = isOnSiteQuote(o);
-  const diff = onSiteQuote ? qTotal : qTotal - bookedValue(o);
+  const extraItems = draft.lines.filter((l) => !l.isOriginal);
+  const extraTotal = extraItems.reduce((sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 1), 0);
+  const prodDisc = Number(o.productDiscount) || 0;
+  const comboDisc = Number(o.comboDiscount) || 0;
+  const netDraftTotal = Math.max(0, qTotal - prodDisc - comboDisc);
+  // Tại nhà khách form chỉ chứa phần phát sinh -> phát sinh = tổng các dòng mới.
+  // Trước khi xuất phát: chênh lệch = tổng sau giảm − giá đã đặt.
+  const diff = onSiteQuote ? extraTotal : Math.max(0, netDraftTotal - bookedValue(o));
   const mats = MATERIALS.filter((m) => matAll || m.category === 'all' || cats.includes(m.category));
   const addPart = (m) => {
     if (matMode === 'usage') { a.addMaterial(o.code, m); setMatMode(null); return; }
@@ -1113,8 +1118,9 @@ export function TechJobScreen({ params }) {
       return;
     }
     const text = [symptoms, diag].filter(Boolean).join('. ');
+    const hasExtra = draft.lines.some((l) => !l.isOriginal);
     // Tại nhà khách không có phát sinh: không gửi báo giá (nếu gửi, dịch vụ đã đặt bị tính 2 lần), chỉ ghi chẩn đoán rồi làm.
-    if (onSiteQuote && !draft.lines.length) {
+    if (onSiteQuote && !hasExtra) {
       run(K.quote, () => a.startRepairWithoutQuote(o.code, { diagnosis: text, symptoms, recommendation: reco }))
         .then((res) => { if (succeeded(res)) draft.markSaved(); });
       return;
@@ -1442,6 +1448,20 @@ export function TechJobScreen({ params }) {
                 <Text style={{ color: C.ink, fontWeight: '700' }}>{formatVND(l.price * l.qty)}</Text>
               </View>
             ))}
+            {o.productDiscount ? (
+              <View style={tx.qRow}>
+                <AppIcon name="tag" size={13} color={C.green} style={{ marginTop: 2 }} />
+                <Text style={{ flex: 1, color: C.green }} numberOfLines={1}>Giảm giá dịch vụ</Text>
+                <Text style={{ color: C.green, fontWeight: '700' }}>-{formatVND(o.productDiscount)}</Text>
+              </View>
+            ) : null}
+            {o.comboDiscount ? (
+              <View style={tx.qRow}>
+                <AppIcon name="percent" size={13} color={C.green} style={{ marginTop: 2 }} />
+                <Text style={{ flex: 1, color: C.green }} numberOfLines={1}>Ưu đãi {o.comboLabel || 'Combo nhiều máy (-5%)'}</Text>
+                <Text style={{ color: C.green, fontWeight: '700' }}>-{formatVND(o.comboDiscount)}</Text>
+              </View>
+            ) : null}
             <View style={tx.totalRow}><Text style={{ fontWeight: '800', color: C.ink }}>Tổng</Text><Text style={[ui.price, { fontSize: 17 }]}>{formatVND(o.quote.total)}</Text></View>
             {o.quote.rejectReason ? <Text style={[ui.meta, { color: C.red }]}>Lý do khách từ chối: {o.quote.rejectReason}</Text> : null}
             {o.status === 'quoted' && mine ? (
@@ -1730,9 +1750,9 @@ export function TechJobScreen({ params }) {
         <View style={tx.dock}>
           <View style={{ flex: 1 }}>
             <Text style={ui.meta}>{onSiteQuote ? 'Phát sinh thêm' : 'Tổng báo giá'}</Text>
-            <Text style={[ui.price, { fontSize: 18 }]}>{formatVND(qTotal)}</Text>
+            <Text style={[ui.price, { fontSize: 18 }]}>{formatVND(onSiteQuote ? extraTotal : netDraftTotal)}</Text>
           </View>
-          <Btn title={busyQuote ? 'Đang gửi…' : draft.lines.length ? 'Gửi báo giá phát sinh' : 'Xác nhận & bắt đầu'} style={{ flex: 2 }} disabled={busyQuote} onPress={sendQuote} />
+          <Btn title={busyQuote ? 'Đang gửi…' : (extraItems.length > 0 ? 'Gửi báo giá phát sinh' : 'Xác nhận & bắt đầu')} style={{ flex: 2 }} disabled={busyQuote} onPress={sendQuote} />
         </View>
       ) : null}
       {mine && o.status === 'repairing' ? (
