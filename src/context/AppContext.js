@@ -986,7 +986,7 @@ export function AppProvider({ children }) {
           .slice(0, 10);
         // Hoá đơn: việc đang làm + việc đã nộp biên bản còn chờ khách trả tiền (thợ cần biết số tiền mặt / xác nhận đã nhận).
         const billJobIds = [...new Set([...activeJobIds, ...(jobsRes.ok && Array.isArray(jobsRes.data?.items) ? jobsRes.data.items : [])
-          .filter((j) => j.assignment_id && ['PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE', 'PENDING_REVIEW'].includes(j.request?.request_status))
+          .filter((j) => j.assignment_id && j.assignment_status === 'ACTIVE' && ['PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE', 'PENDING_REVIEW'].includes(j.request?.request_status))
           .map((j) => String(j.assignment_id))])].slice(0, 15);
         const [photoLists, jobBills] = await Promise.all([
           Promise.all(activeJobIds.map((id) => hrmssApi.listJobPhotos(id).catch(() => null))),
@@ -1034,7 +1034,7 @@ export function AppProvider({ children }) {
                 if (rv) o = { ...o, rating: { stars: Number(rv.rating) || 5, text: rv.review_text || '', at: rv.created_at ? new Date(rv.created_at).getTime() : null } };
                 return o;
               }).filter(Boolean)
-            : [];
+            : (p.orders || []).filter((o) => o.assignmentActive || o.status !== 'pending');
           const assignedCodes = new Set(assignedOrders.map((o) => o.code));
           // Đơn bắn cho thợ đã quá hạn tiếp nhận: bỏ hẳn khỏi danh sách (không lưu, không hiển thị).
           const syncNow = Date.now();
@@ -1042,7 +1042,7 @@ export function AppProvider({ children }) {
             ? openRes.data.items
                 .map(mapBackendOpenRequestToOrder)
                 .filter((o) => o && !assignedCodes.has(o.code) && !isOfferExpired(o, syncNow))
-            : [];
+            : (p.orders || []).filter((o) => o.status === 'pending');
           const remoteOrders = [...assignedOrders.filter((o) => !isOfferExpired(o, syncNow)), ...openOrders];
           const nextOrders = mergeBackendOrdersWithLocal(p.orders, remoteOrders);
           const completedJobsCount = assignedOrders.filter((o) => o.status === 'done').length;
@@ -1246,25 +1246,11 @@ export function AppProvider({ children }) {
   useEffect(() => {
     apiEvents.onJobGone(() => {
       if (s.auth?.role !== 'tech') return;
-      const drop = (code) => {
-        if (!code) return;
-        setS((p) => ({ ...p, orders: p.orders.filter((o) => o.code !== code) }));
-        // Đang mở chi tiết việc đó thì quay lại danh sách.
-        setStack((st) => st.filter((x) => x.params?.code !== code));
-      };
-      if (actionCodeRef.current) drop(actionCodeRef.current);
-      else {
-        // Thao tác không qua bộ chống bấm đúp: lấy việc đang mở trên màn chi tiết.
-        setStack((st) => {
-          const top = st[st.length - 1];
-          if (top?.name === 'tech-job' && top.params?.code) {
-            const code = top.params.code;
-            setS((p) => ({ ...p, orders: p.orders.filter((o) => o.code !== code) }));
-            return st.slice(0, -1);
-          }
-          return st;
-        });
-      }
+      const targetCode = actionCodeRef.current;
+      // Chỉ gỡ đơn khi chính thao tác người dùng trên đơn đó nhận được thông báo việc đã hết hạn / đã chuyển
+      if (!targetCode) return;
+      setS((p) => ({ ...p, orders: p.orders.filter((o) => o.code !== targetCode) }));
+      setStack((st) => st.filter((x) => x.params?.code !== targetCode));
       setTimeout(() => syncRef.current?.(), 300);
     });
     return () => apiEvents.onJobGone(null);

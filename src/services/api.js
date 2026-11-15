@@ -217,7 +217,8 @@ async function rawRequest(endpoint, options = {}) {
     }
 
     if (!res.ok) {
-      if (JOB_GONE_CODES.has(resData?.code)) {
+      const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes((init.method || 'GET').toUpperCase());
+      if (isMutation && JOB_GONE_CODES.has(resData?.code)) {
         try { onJobGone?.(resData.code); } catch (e) { /* bỏ qua */ }
         return {
           ok: false,
