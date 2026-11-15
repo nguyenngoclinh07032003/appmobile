@@ -1006,12 +1006,22 @@ export function AppProvider({ children }) {
             } : {}),
             reviews: reviewRes.ok ? (reviewRes.data?.items || []) : (base.reviews || []),
           };
+          // Đánh giá của khách (GET /technician/jobs/reviews) -> gắn vào đúng việc để màn chi tiết hiện "Khách đánh giá".
+          const reviewItems = reviewRes.ok && Array.isArray(reviewRes.data?.items) ? reviewRes.data.items : [];
+          const reviewOf = (j) => reviewItems.find((r) => (
+            (r.request_code && r.request_code === j.request?.request_code)
+            || (r.request_id != null && String(r.request_id) === String(j.request?.request_id))
+            || (r.assignment_id != null && String(r.assignment_id) === String(j.assignment_id))
+          ));
           const assignedOrders = (jobsRes.ok && Array.isArray(jobsRes.data?.items))
             ? jobsRes.data.items.map((j) => {
                 const b = billByJob.get(String(j.assignment_id));
-                const o = mapBackendTechJobToOrder(b ? { ...j, bill: b } : j, techProf);
+                let o = mapBackendTechJobToOrder(b ? { ...j, bill: b } : j, techProf);
                 const ev = evidenceByJob.get(String(j.assignment_id));
-                return o && ev ? { ...o, evidence: ev } : o;
+                if (o && ev) o = { ...o, evidence: ev };
+                const rv = o && !o.rating ? reviewOf(j) : null;
+                if (rv) o = { ...o, rating: { stars: Number(rv.rating) || 5, text: rv.review_text || '', at: rv.created_at ? new Date(rv.created_at).getTime() : null } };
+                return o;
               }).filter(Boolean)
             : [];
           const assignedCodes = new Set(assignedOrders.map((o) => o.code));

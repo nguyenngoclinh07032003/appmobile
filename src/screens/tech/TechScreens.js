@@ -1665,10 +1665,16 @@ export function TechJobScreen({ params }) {
           </Card>
         ) : null}
         {o.rating ? (
-          <Card style={{ marginTop: 12 }}>
-            <Text style={tx.h}>Khách đánh giá</Text>
-            <Stars value={o.rating.stars} size={18} />
-            {o.rating.text ? <Text style={{ color: C.ink2, marginTop: 6 }}>{o.rating.text}</Text> : null}
+          <Card style={{ marginTop: 12, backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={[tx.h, { marginBottom: 0 }]}>⭐ Khách đánh giá</Text>
+              <Text style={{ fontWeight: '900', fontSize: 18, color: '#B45309' }}>{o.rating.stars}/5</Text>
+            </View>
+            <View style={{ marginTop: 8 }}><Stars value={o.rating.stars} size={20} /></View>
+            <Text style={{ color: C.ink2, marginTop: 8, lineHeight: 20, fontStyle: o.rating.text ? 'italic' : 'normal' }}>
+              {o.rating.text ? `“${o.rating.text}”` : 'Khách không để lại nhận xét.'}
+            </Text>
+            {o.rating.at ? <Text style={[ui.meta, { marginTop: 6 }]}>{fmtDateTime(o.rating.at)}</Text> : null}
           </Card>
         ) : null}
 

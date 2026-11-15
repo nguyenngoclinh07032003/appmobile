@@ -500,6 +500,11 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
       .flatMap((q) => (q.items || []).filter((it) => it.is_external_purchase))
       .map((it) => ({ itemId: it.quotation_item_id, name: it.description_snapshot, receiptId: it.receipt_attachment_id || null })),
     followUpRequested: Boolean(visit.follow_up_reason),
+    // Đánh giá của khách nếu server trả kèm việc (nếu không, AppContext gắn từ GET /technician/jobs/reviews).
+    rating: (req.review || job.review) ? {
+      stars: Number((req.review || job.review).rating) || 5,
+      text: (req.review || job.review).review_text || '',
+    } : null,
     followUpReason: visit.follow_up_reason || '',
     outOfWarranty: Boolean(req.out_of_warranty),
     outOfWarrantyReason: req.out_of_warranty_reason || '',
