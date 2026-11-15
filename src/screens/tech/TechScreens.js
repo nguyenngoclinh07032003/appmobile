@@ -1424,20 +1424,25 @@ export function TechJobScreen({ params }) {
         ) : null}
 
         {/* ===== Chẩn đoán & báo giá ===== */}
-        {(o.status === 'diagnosing' || (o.status === 'confirmed' && showPreQuote)) && mine ? (
+        {(o.status === 'diagnosing' || (o.status === 'confirmed' && (showPreQuote || o.quote?.revisionRequested))) && mine ? (
           <QuoteEditor o={o} draft={draft} cats={cats} matsCount={mats.length} onOpenMaterials={() => setMatMode('quote')} evidence={evidence} />
         ) : null}
 
         {/* ===== Báo giá đã gửi ===== */}
-        {o.quote && !(o.status === 'diagnosing' && o.quote.revisionRequested) ? (
+        {o.quote && !(mine && ['diagnosing', 'confirmed'].includes(o.status) && (o.quote.revisionRequested || showPreQuote)) ? (
           <Card style={{ marginTop: 12 }}>
             {(() => {
               // Báo giá trước khi đi (status confirmed) chưa duyệt và chưa bị từ chối = đang chờ khách.
               const waiting = !o.quote.approved && (o.status === 'quoted' || (o.status === 'confirmed' && !o.quote.rejectReason && !o.quote.revisionRequested));
+              const isRevise = Boolean(o.quote.revisionRequested);
               return (
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={tx.h}>🧾 Chẩn đoán & báo giá</Text>
-                  <Badge text={o.quote.approved ? 'Đã duyệt' : waiting ? 'Chờ khách duyệt' : 'Bị từ chối'} fg={o.quote.approved ? C.green : waiting ? C.goldInk : C.red} bg={o.quote.approved ? C.greenSoft : waiting ? C.goldSoft : C.redSoft} />
+                  <Badge
+                    text={o.quote.approved ? 'Đã duyệt' : waiting ? 'Chờ khách duyệt' : isRevise ? 'Yêu cầu báo giá lại' : 'Bị từ chối'}
+                    fg={o.quote.approved ? C.green : (waiting || isRevise) ? C.goldInk : C.red}
+                    bg={o.quote.approved ? C.greenSoft : (waiting || isRevise) ? C.goldSoft : C.redSoft}
+                  />
                 </View>
               );
             })()}
@@ -1464,7 +1469,25 @@ export function TechJobScreen({ params }) {
               </View>
             ) : null}
             <View style={tx.totalRow}><Text style={{ fontWeight: '800', color: C.ink }}>Tổng</Text><Text style={[ui.price, { fontSize: 17 }]}>{formatVND(o.quote.total)}</Text></View>
-            {o.quote.rejectReason ? <Text style={[ui.meta, { color: C.red }]}>Lý do khách từ chối: {o.quote.rejectReason}</Text> : null}
+            {o.quote.rejectReason ? (
+              <Text style={[ui.meta, { color: o.quote.revisionRequested ? C.goldInk : C.red }]}>
+                {o.quote.revisionRequested ? 'Lý do khách yêu cầu báo giá lại: ' : 'Lý do khách từ chối: '}
+                {o.quote.rejectReason}
+              </Text>
+            ) : null}
+            {mine && o.quote.revisionRequested && o.status !== 'quoted' ? (
+              <View style={{ marginTop: 12 }}>
+                <Btn
+                  title="Sửa & gửi lại báo giá cho khách"
+                  icon="pencil"
+                  small
+                  onPress={() => {
+                    setShowPreQuote(true);
+                    a.reopenQuote(o.code);
+                  }}
+                />
+              </View>
+            ) : null}
             {o.status === 'quoted' && mine ? (
               <View style={{ marginTop: 12, gap: 8 }}>
                 <Text style={ui.meta}>
@@ -1733,8 +1756,8 @@ export function TechJobScreen({ params }) {
       {mine && ['confirmed', 'onway'].includes(o.status) ? (
         <View style={tx.dock}>
           <Btn title="Trả việc" variant="dangerSoft" style={{ flex: 1 }} onPress={() => { setReleaseReason(RELEASE_REASONS[0]); setReleaseNote(''); setShowRelease(true); }} />
-          {o.status === 'confirmed' && showPreQuote ? (
-            <Btn title={busyQuote ? 'Đang gửi…' : 'Gửi báo giá trước khi đi'} icon="receipt-text" style={{ flex: 2 }} disabled={busyQuote} onPress={sendQuote} />
+          {o.status === 'confirmed' && (showPreQuote || o.quote?.revisionRequested) ? (
+            <Btn title={busyQuote ? 'Đang gửi…' : (o.quote?.revisionRequested ? 'Gửi lại báo giá' : 'Gửi báo giá trước khi đi')} icon="receipt-text" style={{ flex: 2 }} disabled={busyQuote} onPress={sendQuote} />
           ) : next ? (
             <Btn title={next.label} icon={next.icon} variant={next.variant || 'primary'} style={{ flex: 2 }} disabled={Boolean(next.disabled)} onPress={next.run} />
           ) : null}
@@ -1753,7 +1776,18 @@ export function TechJobScreen({ params }) {
             <Text style={ui.meta}>{onSiteQuote ? 'Phát sinh thêm' : 'Tổng báo giá'}</Text>
             <Text style={[ui.price, { fontSize: 18 }]}>{formatVND(onSiteQuote ? extraTotal : netDraftTotal)}</Text>
           </View>
-          <Btn title={busyQuote ? 'Đang gửi…' : (extraItems.length > 0 ? 'Gửi báo giá phát sinh' : 'Xác nhận & bắt đầu')} style={{ flex: 2 }} disabled={busyQuote} onPress={sendQuote} />
+          <Btn
+            title={
+              busyQuote
+                ? 'Đang gửi…'
+                : o.quote?.revisionRequested
+                  ? (extraItems.length > 0 ? 'Gửi lại báo giá' : 'Xác nhận & bắt đầu (0đ phát sinh)')
+                  : (extraItems.length > 0 ? 'Gửi báo giá phát sinh' : 'Xác nhận & bắt đầu')
+            }
+            style={{ flex: 2 }}
+            disabled={busyQuote}
+            onPress={sendQuote}
+          />
         </View>
       ) : null}
       {mine && o.status === 'repairing' ? (

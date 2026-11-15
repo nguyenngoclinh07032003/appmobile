@@ -56,7 +56,12 @@ export function draftFromOrder(o) {
         .filter((l) => !(l.type !== 'part' && !l.matId && bookedNameSet.has(String(l.name || '').trim().toLowerCase())))
         .map((l, idx) => ({ ...l, key: l.matId || l.key || `q_${idx}`, isOriginal: false })),
     ];
-    return { tags, diagnosis, recommendation: q?.recommendation || '', lines };
+    return {
+      tags,
+      diagnosis,
+      recommendation: q?.recommendation || (q ? 'Thực hiện dịch vụ và hạng mục vật tư theo báo giá' : ''),
+      lines,
+    };
   }
 
   const lines = q?.lines?.length
@@ -86,7 +91,12 @@ export function draftFromOrder(o) {
         isOriginal: true,
       };
     });
-  return { tags, diagnosis, recommendation: q?.recommendation || '', lines };
+  return {
+    tags,
+    diagnosis,
+    recommendation: q?.recommendation || (q ? 'Thực hiện dịch vụ và hạng mục vật tư theo báo giá' : ''),
+    lines,
+  };
 }
 
 export function useQuoteDraft(o) {

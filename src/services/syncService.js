@@ -240,7 +240,7 @@ export const mapBackendQuotationToAppQuote = (
     quotationType: latestQuote.quotation_type || 'INITIAL',
     status: latestQuote.quotation_status,
     revisionRequested: latestQuote.quotation_status === 'REVISION_REQUESTED' || latestQuote.customer_decision === 'REVISE',
-    rejectReason: latestQuote.rejection_reason || '',
+    rejectReason: latestQuote.rejection_reason || latestQuote.revision_note || '',
     approvedTotal,
     diagnosis: latestDiag?.findings || problemDesc || 'Đã kiểm tra thiết bị tại hiện trường',
     symptoms: latestDiag?.symptoms || '',
@@ -476,8 +476,8 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     else if (job.completed_at) status = 'done';
     else return null;
   } else {
-    // Đã ghi chẩn đoán mà đơn vẫn IN_PROGRESS = thợ xác nhận không có phát sinh, đang sửa (không cần báo giá).
-    const decidedNoQuote = (job.diagnoses || []).length > 0;
+    // Đã ghi chẩn đoán mà đơn vẫn IN_PROGRESS (và không có báo giá đang chờ sửa lại) = thợ xác nhận không có phát sinh, đang sửa.
+    const decidedNoQuote = (job.diagnoses || []).length > 0 && !quote?.revisionRequested;
     status = mapBackendStatusToAppStatus(rs, visit.visit_status, quote?.approved || decidedNoQuote, hasPendingQuote);
   }
   const statusUnknown = !isEnded && !isKnownBackendStatus(rs);

@@ -2789,7 +2789,7 @@ export function AppProvider({ children }) {
       const now = Date.now();
       let ok = false;
       updateOrder(code, (o) => {
-        if (!["quoted", "repairing"].includes(o.status)) return {};
+        if (!["quoted", "repairing", "confirmed", "diagnosing"].includes(o.status)) return {};
         ok = true;
         const isOnSite = Boolean(
           o.arrivedAt ||

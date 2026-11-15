@@ -5,8 +5,17 @@ import { useApp } from '../../../context';
 import { getCheckInLocation } from '../../../utils/geo';
 import { useBusyRunner } from './useBusyRunner';
 
-// Báo giá trước khi xuất phát đã gửi nhưng khách chưa duyệt -> chưa được đi.
-export const isAwaitingPreQuote = (o) => Boolean(o && o.status === 'confirmed' && o.quote && !o.quote.approved);
+// Báo giá trước khi xuất phát đã gửi nhưng khách chưa duyệt (và chưa yêu cầu báo giá lại / từ chối) -> chưa được đi.
+export const isAwaitingPreQuote = (o) => Boolean(
+  o &&
+  o.status === 'confirmed' &&
+  o.quote &&
+  !o.quote.approved &&
+  !o.quote.revisionRequested &&
+  !o.quote.rejectReason &&
+  o.quote.status !== 'REJECTED' &&
+  o.quote.status !== 'REVISION_REQUESTED',
+);
 
 // Lấy GPS thật rồi check-in. Không có quyền / không lấy được vị trí -> báo rõ, không gửi.
 export async function checkInWithGps(o, a, u) {
@@ -41,6 +50,16 @@ export function useNextAction({ inDetail = false } = {}) {
     const open = () => nav.push('tech-job', { code: o.code });
     switch (o.status) {
       case 'confirmed': {
+        if (o.quote?.revisionRequested) {
+          return inDetail
+            ? null
+            : {
+                label: 'Báo giá lại cho khách',
+                icon: 'receipt-text',
+                variant: 'primary',
+                run: open,
+              };
+        }
         if (isAwaitingPreQuote(o)) {
           return {
             label: 'Chờ khách đồng ý báo giá',
