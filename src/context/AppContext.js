@@ -45,7 +45,7 @@ import {
   writeJson,
   removeItem as removeStorageItem,
 } from "../services/storage";
-import { hrmssApi, authTokens, apiEvents } from "../services/api";
+import { hrmssApi, authTokens, apiEvents, ensureAccessToken } from "../services/api";
 import {
   playNotificationSound,
   isSoundMuted,
@@ -1090,7 +1090,7 @@ export function AppProvider({ children }) {
 
   const syncFromBackend = async (overrideAccount = null, force = false) => {
     const acc = overrideAccount || s.auth;
-    if (!acc || !authTokens.get()) return;
+    if (!acc) return;
 
     // Chống gọi dồn dập (throttling): tối thiểu 3 giây giữa 2 lần sync, trừ khi gọi trực tiếp với force = true
     const now = Date.now();
@@ -1100,6 +1100,9 @@ export function AppProvider({ children }) {
     lastSyncAt.current = now;
 
     try {
+      // Đảm bảo access token còn hạn trước khi bắn hàng loạt request đồng bộ song song
+      const hasValidToken = await ensureAccessToken();
+      if (!hasValidToken) return;
       if (
         Date.now() - catalogFetchedAt.current >= 10 * 60 * 1000 ||
         MATERIALS.length === 0 ||
@@ -1198,6 +1201,7 @@ export function AppProvider({ children }) {
             hrmssApi.getVoucherWallet("AVAILABLE"),
             hrmssApi.getVoucherCatalog(),
           ]);
+          if (!authTokens.get()) return;
           const serverProfile =
             meRes.ok && meRes.data?.profile ? meRes.data.profile : null;
           const serverAccount =
@@ -1436,6 +1440,7 @@ export function AppProvider({ children }) {
               hrmssApi.getTechnicianProfile(),
               hrmssApi.getTechnicianReviews(),
             ]);
+          if (!authTokens.get()) return;
           if (!jobsRes.ok) {
             // eslint-disable-next-line no-console
             console.warn("[HRMSS Sync Warn][Tech.getTechnicianJobs]", jobsRes.status, jobsRes.code, jobsRes.message);

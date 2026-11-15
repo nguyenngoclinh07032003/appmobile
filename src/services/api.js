@@ -149,25 +149,125 @@ async function refreshSession() {
   return refreshing;
 }
 
+/** Giải mã hạn (exp, tính bằng giây) của JWT access token mà không cần thư viện ngoài. */
+function decodeJwtExp(token) {
+  if (!token || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 ? b64 + '='.repeat(4 - (b64.length % 4)) : b64;
+    let jsonStr = '';
+    if (typeof atob === 'function') {
+      jsonStr = atob(pad);
+    } else if (typeof Buffer !== 'undefined') {
+      jsonStr = Buffer.from(pad, 'base64').toString('utf8');
+    } else {
+      return null;
+    }
+    const payload = JSON.parse(jsonStr);
+    return typeof payload?.exp === 'number' ? payload.exp : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function isTokenExpiringSoon(token, bufferSeconds = 30) {
+  const exp = decodeJwtExp(token);
+  if (!exp) return false;
+  return Date.now() >= (exp - bufferSeconds) * 1000;
+}
+
 /** Bảo đảm có access token (native mở lại app chỉ còn refresh token trong SecureStore). Trả true nếu dùng được API. */
 export async function ensureAccessToken() {
-  if (authTokens.get()) return true;
-  if (!authTokens.getRefresh()) return false;
+  const tok = authTokens.get();
+  if (tok && !isTokenExpiringSoon(tok, 15)) return true;
+  if (!authTokens.getRefresh()) {
+    if (tok && !isTokenExpiringSoon(tok, 0)) return true;
+    authTokens.clear();
+    try { onSessionExpired?.(); } catch (e) { /* bỏ qua */ }
+    return false;
+  }
   const r = await refreshSession();
   return Boolean(r?.ok);
 }
 
 /**
- * Hàm gọi API tổng quát: tự gắn Bearer, hết hạn access token (401) thì tự làm mới phiên rồi gửi lại 1 lần.
- * Làm mới phiên lỗi mạng -> trả lỗi mạng đó (rõ nguyên nhân) thay vì 401.
+ * Hàm gọi API tổng quát:
+ * - Chủ động làm mới access token trước khi hết hạn (tránh bắn hàng loạt request song song bị 401).
+ * - Khi đang làm mới phiên (`refreshing`), các request song song chờ dùng chung token mới.
+ * - Nếu token hết hạn mà không có refresh token (phiên cũ còn sót): tự động dọn phiên và đưa về màn đăng nhập.
  */
 export async function apiRequest(endpoint, options = {}) {
+  const path = String(endpoint || '');
+  const isAuthCall =
+    Boolean(options.noAuth) ||
+    path.startsWith('/auth/login') ||
+    path.startsWith('/auth/mobile/') ||
+    path.startsWith('/auth/register') ||
+    path.startsWith('/auth/forgot-password') ||
+    path.startsWith('/auth/reset-password');
+  const isPublicEndpoint =
+    path === '/' ||
+    path.startsWith('/service-categories') ||
+    path.startsWith('/customer/services') ||
+    path.startsWith('/customer/materials') ||
+    path.startsWith('/config/public') ||
+    path.startsWith('/locations/');
+
+  if (!isAuthCall) {
+    if (refreshing) {
+      await refreshing;
+    }
+    const curToken = authTokens.get();
+    if (curToken && isTokenExpiringSoon(curToken, 30)) {
+      if (authTokens.getRefresh()) {
+        const refreshed = await refreshSession();
+        if (!refreshed.ok && refreshed.status === 0) return refreshed;
+      } else if (isTokenExpiringSoon(curToken, 0)) {
+        authTokens.clear();
+        try { onSessionExpired?.(); } catch (e) { /* bỏ qua */ }
+        if (!isPublicEndpoint) {
+          return {
+            ok: false,
+            status: 401,
+            code: 'SESSION_EXPIRED',
+            message: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+            data: null,
+            errors: [],
+          };
+        }
+      }
+    }
+    if (!authTokens.get() && !isPublicEndpoint) {
+      if (authTokens.getRefresh()) {
+        const refreshed = await refreshSession();
+        if (!refreshed.ok && refreshed.status === 0) return refreshed;
+      }
+      if (!authTokens.get()) {
+        return {
+          ok: false,
+          status: 401,
+          code: 'UNAUTHENTICATED',
+          message: 'Vui lòng đăng nhập để tiếp tục.',
+          data: null,
+          errors: [],
+        };
+      }
+    }
+  }
+
   const res = await rawRequest(endpoint, options);
-  const isAuthCall = String(endpoint).startsWith('/auth/login') || String(endpoint).startsWith('/auth/mobile/');
-  if (res.status === 401 && !isAuthCall && authTokens.getRefresh()) {
-    const refreshed = await refreshSession();
-    if (refreshed.ok) return rawRequest(endpoint, options);
-    if (refreshed.status === 0) return refreshed;
+  if (res.status === 401 && !isAuthCall) {
+    if (authTokens.getRefresh()) {
+      const refreshed = await refreshSession();
+      if (refreshed.ok) return rawRequest(endpoint, { ...options, _retried: true });
+      if (refreshed.status === 0) return refreshed;
+    } else if (authTokens.get()) {
+      // Có access token nhưng bị server từ chối 401 và không có refresh token để khôi phục -> đăng xuất sạch
+      authTokens.clear();
+      try { onSessionExpired?.(); } catch (e) { /* bỏ qua */ }
+    }
   }
   return res;
 }
@@ -183,6 +283,7 @@ async function rawRequest(endpoint, options = {}) {
     timeout = APP_CONFIG.timeoutMs,
     noAuth = false, // true: không gắn Bearer (vd. gọi refresh)
     formData = null, // multipart (tải ảnh): gửi nguyên FormData, không đặt Content-Type
+    _retried = false,
   } = options;
 
   const baseUrl = API_BASE_URL;
@@ -225,11 +326,14 @@ async function rawRequest(endpoint, options = {}) {
     }
 
     if (!res.ok) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[HRMSS API HTTP ${res.status}] ${String(method || 'GET').toUpperCase()} ${cleanPath} -> code=${resData?.code || 'ERROR'} | msg=${resData?.message || ''}`,
-        Array.isArray(resData?.errors) && resData.errors.length ? resData.errors : '',
-      );
+      const willAutoRefresh = res.status === 401 && !_retried && !noAuth && Boolean(authTokens.getRefresh());
+      if (!willAutoRefresh) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[HRMSS API HTTP ${res.status}] ${String(method || 'GET').toUpperCase()} ${cleanPath} -> code=${resData?.code || 'ERROR'} | msg=${resData?.message || ''}`,
+          Array.isArray(resData?.errors) && resData.errors.length ? resData.errors : '',
+        );
+      }
       const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(String(method || 'GET').toUpperCase());
       if (isMutation && JOB_GONE_CODES.has(resData?.code)) {
         try { onJobGone?.(resData.code); } catch (e) { /* bỏ qua */ }
