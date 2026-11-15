@@ -49,6 +49,19 @@ export const slotEndTs = (order) => {
 };
 
 /**
+ * Đơn bắn cho thợ đã quá hạn tiếp nhận chưa.
+ * - Server có hạn phản hồi (offerExpiresAt) thì theo hạn đó.
+ * - Không có thì quá hạn khi đã tới giờ bắt đầu khung hẹn (thợ không thể nhận việc đã trễ giờ hẹn).
+ * Chỉ áp dụng cho đơn đang chờ nhận ('pending').
+ */
+export const isOfferExpired = (order, now = Date.now()) => {
+  if (!order || order.status !== 'pending') return false;
+  if (order.offerExpiresAt && now >= order.offerExpiresAt) return true;
+  const start = slotStartTs(order);
+  return Boolean(start) && now >= start;
+};
+
+/**
  * Kiểm tra xem khách hàng có được phép huỷ đơn hay không.
  * Quy định: Khách hàng không được huỷ đơn khi còn dưới 1 tiếng trước giờ hẹn với thợ.
  */

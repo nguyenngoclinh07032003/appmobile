@@ -54,8 +54,9 @@ export const STATUS_META = {
   quoted: { label: 'Chờ duyệt báo giá', fg: '#B45309', bg: '#FEF3C7' },
   repairing: { label: 'Đang thực hiện', fg: '#0062E0', bg: '#DBEAFE' },
   pending_payment: { label: 'Chờ thanh toán', fg: '#B45309', bg: '#FEF3C7' },
-  partially_paid: { label: 'Còn công nợ', fg: '#C2410C', bg: '#FFF7ED' },
-  pending_review: { label: 'Chờ VP nghiệm thu', fg: '#7C3AED', bg: '#F5F3FF' },
+  // Giữ để đơn cũ trong bộ nhớ local không lỗi hiển thị; luồng mới không dùng 2 trạng thái này.
+  partially_paid: { label: 'Chờ thanh toán', fg: '#B45309', bg: '#FEF3C7' },
+  pending_review: { label: 'Hoàn thành', fg: '#047857', bg: '#ECFDF5' },
   warranty_pending: { label: 'Chờ VP duyệt BH', fg: '#C026D3', bg: '#FDF4FF' },
   out_of_warranty: { label: 'Ngoài bảo hành', fg: '#EA580C', bg: '#FFF7ED' },
   done: { label: 'Hoàn thành', fg: '#059669', bg: '#ECFDF5' },

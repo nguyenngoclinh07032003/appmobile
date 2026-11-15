@@ -7,6 +7,7 @@ import {
   ensureServiceFromOrderItem,
 } from '../constants/data';
 import { toVnParts, vnDateKey } from '../utils/vnTime';
+import { viNotification, toVietnamese } from '../utils/viText';
 
 // Tên hiển thị khi đơn đã có thợ nhưng chưa tải được thông tin thợ (GET /customer/requests/:id/tracking).
 const ASSIGNED_TECH_PLACEHOLDER = 'Thợ được phân công';
@@ -110,10 +111,13 @@ const mapKnownStatus = (requestStatus, visitStatus, hasApprovedQuote = false, ha
   // thợ cần lập lại báo giá -> 'diagnosing'; khách không thấy nút duyệt (server sẽ trả 404 QUOTATION_NOT_FOUND).
   if (st === 'DIAGNOSED_PENDING_QUOTATION') return hasPendingQuote ? 'quoted' : 'diagnosing';
   if (st === 'READY_FOR_REPAIR') return 'repairing';
+  // Luồng app: thợ bấm hoàn thành -> "Chờ thanh toán" -> khách thanh toán đủ -> "Hoàn thành".
+  // App bỏ bước "Còn công nợ" và "Chờ văn phòng nghiệm thu": trả thiếu vẫn là chờ thanh toán,
+  // đã thanh toán đủ (READY_FOR_ACCEPTANCE) coi như hoàn thành.
   if (st === 'PENDING_PAYMENT') return 'pending_payment';
-  if (st === 'PARTIALLY_PAID_RECEIVABLE') return 'partially_paid';
+  if (st === 'PARTIALLY_PAID_RECEIVABLE') return 'pending_payment';
   if (st === 'PENDING_REVIEW') return 'pending_payment'; // trạng thái cũ vẫn thuộc nhóm chờ thanh toán ở BE
-  if (st === 'READY_FOR_ACCEPTANCE') return 'pending_review';
+  if (st === 'READY_FOR_ACCEPTANCE') return 'done';
   if (st === 'COMPLETED') {
     return 'done';
   }
@@ -248,6 +252,8 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     ? req.address.contact_phone
     : (customerPhoneFallback || req.address?.contact_phone || '');
   const bill = mapBackendBill(req.bill);
+  // Khách đã thanh toán đủ theo hoá đơn server -> hoàn thành luôn (không chờ văn phòng nghiệm thu).
+  if (status === 'pending_payment' && bill && ['PAID', 'NOTHING_TO_PAY'].includes(bill.paymentStatus)) status = 'done';
 
   const cancelHistory = (req.timeline || []).find((h) => String(h.new_status || '').toUpperCase().startsWith('CANCELLED'));
   // Phí kiểm tra khi huỷ: chỉ lấy từ hoá đơn server (amount_due của đơn huỷ), không đoán.
@@ -261,7 +267,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
         // Lịch sử: bước DIAGNOSED_PENDING_QUOTATION luôn là bước "chờ duyệt báo giá" của đơn.
         status: mapBackendStatusToAppStatus(h.new_status, null, quote?.approved, true),
         at: h.changed_at ? new Date(h.changed_at).getTime() : createdAt,
-        note: h.reason || '',
+        note: toVietnamese(h.reason, ''),
       }))
     : [{ status, at: createdAt }];
 
@@ -301,7 +307,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     finalTotal: bill ? bill.amountDue : (Number.isFinite(estimated) && estimated > 0 ? estimated : booked),
     bill,
     inspectionFee,
-    cancelReason: cancelHistory?.reason || 'Đơn đã được huỷ',
+    cancelReason: toVietnamese(cancelHistory?.reason, 'Đơn đã được huỷ') || 'Đơn đã được huỷ',
     dateLabel: formatDateLabelFromIso(preferredIso),
     dateKey: formatDateKeyFromIso(preferredIso),
     slot: formatSlotFromIso(preferredIso),
@@ -336,8 +342,8 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     materials: (quote?.lines || [])
       .filter((l) => l.type === 'part')
       .map((l, idx) => ({ id: `mat-${req.request_id}-${idx}`, matId: l.matId || null, name: l.name, unit: l.unit, qty: l.qty, price: l.price })),
-    // Trạng thái chờ thanh toán / còn công nợ theo cách chia của Linh; đã trả hay chưa đọc từ hoá đơn server.
-    report: (isDone || ['pending_payment', 'partially_paid', 'pending_review'].includes(status)) ? {
+    // Chờ thanh toán (gồm cả trả thiếu) hoặc hoàn thành; đã trả hay chưa đọc từ hoá đơn server.
+    report: (isDone || status === 'pending_payment') ? {
       summary: latestVisit?.work_performed || '',
       paid,
       at: doneAt || dateMs(req.updated_at),
@@ -363,18 +369,22 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
   const booked = Math.max(0, goods - productDiscount - comboDiscount);
   const hasPendingQuote = (job.quotations || []).some((q) => q.quotation_status === 'SENT');
   const quote = mapBackendQuotationToAppQuote(job.quotations || [], job.diagnoses || [], booked, req.problem_description);
-  const isEnded = job.assignment_status === 'ENDED';
+  // Phân công còn hiệu lực với thợ này. Mọi trạng thái khác (ENDED, EXPIRED, TIMEOUT, RELEASED, REASSIGNED, REVOKED...)
+  // = việc không còn được giao cho thợ -> chỉ giữ lại nếu chính thợ này đã làm xong.
+  const LIVE_ASSIGNMENT = ['ACTIVE', 'PENDING', 'PENDING_ACK', 'ASSIGNED', 'ACCEPTED'];
+  const assignmentStatus = String(job.assignment_status || 'ACTIVE').toUpperCase();
+  const isEnded = !LIVE_ASSIGNMENT.includes(assignmentStatus);
   const rs = String(req.request_status || '').toUpperCase();
   const PAYMENT_STAGE = ['PENDING_REVIEW', 'READY_FOR_ACCEPTANCE', 'PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE'];
   let status;
-  if (PAYMENT_STAGE.includes(rs)) {
+  if (PAYMENT_STAGE.includes(rs) && (!isEnded || job.completed_at)) {
     status = mapBackendStatusToAppStatus(rs);
   } else if (isEnded) {
     // Phân công đã kết thúc: chỉ là "xong" khi đơn đã hoàn thành / nghiệm thu (hoặc chính thợ này đã nộp hoàn thành
     // trước khi đơn chuyển sang bảo hành). Đơn bị huỷ -> 'cancelled'. Còn lại là thợ đã trả việc / bị thu hồi và đơn
     // đang do thợ khác xử lý -> bỏ khỏi danh sách của thợ này.
-    if (rs === 'COMPLETED') status = 'done';
-    else if (rs.startsWith('CANCELLED')) status = 'cancelled';
+    if (rs === 'COMPLETED' && (assignmentStatus === 'ENDED' || job.completed_at)) status = 'done';
+    else if (rs.startsWith('CANCELLED') && ['ENDED', 'CANCELLED'].includes(assignmentStatus)) status = 'cancelled';
     else if (job.completed_at) status = 'done';
     else return null;
   } else {
@@ -386,6 +396,8 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
   // "Đang đến": đã bấm xuất phát (travel_started_at) mà chưa check-in (arrived_at) -> giữ đúng sau khi cài lại / đổi máy.
   if (status === 'confirmed' && job.travel_started_at && !job.arrived_at) status = 'onway';
   const bill = mapBackendBill(job.bill);
+  // Khách đã thanh toán đủ -> việc hoàn thành (app không chờ văn phòng nghiệm thu).
+  if (status === 'pending_payment' && bill && ['PAID', 'NOTHING_TO_PAY'].includes(bill.paymentStatus)) status = 'done';
 
   const cancelHistory = (req.timeline || req.status_history || []).find((h) => String(h.new_status || '').toUpperCase().startsWith('CANCELLED'));
   const inspectionFee = status === 'cancelled' && bill ? bill.amountDue : 0;
@@ -442,8 +454,9 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     lateCompensation: req.late_minutes > 0 ? { minutes: req.late_minutes, tier: req.late_tier || null, amount: bill?.lateDiscount || 0 } : null,
     preferredTimeAt: dateMs(req.preferred_time),
     preferredTimeEndAt: dateMs(req.preferred_time_end),
+    offerExpiresAt: dateMs(job.offer_expires_at || job.expires_at || job.accept_deadline),
     inspectionFee,
-    cancelReason: cancelHistory?.reason || 'Đơn đã huỷ',
+    cancelReason: toVietnamese(cancelHistory?.reason, 'Đơn đã huỷ') || 'Đơn đã huỷ',
     dateLabel: formatDateLabelFromIso(preferredIso),
     dateKey: formatDateKeyFromIso(preferredIso),
     slot: formatSlotFromIso(preferredIso),
@@ -495,7 +508,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
       text: `${d.symptoms ? `[Triệu chứng: ${d.symptoms}] ` : ''}${d.findings || ''}${d.repair_recommendation ? ` -> Đề xuất: ${d.repair_recommendation}` : ''}`,
       at: d.recorded_at ? new Date(d.recorded_at).getTime() : createdAt,
     })),
-    report: (isDone || ['pending_payment', 'partially_paid', 'pending_review'].includes(status)) ? {
+    report: (isDone || status === 'pending_payment') ? {
       summary: visit.work_performed || '',
       paid: bill ? ['PAID', 'NOTHING_TO_PAY'].includes(bill.paymentStatus) : ['COMPLETED', 'READY_FOR_ACCEPTANCE'].includes(String(req.request_status || '').toUpperCase()),
       at: doneAt || dateMs(job.completed_at),
@@ -531,6 +544,10 @@ export const mapBackendOpenRequestToOrder = (req) => {
     dateLabel: formatDateLabelFromIso(preferredIso),
     dateKey: formatDateKeyFromIso(preferredIso),
     slot: formatSlotFromIso(preferredIso),
+    preferredTimeAt: dateMs(req.preferred_time),
+    preferredTimeEndAt: dateMs(req.preferred_time_end),
+    // Hạn tiếp nhận do server trả (nếu có) — dùng để ẩn đơn quá hạn khỏi app thợ.
+    offerExpiresAt: dateMs(req.offer_expires_at || req.expires_at || req.accept_deadline),
     payment: paymentLabelOf(req.preferred_payment_method),
     note: req.problem_description || '',
     address: {
@@ -548,7 +565,9 @@ export const mapBackendOpenRequestToOrder = (req) => {
 };
 
 // Ảnh của việc (GET /uploads?job_id=) -> evidence trên app.
-const EVIDENCE_STAGE = { PROBLEM_PHOTO: 'diagnosis', BEFORE_REPAIR: 'before', AFTER_REPAIR: 'after', DOCUMENT: 'after' };
+// DOCUMENT = ảnh biên lai linh kiện mua ngoài: tách riêng stage 'receipt' (hiện ở khối Biên lai), KHÔNG gộp vào
+// "Sau khi làm" (trước đây gộp chung nên dễ nhầm ảnh biên lai với ảnh minh chứng sau khi sửa).
+const EVIDENCE_STAGE = { PROBLEM_PHOTO: 'diagnosis', BEFORE_REPAIR: 'before', AFTER_REPAIR: 'after', DOCUMENT: 'receipt' };
 export const mapBackendPhotoToEvidence = (row) => ({
   id: `att-${row.attachment_id}`,
   dbAttachmentId: row.attachment_id,
@@ -620,6 +639,8 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
 export const mapBackendNotification = (n, orders = [], linkName = 'order') => {
   if (!n) return null;
   const order = n.request_id != null ? orders.find((o) => String(o.dbRequestId) === String(n.request_id)) : null;
+  // Backend có thể gửi tiêu đề / nội dung tiếng Anh: luôn Việt hoá.
+  const vi = viNotification({ ...n, request_code: n.request_code || order?.code });
   return {
     id: `notif-db-${n.notification_id}`,
     dbNotificationId: n.notification_id,
@@ -627,8 +648,8 @@ export const mapBackendNotification = (n, orders = [], linkName = 'order') => {
     read: Boolean(n.is_read),
     icon: n.icon || '🔔',
     type: n.type || null,
-    title: n.title || '',
-    body: n.body || '',
+    title: vi.title,
+    body: vi.body,
     ...(order ? { link: { name: linkName, params: { code: order.code } } } : {}),
   };
 };

@@ -1,29 +1,30 @@
 // Form chẩn đoán & báo giá của thợ (dùng cho báo giá trước khi xuất phát và báo giá tại nhà).
 // State bản nháp nằm ở useQuoteDraft (màn cha giữ để thanh hành động dưới cùng gửi được).
 import React, { useState } from 'react';
-import { View, Text, Image } from 'react-native';
+import { View, Text } from 'react-native';
 import { C, R } from '../../../theme';
-import { formatVND, formatNumberInput, DIAG_TAGS } from '../../../constants/data';
+import { formatVND, formatNumberInput } from '../../../constants/data';
 import { useApp, bookedValue } from '../../../context';
-import { Tap, Btn, Card, Chip, Badge, Field, Stepper, ui, AppIcon } from '../../../components';
+import { Tap, Btn, Card, Badge, Field, Stepper, ui, AppIcon } from '../../../components';
 import { pickImage, pickCamera } from '../../../utils/media';
 import { tx } from './techStyles';
 import { isOnSiteQuote } from './useQuoteDraft';
+import { SymptomSection } from './SymptomSection';
 
 export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, evidence }) {
   const { a, ui: u } = useApp();
   const [showCustomFee, setShowCustomFee] = useState(false);
   const [customFeeName, setCustomFeeName] = useState('');
   const [customFeePrice, setCustomFeePrice] = useState('');
-  const [customFeeType, setCustomFeeType] = useState('labor'); // 'labor' | 'part'
   const [addingPhoto, setAddingPhoto] = useState(false);
 
-  const { tags, setTags, diagnosis, setDiagnosis, recommendation, setRecommendation, lines, setLines } = draft;
+  const { lines, setLines } = draft;
   const booked = bookedValue(o);
   // Phân loại: Dịch vụ gốc ban đầu vs Vật tư vs Phí phát sinh
   const originalLines = lines.filter((l) => l.isOriginal);
-  const partLines = lines.filter((l) => (l.type === 'part' || Boolean(l.matId)) && !l.isOriginal);
-  const customLines = lines.filter((l) => !l.isOriginal && l.type !== 'part' && !l.matId);
+  // Vật tư kho (chọn từ danh sách) tách riêng; phí phát sinh = vật tư mua ngoài (isCustom). Dòng công thêm của báo giá cũ vẫn hiện ở phát sinh.
+  const partLines = lines.filter((l) => (l.type === 'part' || Boolean(l.matId)) && !l.isOriginal && !l.isCustom);
+  const customLines = lines.filter((l) => !l.isOriginal && (l.isCustom || (l.type !== 'part' && !l.matId)));
 
   // Phát sinh thực tế: tất cả các dòng không thuộc dịch vụ gốc đã đặt ban đầu
   const extraItems = lines.filter((l) => !l.isOriginal);
@@ -39,27 +40,28 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
     const name = customFeeName.trim();
     const priceNum = parseInt(String(customFeePrice).replace(/[^0-9]/g, ''), 10);
     if (!name) {
-      u.alert('Thiếu nội dung', 'Vui lòng nhập tên hoặc nội dung chi phí phát sinh.', 'alert-triangle');
+      u.alert('Thiếu tên vật tư', 'Vui lòng nhập tên vật tư mua ngoài.', 'alert-triangle');
       return;
     }
     if (!priceNum || priceNum <= 0) {
-      u.alert('Giá không hợp lệ', 'Vui lòng nhập số tiền phát sinh lớn hơn 0đ.', 'alert-triangle');
+      u.alert('Giá không hợp lệ', 'Vui lòng nhập giá vật tư lớn hơn 0đ.', 'alert-triangle');
       return;
     }
     const newFeeLine = {
       key: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      type: customFeeType,
+      // Phí phát sinh chỉ còn vật tư mua ngoài (gửi lên server: MATERIAL + external_purchase).
+      type: 'part',
       name,
       price: priceNum,
       qty: 1,
-      unit: customFeeType === 'labor' ? 'lần' : 'cái',
+      unit: 'cái',
       isCustom: true,
     };
     setLines((prev) => [...prev, newFeeLine]);
     setCustomFeeName('');
     setCustomFeePrice('');
     setShowCustomFee(false);
-    u.toast(`Đã thêm phát sinh: ${name} (+${formatVND(priceNum)})`, 'check-circle-2');
+    u.toast(`Đã thêm vật tư ngoài: ${name} (+${formatVND(priceNum)})`, 'check-circle-2');
   };
 
   const addDiagnosisPhoto = async () => {
@@ -130,29 +132,14 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
           <Tap onPress={draft.resetFromServer} hitSlop={8}><Text style={ui.link}>Lấy lại bản hệ thống</Text></Tap>
         </View>
       ) : null}
-      <Card style={{ marginTop: 12 }}>
-        <Text style={tx.h}>🔍 Triệu chứng thiết bị</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {[...new Set([...cats.flatMap((c) => DIAG_TAGS[c] || []), ...(DIAG_TAGS.all || [])])].map((t) => (
-            <Chip key={t} label={t} on={tags.includes(t)} onPress={() => setTags((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]))} />
-          ))}
-        </View>
-        <Field label="Kết luận chẩn đoán" multiline value={diagnosis} onChangeText={setDiagnosis} placeholder="Nguyên nhân / tình trạng thực tế…" />
-        <Field label="Đề xuất xử lý" multiline value={recommendation} onChangeText={setRecommendation} placeholder="VD: Vệ sinh dàn lạnh + kiểm tra gas…" />
-        <Text style={[tx.fl, { marginTop: 8 }]}>Ảnh minh chứng chẩn đoán</Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {evidence.filter((e) => e.stage === 'diagnosis').map((e) => (
-            <View key={e.id} style={tx.thumb}>
-              {e.uri ? <Image source={{ uri: e.uri }} style={{ width: '100%', height: '100%' }} /> : <AppIcon name="image" size={26} color={C.muted} />}
-              <Tap style={tx.thumbX} onPress={() => a.removeEvidence(o.code, e.id)}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>✕</Text></Tap>
-            </View>
-          ))}
-          <Tap style={[tx.thumb, tx.thumbAdd]} disabled={addingPhoto} onPress={addDiagnosisPhoto}>
-            <AppIcon name="plus" size={22} color={C.primary} />
-            <Text style={{ fontSize: 10, color: C.primary, fontWeight: '700' }}>{addingPhoto ? 'Đang tải…' : 'Thêm ảnh'}</Text>
-          </Tap>
-        </View>
-      </Card>
+      <SymptomSection
+        cats={cats}
+        draft={draft}
+        evidence={evidence}
+        addingPhoto={addingPhoto}
+        onAddPhoto={addDiagnosisPhoto}
+        onRemovePhoto={(id) => a.removeEvidence(o.code, id)}
+      />
       <Card style={{ marginTop: 12 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={tx.h}>🧾 Báo giá chi tiết</Text>
@@ -206,7 +193,7 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
         {customLines.length ? (
           <>
             <Text style={[ui.meta, { fontWeight: '700', color: C.orange, marginTop: 12, marginBottom: 4 }]}>
-              📝 Chi phí phát sinh tại hiện trường ({customLines.length})
+              📝 Vật tư mua ngoài ({customLines.length})
             </Text>
             {customLines.map((l) => (
               <View key={l.key} style={tx.lineRow}>
@@ -248,50 +235,23 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
         {showCustomFee ? (
           <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1' }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>📝 Nhập chi phí phát sinh thực tế</Text>
+              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>🔩 Nhập vật tư mua ngoài</Text>
               <Tap onPress={() => setShowCustomFee(false)} hitSlop={8}><Text style={{ color: C.muted, fontWeight: '700' }}>Đóng</Text></Tap>
             </View>
-
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
-              {[
-                { id: 'labor', label: 'Công phát sinh', icon: 'hammer' },
-                { id: 'part', label: 'Vật tư ngoài', icon: 'settings' },
-              ].map((t) => {
-                const on = customFeeType === t.id;
-                return (
-                  <Tap
-                    key={t.id}
-                    style={{
-                      flex: 1,
-                      paddingVertical: 7,
-                      borderRadius: R.sm,
-                      borderWidth: 1,
-                      borderColor: on ? C.primary : '#E2E8F0',
-                      backgroundColor: on ? C.primarySoft : '#fff',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexDirection: 'row',
-                      gap: 5,
-                    }}
-                    onPress={() => setCustomFeeType(t.id)}
-                  >
-                    <AppIcon name={t.icon} size={13} color={on ? C.primary : C.muted} />
-                    <Text style={{ fontSize: 12, fontWeight: '700', color: on ? C.primary : C.muted }}>{t.label}</Text>
-                  </Tap>
-                );
-              })}
-            </View>
+            <Text style={[ui.meta, { marginTop: -4, marginBottom: 10 }]}>
+              Vật tư / linh kiện không có trong kho, thợ mua ngoài cho khách. Nhớ chụp biên lai khi mua.
+            </Text>
 
             <Field
-              label="Nội dung / Tên chi phí phát sinh"
-              placeholder={customFeeType === 'labor' ? 'Ví dụ: Hàn vá ống đồng lổ mọt, Gia cố bas treo...' : 'Ví dụ: Dây đồng Thái Lan 2m, Cầu dao phụ Panasonic...'}
+              label="Tên vật tư"
+              placeholder="Ví dụ: Dây đồng Thái Lan 2m, Cầu dao phụ Panasonic..."
               value={customFeeName}
               onChangeText={setCustomFeeName}
             />
 
             <View style={{ marginTop: 8 }}>
               <Field
-                label="Số tiền phát sinh (VNĐ)"
+                label="Giá vật tư (VNĐ)"
                 placeholder="Ví dụ: 150.000"
                 value={customFeePrice}
                 onChangeText={(t) => setCustomFeePrice(formatNumberInput(t))}

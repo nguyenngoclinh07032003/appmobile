@@ -96,6 +96,20 @@ export function useQuoteDraft(o) {
     setDraft(draftFromOrder(orderRef.current));
   }, [sig]);
 
+  // Màn việc mở từ trước khi xuất phát rồi thợ check-in: báo giá trên server chưa đổi (chưa có báo giá) nên cơ chế
+  // theo quoteSignature ở trên không chạy, bản nháp vẫn còn các dòng dịch vụ đã đặt (đúng cho báo giá trước khi đi).
+  // Tại nhà, báo giá là PHÁT SINH (cộng thêm) -> phải làm mới dòng theo giai đoạn mới, kể cả khi đang sửa dở;
+  // nếu giữ lại, "Gửi báo giá phát sinh" sẽ gửi lại dịch vụ đã đặt (server mới trả 400, server cũ tính tiền 2 lần).
+  const phase = isOnSiteQuote(o) ? 'site' : 'pre';
+  const lastPhase = useRef(phase);
+  useEffect(() => {
+    if (phase === lastPhase.current) return;
+    lastPhase.current = phase;
+    const fresh = draftFromOrder(orderRef.current);
+    // Đang sửa dở: chỉ thay dòng chi phí, giữ triệu chứng / chẩn đoán / đề xuất thợ đã nhập. Không sửa dở: lấy bản mới.
+    setDraft((p) => (dirtyRef.current ? { ...p, lines: fresh.lines } : fresh));
+  }, [phase]);
+
   const makeSetter = (field) => (valueOrFn) => {
     markDirty(true);
     setDraft((p) => ({ ...p, [field]: typeof valueOrFn === 'function' ? valueOrFn(p[field]) : valueOrFn }));

@@ -2,14 +2,15 @@ import React, { createContext, useContext, useEffect, useRef, useState, useMemo,
 import { BackHandler, Linking, Platform, AppState } from 'react-native';
 import {
   getService, TECH_ME, formatVND, catLabel, HOTLINE, serviceKind, matchJobForTech, CATEGORIES, SERVICES,
-  tierOf, comboDiscountFor, syncCatalogFromBackend, syncPolicyFromBackend, resolveDbServiceId, PAYMENT_METHODS,
+  tierOf, comboDiscountFor, syncCatalogFromBackend, syncPolicyFromBackend, resolveDbServiceId, PAYMENT_METHODS, STATUS_DESC,
 } from '../constants/data';
+import { STATUS_META } from '../theme/colors';
 export { matchJobForTech, comboDiscountFor } from '../constants/data';
 import {
   getSession, clearSession, urlRoleHint, setSession, upsertBackendAccount, deleteAccountById, hydrateAuthStore,
 } from '../services/authService';
 import { IS_WEB_STORAGE, readJsonSync, readJson, writeJson, removeItem as removeStorageItem } from '../services/storage';
-import { hrmssApi, authTokens } from '../services/api';
+import { hrmssApi, authTokens, apiEvents } from '../services/api';
 import { playNotificationSound, isSoundMuted, toggleSoundMuted } from '../services/soundService';
 import {
   initSocket,
@@ -63,12 +64,13 @@ import {
 } from '../services/syncService';
 import {
   TECH_POLICY, normalizeTechRep, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
-  applyTechPenalty, applyTechBonus, mintWalletVoucher, slotStartTs, getCancellationWindowStatus,
+  applyTechPenalty, applyTechBonus, mintWalletVoucher, slotStartTs, getCancellationWindowStatus, isOfferExpired,
 } from '../constants/techPolicy';
 import { getCheckInLocation } from '../utils/geo';
+import { viNotification } from '../utils/viText';
 export {
   TECH_POLICY, isTechLocked, techLockReason, assessCancelAfterAccept, assessLateness,
-  reputationTone, normalizeTechRep, slotStartTs, getCancellationWindowStatus,
+  reputationTone, normalizeTechRep, slotStartTs, getCancellationWindowStatus, isOfferExpired,
 } from '../constants/techPolicy';
 
 // ---------------------------------------------------------------------------
@@ -90,7 +92,7 @@ const addMonths = (ts, m) => { const d = new Date(ts); d.setMonth(d.getMonth() +
 const uid = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 export const cartTotal = (items) => items.reduce((sum, it) => sum + (getService(it.id)?.price || 0) * it.qty, 0);
-export const ACTIVE_STATUSES = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'pending_payment', 'partially_paid', 'pending_review', 'warranty_pending', 'out_of_warranty'];
+export const ACTIVE_STATUSES = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'pending_payment', 'warranty_pending', 'out_of_warranty'];
 // Server chặn xuất phát / check-in khi báo giá trước khi đi chưa được khách chốt.
 const QUOTE_BLOCK_MESSAGES = {
   QUOTATION_PENDING: 'Khách chưa đồng ý báo giá. Thợ chỉ xuất phát sau khi khách đồng ý.',
@@ -113,7 +115,7 @@ export const orderTotal = (o) => {
   if (o.status === 'cancelled') return o.inspectionFee || 0;
   const quoteAmount = o.quote?.approvedTotal != null
     ? o.quote.approvedTotal
-    : ((o.quote?.approved || ['repairing', 'pending_payment', 'partially_paid', 'pending_review', 'done'].includes(o.status)) && o.quote?.total != null
+    : ((o.quote?.approved || ['repairing', 'pending_payment', 'done'].includes(o.status)) && o.quote?.total != null
       ? o.quote.total
       : null);
   if (quoteAmount != null) return Math.max(0, quoteAmount - (o.voucherDiscount || 0));
@@ -349,6 +351,76 @@ const storage = {
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
 
+// Gom thông báo theo đơn: mỗi đơn chỉ hiện thông báo MỚI NHẤT. Mã đơn lấy từ link (mở đơn / mở việc),
+// không có link thì tìm mã đơn trong tiêu đề / nội dung (vd. REQ-1602621059, HRM261108-03).
+const ORDER_CODE_IN_TEXT = /\b[A-Z]{2,5}-?\d[\d-]{4,}\b/;
+export const notifOrderKey = (n) => {
+  const code = n?.link?.params?.code;
+  if (code) return String(code);
+  const m = `${n?.title || ''} ${n?.body || ''}`.match(ORDER_CODE_IN_TEXT);
+  return m ? m[0] : null;
+};
+// Trả danh sách đã gom: mỗi phần tử có groupIds (mọi thông báo của đơn đó), olderCount (số cập nhật cũ hơn bị ẩn),
+// read = false nếu trong nhóm còn thông báo chưa đọc. Thông báo không thuộc đơn nào giữ nguyên.
+export const latestNotifPerOrder = (list = []) => {
+  const groups = new Map();
+  const out = [];
+  [...list].sort((x, y) => (y.at || 0) - (x.at || 0)).forEach((n) => {
+    const key = notifOrderKey(n);
+    const g = key ? groups.get(key) : null;
+    if (g) {
+      g.groupIds.push(n.id);
+      g.olderCount += 1;
+      if (!n.read) g.read = false;
+      return;
+    }
+    const item = { ...n, groupIds: [n.id], olderCount: 0 };
+    if (key) groups.set(key, item);
+    out.push(item);
+  });
+  return out;
+};
+
+// Nhãn trạng thái hiển thị cho khách: đơn chờ thợ đã quá giờ hẹn mà chưa có thợ nhận -> "Quá hạn tiếp nhận".
+export const EXPIRED_META = { label: 'Quá hạn tiếp nhận', fg: '#B91C1C', bg: '#FEF2F2' };
+export const customerStatusMeta = (o, now = Date.now()) => (
+  isOfferExpired(o, now) ? EXPIRED_META : (STATUS_META[o?.status] || STATUS_META.pending)
+);
+
+// So trạng thái đơn của khách trước / sau khi tải từ server -> thông báo cho khách biết đơn đang ở trạng thái gì.
+// Đơn đang có thợ mà quay về "chờ thợ" = thợ trả việc / hết hạn xác nhận -> báo đang điều phối lại thợ.
+const TECH_STAGES = ['confirmed', 'onway', 'diagnosing', 'quoted', 'repairing'];
+const STATUS_ICON = { confirmed: '👷', onway: '🛵', diagnosing: '🔍', quoted: '🧾', repairing: '🔧', pending_payment: '💳', done: '✅', cancelled: '✖️', warranty_pending: '🛡️', out_of_warranty: '⚠️' };
+export const detectCustomerStatusChanges = (prevOrders = [], nextOrders = []) => {
+  const prevBy = new Map(prevOrders.map((o) => [o.code, o]));
+  const notifs = [];
+  const now = Date.now();
+  const orders = nextOrders.map((o) => {
+    const prev = prevBy.get(o.code);
+    if (!prev || !prev.status || prev.status === o.status) return o;
+    let extra = {};
+    let title;
+    let body;
+    let icon;
+    if (o.status === 'pending' && TECH_STAGES.includes(prev.status)) {
+      title = `Đơn ${o.code}: đang điều phối lại thợ`;
+      body = 'Thợ trước không thể tiếp tục (đã trả việc hoặc quá hạn xác nhận). Hệ thống đang tìm thợ khác cho bạn.';
+      icon = '🔄';
+      extra = { releaseLog: [...(prev.releaseLog || []), { at: now, from: prev.tech?.name || '' }], expiredNotified: false };
+    } else {
+      const label = STATUS_META[o.status]?.label || 'Cập nhật mới';
+      title = `Đơn ${o.code}: ${label}`;
+      body = o.status === 'confirmed' && o.tech?.name
+        ? `Thợ ${o.tech.name} đã nhận đơn và sẽ gọi cho bạn trước khi đến.`
+        : (STATUS_DESC[o.status] || 'Đơn hàng có cập nhật mới.');
+      icon = STATUS_ICON[o.status] || '🔔';
+    }
+    notifs.push({ id: `st-${o.code}-${o.status}-${now}`, at: now, read: false, icon, title, body, link: { name: 'order', params: { code: o.code } } });
+    return { ...o, ...extra };
+  });
+  return { orders, notifs };
+};
+
 export function AppProvider({ children }) {
   const [s, setS] = useState(() => {
     const saved = storage.load() || {};
@@ -510,6 +582,40 @@ export function AppProvider({ children }) {
   const [actFilter, setActFilter] = useState('active');
   const [warrantyQuery, setWarrantyQuery] = useState('');
   const [warrantyNonce, setWarrantyNonce] = useState(0);
+  // Đồng hồ 30s: đơn bắn cho thợ tự biến mất khi quá hạn tiếp nhận; khách được báo khi đơn quá hạn chưa có thợ nhận.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const isTechRole = s.auth?.role === 'tech';
+  const isCustomerRole = s.auth?.role === 'customer';
+  useEffect(() => {
+    if (!isTechRole && !isCustomerRole) return undefined;
+    setNowTick(Date.now());
+    const id = setInterval(() => setNowTick(Date.now()), 30 * 1000);
+    return () => clearInterval(id);
+  }, [isTechRole, isCustomerRole]);
+  // Dọn khỏi bộ nhớ các đơn chờ nhận đã quá hạn tiếp nhận.
+  useEffect(() => {
+    if (!isTechRole) return;
+    if (!s.orders.some((o) => isOfferExpired(o, nowTick))) return;
+    setS((p) => ({ ...p, orders: p.orders.filter((o) => !isOfferExpired(o, nowTick)) }));
+  }, [isTechRole, nowTick, s.orders]);
+  // Khách: đơn đã tới giờ hẹn mà chưa có thợ nhận -> báo 1 lần cho mỗi đơn.
+  useEffect(() => {
+    if (!isCustomerRole) return;
+    const expired = s.orders.filter((o) => isOfferExpired(o, nowTick) && !o.expiredNotified);
+    if (!expired.length) return;
+    const codes = new Set(expired.map((o) => o.code));
+    setS((p) => ({
+      ...p,
+      orders: p.orders.map((o) => (codes.has(o.code) ? { ...o, expiredNotified: true } : o)),
+      notifications: expired.reduce((list, o) => pushNotif({ notifications: list }, {
+        icon: '⏰',
+        title: `Đơn ${o.code} quá hạn tiếp nhận`,
+        body: 'Chưa có thợ nhận đơn trong khung giờ bạn chọn. Vui lòng đổi giờ hẹn hoặc gọi hotline để được hỗ trợ.',
+        link: { name: 'order', params: { code: o.code } },
+      }), p.notifications),
+    }));
+    uiRef.current?.toast(`Đơn ${expired[0].code} quá hạn tiếp nhận`, '⏰');
+  }, [isCustomerRole, nowTick, s.orders]);
 
   const nav = {
     tab,
@@ -672,6 +778,7 @@ export function AppProvider({ children }) {
   //  - đơn đã hoàn thành / đã huỷ không đổi nữa -> giữ tracking + hoá đơn đã tải, không gọi lại mỗi lần.
   const catalogFetchedAt = useRef(0);
   const finishedOrderCache = useRef(new Map()); // request_id -> { status, technician, journey, bill }
+  const statusToastRef = useRef(null); // thông báo đổi trạng thái đơn vừa phát hiện khi đồng bộ (hiện toast sau khi cập nhật)
   const syncFromBackend = async (overrideAccount = null) => {
     if (Date.now() - catalogFetchedAt.current >= 10 * 60 * 1000) {
       try {
@@ -784,8 +891,22 @@ export function AppProvider({ children }) {
           const remoteWithAcc = remoteOrders
             ? remoteOrders.map((o) => ({ ...o, customerAccountId: acc.id || o.customerAccountId || null }))
             : null;
-          const nextOrders = remoteWithAcc ? mergeBackendOrdersWithLocal(p.orders, remoteWithAcc) : p.orders;
+          const nextOrdersRaw = remoteWithAcc ? mergeBackendOrdersWithLocal(p.orders, remoteWithAcc) : p.orders;
+          // Báo khách khi trạng thái đơn đổi (thợ nhận, thợ trả việc / hết hạn -> điều phối lại, chờ thanh toán, hoàn thành...).
+          const { orders: nextOrders, notifs: detectedNotifs } = remoteWithAcc
+            ? detectCustomerStatusChanges(p.orders, nextOrdersRaw)
+            : { orders: nextOrdersRaw, notifs: [] };
           const notifItems = okItems(notifRes);
+          // Server vừa gửi thông báo cho đúng đơn đó (≤ 2 phút) thì không tạo thêm bản trên máy (tránh trùng).
+          const recentServerCodes = new Set((notifItems || [])
+            .filter((n) => n.created_at && Date.now() - new Date(n.created_at).getTime() < 2 * 60 * 1000)
+            .map((n) => nextOrders.find((o) => String(o.dbRequestId) === String(n.request_id))?.code)
+            .filter(Boolean));
+          const statusNotifs = detectedNotifs.filter((n) => !recentServerCodes.has(n.link?.params?.code));
+          if (statusNotifs.length) statusToastRef.current = statusNotifs[0];
+          // Thông báo tạo trên máy (đổi trạng thái, quá hạn...) không có trên server: giữ lại khi tải danh sách server.
+          const localNotifs = [...statusNotifs, ...p.notifications.filter((n) => !n.dbNotificationId)]
+            .filter((n) => !p.notifClearedAt || n.at > p.notifClearedAt);
           const nextAuth = p.auth
             ? upsertBackendAccount({
                 ...p.auth,
@@ -807,10 +928,13 @@ export function AppProvider({ children }) {
             selectedAddressId: nextSelectedId,
             orders: nextOrders,
             ...(notifItems ? {
-              notifications: notifItems
-                .map((n) => mapBackendNotification(n, nextOrders, 'order'))
-                .filter((n) => n && (!p.notifClearedAt || n.at > p.notifClearedAt)),
-            } : {}),
+              notifications: [
+                ...notifItems
+                  .map((n) => mapBackendNotification(n, nextOrders, 'order'))
+                  .filter((n) => n && (!p.notifClearedAt || n.at > p.notifClearedAt)),
+                ...localNotifs,
+              ].sort((x, y) => (y.at || 0) - (x.at || 0)).slice(0, 50),
+            } : (statusNotifs.length ? { notifications: [...statusNotifs, ...p.notifications].slice(0, 50) } : {})),
             ...(loyalty ? {
               points: Number(loyalty.points) || 0,
               lifetimePoints: Number(loyalty.lifetime_points) || 0,
@@ -823,6 +947,13 @@ export function AppProvider({ children }) {
             } : {}),
           };
         });
+        setTimeout(() => {
+          const n = statusToastRef.current;
+          if (!n) return;
+          statusToastRef.current = null;
+          playNotificationSound('notification');
+          uiRef.current?.toast(n.title, n.icon || '🔔');
+        }, 0);
       } catch (e) { /* bỏ qua */ }
     } else if (acc.role === 'tech') {
       try {
@@ -884,12 +1015,14 @@ export function AppProvider({ children }) {
               }).filter(Boolean)
             : [];
           const assignedCodes = new Set(assignedOrders.map((o) => o.code));
+          // Đơn bắn cho thợ đã quá hạn tiếp nhận: bỏ hẳn khỏi danh sách (không lưu, không hiển thị).
+          const syncNow = Date.now();
           const openOrders = (openRes.ok && Array.isArray(openRes.data?.items))
             ? openRes.data.items
                 .map(mapBackendOpenRequestToOrder)
-                .filter((o) => o && !assignedCodes.has(o.code))
+                .filter((o) => o && !assignedCodes.has(o.code) && !isOfferExpired(o, syncNow))
             : [];
-          const remoteOrders = [...assignedOrders, ...openOrders];
+          const remoteOrders = [...assignedOrders.filter((o) => !isOfferExpired(o, syncNow)), ...openOrders];
           const nextOrders = mergeBackendOrdersWithLocal(p.orders, remoteOrders);
           const completedJobsCount = assignedOrders.filter((o) => o.status === 'done').length;
           const notifItems = okItems(notifRes);
@@ -1035,7 +1168,7 @@ export function AppProvider({ children }) {
       // Thông báo mới cho chính tài khoản này (thợ có việc mới, khách có thợ nhận, báo giá, tiền về...).
       subscribeSocketEvent('notification:new', (n) => {
         syncSoon();
-        if (n?.title) uiRef.current?.toast(n.title, n.icon || '🔔');
+        if (n?.title) uiRef.current?.toast(viNotification(n).title, n.icon || '🔔');
       }),
       subscribeSocketEvent('request:status', syncSoon),
       subscribeSocketEvent('request:updated', syncSoon),
@@ -1080,6 +1213,34 @@ export function AppProvider({ children }) {
   }, [s.auth?.id]);
 
   const inFlight = useRef(new Set()); // thao tác ghi đang chạy (chống bấm đúp)
+  // Mã đơn của thao tác thợ đang chạy: server báo "việc không còn được giao / hết hạn" thì gỡ đúng đơn này.
+  const actionCodeRef = useRef(null);
+  useEffect(() => {
+    apiEvents.onJobGone(() => {
+      if (s.auth?.role !== 'tech') return;
+      const drop = (code) => {
+        if (!code) return;
+        setS((p) => ({ ...p, orders: p.orders.filter((o) => o.code !== code) }));
+        // Đang mở chi tiết việc đó thì quay lại danh sách.
+        setStack((st) => st.filter((x) => x.params?.code !== code));
+      };
+      if (actionCodeRef.current) drop(actionCodeRef.current);
+      else {
+        // Thao tác không qua bộ chống bấm đúp: lấy việc đang mở trên màn chi tiết.
+        setStack((st) => {
+          const top = st[st.length - 1];
+          if (top?.name === 'tech-job' && top.params?.code) {
+            const code = top.params.code;
+            setS((p) => ({ ...p, orders: p.orders.filter((o) => o.code !== code) }));
+            return st.slice(0, -1);
+          }
+          return st;
+        });
+      }
+      setTimeout(() => syncRef.current?.(), 300);
+    });
+    return () => apiEvents.onJobGone(null);
+  }, [s.auth?.role]);
   // Phiên hết hạn / bị thu hồi (refresh token hết hạn): xoá dữ liệu tài khoản trên máy, về màn chính và báo đăng nhập lại.
   // Trước đây token bị xoá nhưng app vẫn "đã đăng nhập", mọi thao tác chỉ báo "chưa đồng bộ".
   useEffect(() => {
@@ -1329,6 +1490,11 @@ export function AppProvider({ children }) {
         ui.alert('Không nhận được', 'Việc không còn ở trạng thái chờ nhận.', 'ℹ️');
         return false;
       }
+      if (isOfferExpired(o0)) {
+        setS((p) => ({ ...p, orders: p.orders.filter((x) => x.code !== code) }));
+        ui.alert('Đơn đã quá hạn', 'Đơn này đã quá hạn tiếp nhận và đã được gỡ khỏi danh sách.', '⏰');
+        return false;
+      }
       // Việc hệ thống đã gán (có assignment) là của thợ rồi: không tự đổi trạng thái trên máy, chỉ tải lại từ server.
       if (o0.dbAssignmentId) {
         await syncFromBackend();
@@ -1347,7 +1513,7 @@ export function AppProvider({ children }) {
             TOO_MANY_ACTIVE_JOBS: `Bạn đang giữ tối đa ${TECH_POLICY.maxActiveJobs} việc. Hoàn thành hoặc trả việc trước khi nhận thêm.`,
             SPECIALTY_MISMATCH: 'Việc này không thuộc chuyên môn của bạn.',
             NOT_ACCEPTING_JOBS: 'Tài khoản đang tạm ngưng nhận việc. Liên hệ điều phối để mở lại.',
-            REQUEST_NOT_AVAILABLE: 'Việc đã có thợ khác nhận hoặc không còn chờ nhận.',
+            REQUEST_NOT_AVAILABLE: 'Việc đã có thợ khác nhận hoặc đã hết hạn. Việc đã được gỡ khỏi danh sách.',
           }[res.code];
           ui.alert('Không nhận được', msg || (res.status > 0 ? res.message : networkError(res)), 'ℹ️');
           syncFromBackend();
@@ -1657,7 +1823,7 @@ export function AppProvider({ children }) {
           QUOTATION_DUPLICATES_BOOKED_SERVICE: 'Báo giá phát sinh chỉ ghi phần làm thêm, không ghi lại dịch vụ khách đã đặt.',
           QUOTATION_ALREADY_APPROVED: 'Khách đã đồng ý báo giá. Hãy xuất phát đến nhà khách.',
           INVALID_VISIT_STATE: 'Việc chưa ở bước báo giá.',
-          JOB_NOT_ACTIVE: 'Việc không còn được giao cho bạn.',
+          JOB_NOT_ACTIVE: 'Việc không còn được giao cho bạn (đã hết hạn hoặc đã chuyển cho thợ khác). Việc đã được gỡ khỏi danh sách.',
         },
         toast: 'Đã gửi báo giá cho khách',
         icon: '🧾',
@@ -1909,7 +2075,7 @@ export function AppProvider({ children }) {
       ui.toast('Đã đặt lại mật khẩu. Hãy đăng nhập lại.', '🔐');
       return { ok: true };
     },
-    // Biên bản hoàn thành → chuyển sang Chờ văn phòng duyệt nghiệm thu
+    // Thợ bấm hoàn thành → "Chờ thanh toán"; khách thanh toán đủ → "Hoàn thành" (không qua nghiệm thu văn phòng)
     // Nộp biên bản: gửi backend TRƯỚC (PATCH /technician/jobs/:id/complete). Backend từ chối (vd. chưa xong các bước
     // bắt buộc -> 409 PROCEDURE_INCOMPLETE) thì báo thợ và KHÔNG đổi trạng thái trên máy. Trả true khi nộp được.
     completeJob: async (code, { summary, paid, safetyChecklist, customerSignature }) => {
@@ -1962,7 +2128,7 @@ export function AppProvider({ children }) {
           },
         },
       }));
-      ui.toast(Boolean(paid) && !isQRPayment(o0) ? 'Đã nộp biên bản · Chờ Văn phòng nghiệm thu' : 'Đã nộp biên bản · Chờ khách kiểm tra & thanh toán', '🏢');
+      ui.toast(Boolean(paid) && !isQRPayment(o0) ? 'Đã hoàn thành · Đã thu tiền' : 'Đã hoàn thành · Chờ khách thanh toán', '✅');
       syncFromBackend();
       return true;
     },
@@ -1986,10 +2152,12 @@ export function AppProvider({ children }) {
       const res = await hrmssApi.requestJobFollowUp(o.dbAssignmentId, reason || 'Chờ linh kiện phụ tùng', remainingWork || null);
       return serverDone(res, { title: 'Không gửi được', toast: 'Đã ghi nhận yêu cầu hẹn tái khám', icon: '📅' });
     },
+    // id: 1 id hoặc mảng id (cả nhóm thông báo của cùng một đơn).
     readTechNotif: (id) => {
-      const n = (s.techNotifs || []).find((x) => x.id === id);
-      if (n?.dbNotificationId && !n.read) hrmssApi.markNotificationRead(n.dbNotificationId).catch(() => {});
-      up((p) => ({ techNotifs: p.techNotifs.map((x) => (x.id === id ? { ...x, read: true } : x)) }));
+      const ids = new Set(Array.isArray(id) ? id : [id]);
+      (s.techNotifs || []).filter((x) => ids.has(x.id) && x.dbNotificationId && !x.read)
+        .forEach((x) => hrmssApi.markNotificationRead(x.dbNotificationId).catch(() => {}));
+      up((p) => ({ techNotifs: p.techNotifs.map((x) => (ids.has(x.id) ? { ...x, read: true } : x)) }));
     },
     readAllTech: () => {
       hrmssApi.markAllNotificationsRead().catch(() => {});
@@ -2328,10 +2496,12 @@ export function AppProvider({ children }) {
     },
 
     // Thông báo
+    // id: 1 id hoặc mảng id (cả nhóm thông báo của cùng một đơn).
     readNotif: (id) => {
-      const n = s.notifications.find((x) => x.id === id);
-      if (n?.dbNotificationId && !n.read) hrmssApi.markNotificationRead(n.dbNotificationId).catch(() => {});
-      up((p) => ({ notifications: p.notifications.map((x) => (x.id === id ? { ...x, read: true } : x)) }));
+      const ids = new Set(Array.isArray(id) ? id : [id]);
+      s.notifications.filter((x) => ids.has(x.id) && x.dbNotificationId && !x.read)
+        .forEach((x) => hrmssApi.markNotificationRead(x.dbNotificationId).catch(() => {}));
+      up((p) => ({ notifications: p.notifications.map((x) => (ids.has(x.id) ? { ...x, read: true } : x)) }));
     },
     readAll: () => {
       hrmssApi.markAllNotificationsRead().catch(() => {});
@@ -2398,7 +2568,7 @@ export function AppProvider({ children }) {
     playNotificationSound,
     toggleSound: () => {
       const next = toggleSoundMuted();
-      ui.toast(next ? 'Đã tắt âm thanh thông báo' : 'Đã bật âm thanh thông báo', next ? 'volume-x' : 'volume-2');
+      ui.toast(next ? 'Đã tắt âm thanh thông báo' : 'Đã bật âm thanh thông báo', next ? 'bell-off' : 'bell');
       return !next;
     },
     isSoundMuted,
@@ -2419,7 +2589,9 @@ export function AppProvider({ children }) {
       const key = `${name}:${typeof args[0] === 'object' ? 'new' : args[0]}`;
       if (inFlight.current.has(key)) return false;
       inFlight.current.add(key);
-      try { return await fn(...args); } finally { inFlight.current.delete(key); }
+      const prevCode = actionCodeRef.current;
+      if (typeof args[0] === 'string') actionCodeRef.current = args[0];
+      try { return await fn(...args); } finally { inFlight.current.delete(key); actionCodeRef.current = prevCode; }
     };
   });
 
@@ -2437,14 +2609,16 @@ export function AppProvider({ children }) {
   const derived = {
     address,
     cartCount: s.cart.reduce((sum, it) => sum + it.qty, 0),
-    unread: s.notifications.filter((n) => !n.read).length,
+    // Số chưa đọc đếm theo nhóm (mỗi đơn 1 thông báo) cho khớp danh sách hiển thị.
+    unread: latestNotifPerOrder(s.notifications).filter((n) => !n.read).length,
     activeOrders: visibleCustomerOrders.filter(isActiveOrder),
     // Phía thợ
-    techUnread: (s.techNotifs || []).filter((n) => !n.read).length,
+    techUnread: latestNotifPerOrder(s.techNotifs || []).filter((n) => !n.read).length,
     newJobs: s.orders
       .filter((o) => {
         if (o.status !== 'pending') return false;
         if (declinedFor(s, myCode).includes(o.code)) return false;
+        if (isOfferExpired(o, nowTick)) return false; // quá hạn tiếp nhận -> không hiện cho thợ
         return true;
       })
       .sort((a, b) => {

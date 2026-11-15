@@ -343,10 +343,8 @@ export const ORDER_STEPS = [
   { key: 'diagnosing', label: 'Kiểm tra thiết bị', desc: 'Thợ kiểm tra và lập chẩn đoán' },
   { key: 'quoted', label: 'Chờ duyệt báo giá', desc: 'Thợ đã gửi báo giá, chờ bạn quyết định' },
   { key: 'repairing', label: 'Đang thực hiện', desc: 'Thợ đang sửa chữa / vệ sinh' },
-  { key: 'pending_payment', label: 'Chờ thanh toán', desc: 'Kiểm tra thiết bị và thanh toán để chuyển văn phòng nghiệm thu' },
-  { key: 'partially_paid', label: 'Còn công nợ', desc: 'Đơn đã trả một phần, vui lòng thanh toán số tiền còn lại' },
-  { key: 'pending_review', label: 'Chờ nghiệm thu', desc: 'Văn phòng Minh Đức đang đối soát biên bản nghiệm thu' },
-  { key: 'done', label: 'Hoàn thành', desc: 'Dịch vụ đã hoàn tất và nghiệm thu' },
+  { key: 'pending_payment', label: 'Chờ thanh toán', desc: 'Thợ đã hoàn thành, vui lòng kiểm tra số tiền và thanh toán' },
+  { key: 'done', label: 'Hoàn thành', desc: 'Đã thanh toán, dịch vụ hoàn tất' },
 ];
 // Timeline thợ gọn hơn (gộp báo giá vào bước kiểm tra)
 export const TECH_ORDER_STEPS = ORDER_STEPS.filter((s) => s.key !== 'quoted').map((s) => (
@@ -429,7 +427,7 @@ export const voucherDiscount = (voucher, subtotal) => {
 export const TECH_ME = { name: '', code: '', rating: null, jobs: 0, phone: '', area: 'Hà Nội', skills: [], specialties: [], specialtyCategoryIds: [], acceptsAllCategories: false };
 
 // Trạng thái đơn đầy đủ (khách ↔ thợ)
-export const STATUS_FLOW = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'pending_payment', 'partially_paid', 'pending_review', 'done'];
+export const STATUS_FLOW = ['pending', 'confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'pending_payment', 'done'];
 export const STATUS_DESC = {
   pending: 'Đơn đã gửi, đang chờ thợ nhận',
   confirmed: 'Thợ sẽ gọi cho bạn trước khi đến',
@@ -437,12 +435,10 @@ export const STATUS_DESC = {
   diagnosing: 'Thợ đang kiểm tra thiết bị và lập báo giá',
   quoted: 'Thợ đã gửi báo giá — mở đơn để đồng ý, yêu cầu sửa hoặc từ chối',
   repairing: 'Thợ đang thực hiện dịch vụ',
-  pending_payment: 'Thợ đã nộp biên bản. Vui lòng kiểm tra thiết bị và thanh toán.',
-  partially_paid: 'Đã ghi nhận thanh toán một phần. Vui lòng thanh toán số tiền còn thiếu.',
-  pending_review: 'KTV đã gửi biên bản. Văn phòng Minh Đức đang đối soát kiểm tra nghiệm thu.',
+  pending_payment: 'Thợ đã hoàn thành. Vui lòng kiểm tra số tiền cần thanh toán và thanh toán.',
   warranty_pending: 'Văn phòng Minh Đức đang thẩm định hồ sơ bảo hành theo lịch sử cũ.',
   out_of_warranty: 'Thiết bị lỗi do ngoại lực/người dùng. Đã chuyển sang báo giá dịch vụ có phí.',
-  done: 'Văn phòng đã duyệt nghiệm thu & dịch vụ hoàn tất. Cảm ơn bạn!',
+  done: 'Đã thanh toán & dịch vụ hoàn tất. Cảm ơn bạn!',
   cancelled: 'Đơn đã huỷ',
 };
 // Copy hướng thợ (thao tác hiện trường) — khác với STATUS_DESC phía khách
@@ -452,13 +448,11 @@ export const TECH_STATUS_DESC = {
   onway: 'Đang trên đường. Check-in khi tới địa chỉ khách.',
   diagnosing: 'Kiểm tra thiết bị, ghi chẩn đoán và gửi báo giá trước khi làm.',
   quoted: 'Đã gửi báo giá. Chờ khách duyệt trên app để tiếp tục.',
-  repairing: 'Đang làm việc — cập nhật tiến độ, vật tư và ảnh minh chứng.',
-  pending_review: 'Đã nộp biên bản. Chờ Văn phòng Minh Đức duyệt kết quả nghiệm thu.',
-  pending_payment: 'Đã nộp biên bản. Chờ khách kiểm tra và thanh toán.',
-  partially_paid: 'Khách đã thanh toán một phần. Chờ thanh toán phần còn lại.',
+  repairing: 'Đang làm việc — ghi chú sửa chữa, vật tư và ảnh minh chứng.',
+  pending_payment: 'Đã hoàn thành. Chờ khách kiểm tra số tiền và thanh toán.',
   warranty_pending: 'Đơn bảo hành mới — chờ Văn phòng thẩm định hồ sơ gốc.',
   out_of_warranty: 'Đã xác định ngoài phạm vi bảo hành — chuyển sang báo giá có phí.',
-  done: 'Văn phòng đã duyệt nghiệm thu hoàn tất biên bản cho khách.',
+  done: 'Khách đã thanh toán, việc hoàn tất.',
   cancelled: 'Việc đã kết thúc / bị huỷ.',
 };
 
@@ -587,7 +581,23 @@ export const DIAG_TAGS = {
   'may-giat': ['Lồng giặt bám cặn', 'Kẹt van xả', 'Mòn dây curoa', 'Lỗi bơm xả'],
   'tu-lanh': ['Gioăng cửa hở', 'Dàn nóng bám bụi', 'Hỏng rơ-le', 'Đóng tuyết ngăn đá'],
   'nuoc-nong': ['Bám cặn thanh nhiệt', 'Thanh magie mòn', 'Rò rỉ nước'],
-  all: ['Thiết bị hoạt động bình thường', 'Cần vệ sinh định kỳ', 'Nguồn điện không ổn định'],
+  'loc-khong-khi': ['Màng lọc HEPA bẩn', 'Màng than hoạt tính hết hạn', 'Quạt hút yếu', 'Có mùi khi hoạt động'],
+  quat: ['Bình nước bám cặn', 'Tấm làm mát bẩn', 'Không phun hơi nước', 'Motor quay yếu'],
+  'hut-mui': ['Lưới lọc bám dầu mỡ', 'Motor hút yếu', 'Đèn không sáng'],
+  all: ['Thiết bị hoạt động bình thường', 'Cần vệ sinh định kỳ', 'Nguồn điện không ổn định', 'Kêu to / rung bất thường', 'Không lên nguồn'],
+};
+// Cụm từ gợi ý cho "Kết luận chẩn đoán" và "Đề xuất xử lý" (thợ chạm để chèn, đỡ phải gõ).
+export const DIAG_FINDINGS = {
+  'may-lanh': ['Dàn lạnh bẩn làm giảm hiệu suất làm lạnh', 'Áp suất gas thấp'],
+  'tu-lanh': ['Tủ làm lạnh kém do dàn nóng bẩn'],
+  'loc-khong-khi': ['Màng lọc đã quá hạn sử dụng'],
+  all: ['Thiết bị bẩn, hiệu suất giảm', 'Linh kiện hao mòn theo thời gian', 'Lắp đặt chưa đúng kỹ thuật', 'Do nguồn điện chập chờn', 'Thiết bị hoạt động ổn định'],
+};
+export const DIAG_ACTIONS = {
+  'may-lanh': ['Vệ sinh dàn lạnh, dàn nóng', 'Bổ sung gas', 'Thông ống thoát nước'],
+  'loc-khong-khi': ['Thay màng lọc mới'],
+  'nuoc-nong': ['Thay thanh magie'],
+  all: ['Vệ sinh tổng thể', 'Thay linh kiện hỏng', 'Siết lại mối nối', 'Kiểm tra lại nguồn điện', 'Theo dõi thêm, chưa cần thay'],
 };
 
 // Đối chiếu chuyên môn & khu vực. Chuyên môn = danh mục admin gán cho thợ

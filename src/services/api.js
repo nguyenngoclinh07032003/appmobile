@@ -2,6 +2,18 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL, APP_CONFIG } from '../constants/config';
+import { viServerMessage, viFieldError, toVietnamese } from '../utils/viText';
+
+// Mã lỗi nghĩa là việc không còn được giao cho thợ / đã hết hạn / đã có thợ khác nhận.
+// AppContext đăng ký onJobGone để gỡ việc khỏi màn hình thợ ngay.
+export const JOB_GONE_CODES = new Set([
+  'JOB_NOT_ACTIVE', 'JOB_NOT_FOUND', 'ASSIGNMENT_NOT_ACTIVE', 'ASSIGNMENT_NOT_FOUND', 'ASSIGNMENT_EXPIRED',
+  'ASSIGNMENT_ENDED', 'OFFER_EXPIRED', 'REQUEST_NOT_AVAILABLE', 'NOT_ASSIGNED', 'NOT_YOUR_JOB',
+]);
+let onJobGone = null;
+export const apiEvents = {
+  onJobGone: (fn) => { onJobGone = typeof fn === 'function' ? fn : null; },
+};
 
 // Quản lý Token trong sessionStorage (cô lập theo từng tab & tự động xoá khi đóng trình duyệt, chống rò rỉ localStorage)
 const getStoredToken = () => {
@@ -123,7 +135,7 @@ async function refreshSession() {
         // Lỗi mạng / máy chủ: giữ nguyên phiên.
         return { ...res, ok: false };
       })
-      .catch((e) => ({ ok: false, status: 0, code: 'NETWORK_ERROR', message: e?.message || 'Không thể kết nối.', data: null }))
+      .catch(() => ({ ok: false, status: 0, code: 'NETWORK_ERROR', message: 'Không kết nối được máy chủ. Kiểm tra mạng và thử lại.', data: null }))
       .finally(() => { refreshing = null; });
   }
   return refreshing;
@@ -205,9 +217,21 @@ async function rawRequest(endpoint, options = {}) {
     }
 
     if (!res.ok) {
-      let errMsg = resData?.message || `Lỗi máy chủ (${res.status})`;
+      if (JOB_GONE_CODES.has(resData?.code)) {
+        try { onJobGone?.(resData.code); } catch (e) { /* bỏ qua */ }
+        return {
+          ok: false,
+          status: res.status,
+          code: resData.code,
+          message: 'Việc không còn được giao cho bạn (đã hết hạn hoặc đã chuyển cho thợ khác). Việc đã được gỡ khỏi danh sách.',
+          data: resData?.data || null,
+          errors: [],
+        };
+      }
+      // Backend có thể trả lỗi tiếng Anh: luôn Việt hoá trước khi hiển thị.
+      let errMsg = viServerMessage(resData?.message, resData?.code, res.status);
       if (Array.isArray(resData?.errors) && resData.errors.length > 0) {
-        const details = resData.errors.map((e) => `${e.field}: ${e.message}`).join(', ');
+        const details = resData.errors.map(viFieldError).join(', ');
         errMsg = `${errMsg} (${details})`;
       }
       return {
@@ -224,7 +248,7 @@ async function rawRequest(endpoint, options = {}) {
       ok: true,
       status: res.status,
       code: resData?.code || 'OK',
-      message: resData?.message || 'Thành công',
+      message: toVietnamese(resData?.message, 'Thành công') || 'Thành công',
       data: resData?.data ?? resData,
     };
   } catch (err) {
@@ -239,7 +263,7 @@ async function rawRequest(endpoint, options = {}) {
       code: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
       message: isTimeout
         ? 'Kết nối máy chủ quá hạn (timeout). Vui lòng thử lại.'
-        : `Lỗi kết nối máy chủ (${baseUrl}): ${err?.message || 'Không thể kết nối.'}`,
+        : 'Không kết nối được máy chủ. Kiểm tra mạng và thử lại.',
       data: null,
       errors: [],
     };
@@ -264,7 +288,7 @@ async function uploadFile(uri, fileName, fields = {}) {
     Object.entries(fields).forEach(([k, v]) => form.append(k, v));
     return await apiRequest('/uploads', { method: 'POST', formData: form, timeout: 30000 });
   } catch (e) {
-    return { ok: false, status: 0, code: 'INVALID_PHOTO', message: `Không đọc được ảnh: ${e?.message || 'lỗi không xác định'}`, data: null, errors: [] };
+    return { ok: false, status: 0, code: 'INVALID_PHOTO', message: 'Không đọc được ảnh. Vui lòng chọn ảnh khác.', data: null, errors: [] };
   }
 }
 

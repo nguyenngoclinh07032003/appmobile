@@ -5,7 +5,7 @@ import {
   CATEGORIES, SERVICES, INSTALL_SERVICES, REPAIR_SERVICES, LIFETIME_SERVICES, SERVICE_TYPES, CAT_SHORT,
   formatVND, getService, catLabel, catIcon, tierOf, HOTLINE,
 } from '../../constants/data';
-import { useApp, warrantyInfo, fmtDate, isActiveOrder, orderTotal } from '../../context';
+import { useApp, warrantyInfo, fmtDate, isActiveOrder, orderTotal, customerStatusMeta } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, PageHead, Pills, Segmented, ServiceGrid, EmptyState, Field, Badge,
   StatusChip, Progress, Media, ListRow, Sheet, ui, HScroll, AppIcon,
@@ -52,7 +52,8 @@ export function ServicesScreen() {
                 return (
                   <Tap key={c.id} onPress={() => setSvc((p) => ({ ...p, category: c.id }))} style={[sx.catTile, on && { borderColor: tone.fg, backgroundColor: tone.bg }]}>
                     <AppIcon icon={c.icon} size={24} color={on ? tone.fg : C.ink2} strokeWidth={2} />
-                    <Text style={[sx.catTileText, on && { color: tone.fg }]}>{CAT_SHORT[c.id]}</Text>
+                    {/* Cho phép xuống dòng sau dấu "/" (vd. "Máy nước nóng/Bồn nước") để chữ không bị cắt giữa từ */}
+                    <Text style={[sx.catTileText, on && { color: tone.fg }]} numberOfLines={2}>{String(CAT_SHORT[c.id] || c.label || '').replace(/\s*\/\s*/g, '/\u200B')}</Text>
                   </Tap>
                 );
               })}
@@ -226,7 +227,7 @@ export function ActivityScreen() {
           />
         ) : list.map((o) => {
           const svc0 = getService(o.items[0]?.id);
-          const meta = STATUS_META[o.status] || STATUS_META.pending;
+          const meta = customerStatusMeta(o);
           return (
             <Card key={o.code} style={{ marginBottom: 12, padding: 0, overflow: 'hidden' }} onPress={() => nav.push('order', { code: o.code })}>
               <View style={[sx.oHead, { backgroundColor: meta.bg }]}>
@@ -334,7 +335,7 @@ export function PersonalScreen() {
         </Group>
         <Group title="Hỗ trợ khách hàng">
           <ListRow icon="shield-check" label="Tra cứu bảo hành" onPress={() => nav.warranty(s.user.phone || '')} />
-          <ListRow icon={a.isSoundMuted?.() ? 'volume-x' : 'volume-2'} label="Âm thanh thông báo" value={a.isSoundMuted?.() ? 'Tắt' : 'Bật'} onPress={() => a.toggleSound?.()} />
+          <ListRow icon={a.isSoundMuted?.() ? 'bell-off' : 'bell'} label="Âm thanh thông báo" value={a.isSoundMuted?.() ? 'Tắt' : 'Bật'} onPress={() => a.toggleSound?.()} />
           <ListRow icon="headphones" label="Trợ giúp" onPress={() => nav.push('help')} />
           <ListRow icon="message-circle-more" label="Liên hệ hỗ trợ" value={HOTLINE} onPress={u.call} last />
         </Group>
@@ -357,8 +358,9 @@ export function PersonalScreen() {
 }
 
 const sx = StyleSheet.create({
-  catTile: { width: 82, height: 82, borderRadius: R.lg, backgroundColor: '#fff', borderWidth: 1.5, borderColor: C.line, alignItems: 'center', justifyContent: 'center', gap: 6 },
-  catTileText: { fontSize: 12, fontWeight: '700', color: C.ink2 },
+  // Ô danh mục: icon cố định phía trên, tên căn giữa tối đa 2 dòng -> các ô thẳng hàng dù tên dài ngắn khác nhau.
+  catTile: { width: 100, height: 88, borderRadius: R.lg, backgroundColor: '#fff', borderWidth: 1.5, borderColor: C.line, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 14, paddingHorizontal: 5, gap: 6 },
+  catTileText: { width: '100%', height: 30, fontSize: 11.5, lineHeight: 15, fontWeight: '700', color: C.ink2, textAlign: 'center' },
   ownedDot: { position: 'absolute', top: 8, right: 8, width: 7, height: 7, borderRadius: 4 },
   notice: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginTop: 14, backgroundColor: C.orangeSoft, borderRadius: R.md, padding: 12 },
   noticeText: { flex: 1, color: '#92400E', fontSize: 13, lineHeight: 18, fontWeight: '500' },

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TextInput, Platform, Image, Linking } from 'react-native';
 import { C, R, shadow, toneOf, STATUS_META, grad } from '../../theme';
 import {
@@ -7,6 +7,7 @@ import {
 } from '../../constants/data';
 import {
   useApp, fmtDate, fmtDateTime, timeAgo, warrantyInfo, isActiveOrder, orderTotal, isPaid, isAwaitingPayment, amountRemaining,
+  customerStatusMeta, isOfferExpired, bookedValue, latestNotifPerOrder,
   lateDiscountAmount, tierPartDiscountAmount, normalizeTechRep, getCancellationWindowStatus, isQRPayment,
 } from '../../context';
 import {
@@ -26,6 +27,7 @@ import {
   callAction, errorText, isOk, useBusy, NotFoundView,
 } from '../shared/actionHelpers';
 import { TrackingCard, VietQRPay } from '../../components/order';
+import { WarrantyCertificate } from './WarrantyCertificate';
 
 const newAttId = () => `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 // "60 phút" → "1 tiếng" cho câu chữ chính sách huỷ.
@@ -131,7 +133,8 @@ export function SearchScreen() {
 export function NotificationsScreen() {
   const { s, a, nav } = useApp();
   const [filter, setFilter] = useState('all');
-  const list = s.notifications || [];
+  // Mỗi đơn chỉ hiện thông báo mới nhất (các cập nhật cũ hơn của đơn đó được gom lại).
+  const list = latestNotifPerOrder(s.notifications || []);
   const filtered = list.filter((n) => {
     if (filter === 'unread') return !n.read;
     if (filter === 'orders') return /đơn|báo giá|bảo hành|thợ|thanh toán|huỷ|hoàn thành/i.test(`${n.title} ${n.body || ''}`);
@@ -183,13 +186,15 @@ export function NotificationsScreen() {
                 !n.read && { backgroundColor: sem.unreadBg, borderColor: sem.border },
                 { borderLeftWidth: 4, borderLeftColor: sem.accent },
               ]}
-              onPress={() => { a.readNotif(n.id); nav.open(n.link); }}
+              onPress={() => { a.readNotif(n.groupIds || n.id); nav.open(n.link); }}
             >
               <IconBox icon={n.icon || sem.icon} size={42} bg={sem.bg} color={sem.accent} radius={14} />
               <View style={{ flex: 1 }}>
                 <Text style={[mx.notifTitle, !n.read && { color: C.ink }]}>{n.title}</Text>
                 {n.body ? <Text style={mx.notifBody}>{n.body}</Text> : null}
-                <Text style={[ui.meta, { marginTop: 4 }]}>{timeAgo(n.at)}</Text>
+                <Text style={[ui.meta, { marginTop: 4 }]}>
+                  {timeAgo(n.at)}{n.olderCount > 0 ? ` · ${n.olderCount} cập nhật trước của đơn này` : ''}
+                </Text>
               </View>
               {!n.read ? <View style={[mx.dot, { backgroundColor: sem.accent }]} /> : null}
             </Tap>
@@ -227,7 +232,8 @@ export function OrderScreen({ params }) {
   const [payBusy, runPay] = useBusy();
   const o = (s.orders || []).find((x) => x.code === params?.code);
   if (!o) return <NotFoundView onBack={() => (nav.stack.length ? nav.back() : nav.activity())} />;
-  const meta = STATUS_META[o.status] || STATUS_META.pending;
+  const meta = customerStatusMeta(o);
+  const acceptExpired = isOfferExpired(o);
   const curIdx = o.status === 'cancelled' ? -1 : stepIndexOf(o.status);
   const at = (k) => [...(o.history || [])].reverse().find((h) => h.status === k)?.at;
   const winfo = warrantyInfo(o, s.orders, s.lifetimePoints || 0);
@@ -394,23 +400,23 @@ export function OrderScreen({ params }) {
             </Text>
           </Card>
         ) : null}
-        {(o.releaseLog || []).length && o.status === 'pending' ? (
-          <Card style={{ marginTop: 12, backgroundColor: C.primarySoft, borderColor: '#D6E4FF' }}>
-            <Text style={mx.tlTitle}>Đang điều phối lại thợ</Text>
+        {acceptExpired ? (
+          <Card style={{ marginTop: 12, backgroundColor: '#FEF2F2', borderColor: '#FECACA' }}>
+            <Text style={[mx.tlTitle, { color: '#B91C1C' }]}>⏰ Đơn quá hạn tiếp nhận</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-              Thợ trước đã trả việc. Hệ thống đang điều phối thợ khác; kiểm tra thông báo để nhận voucher xin lỗi (nếu có).
+              Chưa có thợ nhận đơn trong khung giờ {o.slot} ngày {o.dateLabel}. Vui lòng đổi giờ hẹn để hệ thống điều phối lại, hoặc gọi hotline {HOTLINE} để được hỗ trợ.
             </Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+              {canEdit ? <Btn title="Đổi giờ hẹn" icon="calendar" small variant="primary" style={{ flex: 1 }} onPress={openEdit} /> : null}
+              <Btn title="Gọi hotline" icon="phone" small variant="soft" style={{ flex: 1 }} onPress={u.call} />
+            </View>
           </Card>
         ) : null}
-
-        {/* ===== Chờ Văn phòng nghiệm thu ===== */}
-        {o.status === 'pending_review' ? (
-          <Card style={{ marginTop: 12, backgroundColor: '#F5F3FF', borderColor: '#DDD6FE' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={[mx.tlTitle, { color: '#6D28D9' }]}>🏢 Văn phòng đang đối soát nghiệm thu</Text>
-            </View>
+        {(o.releaseLog || []).length > 0 && o.status === 'pending' && !acceptExpired ? (
+          <Card style={{ marginTop: 12, backgroundColor: C.primarySoft, borderColor: '#D6E4FF' }}>
+            <Text style={mx.tlTitle}>🔄 Đang điều phối lại thợ</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-              Kỹ thuật viên đã gửi biên bản & hình ảnh sau làm việc. Bộ phận kiểm soát chất lượng (QA) của Văn phòng Minh Đức đang đối soát kiểm tra trước khi bàn giao thanh toán.
+              Thợ trước không thể tiếp tục (đã trả việc hoặc quá hạn xác nhận). Hệ thống đang điều phối thợ khác; kiểm tra thông báo để nhận voucher xin lỗi (nếu có).
             </Text>
           </Card>
         ) : null}
@@ -786,21 +792,6 @@ export function OrderScreen({ params }) {
             </Card>
           );
         })() : null}
-        {(o.progress || []).length ? (
-          <Card style={{ marginTop: 12 }}>
-            <Text style={mx.tlTitle}>Tiến độ thi công</Text>
-            {o.progress.map((p) => (
-              <View key={p.id} style={{ marginTop: 10 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontWeight: '800', color: C.purple }}>{p.percent}%</Text>
-                  <Text style={ui.meta}>{fmtDateTime(p.at)}</Text>
-                </View>
-                <Progress value={p.percent / 100} color={C.purple} style={{ marginTop: 4 }} />
-                {p.note ? <Text style={{ color: C.ink2, marginTop: 4 }}>{p.note}</Text> : null}
-              </View>
-            ))}
-          </Card>
-        ) : null}
         {(o.materials || []).length && ['diagnosing', 'quoted', 'repairing', 'done'].includes(o.status) ? (
           <Card style={{ marginTop: 12 }}>
             <Text style={mx.tlTitle}>Vật tư & linh kiện thay thế</Text>
@@ -823,7 +814,7 @@ export function OrderScreen({ params }) {
             ))}
           </Card>
         ) : null}
-        {evidence.length ? (
+        {evidence.some((e) => e.stage !== 'receipt') ? (
           <Card style={{ marginTop: 12 }}>
             <Text style={mx.tlTitle}>Hình ảnh nghiệm thu & minh chứng</Text>
             {[
@@ -911,8 +902,8 @@ export function OrderScreen({ params }) {
                     ? (isQRPayment(o) ? 'Đã chuyển khoản VietQR' : 'Đã thanh toán')
                     : o.bill?.cashClaimPending
                       ? 'Đã báo trả tiền mặt · chờ thợ xác nhận'
-                    : o.status === 'partially_paid'
-                      ? 'Đã trả một phần · Còn thiếu'
+                    : o.status === 'pending_payment' && (o.bill?.paidAmount || 0) > 0
+                      ? 'Đã trả một phần · Vui lòng thanh toán phần còn lại'
                       : o.status === 'pending_payment'
                         ? (isQRPayment(o) ? 'Chờ thanh toán VietQR' : 'Chờ khách thanh toán')
                         : isQRPayment(o) ? 'Thanh toán qua QR (Thợ không thu tiền mặt)' : 'Chưa đến bước thanh toán'
@@ -949,7 +940,7 @@ export function OrderScreen({ params }) {
                 <VietQRPay requestId={o.dbRequestId} onPaid={() => a.confirmPayment(o.code, 'webhook')} size={180} />
               </View>
             ) : null}
-            {['pending_payment', 'partially_paid'].includes(o.status) && !o.report?.paid && isQRPayment(o) ? (
+            {o.status === 'pending_payment' && !o.report?.paid && isQRPayment(o) ? (
               <View style={{ marginTop: 14, alignItems: 'center', padding: 14, borderRadius: 14, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1' }}>
                 <View style={{ width: '100%', padding: 10, borderRadius: R.sm, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <AppIcon name="shield-check" size={18} color={C.orange} strokeWidth={2.3} />
@@ -962,9 +953,9 @@ export function OrderScreen({ params }) {
                   <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>Chuyển khoản nhanh VietQR 24/7</Text>
                 </View>
                 <Text style={[ui.meta, { marginBottom: 10, textAlign: 'center', color: C.muted }]}>
-                  Quét mã VietQR để thanh toán dịch vụ. Khi thanh toán đủ, đơn sẽ chuyển chờ Văn phòng nghiệm thu.
+                  Quét mã VietQR để thanh toán dịch vụ. Khi thanh toán đủ, đơn sẽ chuyển sang Hoàn thành.
                 </Text>
-                {['pending_payment', 'partially_paid'].includes(o.status) ? (
+                {o.status === 'pending_payment' ? (
                   <VietQRPay requestId={o.dbRequestId} onPaid={() => a.confirmPayment(o.code, 'webhook')} />
                 ) : (
                   <Text style={[ui.meta, { textAlign: 'center' }]}>Mã QR thanh toán hiện khi thợ hoàn thành công việc.</Text>
@@ -972,7 +963,7 @@ export function OrderScreen({ params }) {
               </View>
             ) : null}
             {/* Nút "Xác nhận đã trả tiền" chỉ đặt ở thanh dưới (dock) để tránh hai nút trùng chức năng. */}
-            {isPaid(o) && ['done', 'pending_review'].includes(o.status) ? (
+            {isPaid(o) && o.status === 'done' ? (
               <View style={{ marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: C.greenSoft }}>
                 <Text style={{ fontWeight: '800', color: C.green }}>🧾 Đã thanh toán</Text>
                 <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
@@ -1033,7 +1024,7 @@ export function OrderScreen({ params }) {
         <View style={mx.dock}>
           {canEdit ? <Btn title="Sửa yêu cầu" icon="pencil" variant="soft" style={{ flex: 1 }} onPress={openEdit} /> : null}
           {canCancel ? <Btn title="Huỷ đơn" variant="dangerSoft" style={{ flex: 1 }} onPress={handlePressCancel} /> : null}
-          {['pending_payment', 'partially_paid'].includes(o.status) && !o.report?.paid && !isQRPayment(o) && !o.bill?.cashClaimPending && o.kind !== 'warranty' && o.kind !== 'followup' ? (
+          {o.status === 'pending_payment' && !o.report?.paid && !isQRPayment(o) && !o.bill?.cashClaimPending && o.kind !== 'warranty' && o.kind !== 'followup' ? (
             <Btn
               title={payBusy ? 'Đang gửi…' : 'Xác nhận đã trả tiền'}
               icon="credit-card"
@@ -1071,7 +1062,7 @@ export function OrderScreen({ params }) {
       <Sheet
         visible={showCertificate}
         onClose={() => setShowCertificate(false)}
-        title="Phiếu Nghiệm Thu & Bảo Hành Điện Tử"
+        title="Phiếu bảo hành điện tử"
         footer={winfo.ok ? (
           <Btn
             title="🛠️ Yêu cầu bảo hành miễn phí"
@@ -1082,52 +1073,7 @@ export function OrderScreen({ params }) {
           />
         ) : <Btn title="Đóng phiếu" onPress={() => setShowCertificate(false)} />}
       >
-        <View style={{ backgroundColor: C.navy, borderRadius: R.lg, padding: 16, alignItems: 'center', marginBottom: 14 }}>
-          <Text style={{ color: '#93C5FD', fontWeight: '900', fontSize: 12, letterSpacing: 0.8 }}>THỢ MINH ĐỨC · CHỨNG NHẬN ĐIỆN TỬ</Text>
-          <Text style={{ color: '#fff', fontWeight: '900', fontSize: 18, marginTop: 4 }}>
-            Mã chứng nhận: {o.report?.warrantyCertificateCode || `BH-${o.code}`}
-          </Text>
-          <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2 }}>
-            Đơn gốc: {o.code} · Hoàn thành: {fmtDateTime(o.doneAt || o.createdAt)}
-          </Text>
-          <View style={{ backgroundColor: '#fff', padding: 10, borderRadius: 16, marginTop: 12 }}>
-            <PseudoQR value={`MINHDUC-WARRANTY|${o.code}|${o.address?.phone || ''}|${winfo.totalDays || tierWarrantyDays}D`} size={130} />
-          </View>
-          <Badge
-            text={winfo.ok ? `🛡️ Còn ${winfo.daysLeft}/${winfo.totalDays} ngày bảo hành (đến ${fmtDate(winfo.until)})` : winfo.text}
-            fg={winfo.ok ? C.green : C.orange}
-            bg="#fff"
-            style={{ marginTop: 10 }}
-          />
-        </View>
-
-        <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, gap: 6 }}>
-          <Text style={{ fontWeight: '800', color: C.ink }}>1. Thông tin khách hàng & Thiết bị</Text>
-          <Text style={ui.meta}>• Khách hàng: {o.address?.name} · {o.address?.phone}</Text>
-          <Text style={ui.meta}>• Địa chỉ: {o.address?.full}</Text>
-          {o.device ? (
-            <Text style={ui.meta}>
-              • Thiết bị: {catLabel(o.device.category)} {o.device.brand || ''} {o.device.room ? `(${o.device.room})` : ''}{o.device.serial ? ` · SN: ${o.device.serial}` : ''}
-            </Text>
-          ) : null}
-          <Text style={ui.meta}>• Kỹ thuật viên: {o.tech?.name || o.report?.tech || 'Thợ Minh Đức'} ({o.tech?.code || o.report?.techCode || 'MINHDUC'})</Text>
-        </View>
-
-        <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, gap: 6, marginTop: 10 }}>
-          <Text style={{ fontWeight: '800', color: C.ink }}>2. Hạng mục nghiệm thu & An toàn kỹ thuật</Text>
-          <Text style={{ color: C.ink2, fontSize: 13, lineHeight: 19 }}>{o.report?.summary || 'Đã hoàn thành đúng quy trình kỹ thuật.'}</Text>
-          {((o.report?.safetyChecklist?.length ? o.report.safetyChecklist : SAFETY_CHECKLIST_ITEMS)).map((chk, idx) => (
-            <Text key={idx} style={{ fontSize: 12.5, color: C.green, fontWeight: '700' }}>✓ {chk}</Text>
-          ))}
-        </View>
-
-        {o.report?.customerSignature ? (
-          <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', marginTop: 10 }}>
-            <Text style={{ fontWeight: '800', color: '#166534', fontSize: 13 }}>3. Chữ ký số xác nhận của Khách hàng</Text>
-            <Text style={{ fontStyle: 'italic', fontSize: 18, fontWeight: '900', color: C.navy, marginTop: 4 }}>{o.report.customerSignature}</Text>
-            <Text style={{ fontSize: 11, color: '#166534', marginTop: 2 }}>✓ Đã xác thực bàn giao thiết bị an toàn và hoạt động bình thường</Text>
-          </View>
-        ) : null}
+        <WarrantyCertificate o={o} winfo={winfo} tierWarrantyDays={tierWarrantyDays} />
       </Sheet>
       <Sheet
         visible={showCancel}
@@ -1993,7 +1939,7 @@ export function ProfileScreen() {
               if (err.dob) setErr((prev) => ({ ...prev, dob: '' }));
             }}
             keyboardType="numeric"
-            placeholder="DD/MM/YYYY (VD: 15/08/1995)"
+            placeholder="Ngày/tháng/năm (VD: 15/08/1995)"
             error={err.dob}
           />
           <Field label="Email (tài khoản đăng nhập, không sửa ở đây)" value={email} editable={false} />
@@ -2012,7 +1958,7 @@ export function ProfileScreen() {
                 <Tap
                   onPress={() => {
                     setShowOtp(true);
-                    if (!otpHint) sendOtp();
+                    if (!otpSent && !otpSending) sendOtp();
                   }}
                 >
                   <Badge text="📧 Xác thực ngay" fg="#fff" bg="#D97706" />
