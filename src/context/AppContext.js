@@ -206,19 +206,33 @@ export const lateDiscountAmount = (o) => Number(o?.bill?.lateDiscount) || 0;
 // Số tiền khách phải trả = bill.amount_due của server (đã gồm báo giá, phát sinh, giảm hạng, voucher, đến muộn, phí kiểm tra).
 // Chưa tải được hoá đơn thì tạm dùng tổng server trả cùng đơn (estimated_total / tổng báo giá đã duyệt).
 export const orderTotal = (o) => {
-  if (o?.bill) return Math.max(0, Number(o.bill.amountDue) || 0);
+  if (!o) return 0;
   if (o.kind === "warranty" || o.kind === "followup") return 0;
   if (o.status === "cancelled") return o.inspectionFee || 0;
-  const quoteAmount =
-    o.quote?.approvedTotal != null
-      ? o.quote.approvedTotal
-      : (o.quote?.approved ||
-            ["repairing", "pending_payment", "done"].includes(o.status)) &&
-          o.quote?.total != null
-        ? o.quote.total
-        : null;
-  if (quoteAmount != null)
-    return Math.max(0, quoteAmount - (o.voucherDiscount || 0));
+  const hasActiveQuote =
+    o.quote &&
+    !o.quote.rejectReason &&
+    !o.quote.revisionRequested &&
+    o.quote.status !== "REJECTED";
+  if (o?.bill && o.bill.quotationTotal != null && o.status !== "quoted") {
+    return Math.max(0, Number(o.bill.amountDue) || 0);
+  }
+  if (hasActiveQuote) {
+    const qTotal =
+      o.quote.approved && o.quote.approvedTotal != null
+        ? Number(o.quote.approvedTotal)
+        : Number(o.quote.total);
+    if (Number.isFinite(qTotal) && qTotal >= 0) {
+      return Math.max(
+        0,
+        qTotal -
+          tierPartDiscountAmount(o) -
+          (Number(o.voucherDiscount) || 0) -
+          lateDiscountAmount(o),
+      );
+    }
+  }
+  if (o?.bill) return Math.max(0, Number(o.bill.amountDue) || 0);
   const base = o.finalTotal != null ? o.finalTotal : o.total;
   return Math.max(0, Number(base) || 0);
 };

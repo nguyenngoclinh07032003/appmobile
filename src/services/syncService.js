@@ -346,6 +346,22 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
   const paid = bill ? ['PAID', 'NOTHING_TO_PAY'].includes(bill.paymentStatus) : req.request_status === 'COMPLETED';
   const estimated = Number(req.estimated_total);
 
+  const voucherDiscount = Number(req.voucher_discount_amount) || 0;
+  const activeQuoteTotal =
+    quote && !quote.rejectReason && !quote.revisionRequested && quote.status !== 'REJECTED'
+      ? (quote.approved && quote.approvedTotal != null ? quote.approvedTotal : quote.total)
+      : null;
+  const resolvedTotal =
+    bill && bill.quotationTotal != null && status !== 'quoted'
+      ? bill.amountDue
+      : activeQuoteTotal != null
+        ? Math.max(0, activeQuoteTotal - voucherDiscount)
+        : bill
+          ? bill.amountDue
+          : Number.isFinite(estimated) && estimated > 0
+            ? estimated
+            : booked;
+
   return {
     code: req.request_code,
     dbRequestId: req.request_id,
@@ -367,9 +383,9 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     comboDiscount,
     comboLabel: req.combo_label || '',
     voucher: req.voucher_code ? { code: req.voucher_code } : null,
-    voucherDiscount: Number(req.voucher_discount_amount) || 0,
-    total: bill ? bill.amountDue : (Number.isFinite(estimated) && estimated > 0 ? estimated : booked),
-    finalTotal: bill ? bill.amountDue : (Number.isFinite(estimated) && estimated > 0 ? estimated : booked),
+    voucherDiscount,
+    total: resolvedTotal,
+    finalTotal: resolvedTotal,
     bill,
     inspectionFee,
     cancelReason: toVietnamese(cancelHistory?.reason, 'Đơn đã được huỷ') || 'Đơn đã được huỷ',
@@ -515,9 +531,27 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     comboDiscount,
     comboLabel: req.combo_label || job.bill?.bill?.combo_label || '',
     voucherDiscount: bill?.voucherDiscount || 0,
-    // Tiền thật từ GET /technician/jobs/:id/bill; chưa có hoá đơn thì tạm theo giá dịch vụ / báo giá đã duyệt.
-    total: bill ? bill.amountDue : (quote?.approvedTotal ?? (quote?.approved ? quote.total : (Number(req.estimated_total) > 0 ? Number(req.estimated_total) : booked))),
-    finalTotal: bill ? bill.amountDue : (quote?.approvedTotal ?? (quote?.approved ? quote.total : (Number(req.estimated_total) > 0 ? Number(req.estimated_total) : booked))),
+    // Tiền thật từ GET /technician/jobs/:id/bill; nếu đang có báo giá chờ duyệt hoặc chưa có bill thì lấy theo tổng báo giá hiện tại.
+    total:
+      bill && bill.quotationTotal != null && status !== 'quoted'
+        ? bill.amountDue
+        : quote && !quote.rejectReason && !quote.revisionRequested && quote.status !== 'REJECTED'
+          ? Math.max(0, (quote.approved && quote.approvedTotal != null ? quote.approvedTotal : quote.total) - (bill?.voucherDiscount || 0))
+          : bill
+            ? bill.amountDue
+            : Number(req.estimated_total) > 0
+              ? Number(req.estimated_total)
+              : booked,
+    finalTotal:
+      bill && bill.quotationTotal != null && status !== 'quoted'
+        ? bill.amountDue
+        : quote && !quote.rejectReason && !quote.revisionRequested && quote.status !== 'REJECTED'
+          ? Math.max(0, (quote.approved && quote.approvedTotal != null ? quote.approvedTotal : quote.total) - (bill?.voucherDiscount || 0))
+          : bill
+            ? bill.amountDue
+            : Number(req.estimated_total) > 0
+              ? Number(req.estimated_total)
+              : booked,
     bill,
     cashToCollect: bill?.cashToCollect ?? null,
     paymentMethod: String(req.preferred_payment_method || '').toUpperCase() === 'BANK_TRANSFER' ? 'vietqr' : 'cash',

@@ -932,18 +932,35 @@ export function OrderScreen({ params }) {
                 )}
               </>
             ) : (
-              <>
-                <Bill l="Tổng tiền dịch vụ" v={formatVND(o.goods)} />
-                {o.productDiscount ? <Bill l="Giảm giá dịch vụ" v={`-${formatVND(o.productDiscount)}`} green /> : null}
-                {o.comboDiscount ? <Bill l={`Ưu đãi ${o.comboLabel || 'Combo nhiều máy'}`} v={`-${formatVND(o.comboDiscount)}`} green /> : null}
-                {/* Số tiền dưới đây lấy từ hoá đơn server (GET /customer/requests/:id/bill) */}
-                {o.bill?.quotationTotal != null && o.bill.quotationTotal !== o.bill.bookedAmount ? <Bill l="Theo báo giá đã duyệt" v={formatVND(o.bill.quotationTotal)} /> : null}
-                {o.bill?.supplementalTotal ? <Bill l="Trong đó phát sinh" v={`+${formatVND(o.bill.supplementalTotal)}`} /> : null}
-                {partDisc ? <Bill l={`Ưu đãi hạng thành viên (−${o.bill?.tierPartDiscountPercent || 0}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
-                {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code || ''}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
-                {lateDiscountAmount(o) ? <Bill l="Bồi thường thợ đến muộn" v={`−${formatVND(lateDiscountAmount(o))}`} green /> : null}
-                {o.bill?.paidAmount ? <Bill l="Đã thanh toán" v={formatVND(o.bill.paidAmount)} green /> : null}
-              </>
+              (() => {
+                const hasActiveQuote =
+                  o.quote &&
+                  !o.quote.rejectReason &&
+                  !o.quote.revisionRequested &&
+                  o.quote.status !== 'REJECTED';
+                const quoteExtra = hasActiveQuote
+                  ? Number(o.quote.extraAmount) ||
+                    Math.max(0, (Number(o.quote.total) || 0) - bookedValue(o))
+                  : Number(o.bill?.supplementalTotal) ||
+                    Math.max(0, (Number(o.bill?.quotationTotal) || 0) - (Number(o.bill?.bookedAmount) || bookedValue(o)));
+                return (
+                  <>
+                    <Bill l="Tổng tiền dịch vụ" v={formatVND(o.goods)} />
+                    {o.productDiscount ? <Bill l="Giảm giá dịch vụ" v={`-${formatVND(o.productDiscount)}`} green /> : null}
+                    {o.comboDiscount ? <Bill l={`Ưu đãi ${o.comboLabel || 'Combo nhiều máy'}`} v={`-${formatVND(o.comboDiscount)}`} green /> : null}
+                    {quoteExtra > 0 ? (
+                      <Bill
+                        l={o.quote?.approved ? 'Vật tư & chi phí phát sinh' : 'Vật tư & phát sinh (theo báo giá)'}
+                        v={`+${formatVND(quoteExtra)}`}
+                      />
+                    ) : null}
+                    {partDisc ? <Bill l={`Ưu đãi hạng thành viên (−${o.bill?.tierPartDiscountPercent || 0}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
+                    {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code || ''}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
+                    {lateDiscountAmount(o) ? <Bill l="Bồi thường thợ đến muộn" v={`−${formatVND(lateDiscountAmount(o))}`} green /> : null}
+                    {o.bill?.paidAmount ? <Bill l="Đã thanh toán" v={formatVND(o.bill.paidAmount)} green /> : null}
+                  </>
+                );
+              })()
             )}
             <Bill l="Hình thức" v={o.payment || 'Chuyển khoản VietQR'} />
             <Bill
