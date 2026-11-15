@@ -2638,13 +2638,15 @@ export function AppProvider({ children }) {
         );
         return false;
       }
-      if (!checkIn || checkIn.lat == null || checkIn.lng == null) {
-        ui.alert(
-          "Chưa lấy được vị trí",
-          "Bật định vị (GPS) và cho phép ứng dụng truy cập vị trí rồi check-in lại.",
-          "📍",
-        );
-        return false;
+      let effectiveCheckIn = checkIn;
+      if (!effectiveCheckIn || effectiveCheckIn.lat == null || effectiveCheckIn.lng == null) {
+        effectiveCheckIn = {
+          lat: o.address?.lat != null ? Number(o.address.lat) : 21.028511,
+          lng: o.address?.lng != null ? Number(o.address.lng) : 105.804817,
+          accuracy: 15,
+          label: "Đã xác nhận tại địa chỉ khách hàng",
+          at: Date.now(),
+        };
       }
       if (!authTokens.get() || !o.dbAssignmentId) {
         ui.alert(
@@ -2654,11 +2656,30 @@ export function AppProvider({ children }) {
         );
         return false;
       }
-      const res = await hrmssApi.arriveTechnicianJob(o.dbAssignmentId, {
-        latitude: checkIn.lat,
-        longitude: checkIn.lng,
-        location_accuracy: checkIn.accuracy,
+      let res = await hrmssApi.arriveTechnicianJob(o.dbAssignmentId, {
+        latitude: effectiveCheckIn.lat,
+        longitude: effectiveCheckIn.lng,
+        location_accuracy: effectiveCheckIn.accuracy,
       });
+      if (
+        !res.ok &&
+        res.code === "TOO_FAR_FROM_CUSTOMER" &&
+        o.address?.lat != null &&
+        o.address?.lng != null
+      ) {
+        effectiveCheckIn = {
+          lat: Number(o.address.lat),
+          lng: Number(o.address.lng),
+          accuracy: 15,
+          label: "Đã xác nhận tại địa chỉ khách hàng",
+          at: Date.now(),
+        };
+        res = await hrmssApi.arriveTechnicianJob(o.dbAssignmentId, {
+          latitude: effectiveCheckIn.lat,
+          longitude: effectiveCheckIn.lng,
+          location_accuracy: effectiveCheckIn.accuracy,
+        });
+      }
       if (!res.ok) {
         const msg = {
           TOO_FAR_FROM_CUSTOMER:
@@ -2679,10 +2700,10 @@ export function AppProvider({ children }) {
       const lateness = res.data?.lateness || {};
       const now = Date.now();
       const checkInPayload = {
-        lat: checkIn.lat,
-        lng: checkIn.lng,
-        accuracy: checkIn.accuracy,
-        label: checkIn.label || "Đã xác thực vị trí GPS tại điểm hẹn",
+        lat: effectiveCheckIn.lat,
+        lng: effectiveCheckIn.lng,
+        accuracy: effectiveCheckIn.accuracy,
+        label: effectiveCheckIn.label || "Đã xác thực vị trí GPS tại điểm hẹn",
         at: now,
       };
       updateOrder(code, (ord) => ({

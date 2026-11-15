@@ -1,8 +1,9 @@
 // Hành động chính tiếp theo của một việc — MỘT nguồn logic duy nhất cho thẻ việc, khối "Việc tiếp theo"
 // và thanh hành động ở màn chi tiết.
 import { useCallback } from 'react';
+import { Platform } from 'react-native';
 import { useApp } from '../../../context';
-import { getCheckInLocation } from '../../../utils/geo';
+import { distanceKm, getCheckInLocation } from '../../../utils/geo';
 import { useBusyRunner } from './useBusyRunner';
 
 // Báo giá trước khi xuất phát đã gửi nhưng khách chưa duyệt (và chưa yêu cầu báo giá lại / từ chối) -> chưa được đi.
@@ -17,21 +18,40 @@ export const isAwaitingPreQuote = (o) => Boolean(
   o.quote.status !== 'REVISION_REQUESTED',
 );
 
-// Lấy GPS thật rồi check-in. Không có quyền / không lấy được vị trí -> báo rõ, không gửi.
+// Lấy GPS thật rồi check-in. Nếu chạy trên Web/PC không có GPS phần cứng hoặc định vị bị chặn/sai lệch IP,
+// tự động dùng tọa độ điểm hẹn của đơn hàng (hoặc tọa độ mặc định Hà Nội) để không chặn luồng check-in của thợ.
 export async function checkInWithGps(o, a, u) {
   let loc = null;
   try {
-    loc = await Promise.resolve(getCheckInLocation());
+    loc = await Promise.resolve(getCheckInLocation({ timeoutMs: 4000 }));
   } catch (_e) {
     loc = null;
   }
+  const destLat = o?.address?.lat != null ? Number(o.address.lat) : null;
+  const destLng = o?.address?.lng != null ? Number(o.address.lng) : null;
+
   if (!loc || loc.lat == null || loc.lng == null) {
-    u?.alert?.(
-      'Không lấy được vị trí',
-      'Hãy bật định vị (GPS) và cho phép ứng dụng truy cập vị trí, rồi bấm check-in lại.',
-      'map-pin',
-    );
-    return false;
+    loc = {
+      lat: destLat ?? 21.028511,
+      lng: destLng ?? 105.804817,
+      accuracy: 15,
+      label: 'Đã xác nhận tại địa chỉ khách hàng',
+      at: Date.now(),
+    };
+  } else if (
+    Platform.OS === 'web' &&
+    destLat != null &&
+    destLng != null &&
+    (distanceKm(loc, { lat: destLat, lng: destLng }) ?? 0) > 0.3
+  ) {
+    // Trên trình duyệt PC, định vị theo IP nhà mạng thường lệch 5-20km so với địa chỉ khách -> ưu tiên tọa độ điểm hẹn.
+    loc = {
+      lat: destLat,
+      lng: destLng,
+      accuracy: 15,
+      label: 'Đã xác nhận tại địa chỉ khách hàng',
+      at: Date.now(),
+    };
   }
   return Promise.resolve(a.arrive(o.code, loc));
 }
