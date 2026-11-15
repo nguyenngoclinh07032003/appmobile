@@ -746,6 +746,7 @@ export function TechAccountScreen() {
           <Text style={{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }}>Hỗ trợ kỹ thuật viên</Text>
           <View style={tx.menu}>
             <ListRow icon={a.isSoundMuted?.() ? 'bell-off' : 'bell'} label="Âm thanh chuông báo" value={a.isSoundMuted?.() ? 'Tắt' : 'Bật'} onPress={() => a.toggleSound?.()} />
+            <ListRow icon="refresh-cw" label="Đồng bộ lại từ máy chủ" onPress={async () => { await a.syncFromBackend(null, true); u.toast('Đã nạp lại dữ liệu máy chủ mới nhất', 'check'); }} />
             <ListRow icon="headphones" label="Liên hệ điều phối" value={HOTLINE} onPress={u.call} last />
           </View>
           <Btn

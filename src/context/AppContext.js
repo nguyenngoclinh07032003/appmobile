@@ -429,9 +429,9 @@ export function AppProvider({ children }) {
     const user = session
       ? { name: session.name || '', phone: session.phone || '', email: session.email || '' }
       : (saved.user || { name: '', phone: '', email: '' });
-    // Bỏ dữ liệu mẫu đã lưu từ bản app cũ (đơn/địa chỉ/thông báo không có id backend, thiết bị giả).
+    // Bỏ hoàn toàn dữ liệu mock / offline cũ: chỉ giữ đơn có id thật từ database backend.
     const fromBackend = (list, idKey) => (Array.isArray(list) ? list.filter((x) => x && x[idKey] != null) : []);
-    const cleanOrders = (saved.orders || []).filter((o) => o && (o.dbRequestId != null || o.localOnly));
+    const cleanOrders = (saved.orders || []).filter((o) => o && (o.dbRequestId != null || o.dbAssignmentId != null));
     const cleanAddresses = fromBackend(saved.addresses, 'dbAddressId');
     const cleanNotifs = fromBackend(saved.notifications, 'dbNotificationId');
     const cleanTechNotifs = fromBackend(saved.techNotifs, 'dbNotificationId');
@@ -2195,6 +2195,7 @@ export function AppProvider({ children }) {
         ...switchCustomerSlice(p, account),
         auth: account,
         role: account.role,
+        orders: [],
         user: {
           name: account.name || '',
           phone: account.phone || '',
@@ -2230,6 +2231,7 @@ export function AppProvider({ children }) {
         ...switchCustomerSlice(p, res.account),
         auth: res.account,
         role: res.account.role,
+        orders: [],
         user: {
           name: res.account.name || '',
           username: res.account.username || '',
@@ -2312,6 +2314,7 @@ export function AppProvider({ children }) {
         ...switchCustomerSlice(p, res.account),
         auth: res.account,
         role: res.account.role,
+        orders: [],
         user: {
           name: res.account.name || '',
           username: res.account.username || '',
@@ -2647,8 +2650,8 @@ export function AppProvider({ children }) {
         if (mb.matchScore !== ma.matchScore) return mb.matchScore - ma.matchScore;
         return (b.createdAt || 0) - (a.createdAt || 0);
       }),
-    myJobs: s.orders.filter((o) => o.tech?.code === myCode),
-    workingJobs: s.orders.filter((o) => o.tech?.code === myCode && isActiveOrder(o)),
+    myJobs: s.orders.filter((o) => Boolean(o.dbAssignmentId) || Boolean(o.assignmentActive) || (Boolean(myCode) && o.tech?.code === myCode)),
+    workingJobs: s.orders.filter((o) => (Boolean(o.dbAssignmentId) || Boolean(o.assignmentActive) || (Boolean(myCode) && o.tech?.code === myCode)) && isActiveOrder(o)),
     declinedCodes: declinedFor(s, myCode),
     roleHint: urlRoleHint(),
     techReputation: techRep.reputation,

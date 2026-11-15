@@ -576,24 +576,22 @@ export const syncCatalogFromBackend = ({ categories = null, services = null, mat
     ALL_SERVICES.forEach((x) => { SERVICE_MAP[x.id] = x; SERVICE_BY_DB_ID[String(x.dbId)] = x; });
   }
   if (Array.isArray(materials) && materials.length > 0) {
-    materials.forEach((dbMat) => {
+    const list = materials.filter(Boolean).map((dbMat) => {
       const matIdNum = Number(dbMat.material_id);
-      if (!matIdNum) return;
+      if (!matIdNum) return null;
       const price = dbMat.unit_price == null ? null : Number(dbMat.unit_price);
-      const existing = MATERIALS.find((m) => m.dbId === matIdNum);
-      const next = {
+      return {
         id: `m-db-${matIdNum}`,
         dbId: matIdNum,
-        name: dbMat.material_name || existing?.name || `Vật tư #${matIdNum}`,
-        unit: dbMat.unit_of_measure || existing?.unit || 'cái',
-        // Văn phòng chưa niêm yết giá -> 0 (thợ tự nhập giá khi lập báo giá)
-        price: price != null ? price : (existing?.price ?? 0),
-        category: 'all', // backend không gắn vật tư với danh mục
+        name: dbMat.material_name || `Vật tư #${matIdNum}`,
+        unit: dbMat.unit_of_measure || 'cái',
+        price: price != null ? price : 0,
+        category: 'all',
       };
-      if (existing) Object.assign(existing, next);
-      else MATERIALS.push(next);
-    });
-    MATERIALS.sort((x, y) => x.dbId - y.dbId);
+    }).filter(Boolean);
+    if (list.length > 0) {
+      replaceAll(MATERIALS, list.sort((x, y) => x.dbId - y.dbId));
+    }
   }
 };
 

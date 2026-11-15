@@ -656,10 +656,9 @@ export const mapBackendPhotoToEvidence = (row) => ({
 });
 
 export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = []) => {
-  // Nếu remoteOrders rỗng nhưng localOrders đang có dữ liệu (do lỗi mạng tạm thời hoặc server lag 1 nhịp):
-  // Giữ lại localOrders để tránh màn hình bị chớp tắt, trắng xoá dữ liệu.
-  if ((!remoteOrders || remoteOrders.length === 0) && Array.isArray(localOrders) && localOrders.length > 0) {
-    return localOrders;
+  // remoteOrders là nguồn sự thật từ backend. Nếu không có (lỗi mạng/chưa gọi) thì giữ localOrders.
+  if (!Array.isArray(remoteOrders)) {
+    return Array.isArray(localOrders) ? localOrders.filter((o) => o && o.dbRequestId != null) : [];
   }
 
   const byKey = new Map();
@@ -671,7 +670,7 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
     byKey.set(k, ro);
   });
 
-  localOrders.forEach((lo) => {
+  (localOrders || []).forEach((lo) => {
     const k = keyOf(lo);
     if (!k) return;
     const matchKey = byKey.has(k)
@@ -715,11 +714,8 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         // Bảo toàn cờ đã thông báo quá hạn tiếp nhận để tránh vòng lặp thông báo/refresh
         expiredNotified: lo.expiredNotified !== undefined ? lo.expiredNotified : ro.expiredNotified,
       });
-    } else if (lo.localOnly) {
-      // Đơn vừa tạo offline / localOnly chưa kịp sync lên server thì vẫn giữ lại
-      byKey.set(k, lo);
     }
-    // Đơn chỉ có trên máy (chưa từng lưu lên server) bị bỏ: mọi đơn đều tạo qua backend.
+    // Tuyệt đối không giữ lại đơn không có trên backend: Backend là nguồn sự thật duy nhất (SSOT).
   });
   return [...byKey.values()].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 };
