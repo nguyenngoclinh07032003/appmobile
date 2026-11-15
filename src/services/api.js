@@ -128,14 +128,22 @@ async function refreshSession() {
           return res;
         }
         if (res.status === 401 || res.status === 400) {
+          // eslint-disable-next-line no-console
+          console.warn(`[HRMSS AUTH] Refresh token hết hạn/không hợp lệ: status=${res.status} code=${res.code}`);
           authTokens.clear();
           try { onSessionExpired?.(); } catch (e) { /* bỏ qua */ }
           return { ...res, ok: false, code: res.code && res.code !== 'ERROR' ? res.code : 'SESSION_EXPIRED' };
         }
         // Lỗi mạng / máy chủ: giữ nguyên phiên.
+        // eslint-disable-next-line no-console
+        console.warn(`[HRMSS AUTH] Refresh tạm lỗi (giữ phiên): status=${res.status} code=${res.code} msg=${res.message}`);
         return { ...res, ok: false };
       })
-      .catch(() => ({ ok: false, status: 0, code: 'NETWORK_ERROR', message: 'Không kết nối được máy chủ. Kiểm tra mạng và thử lại.', data: null }))
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.error('[HRMSS AUTH] Ngoại lệ khi refresh token:', err);
+        return { ok: false, status: 0, code: 'NETWORK_ERROR', message: 'Không kết nối được máy chủ. Kiểm tra mạng và thử lại.', data: null };
+      })
       .finally(() => { refreshing = null; });
   }
   return refreshing;
@@ -217,7 +225,12 @@ async function rawRequest(endpoint, options = {}) {
     }
 
     if (!res.ok) {
-      const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes((init.method || 'GET').toUpperCase());
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[HRMSS API HTTP ${res.status}] ${String(method || 'GET').toUpperCase()} ${cleanPath} -> code=${resData?.code || 'ERROR'} | msg=${resData?.message || ''}`,
+        Array.isArray(resData?.errors) && resData.errors.length ? resData.errors : '',
+      );
+      const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(String(method || 'GET').toUpperCase());
       if (isMutation && JOB_GONE_CODES.has(resData?.code)) {
         try { onJobGone?.(resData.code); } catch (e) { /* bỏ qua */ }
         return {
@@ -255,6 +268,11 @@ async function rawRequest(endpoint, options = {}) {
   } catch (err) {
     if (timer) clearTimeout(timer);
     const isTimeout = err?.name === 'AbortError';
+    // eslint-disable-next-line no-console
+    console.error(
+      `[HRMSS API EXCEPTION] ${String(method || 'GET').toUpperCase()} ${cleanPath} (${url}) -> ${err?.name || 'Error'}: ${err?.message || err}`,
+      err,
+    );
 
     // Không tự gửi lại sang server khác khi lỗi mạng: tránh gửi Authorization ra host khác và ghi trùng (POST 2 lần).
 

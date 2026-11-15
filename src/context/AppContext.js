@@ -18,6 +18,7 @@ import {
   matchJobForTech,
   CATEGORIES,
   SERVICES,
+  MATERIALS,
   tierOf,
   comboDiscountFor,
   syncCatalogFromBackend,
@@ -509,7 +510,7 @@ const storage = {
   load() {
     try {
       if (IS_WEB_STORAGE) {
-        return readJsonSync(KEY, "local");
+        return readJsonSync(KEY, "session");
       }
       return null;
     } catch (e) {
@@ -519,7 +520,7 @@ const storage = {
   save(s) {
     try {
       if (IS_WEB_STORAGE) {
-        writeJson(KEY, s, "local");
+        writeJson(KEY, s, "session");
       }
     } catch (e) {
       /* bỏ qua */
@@ -528,6 +529,7 @@ const storage = {
   clear() {
     try {
       if (IS_WEB_STORAGE) {
+        removeStorageItem(KEY, "session");
         removeStorageItem(KEY, "local");
       }
     } catch (e) {
@@ -740,9 +742,8 @@ export function AppProvider({ children }) {
       }
       return next;
     });
-  // Chống vòng lặp sync 2 tab: merge từ storage ≠ payload đã ghi → save lại → tab kia merge lại…
+  // Lưu trạng thái theo từng tab trên Web (sessionStorage) để mở 2 tab (1 tab Khách + 1 tab Thợ) không ghi đè mất đơn của nhau.
   const lastWritten = useRef("");
-  const skipSaveOnce = useRef(false);
   useEffect(() => {
     const { auth, ...rest } = s;
     const payload = { ...rest, role: auth?.role || rest.role };
@@ -753,15 +754,11 @@ export function AppProvider({ children }) {
       return;
     }
     if (raw === lastWritten.current) return;
-    if (skipSaveOnce.current) {
-      skipSaveOnce.current = false;
-      lastWritten.current = raw;
-      return;
-    }
     lastWritten.current = raw;
     if (IS_WEB_STORAGE) {
       try {
-        if (typeof localStorage !== "undefined") localStorage.setItem(KEY, raw);
+        if (typeof sessionStorage !== "undefined") sessionStorage.setItem(KEY, raw);
+        if (typeof localStorage !== "undefined") localStorage.removeItem(KEY);
       } catch (e) {
         /* quota / private mode */
       }
@@ -769,73 +766,6 @@ export function AppProvider({ children }) {
       writeJson(KEY, payload, "local");
     }
   }, [s]);
-
-  // Đồng bộ đơn hàng giữa tab Khách ↔ Thợ trên cùng trình duyệt
-  // Ưu tiên bản đơn có lịch sử dài hơn / cập nhật gần hơn để không ghi đè tiến độ thợ
-  useEffect(() => {
-    if (typeof window === "undefined") return undefined;
-    const orderRank = (o) => {
-      const hist = (o?.history || []).length;
-      const last = (o?.history || []).reduce(
-        (m, h) => Math.max(m, h.at || 0),
-        o?.updatedAt || 0,
-      );
-      return hist * 1e13 + last;
-    };
-    const mergeOrders = (local = [], remote = []) => {
-      const map = new Map();
-      [...local, ...remote].forEach((o) => {
-        if (!o?.code) return;
-        const cur = map.get(o.code);
-        if (!cur || orderRank(o) >= orderRank(cur)) map.set(o.code, o);
-      });
-      return [...map.values()].sort((a, b) => orderRank(b) - orderRank(a));
-    };
-    const mergeNotifs = (local = [], remote = []) => {
-      const map = new Map();
-      [...remote, ...local].forEach((n) => {
-        if (n?.id) map.set(n.id, n);
-      });
-      return [...map.values()].sort((a, b) => (b.at || 0) - (a.at || 0));
-    };
-    const onStorage = (e) => {
-      if (e.key !== KEY || !e.newValue) return;
-      if (e.newValue === lastWritten.current) return;
-      try {
-        const incoming = JSON.parse(e.newValue);
-        skipSaveOnce.current = true;
-        lastWritten.current = e.newValue;
-        setS((prev) => {
-          const sessKey = customerProfileKey(prev.auth);
-          const mergedProfiles = {
-            ...(prev.customerProfiles || {}),
-            ...(incoming.customerProfiles || {}),
-          };
-          const custSlice =
-            sessKey && mergedProfiles[sessKey]
-              ? {
-                  ...mergedProfiles[sessKey],
-                  notifications: mergeNotifs(
-                    prev.notifications,
-                    mergedProfiles[sessKey].notifications,
-                  ),
-                }
-              : {};
-          return {
-            ...prev,
-            ...custSlice,
-            customerProfiles: mergedProfiles,
-            orders: mergeOrders(prev.orders, incoming.orders),
-            techNotifs: mergeNotifs(prev.techNotifs, incoming.techNotifs),
-          };
-        });
-      } catch (err) {
-        /* bỏ qua */
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
 
   // ------------------------- Điều hướng -------------------------
   const [tab, setTab] = useState(() =>
@@ -1228,7 +1158,8 @@ export function AppProvider({ children }) {
             up(() => ({ policy: cfgRes.data }));
           }
         } catch (e) {
-          /* mất mạng: giữ dữ liệu cũ */
+          // eslint-disable-next-line no-console
+          console.error("[HRMSS Sync Error][Catalog]", e);
         }
       }
 
@@ -1477,7 +1408,8 @@ export function AppProvider({ children }) {
             uiRef.current?.toast(n.title, n.icon || "🔔");
           }, 0);
         } catch (e) {
-          /* bỏ qua */
+          // eslint-disable-next-line no-console
+          console.error("[HRMSS Sync Error][Customer]", e);
         }
       } else if (acc.role === "tech") {
         try {
@@ -1490,6 +1422,14 @@ export function AppProvider({ children }) {
               hrmssApi.getTechnicianProfile(),
               hrmssApi.getTechnicianReviews(),
             ]);
+          if (!jobsRes.ok) {
+            // eslint-disable-next-line no-console
+            console.warn("[HRMSS Sync Warn][Tech.getTechnicianJobs]", jobsRes.status, jobsRes.code, jobsRes.message);
+          }
+          if (!techMatRes.ok) {
+            // eslint-disable-next-line no-console
+            console.warn("[HRMSS Sync Warn][Tech.getTechnicianMaterials]", techMatRes.status, techMatRes.code, techMatRes.message);
+          }
           if (okItems(techMatRes))
             syncCatalogFromBackend({ materials: techMatRes.data.items });
           const summary = reviewRes.ok ? reviewRes.data?.summary : null;
@@ -1673,7 +1613,8 @@ export function AppProvider({ children }) {
             };
           });
         } catch (e) {
-          /* bỏ qua */
+          // eslint-disable-next-line no-console
+          console.error("[HRMSS Sync Error][Tech]", e);
         }
       }
     } finally {
@@ -1924,6 +1865,14 @@ export function AppProvider({ children }) {
     { title = "Không thực hiện được", codes = {}, toast, icon = "✓" } = {},
   ) => {
     if (!res?.ok) {
+      // eslint-disable-next-line no-console
+      console.warn("[HRMSS Action Error]", {
+        title,
+        status: res?.status,
+        code: res?.code,
+        message: res?.message,
+        errors: res?.errors,
+      });
       ui.alert(
         title,
         codes[res?.code] || (res?.status > 0 ? res.message : networkError(res)),
