@@ -489,7 +489,8 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     procedure: job.procedure || null,
     // Tiến độ / ghi chú thợ gửi (POST /technician/jobs/:id/progress).
     progress: (job.progress || []).map((p, idx) => ({
-      id: `pg-${job.assignment_id}-${idx}`,
+      id: p.progress_id != null ? `pg-${p.progress_id}` : `pg-${job.assignment_id}-${idx}`,
+      dbProgressId: p.progress_id ?? null,
       percent: p.progress_percent,
       note: p.note || '',
       at: p.recorded_at ? new Date(p.recorded_at).getTime() : createdAt,
@@ -508,11 +509,21 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     followUpReason: visit.follow_up_reason || '',
     outOfWarranty: Boolean(req.out_of_warranty),
     outOfWarrantyReason: req.out_of_warranty_reason || '',
-    repairNotes: (job.diagnoses || []).map((d, idx) => ({
-      id: `diag-${job.assignment_id}-${idx}`,
-      text: `${d.symptoms ? `[Triệu chứng: ${d.symptoms}] ` : ''}${d.findings || ''}${d.repair_recommendation ? ` -> Đề xuất: ${d.repair_recommendation}` : ''}`,
-      at: d.recorded_at ? new Date(d.recorded_at).getTime() : createdAt,
-    })),
+    repairNotes: [
+      ...(job.diagnoses || []).map((d, idx) => ({
+        id: `diag-${job.assignment_id}-${idx}`,
+        text: `${d.symptoms ? `[Triệu chứng: ${d.symptoms}] ` : ''}${d.findings || ''}${d.repair_recommendation ? ` -> Đề xuất: ${d.repair_recommendation}` : ''}`,
+        at: d.recorded_at ? new Date(d.recorded_at).getTime() : createdAt,
+      })),
+      ...(job.progress || [])
+        .filter((p) => p.note && String(p.note).trim())
+        .map((p, idx) => ({
+          id: p.progress_id != null ? `pg-${p.progress_id}` : `pg-${job.assignment_id}-${idx}`,
+          dbProgressId: p.progress_id ?? null,
+          text: String(p.note).trim(),
+          at: p.recorded_at ? new Date(p.recorded_at).getTime() : createdAt,
+        })),
+    ],
     report: (isDone || status === 'pending_payment') ? {
       summary: visit.work_performed || '',
       paid: bill ? ['PAID', 'NOTHING_TO_PAY'].includes(bill.paymentStatus) : ['COMPLETED', 'READY_FOR_ACCEPTANCE'].includes(String(req.request_status || '').toUpperCase()),
@@ -618,16 +629,7 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         // Ảnh, tiến độ lấy từ server; chỉ giữ bản trên máy khi server chưa trả trường này.
         evidence: ro.evidence !== undefined ? ro.evidence : (lo.evidence || []),
         progress: ro.progress !== undefined ? ro.progress : (lo.progress || []),
-        repairNotes: (() => {
-          const deleted = new Set(lo.deletedRepairNoteIds || []);
-          const edited = lo.editedRepairNotes || {};
-          const base = (ro.repairNotes?.length ? ro.repairNotes : (lo.repairNotes || []))
-            .filter((n) => !deleted.has(n.id))
-            .map((n) => (edited[n.id] ? { ...n, text: edited[n.id] } : n));
-          const baseIds = new Set(base.map((n) => n.id));
-          const localOnly = (lo.repairNotes || []).filter((n) => !deleted.has(n.id) && !baseIds.has(n.id));
-          return [...base, ...localOnly];
-        })(),
+        repairNotes: ro.repairNotes !== undefined ? ro.repairNotes : (lo.repairNotes || []),
         materials: ro.materials !== undefined ? ro.materials : (lo.materials || []),
         // Đang sửa lại báo giá thì giữ bản trên máy (trước đây dòng này ghi đè mất bản đang sửa).
         quote: keepEditing ? lo.quote : (ro.quote || lo.quote || null),

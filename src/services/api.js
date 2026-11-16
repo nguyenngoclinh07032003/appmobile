@@ -522,6 +522,17 @@ export const hrmssApi = {
       body: { ...(progress_percent != null ? { progress_percent } : {}), ...(note ? { note } : {}) },
     });
   },
+  async updateJobProgress(jobId, progressId, { note }) {
+    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/progress/${encodeURIComponent(progressId)}`, {
+      method: 'PATCH',
+      body: { note },
+    });
+  },
+  async deleteJobProgress(jobId, progressId) {
+    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/progress/${encodeURIComponent(progressId)}`, {
+      method: 'DELETE',
+    });
+  },
   async updateMaterialUsage(jobId, usageId, usedQuantity) {
     return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/materials/${encodeURIComponent(usageId)}`, { method: 'PATCH', body: { used_quantity: usedQuantity } });
   },

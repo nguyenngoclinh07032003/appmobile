@@ -1503,8 +1503,9 @@ export function TechJobScreen({ params }) {
                         title="Lưu"
                         small
                         onPress={() => {
-                          a.updateRepairNote(o.code, n.id, editingNoteText);
-                          setEditingNoteId(null);
+                          run(K.note, () => a.updateRepairNote(o.code, n.id, editingNoteText)).then((ok) => {
+                            if (ok) setEditingNoteId(null);
+                          });
                         }}
                       />
                     </View>
@@ -1515,7 +1516,7 @@ export function TechJobScreen({ params }) {
                       <Text style={{ color: C.ink, fontWeight: '600', lineHeight: 20 }}>{n.text}</Text>
                       <Text style={[ui.meta, { marginTop: 2 }]}>{fmtDateTime(n.at)}</Text>
                     </View>
-                    {mine ? (
+                    {mine && n.dbProgressId ? (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
                         <Tap
                           style={{ padding: 6, borderRadius: 6, backgroundColor: '#F1F5F9' }}
@@ -1540,7 +1541,7 @@ export function TechJobScreen({ params }) {
                                 {
                                   label: 'Xác nhận xoá',
                                   variant: 'danger',
-                                  onPress: () => a.deleteRepairNote(o.code, n.id),
+                                  onPress: () => run(K.note, () => a.deleteRepairNote(o.code, n.id)),
                                 },
                               ],
                             });

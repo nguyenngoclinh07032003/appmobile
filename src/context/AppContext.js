@@ -1982,57 +1982,43 @@ export function AppProvider({ children }) {
         icon: '💵',
       });
     },
-    // Nhật ký sửa chữa: ghi chú gửi qua POST /technician/jobs/:id/progress (chỉ note).
+    // Nhật ký sửa chữa: thêm / sửa / xóa trên server (POST / PATCH / DELETE /technician/jobs/:id/progress).
     addRepairNote: async (code, text) => {
       const note = String(text || '').trim();
       if (!note) { ui.alert('Thiếu nội dung', 'Nhập ghi chú công việc đã làm.', '📝'); return false; }
       const o = s.orders.find((x) => x.code === code);
       if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
       const res = await hrmssApi.addJobProgress(o.dbAssignmentId, { note });
-      if (res.ok) {
-        updateOrder(code, (ord) => ({
-          order: {
-            ...ord,
-            repairNotes: [...(ord.repairNotes || []), { id: `note_${Date.now()}`, text: note, at: Date.now() }],
-          },
-        }));
-      }
       return serverDone(res, { title: 'Không lưu được ghi chú', toast: 'Đã lưu ghi chú sửa chữa', icon: '📝' });
     },
-    updateRepairNote: (code, noteId, nextText) => {
+    updateRepairNote: async (code, noteId, nextText) => {
       const clean = String(nextText || '').trim();
       if (!clean) {
         ui.alert('Thiếu nội dung', 'Nội dung ghi chú không được để trống.', '✏️');
         return false;
       }
-      updateOrder(code, (ord) => {
-        const nextNotes = (ord.repairNotes || []).map((n) => (n.id === noteId ? { ...n, text: clean } : n));
-        const editedMap = { ...(ord.editedRepairNotes || {}), [noteId]: clean };
-        return {
-          order: {
-            ...ord,
-            repairNotes: nextNotes,
-            editedRepairNotes: editedMap,
-          },
-        };
+      const o = s.orders.find((x) => x.code === code);
+      const n = (o?.repairNotes || []).find((x) => x.id === noteId);
+      if (!o?.dbAssignmentId || !n?.dbProgressId || !authTokens.get()) return notSynced('Ghi chú này');
+      const res = await hrmssApi.updateJobProgress(o.dbAssignmentId, n.dbProgressId, { note: clean });
+      return serverDone(res, {
+        title: 'Không cập nhật được ghi chú',
+        codes: { PROGRESS_NOT_FOUND: 'Ghi chú này không còn trên hệ thống.' },
+        toast: 'Đã cập nhật ghi chú',
+        icon: '✏️',
       });
-      ui.toast('Đã cập nhật ghi chú', '✏️');
-      return true;
     },
-    deleteRepairNote: (code, noteId) => {
-      updateOrder(code, (ord) => {
-        const nextNotes = (ord.repairNotes || []).filter((n) => n.id !== noteId);
-        const deletedList = [...(ord.deletedRepairNoteIds || []), noteId];
-        return {
-          order: {
-            ...ord,
-            repairNotes: nextNotes,
-            deletedRepairNoteIds: deletedList,
-          },
-        };
+    deleteRepairNote: async (code, noteId) => {
+      const o = s.orders.find((x) => x.code === code);
+      const n = (o?.repairNotes || []).find((x) => x.id === noteId);
+      if (!o?.dbAssignmentId || !n?.dbProgressId || !authTokens.get()) return notSynced('Ghi chú này');
+      const res = await hrmssApi.deleteJobProgress(o.dbAssignmentId, n.dbProgressId);
+      return serverDone(res, {
+        title: 'Không xoá được ghi chú',
+        codes: { PROGRESS_NOT_FOUND: 'Ghi chú này không còn trên hệ thống.' },
+        toast: 'Đã xoá ghi chú',
+        icon: '🗑️',
       });
-      ui.toast('Đã xoá ghi chú', '🗑️');
-      return true;
     },
     // Khách sửa đơn còn chờ: PATCH /customer/requests/:id; ảnh mới tải lên POST /uploads (request_id).
     updatePendingRequest: async (code, patch) => {
