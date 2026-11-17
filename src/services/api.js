@@ -603,8 +603,43 @@ export const hrmssApi = {
     return apiRequest('/auth/me', { method: 'DELETE', body: { password } });
   },
   // Yêu cầu bảo hành cho đơn đã xong: tạo đơn bảo hành WARRANTY_PENDING (văn phòng thẩm định).
-  async requestWarranty(id, note = null) {
-    return apiRequest(`/customer/requests/${encodeURIComponent(id)}/warranty`, { method: 'POST', body: note ? { note } : {} });
+  // mode: 'full' = payload đặt lịch mới; 'legacy' = chỉ { note } (backend cũ).
+  async requestWarranty(id, payload = null, mode = 'full') {
+    let body = {};
+    if (typeof payload === 'string') {
+      body = { note: payload };
+    } else if (payload && typeof payload === 'object') {
+      const scheduledDate = payload.scheduled_date || payload.date || null;
+      const timeSlot = payload.time_slot || payload.slot || null;
+      const issue = payload.issue_description || payload.note || null;
+      const phone = payload.contact_phone || payload.phone || null;
+      const address = payload.contact_address || payload.address || null;
+      const urls = (payload.attachment_urls || payload.images || [])
+        .filter((u) => /^https?:\/\//i.test(String(u || '')));
+
+      const noteParts = [
+        scheduledDate || timeSlot ? `Lịch hẹn: ${[scheduledDate, timeSlot].filter(Boolean).join(' · ')}` : null,
+        phone ? `SĐT liên hệ: ${phone}` : null,
+        address ? `Địa chỉ: ${address}` : null,
+        issue || null,
+      ].filter(Boolean);
+      const note = payload.note || (noteParts.length ? noteParts.join('\n') : null);
+
+      if (mode === 'legacy') {
+        body = note ? { note } : {};
+      } else {
+        body = {
+          scheduled_date: scheduledDate,
+          time_slot: timeSlot,
+          issue_description: issue,
+          contact_phone: phone,
+          contact_address: address,
+          note,
+        };
+        if (urls.length) body.attachment_urls = urls;
+      }
+    }
+    return apiRequest(`/customer/requests/${encodeURIComponent(id)}/warranty`, { method: 'POST', body });
   },
   async reviewCustomerRequest(id, { rating, review_text, punctuality_rating, attitude_rating, expertise_rating }) {
     return apiRequest(`/customer/requests/${id}/review`, {

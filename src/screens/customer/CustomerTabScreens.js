@@ -8,7 +8,7 @@ import {
 import { useApp, warrantyInfo, fmtDate, isActiveOrder, orderTotal, customerStatusMeta } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, PageHead, Pills, Segmented, ServiceGrid, EmptyState, Field, Badge,
-  StatusChip, Progress, Media, ListRow, Sheet, ui, HScroll, AppIcon,
+  StatusChip, Progress, Media, ListRow, Sheet, ui, HScroll, AppIcon, WarrantyBookingSheet,
 } from '../../components';
 
 // =========================================================== DỊCH VỤ
@@ -110,12 +110,8 @@ function WarrantyView() {
     if (warrantyQuery) lookup(warrantyQuery); else setResult(null);
   }, [warrantyNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const request = (o) => u.confirm(
-    'Gửi yêu cầu bảo hành?',
-    `Thợ sẽ quay lại kiểm tra miễn phí cho đơn ${o.code}.`,
-    () => { a.requestWarranty(o.code).then((code) => { if (code) nav.push('order', { code }); }); },
-    'Gửi yêu cầu',
-  );
+  const [bookingOrder, setBookingOrder] = useState(null);
+  const request = (o) => setBookingOrder(o);
 
   const OrderLine = ({ o }) => {
     const info = warrantyInfo(o, s.orders, s.lifetimePoints);
@@ -187,6 +183,25 @@ function WarrantyView() {
           Chưa có đơn nào đang trong thời gian bảo hành.{'\n'}Đơn hoàn thành sẽ tự động xuất hiện ở đây.
         </Text>
       ) : null}
+      <WarrantyBookingSheet
+        visible={!!bookingOrder}
+        onClose={() => setBookingOrder(null)}
+        order={bookingOrder}
+        winfo={bookingOrder ? warrantyInfo(bookingOrder, s.orders, s.lifetimePoints) : null}
+        onSubmit={async (payload) => {
+          try {
+            const newCode = await a.requestWarranty(bookingOrder.code, payload);
+            if (newCode) {
+              setBookingOrder(null);
+              nav.push('order', { code: newCode });
+            }
+            return newCode;
+          } catch (e) {
+            u.alert('Chưa gửi được', 'Không gửi được yêu cầu bảo hành. Vui lòng thử lại.', '⚠️');
+            return null;
+          }
+        }}
+      />
     </ScrollView>
   );
 }

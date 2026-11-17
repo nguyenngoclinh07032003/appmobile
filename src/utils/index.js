@@ -5,3 +5,4 @@ export * from './techProfile';
 export * from './authErrorMessages';
 export * from './vnTime';
 export * from './async';
+export * from './warrantyPolicy';

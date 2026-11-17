@@ -63,6 +63,10 @@ import {
 import { API_BASE_URL } from "../constants/config";
 import { authErrorMessage } from "../utils/authErrorMessages";
 import { readTechnicianSpecialties } from "../utils/techProfile";
+import {
+  analyzeWarrantyEligibility,
+  checkWarrantyAlertMilestone,
+} from "../utils/warrantyPolicy";
 
 // Ngày sinh: server lưu 'YYYY-MM-DD', app hiển thị 'DD/MM/YYYY'.
 const isoToDob = (iso) => {
@@ -355,20 +359,35 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
       totalDays,
       text: `Bảo hành ${totalDays} ngày sẽ bắt đầu khi đơn hoàn thành.`,
     };
-  const endAt = o.warrantyEndAt || o.doneAt + totalDays * DAY;
-  const left = Math.ceil((endAt - Date.now()) / DAY);
-  if (left <= 0)
+
+  const schedule = analyzeWarrantyEligibility({
+    completedAt: o.doneAt,
+    warrantyDays: totalDays,
+    serverNow: Date.now(),
+  });
+
+  if (!schedule.eligible) {
     return {
       ok: false,
       totalDays,
-      text: `Đơn đã hết thời hạn bảo hành ${totalDays} ngày.`,
+      daysLeft: schedule.daysLeft || 0,
+      isCutoff: schedule.reason === 'WARRANTY_FINAL_DAY_CUTOFF',
+      isFinalDay: schedule.isFinalDay,
+      reason: schedule.reason,
+      text: schedule.message || `Đơn đã hết thời hạn bảo hành ${totalDays} ngày.`,
+      until: schedule.until,
     };
+  }
+
   return {
     ok: true,
     totalDays,
-    daysLeft: left,
-    until: endAt,
-    text: `Còn ${left}/${totalDays} ngày bảo hành (đến ${fmtDate(endAt)}).`,
+    daysLeft: schedule.daysLeft,
+    isFinalDay: schedule.isFinalDay,
+    availableDates: schedule.availableDates,
+    availableSlots: schedule.availableSlots,
+    until: schedule.until,
+    text: schedule.notice || `Còn ${schedule.daysLeft}/${totalDays} ngày bảo hành (đến ${fmtDate(schedule.until)}).`,
   };
 };
 
@@ -846,6 +865,56 @@ export function AppProvider({ children }) {
       ),
     }));
     uiRef.current?.toast(`Đơn ${expired[0].code} quá hạn tiếp nhận`, "⏰");
+  }, [isCustomerRole, nowTick, s.orders]);
+
+  // Khách: Cảnh báo tự động trước khi hết hạn bảo hành (D-7, D-3, D-1)
+  useEffect(() => {
+    if (!isCustomerRole) return;
+    const nowTs = Date.now();
+    const alertable = [];
+    for (const o of s.orders) {
+      if (o.status !== "done" || o.kind === "warranty" || !o.doneAt) continue;
+      const milestone = checkWarrantyAlertMilestone(o.doneAt, o.warrantyDays || 60, nowTs);
+      if (!milestone) continue;
+      const notifiedKey = `warranty_alert_${milestone}`;
+      if (!o[notifiedKey]) {
+        alertable.push({ order: o, milestone, notifiedKey });
+      }
+    }
+    if (!alertable.length) return;
+    setS((p) => {
+      let currentNotifs = p.notifications;
+      const updatedOrders = p.orders.map((ord) => {
+        const item = alertable.find((a) => a.order.code === ord.code);
+        if (item) {
+          return { ...ord, [item.notifiedKey]: true };
+        }
+        return ord;
+      });
+      for (const item of alertable) {
+        const { order, milestone } = item;
+        let title = `🛡️ Đơn ${order.code} còn ${milestone} ngày bảo hành`;
+        let body = `Thiết bị của bạn còn ${milestone} ngày bảo hành miễn phí. Nếu phát sinh sự cố, hãy gửi yêu cầu để thợ hỗ trợ kịp thời nhé!`;
+        if (milestone === 1) {
+          title = `🚨 Cơ hội cuối: Đơn ${order.code} sắp hết hạn bảo hành`;
+          body = `Hôm nay là ngày cuối cùng trong thời hạn bảo hành. Vui lòng kiểm tra lại thiết bị và gửi yêu cầu trước 18h00!`;
+        }
+        currentNotifs = pushNotif(
+          { notifications: currentNotifs },
+          {
+            icon: "🛡️",
+            title,
+            body,
+            link: { name: "order", params: { code: order.code } },
+          },
+        );
+      }
+      return {
+        ...p,
+        orders: updatedOrders,
+        notifications: currentNotifs,
+      };
+    });
   }, [isCustomerRole, nowTick, s.orders]);
 
   const nav = {
@@ -3929,11 +3998,19 @@ export function AppProvider({ children }) {
     },
     // Yêu cầu bảo hành: backend tạo đơn bảo hành (WARRANTY_PENDING), văn phòng thẩm định trên web.
     // Trả mã đơn bảo hành mới (để mở màn đơn), lỗi thì báo và trả null.
-    requestWarranty: async (code, note) => {
+    requestWarranty: async (code, payloadOrNote) => {
       const o = s.orders.find((x) => x.code === code);
       if (!o) return null;
       const info = warrantyInfo(o, s.orders, s.lifetimePoints);
       if (!info.ok) {
+        if (info.isCutoff) {
+          ui.alert(
+            "Đã hết giờ tiếp nhận bảo hành",
+            "Hôm nay là ngày cuối cùng trong thời hạn bảo hành và đã quá giờ làm việc của kỹ thuật viên (sau 18h00). Vui lòng liên hệ Hotline 1900 886633 để được hỗ trợ.",
+            "🛡️"
+          );
+          return null;
+        }
         ui.alert("Không thể gửi yêu cầu", info.text, "🛡️");
         return info.openCode || null;
       }
@@ -3945,13 +4022,29 @@ export function AppProvider({ children }) {
         );
         return null;
       }
-      const res = await hrmssApi.requestWarranty(o.dbRequestId, note || null);
+      // Thử payload đặt lịch mới trước; nếu backend cũ/chưa hỗ trợ thì gửi lại dạng { note }.
+      let res = await hrmssApi.requestWarranty(o.dbRequestId, payloadOrNote || null, "full");
+      const canFallbackLegacy =
+        !res.ok &&
+        typeof payloadOrNote === "object" &&
+        payloadOrNote &&
+        ["ERROR", "VALIDATION_ERROR", "BAD_REQUEST", "NOT_FOUND", "INTERNAL_ERROR", "INTERNAL_SERVER_ERROR"].includes(
+          String(res.code || ""),
+        );
+      if (canFallbackLegacy) {
+        res = await hrmssApi.requestWarranty(o.dbRequestId, payloadOrNote, "legacy");
+      }
       if (!res.ok) {
         const msg = {
           WARRANTY_NOT_STARTED: "Bảo hành chỉ bắt đầu khi đơn đã hoàn thành.",
           WARRANTY_EXPIRED: "Đơn đã hết thời hạn bảo hành.",
+          WARRANTY_FINAL_DAY_CUTOFF: "Hôm nay là ngày cuối bảo hành và đã quá ca tiếp nhận của thợ (sau 18h00).",
+          WARRANTY_MUST_BE_TODAY: "Ngày cuối bảo hành chỉ được chọn lịch trong ngày hôm nay.",
           WARRANTY_ALREADY_OPEN:
             "Đơn này đang có một yêu cầu bảo hành chưa xử lý xong.",
+          INVALID_TIME_SLOT:
+            "Khung giờ đã chọn không còn khả dụng. Vui lòng chọn ca khác.",
+          VALIDATION_ERROR: res.message || "Thông tin gửi bảo hành chưa hợp lệ. Vui lòng kiểm tra lại.",
         }[res.code];
         ui.alert(
           "Không thể gửi yêu cầu",

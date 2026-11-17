@@ -26,7 +26,7 @@ import {
 import {
   callAction, errorText, isOk, useBusy, NotFoundView,
 } from '../shared/actionHelpers';
-import { TrackingCard, VietQRPay } from '../../components/order';
+import { TrackingCard, VietQRPay, WarrantyBookingSheet } from '../../components/order';
 import { WarrantyCertificate } from './WarrantyCertificate';
 
 const newAttId = () => `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
@@ -360,11 +360,9 @@ export function OrderScreen({ params }) {
     'Xác nhận',
   );
 
-  const requestWarranty = () => u.confirm('Gửi yêu cầu bảo hành?', 'Thợ sẽ quay lại kiểm tra miễn phí.', () => {
-    callAction(a.requestWarranty, o.code)
-      .then((c) => { if (c) nav.push('order', { code: c }); })
-      .catch((e) => u.alert('Chưa gửi được', errorText(e, 'Không gửi được yêu cầu bảo hành. Vui lòng thử lại.'), '⚠️'));
-  }, 'Gửi');
+  const [showWarrantyBooking, setShowWarrantyBooking] = useState(false);
+
+  const requestWarranty = () => setShowWarrantyBooking(true);
 
   return (
     <View style={{ flex: 1 }}>
@@ -1273,6 +1271,24 @@ export function OrderScreen({ params }) {
           ) : null}
         </View>
       </Sheet>
+      <WarrantyBookingSheet
+        visible={showWarrantyBooking}
+        onClose={() => setShowWarrantyBooking(false)}
+        order={o}
+        winfo={winfo}
+        onSubmit={async (payload) => {
+          try {
+            const newCode = await callAction(a.requestWarranty, o.code, payload);
+            if (newCode) {
+              nav.push('order', { code: newCode });
+            }
+            return newCode;
+          } catch (e) {
+            u.alert('Chưa gửi được', errorText(e, 'Không gửi được yêu cầu bảo hành. Vui lòng thử lại.'), '⚠️');
+            return null;
+          }
+        }}
+      />
     </View>
   );
 }
