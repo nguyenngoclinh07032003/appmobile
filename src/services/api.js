@@ -731,6 +731,24 @@ export const hrmssApi = {
   async releaseTechnicianJob(id, reason) {
     return apiRequest(`/technician/jobs/${encodeURIComponent(id)}/release`, { method: 'POST', body: { reason } });
   },
+  // Bàn giao tiền mặt thợ thu (/technician/handovers).
+  async getTechnicianPendingHandovers() {
+    return apiRequest('/technician/handovers/pending');
+  },
+  async submitTechnicianHandover({ payment_ids, notes = null }) {
+    return apiRequest('/technician/handovers', {
+      method: 'POST',
+      body: {
+        payment_ids: (payment_ids || []).map((id) => Number(id)),
+        ...(notes && String(notes).trim() ? { notes: String(notes).trim() } : {}),
+      },
+    });
+  },
+  async getTechnicianHandovers({ status = '', page = 1, limit = 30 } = {}) {
+    const q = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (status) q.set('status', status);
+    return apiRequest(`/technician/handovers?${q.toString()}`);
+  },
   async startTechnicianJob(id) {
     return apiRequest(`/technician/jobs/${id}/start`, { method: 'PATCH' });
   },

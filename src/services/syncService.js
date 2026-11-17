@@ -775,7 +775,11 @@ export const mapBackendNotification = (n, orders = [], linkName = 'order') => {
     type: n.type || null,
     title: vi.title,
     body: vi.body,
-    ...(order ? { link: { name: linkName, params: { code: order.code } } } : {}),
+    ...(order
+      ? { link: { name: linkName, params: { code: order.code } } }
+      : (['HANDOVER_CONFIRMED', 'HANDOVER_REJECTED'].includes(n.type)
+        ? { link: { name: 'tech-handovers', params: { tab: 'history' } } }
+        : {})),
   };
 };
 

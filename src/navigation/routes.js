@@ -10,7 +10,7 @@ import {
   ProfileScreen, HelpScreen, TermsScreen,
 } from '../screens/misc';
 import {
-  TechJobsScreen, TechScheduleScreen, TechNotifsScreen, TechAccountScreen, TechJobScreen,
+  TechJobsScreen, TechScheduleScreen, TechNotifsScreen, TechAccountScreen, TechJobScreen, TechHandoversScreen,
 } from '../screens/tech';
 import AuthScreen from '../screens/auth';
 
@@ -47,6 +47,7 @@ export const SCREENS = {
   terms: TermsScreen,
   'tech-job': TechJobScreen,
   'tech-notifs': TechNotifsScreen,
+  'tech-handovers': TechHandoversScreen,
 };
 
 export const DARK_TOP = ['home', 'personal', 'tech-jobs', 'tech-account'];

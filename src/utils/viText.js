@@ -51,6 +51,8 @@ const NOTIF_TYPE_VI = {
   QUOTATION_APPROVED: { title: 'Khách đã duyệt báo giá', body: 'Báo giá đơn {code} đã được khách đồng ý.' },
   QUOTATION_REJECTED: { title: 'Khách từ chối báo giá', body: 'Báo giá đơn {code} đã bị khách từ chối.' },
   QUOTATION_REVISION_REQUESTED: { title: 'Khách yêu cầu báo giá lại', body: 'Vui lòng gửi lại báo giá cho đơn {code}.' },
+  HANDOVER_CONFIRMED: { title: 'Văn phòng đã xác nhận nộp tiền mặt', body: 'Đợt bàn giao tiền mặt của bạn đã được đối soát.' },
+  HANDOVER_REJECTED: { title: 'Đợt nộp tiền mặt bị từ chối', body: 'Kiểm tra lý do từ chối và nộp lại khoản tiền mặt.' },
   JOB_COMPLETED: { title: 'Thợ đã hoàn thành', body: 'Đơn {code} đã xong, vui lòng kiểm tra số tiền và thanh toán.' },
   PAYMENT_REQUIRED: { title: 'Chờ thanh toán', body: 'Vui lòng thanh toán đơn {code}.' },
   PAYMENT_RECEIVED: { title: 'Đã nhận thanh toán', body: 'Thanh toán cho đơn {code} đã được ghi nhận.' },
