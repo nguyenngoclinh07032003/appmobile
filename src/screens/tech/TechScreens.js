@@ -198,10 +198,14 @@ function JobCard({ o, compact, onDecline }) {
             </View>
           ) : (
             <>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <Btn title="Gọi" small variant="ghost" icon="phone-call" onPress={() => callPhone(o.address?.phone)} />
-                {!compact ? <Btn title="Chỉ đường" small variant="ghost" icon="compass" onPress={() => openMap(o.address?.full)} /> : null}
-              </View>
+              {(o.assignmentActive || o.status === 'pending') ? (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {o.address?.phone && !String(o.address.phone).includes('*') ? (
+                    <Btn title="Gọi" small variant="ghost" icon="phone-call" onPress={() => callPhone(o.address?.phone)} />
+                  ) : null}
+                  {!compact ? <Btn title="Chỉ đường" small variant="ghost" icon="compass" onPress={() => openMap(o.address?.full)} /> : null}
+                </View>
+              ) : <View />}
               <View style={{ flexDirection: 'row', gap: 8, flexShrink: 1 }}>
                 {compact ? (
                   <Btn title="Chi tiết" small variant="soft" onPress={open} />
@@ -1291,12 +1295,14 @@ export function TechJobScreen({ params }) {
               <Text style={tx.name}>{o.address?.gender === 'Nữ' ? 'Chị' : 'Anh'} {o.address?.name}</Text>
               <Text style={ui.meta}>{o.address?.phone}</Text>
             </View>
-            <IconBtn icon="phone-call" onPress={() => callPhone(o.address?.phone)} style={{ backgroundColor: C.greenSoft }} label="Gọi khách" />
+            {(mine || o.status === 'pending') && o.address?.phone && !String(o.address.phone).includes('*') ? (
+              <IconBtn icon="phone-call" onPress={() => callPhone(o.address?.phone)} style={{ backgroundColor: C.greenSoft }} label="Gọi khách" />
+            ) : null}
           </View>
-          <Tap style={tx.addrBox} onPress={() => openMap(o.address?.full)}>
+          <Tap style={tx.addrBox} disabled={!mine && o.status !== 'pending'} onPress={() => openMap(o.address?.full)}>
             <AppIcon name="map-pin" size={16} color={C.primary} strokeWidth={2.2} />
             <Text style={{ flex: 1, color: C.ink, fontWeight: '600', lineHeight: 20 }}>{o.address?.full}</Text>
-            <Text style={ui.link}>Chỉ đường</Text>
+            {(mine || o.status === 'pending') ? <Text style={ui.link}>Chỉ đường</Text> : null}
           </Tap>
         </Card>
 

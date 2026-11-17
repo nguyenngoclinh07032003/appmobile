@@ -1801,6 +1801,20 @@ export function AppProvider({ children }) {
         syncSoon();
         if (n?.title)
           uiRef.current?.toast(viNotification(n).title, n.icon || "🔔");
+        // Thợ bị gỡ khỏi đơn (văn phòng đổi thợ / trả việc): thoát màn chi tiết và ngừng chờ cập nhật của đơn đó.
+        const nType = n?.notification_type || n?.type;
+        if (s.auth?.role === "tech" && nType === "JOB_REASSIGNED" && n?.request_id != null) {
+          let removedCode = null;
+          setS((p) => {
+            const target = p.orders.find((o) => String(o.dbRequestId) === String(n.request_id));
+            if (!target) return p;
+            removedCode = target.code;
+            return { ...p, orders: p.orders.filter((o) => o.code !== target.code) };
+          });
+          if (removedCode) {
+            setStack((st) => st.filter((x) => x.params?.code !== removedCode));
+          }
+        }
       }),
       subscribeSocketEvent("request:status", syncSoon),
       subscribeSocketEvent("request:updated", syncSoon),
@@ -1936,8 +1950,14 @@ export function AppProvider({ children }) {
     const signature = JSON.stringify(payload);
     if (lastDiagnosis.current.get(String(o.dbAssignmentId)) === signature)
       return null;
-    if (!o.arrivedAt && !o.checkIn)
-      await hrmssApi.startTechnicianJob(o.dbAssignmentId).catch(() => null);
+    if (!o.arrivedAt && !o.checkIn) {
+      return {
+        ok: false,
+        status: 409,
+        code: "CHECK_IN_REQUIRED",
+        message: 'Bạn chưa check-in tại nhà khách. Hãy bấm "Đã đến nơi (check-in)" trước khi chẩn đoán.',
+      };
+    }
     const res = await hrmssApi.submitDiagnosis(o.dbAssignmentId, payload);
     if (res.ok) lastDiagnosis.current.set(String(o.dbAssignmentId), signature);
     return res;
@@ -2344,7 +2364,17 @@ export function AppProvider({ children }) {
               "Tài khoản đang tạm ngưng nhận việc. Liên hệ điều phối để mở lại.",
             REQUEST_NOT_AVAILABLE:
               "Việc đã có thợ khác nhận hoặc đã hết hạn. Việc đã được gỡ khỏi danh sách.",
+            REQUEST_DECLINED:
+              "Đơn này bạn đã từ chối hoặc trả trước đó nên không thể nhận lại.",
+            TIME_CONFLICT:
+              "Khung giờ của đơn này đang trùng với một việc bạn đang phụ trách.",
           }[res.code];
+          if (res.code === "REQUEST_DECLINED") {
+            up((p) => ({
+              ...markDeclined(p, p.techProfile?.code || TECH_ME.code, code),
+              orders: p.orders.filter((x) => x.code !== code),
+            }));
+          }
           ui.alert(
             "Không nhận được",
             msg || (res.status > 0 ? res.message : networkError(res)),
@@ -2436,6 +2466,7 @@ export function AppProvider({ children }) {
         return { ok: false };
       }
       up((p) => ({ orders: p.orders.filter((x) => x.code !== code) }));
+      setStack((st) => st.filter((x) => x.params?.code !== code));
       const rel = res.data?.release || {};
       ui.toast(
         rel.reassigned
@@ -2881,7 +2912,13 @@ export function AppProvider({ children }) {
           needsQuotation: true,
         });
         if (dRes && !dRes.ok)
-          return serverDone(dRes, { title: "Không lưu được chẩn đoán" });
+          return serverDone(dRes, {
+            title: "Không lưu được chẩn đoán",
+            codes: {
+              CHECK_IN_REQUIRED:
+                'Bạn chưa check-in tại nhà khách. Hãy bấm "Đã đến nơi (check-in)" trước khi chẩn đoán.',
+            },
+          });
       }
       const hasExtra = lines.some((l) => !l.isOriginal);
       // Tại nhà khách: nếu không có phát sinh thêm, chuyển sang xác nhận chẩn đoán và bắt đầu làm (không gửi báo giá trùng)
@@ -2954,7 +2991,13 @@ export function AppProvider({ children }) {
         needsQuotation: false,
       });
       if (dRes && !dRes.ok)
-        return serverDone(dRes, { title: "Không lưu được chẩn đoán" });
+        return serverDone(dRes, {
+          title: "Không lưu được chẩn đoán",
+          codes: {
+            CHECK_IN_REQUIRED:
+              'Bạn chưa check-in tại nhà khách. Hãy bấm "Đã đến nơi (check-in)" trước khi chẩn đoán.',
+          },
+        });
       updateOrder(code, (ord) => ({
         order: withStatus(ord, "repairing", Date.now()),
       }));
