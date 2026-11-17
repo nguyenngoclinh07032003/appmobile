@@ -18,8 +18,20 @@ export const isAwaitingPreQuote = (o) => Boolean(
   o.quote.status !== 'REVISION_REQUESTED',
 );
 
-// Lấy GPS thật rồi check-in. Nếu chạy trên Web/PC không có GPS phần cứng hoặc định vị bị chặn/sai lệch IP,
-// tự động dùng tọa độ điểm hẹn của đơn hàng (hoặc tọa độ mặc định Hà Nội) để không chặn luồng check-in của thợ.
+const destLocOf = (o) => {
+  const lat = o?.address?.lat != null ? Number(o.address.lat) : null;
+  const lng = o?.address?.lng != null ? Number(o.address.lng) : null;
+  if (lat == null || lng == null) return null;
+  return {
+    lat,
+    lng,
+    accuracy: 15,
+    label: 'Check-in theo địa chỉ khách (web/demo)',
+    at: Date.now(),
+  };
+};
+
+// Lấy GPS thật rồi check-in. Không tự giả tọa độ im lặng; trên web mới hỏi dùng địa chỉ khách.
 export async function checkInWithGps(o, a, u) {
   let loc = null;
   try {
@@ -27,32 +39,30 @@ export async function checkInWithGps(o, a, u) {
   } catch (_e) {
     loc = null;
   }
-  const destLat = o?.address?.lat != null ? Number(o.address.lat) : null;
-  const destLng = o?.address?.lng != null ? Number(o.address.lng) : null;
+  const dest = destLocOf(o);
 
   if (!loc || loc.lat == null || loc.lng == null) {
-    loc = {
-      lat: destLat ?? 21.028511,
-      lng: destLng ?? 105.804817,
-      accuracy: 15,
-      label: 'Đã xác nhận tại địa chỉ khách hàng',
-      at: Date.now(),
-    };
-  } else if (
-    Platform.OS === 'web' &&
-    destLat != null &&
-    destLng != null &&
-    (distanceKm(loc, { lat: destLat, lng: destLng }) ?? 0) > 0.3
-  ) {
-    // Trên trình duyệt PC, định vị theo IP nhà mạng thường lệch 5-20km so với địa chỉ khách -> ưu tiên tọa độ điểm hẹn.
-    loc = {
-      lat: destLat,
-      lng: destLng,
-      accuracy: 15,
-      label: 'Đã xác nhận tại địa chỉ khách hàng',
-      at: Date.now(),
-    };
+    if (Platform.OS === 'web' && dest) {
+      u.toast('GPS web không có · dùng địa chỉ khách để check-in', '📍');
+      return Promise.resolve(a.arrive(o.code, dest));
+    }
+    u.alert(
+      'Không lấy được GPS',
+      'Bật định vị rồi thử lại khi đã đến gần nhà khách.',
+      '📍',
+    );
+    return false;
   }
+
+  if (
+    Platform.OS === 'web' &&
+    dest &&
+    (distanceKm(loc, { lat: dest.lat, lng: dest.lng }) ?? 0) > 0.3
+  ) {
+    u.toast('GPS web lệch điểm hẹn · dùng địa chỉ khách', '📍');
+    return Promise.resolve(a.arrive(o.code, dest));
+  }
+
   return Promise.resolve(a.arrive(o.code, loc));
 }
 

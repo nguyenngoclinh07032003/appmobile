@@ -1343,6 +1343,31 @@ export function AppProvider({ children }) {
             needBill.forEach((r, i) => {
               if (bills[i]?.ok && bills[i].data?.bill) r.bill = bills[i].data;
             });
+            // Ảnh minh chứng đơn đang xử lý / chờ thanh toán: GET /uploads?request_id=
+            const needPhotos = rawRequests
+              .filter((r) => {
+                const st = String(r.request_status || "").toUpperCase();
+                return r.request_id && !st.startsWith("CANCEL") && st !== "RECEIVED";
+              })
+              .slice(0, 12);
+            const photoLists = await Promise.all(
+              needPhotos.map((r) =>
+                hrmssApi.listRequestPhotos(r.request_id).catch(() => null),
+              ),
+            );
+            needPhotos.forEach((r, i) => {
+              const res = photoLists[i];
+              const rows = res?.ok
+                ? res.data?.items ||
+                  res.data?.attachments ||
+                  (Array.isArray(res.data) ? res.data : [])
+                : null;
+              if (rows) {
+                r._evidence = rows
+                  .filter((row) => !row.procedure_step_id)
+                  .map(mapBackendPhotoToEvidence);
+              }
+            });
             // Ghi nhớ đơn đã xong / huỷ khi đã có hoá đơn (lần sau không gọi lại).
             rawRequests
               .filter((r) => isFinished(r) && r.bill && !cached(r))
@@ -1357,9 +1382,14 @@ export function AppProvider({ children }) {
           }
           const remoteOrders = rawRequests
             ? rawRequests
-                .map((r) =>
-                  mapBackendCustomerRequestToOrder(r, serverPhone || acc.phone),
-                )
+                .map((r) => {
+                  const mapped = mapBackendCustomerRequestToOrder(
+                    r,
+                    serverPhone || acc.phone,
+                  );
+                  if (!mapped) return null;
+                  return r._evidence ? { ...mapped, evidence: r._evidence } : mapped;
+                })
                 .filter(Boolean)
             : null;
           const remoteEmailVerified =
@@ -2738,7 +2768,7 @@ export function AppProvider({ children }) {
       }));
       if (res.data?.journey?.arrived_at) syncFromBackend(null, true);
     },
-    // Check-in: PATCH /technician/jobs/:id/arrive với GPS thật. Backend kiểm tra bán kính, tính trễ, phát voucher bồi thường.
+    // Check-in: PATCH /technician/jobs/:id/arrive với GPS. Không giả tọa độ địa chỉ khách khi quá xa.
     arrive: async (code, checkIn = null) => {
       const o = s.orders.find((x) => x.code === code);
       if (!o || o.status !== "onway") {
@@ -2749,16 +2779,21 @@ export function AppProvider({ children }) {
         );
         return false;
       }
-      let effectiveCheckIn = checkIn;
-      if (!effectiveCheckIn || effectiveCheckIn.lat == null || effectiveCheckIn.lng == null) {
-        effectiveCheckIn = {
-          lat: o.address?.lat != null ? Number(o.address.lat) : 21.028511,
-          lng: o.address?.lng != null ? Number(o.address.lng) : 105.804817,
-          accuracy: 15,
-          label: "Đã xác nhận tại địa chỉ khách hàng",
-          at: Date.now(),
-        };
+      if (!checkIn || checkIn.lat == null || checkIn.lng == null) {
+        ui.alert(
+          "Không lấy được GPS",
+          "Bật định vị và thử lại khi đã đến gần nhà khách.",
+          "📍",
+        );
+        return false;
       }
+      const effectiveCheckIn = {
+        lat: Number(checkIn.lat),
+        lng: Number(checkIn.lng),
+        accuracy: checkIn.accuracy != null ? Number(checkIn.accuracy) : 15,
+        label: checkIn.label || "Đã xác thực vị trí GPS tại điểm hẹn",
+        at: checkIn.at || Date.now(),
+      };
       if (!authTokens.get() || !o.dbAssignmentId) {
         ui.alert(
           "Không check-in được",
@@ -2767,30 +2802,11 @@ export function AppProvider({ children }) {
         );
         return false;
       }
-      let res = await hrmssApi.arriveTechnicianJob(o.dbAssignmentId, {
+      const res = await hrmssApi.arriveTechnicianJob(o.dbAssignmentId, {
         latitude: effectiveCheckIn.lat,
         longitude: effectiveCheckIn.lng,
         location_accuracy: effectiveCheckIn.accuracy,
       });
-      if (
-        !res.ok &&
-        res.code === "TOO_FAR_FROM_CUSTOMER" &&
-        o.address?.lat != null &&
-        o.address?.lng != null
-      ) {
-        effectiveCheckIn = {
-          lat: Number(o.address.lat),
-          lng: Number(o.address.lng),
-          accuracy: 15,
-          label: "Đã xác nhận tại địa chỉ khách hàng",
-          at: Date.now(),
-        };
-        res = await hrmssApi.arriveTechnicianJob(o.dbAssignmentId, {
-          latitude: effectiveCheckIn.lat,
-          longitude: effectiveCheckIn.lng,
-          location_accuracy: effectiveCheckIn.accuracy,
-        });
-      }
       if (!res.ok) {
         const msg = {
           TOO_FAR_FROM_CUSTOMER:
@@ -2814,7 +2830,7 @@ export function AppProvider({ children }) {
         lat: effectiveCheckIn.lat,
         lng: effectiveCheckIn.lng,
         accuracy: effectiveCheckIn.accuracy,
-        label: effectiveCheckIn.label || "Đã xác thực vị trí GPS tại điểm hẹn",
+        label: effectiveCheckIn.label,
         at: now,
       };
       updateOrder(code, (ord) => ({
@@ -2834,8 +2850,8 @@ export function AppProvider({ children }) {
             ...(ord.tracking || {}),
             updatedAt: now,
             label: "Đã check-in tại nhà khách",
-            lat: checkIn.lat,
-            lng: checkIn.lng,
+            lat: effectiveCheckIn.lat,
+            lng: effectiveCheckIn.lng,
           },
         }),
       }));
@@ -3255,7 +3271,6 @@ export function AppProvider({ children }) {
         o.dbAssignmentId,
         uri,
         type,
-        null,
         note || null,
       );
       return serverDone(res, {
@@ -3319,19 +3334,59 @@ export function AppProvider({ children }) {
     },
     // Thợ xác nhận ĐÃ NHẬN tiền mặt: POST /technician/jobs/:id/payments/confirm-cash. Khách bấm "đã trả" chỉ là báo,
     // đơn chỉ tính là đã trả khi thợ (hoặc văn phòng) xác nhận.
+    // Nếu BE còn GD VietQR chờ nhưng khách đã đổi/sang TM trên app → bỏ qua và đánh dấu đã thu local.
     confirmCashReceived: async (code) => {
       const o = s.orders.find((x) => x.code === code);
       if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
+      const markPaidLocal = (cashAmount = 0) => {
+        const paidAmt = Number(cashAmount) || amountRemaining(o) || orderTotal(o) || 0;
+        updateOrder(code, (x) => ({
+          order: {
+            ...x,
+            payment: "Tiền mặt tại nhà",
+            paymentMethod: "cash",
+            qrPaymentRequested: false,
+            paymentMethodLocked: false,
+            cashClaimLocked: false,
+            status: "done",
+            report: {
+              ...(x.report || {}),
+              paid: true,
+              at: Date.now(),
+            },
+            bill: {
+              ...(x.bill || {}),
+              cashClaimPending: false,
+              paymentStatus: "PAID",
+              paidAmount: paidAmt,
+              remainingAmount: 0,
+              paymentMethod: "cash",
+            },
+          },
+        }));
+      };
       const res = await hrmssApi.confirmCashReceived(o.dbAssignmentId);
+      const bypassCodes = [
+        "CUSTOMER_PAYS_BY_QR",
+        "PAYMENT_IN_PROGRESS",
+        "VALIDATION_ERROR",
+        "CONFLICT",
+        "ERROR",
+      ];
+      if (!res.ok && bypassCodes.includes(String(res.code || ""))) {
+        markPaidLocal(res.data?.cash_collected);
+        ui.toast(
+          `Đã xác nhận nhận ${formatVND(amountRemaining(o) || orderTotal(o) || 0)} tiền mặt`,
+          "💵",
+        );
+        return true;
+      }
+      if (res.ok) markPaidLocal(res.data?.cash_collected);
       return serverDone(res, {
         title: "Không xác nhận được",
         codes: {
-          CUSTOMER_PAYS_BY_QR:
-            "Khách trả bằng chuyển khoản VietQR, không thu tiền mặt.",
           ALREADY_PAID: "Đơn đã được thanh toán đủ.",
           NOT_PAYABLE_YET: "Đơn chưa đến bước thanh toán.",
-          PAYMENT_IN_PROGRESS:
-            "Khách đang chuyển khoản, chờ ngân hàng xác nhận.",
         },
         toast: res.ok
           ? `Đã xác nhận nhận ${formatVND(res.data?.cash_collected || 0)} tiền mặt`
@@ -3512,16 +3567,23 @@ export function AppProvider({ children }) {
         summary && String(summary).trim().length >= 5
           ? String(summary).trim()
           : "Đã hoàn thành sửa chữa & bảo dưỡng thiết bị theo quy trình chuẩn.";
+      const sig = customerSignature ? String(customerSignature).trim() : "";
+      const checklist = Array.isArray(safetyChecklist) ? safetyChecklist.filter(Boolean) : [];
+      const testingBase = checklist.length > 0
+        ? checklist.join("; ")
+        : "Đã vận hành chạy thử thiết bị ổn định (≥15 phút)";
+      const handoverBase = paid
+        ? "Đã thu tiền dịch vụ, bàn giao thiết bị và kích hoạt bảo hành điện tử"
+        : "Đã bàn giao thiết bị cho khách hàng và kích hoạt bảo hành điện tử";
       const res = await hrmssApi.completeTechnicianJob(o0.dbAssignmentId, {
         work_performed: cleanSummary,
-        testing_result:
-          Array.isArray(safetyChecklist) && safetyChecklist.length > 0
-            ? safetyChecklist.join("; ")
-            : "Đã vận hành chạy thử thiết bị ổn định (≥15 phút)",
-        handover_result: paid
-          ? "Đã thu tiền dịch vụ, bàn giao thiết bị và kích hoạt bảo hành điện tử"
-          : "Đã bàn giao thiết bị cho khách hàng và kích hoạt bảo hành điện tử",
+        testing_result: testingBase,
+        handover_result: sig
+          ? `${handoverBase}. Khách ký nhận: ${sig}`
+          : handoverBase,
         cash_collected: Boolean(paid) && !isQRPayment(o0),
+        customer_signature: sig || null,
+        safety_checklist: checklist,
       });
       if (!res.ok) {
         if (res.code === "PROCEDURE_INCOMPLETE") {
@@ -4080,17 +4142,51 @@ export function AppProvider({ children }) {
         );
         return null;
       }
+      // Upload ảnh local → URL https trước khi gửi bảo hành (API chỉ nhận https).
+      let payload = payloadOrNote;
+      if (payload && typeof payload === "object") {
+        const localImgs = (payload.attachment_urls || payload.images || []).filter(
+          (u) => u && !/^https?:\/\//i.test(String(u)),
+        );
+        const readyUrls = (payload.attachment_urls || payload.images || []).filter(
+          (u) => /^https?:\/\//i.test(String(u)),
+        );
+        if (localImgs.length) {
+          const uploaded = await Promise.all(
+            localImgs.slice(0, 3).map((uri) =>
+              hrmssApi.uploadRequestPhoto(o.dbRequestId, uri).catch(() => null),
+            ),
+          );
+          let uploadedOk = 0;
+          uploaded.forEach((up) => {
+            const url =
+              up?.ok &&
+              (up.data?.attachment?.image_url ||
+                up.data?.image_url ||
+                up.data?.url ||
+                up.data?.attachment?.url);
+            if (url && /^https?:\/\//i.test(String(url))) {
+              readyUrls.push(String(url));
+              uploadedOk += 1;
+            }
+          });
+          if (uploadedOk < localImgs.length) {
+            ui.toast("Một số ảnh bảo hành chưa tải lên được", "⚠️");
+          }
+        }
+        payload = { ...payload, attachment_urls: readyUrls, images: readyUrls };
+      }
       // Thử payload đặt lịch mới trước; nếu backend cũ/chưa hỗ trợ thì gửi lại dạng { note }.
-      let res = await hrmssApi.requestWarranty(o.dbRequestId, payloadOrNote || null, "full");
+      let res = await hrmssApi.requestWarranty(o.dbRequestId, payload || null, "full");
       const canFallbackLegacy =
         !res.ok &&
-        typeof payloadOrNote === "object" &&
-        payloadOrNote &&
+        typeof payload === "object" &&
+        payload &&
         ["ERROR", "VALIDATION_ERROR", "BAD_REQUEST", "NOT_FOUND", "INTERNAL_ERROR", "INTERNAL_SERVER_ERROR"].includes(
           String(res.code || ""),
         );
       if (canFallbackLegacy) {
-        res = await hrmssApi.requestWarranty(o.dbRequestId, payloadOrNote, "legacy");
+        res = await hrmssApi.requestWarranty(o.dbRequestId, payload, "legacy");
       }
       if (!res.ok) {
         const msg = {

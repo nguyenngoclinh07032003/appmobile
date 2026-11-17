@@ -816,6 +816,10 @@ export const hrmssApi = {
     });
   },
   async completeTechnicianJob(id, payload) {
+    const signature = payload.customer_signature || payload.customerSignature || null;
+    const checklist = Array.isArray(payload.safety_checklist)
+      ? payload.safety_checklist
+      : (Array.isArray(payload.safetyChecklist) ? payload.safetyChecklist : null);
     return apiRequest(`/technician/jobs/${id}/complete`, {
       method: 'PATCH',
       body: {
@@ -824,6 +828,8 @@ export const hrmssApi = {
         handover_result: payload.handover_result || 'Đã bàn giao cho khách hàng và kích hoạt bảo hành điện tử',
         // Thợ đã thu đủ tiền mặt lúc bàn giao (khách chọn VietQR thì backend từ chối 409 CUSTOMER_PAYS_BY_QR).
         ...(payload.cash_collected ? { cash_collected: true } : {}),
+        ...(signature ? { customer_signature: String(signature).trim() } : {}),
+        ...(checklist?.length ? { safety_checklist: checklist } : {}),
       },
     });
   },

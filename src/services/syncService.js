@@ -433,7 +433,10 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
       tech: techName,
       techCode: techInfo?.technician_id != null ? String(techInfo.technician_id) : '',
       warrantyCertificateCode: `BH-${req.request_code}`,
+      customerSignature: latestVisit?.customer_signature || null,
     } : null,
+    followUpRequested: Boolean(latestVisit?.follow_up_reason),
+    followUpReason: latestVisit?.follow_up_reason || '',
     rating: req.review ? {
       stars: Number(req.review.rating) || 5,
       text: req.review.review_text || '',
@@ -752,15 +755,29 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         tracking: lo.tracking || ro.tracking,
         checkIn: lo.checkIn || ro.checkIn,
         chat: lo.chat?.length ? lo.chat : (ro.chat || []),
-        // Ảnh, tiến độ lấy từ server; chỉ giữ bản trên máy khi server chưa trả trường này.
-        evidence: ro.evidence !== undefined ? ro.evidence : (lo.evidence || []),
+        // Ảnh/tiến độ: ưu tiên server; giữ local nếu server chưa có.
+        evidence: (Array.isArray(ro.evidence) && ro.evidence.length)
+          ? ro.evidence
+          : (lo.evidence || ro.evidence || []),
         progress: ro.progress !== undefined ? ro.progress : (lo.progress || []),
         repairNotes: ro.repairNotes !== undefined ? ro.repairNotes : (lo.repairNotes || []),
         materials: ro.materials !== undefined ? ro.materials : (lo.materials || []),
         // Đang sửa lại báo giá thì giữ bản trên máy (trước đây dòng này ghi đè mất bản đang sửa).
         quote: keepEditing ? lo.quote : (ro.quote || lo.quote || null),
         rating: ro.rating || lo.rating || null,
-        report: ro.report || lo.report || null,
+        report: (ro.report || lo.report) ? {
+          ...(lo.report || {}),
+          ...(ro.report || {}),
+          // Giữ chữ ký / checklist thợ vừa nhập nếu server chưa trả.
+          customerSignature: ro.report?.customerSignature || lo.report?.customerSignature || null,
+          safetyChecklist: ro.report?.safetyChecklist?.length
+            ? ro.report.safetyChecklist
+            : (lo.report?.safetyChecklist || []),
+          summary: ro.report?.summary || lo.report?.summary || '',
+          paid: ro.report?.paid != null ? ro.report.paid : lo.report?.paid,
+        } : null,
+        followUpRequested: ro.followUpRequested != null ? ro.followUpRequested : lo.followUpRequested,
+        followUpReason: ro.followUpReason || lo.followUpReason || '',
         // Bảo toàn cờ đã thông báo quá hạn tiếp nhận để tránh vòng lặp thông báo/refresh
         expiredNotified: lo.expiredNotified !== undefined ? lo.expiredNotified : ro.expiredNotified,
         ...(keepLockedMethod ? {
