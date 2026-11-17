@@ -447,18 +447,38 @@ export function OrderScreen({ params }) {
         {o.status === 'quoted' && o.quote ? (() => {
           const isOnSite = Boolean(o.arrivedAt || o.checkIn || o.history?.some((h) => h.status === 'diagnosing'));
           const lines = o.quote.lines || [];
-          const bookedIds = new Set((o.items || []).map((it) => it.id));
-          const bookedNames = new Set((o.items || []).map((it) => String(it.name || '').trim().toLowerCase()));
-          const isBooked = (l) => l.isOriginal || (!l.matId && l.type !== 'part' && (bookedIds.has(l.key) || bookedNames.has(String(l.name || '').trim().toLowerCase())));
+          const bookedIds = new Set((o.items || []).map((it) => String(it.id || it.service_id || it.key)));
+          const bookedNames = new Set(
+            (o.items || [])
+              .map((it) => String(it.name || it.service_name || getService(it.id)?.name || '').trim().toLowerCase())
+              .filter(Boolean)
+          );
+          const isBooked = (l) =>
+            Boolean(l.isOriginal) ||
+            (!l.matId &&
+              l.type !== 'part' &&
+              (bookedIds.has(String(l.key)) ||
+                bookedNames.has(String(l.name || '').trim().toLowerCase())));
 
           const laborItems = lines.filter((l) => isBooked(l));
-          const partItems = lines.filter((l) => (l.type === 'part' || Boolean(l.matId)) && !isBooked(l));
-          const customItems = lines.filter((l) => !isBooked(l) && l.type !== 'part' && !l.matId);
-          const extraAmount = [...partItems, ...customItems].reduce(
+          const extraLines = lines.filter((l) => !isBooked(l));
+          const partItems = extraLines.filter((l) => l.type === 'part' || Boolean(l.matId));
+          const customItems = extraLines.filter((l) => l.type !== 'part' && !l.matId);
+          const laborAmount = laborItems.reduce(
             (sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 1),
             0
           );
-          const bookedBase = o.quote.booked != null ? o.quote.booked : bookedValue(o);
+          const extraAmount = extraLines.reduce(
+            (sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 1),
+            0
+          );
+          const prodDisc = Number(o.productDiscount) || 0;
+          const comboDisc = Number(o.comboDiscount) || 0;
+          const bookedBase =
+            o.quote.booked != null && Number(o.quote.booked) > 0
+              ? Number(o.quote.booked)
+              : bookedValue(o);
+          const goodsBase = o.goods || (bookedBase + prodDisc + comboDisc);
           const finalAfterQuote = Math.max(0, bookedBase + extraAmount - (partDisc || 0) - (o.voucherDiscount || 0));
 
           return (
@@ -502,6 +522,18 @@ export function OrderScreen({ params }) {
                     <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(l.price * l.qty)}</Text>
                   </View>
                 ))}
+                {o.productDiscount ? (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                    <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Giảm giá dịch vụ</Text>
+                    <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.green }]}>-{formatVND(o.productDiscount)}</Text>
+                  </View>
+                ) : null}
+                {o.comboDiscount ? (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
+                    <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Ưu đãi {o.comboLabel || 'Combo nhiều máy (-5%)'}</Text>
+                    <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.green }]}>-{formatVND(o.comboDiscount)}</Text>
+                  </View>
+                ) : null}
               </View>
 
               {/* Danh sách vật tư / linh kiện thay thế (nếu có) */}
@@ -552,6 +584,15 @@ export function OrderScreen({ params }) {
 
               {/* Tổng kết chi tiết minh bạch */}
               <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#FDE68A' }}>
+                {(prodDisc > 0 || comboDisc > 0) ? (
+                  <Bill l="Tổng tiền dịch vụ" v={formatVND(goodsBase)} />
+                ) : null}
+                {prodDisc > 0 ? (
+                  <Bill l="Giảm giá dịch vụ" v={`-${formatVND(prodDisc)}`} green />
+                ) : null}
+                {comboDisc > 0 ? (
+                  <Bill l={`Ưu đãi ${o.comboLabel || 'Combo nhiều máy (-5%)'}`} v={`-${formatVND(comboDisc)}`} green />
+                ) : null}
                 <Bill l="Giá dịch vụ đã đặt" v={formatVND(bookedBase)} />
                 {extraAmount > 0 ? (
                   <Bill l="Chi phí phát sinh thêm" v={`+${formatVND(extraAmount)}`} />
@@ -746,6 +787,18 @@ export function OrderScreen({ params }) {
                     <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.ink }]}>{formatVND(l.price * l.qty)}</Text>
                   </View>
                 ))}
+                {o.productDiscount ? (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
+                    <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Giảm giá dịch vụ</Text>
+                    <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.green }]}>-{formatVND(o.productDiscount)}</Text>
+                  </View>
+                ) : null}
+                {o.comboDiscount ? (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
+                    <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Ưu đãi {o.comboLabel || 'Combo nhiều máy (-5%)'}</Text>
+                    <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.green }]}>-{formatVND(o.comboDiscount)}</Text>
+                  </View>
+                ) : null}
               </View>
 
               {/* Danh sách vật tư (nếu có) */}
@@ -879,18 +932,35 @@ export function OrderScreen({ params }) {
                 )}
               </>
             ) : (
-              <>
-                <Bill l="Tổng tiền dịch vụ" v={formatVND(o.goods)} />
-                {o.productDiscount ? <Bill l="Giảm giá dịch vụ" v={`-${formatVND(o.productDiscount)}`} green /> : null}
-                {o.comboDiscount ? <Bill l={`Ưu đãi ${o.comboLabel || 'Combo nhiều máy'}`} v={`-${formatVND(o.comboDiscount)}`} green /> : null}
-                {/* Số tiền dưới đây lấy từ hoá đơn server (GET /customer/requests/:id/bill) */}
-                {o.bill?.quotationTotal != null && o.bill.quotationTotal !== o.bill.bookedAmount ? <Bill l="Theo báo giá đã duyệt" v={formatVND(o.bill.quotationTotal)} /> : null}
-                {o.bill?.supplementalTotal ? <Bill l="Trong đó phát sinh" v={`+${formatVND(o.bill.supplementalTotal)}`} /> : null}
-                {partDisc ? <Bill l={`Ưu đãi hạng thành viên (−${o.bill?.tierPartDiscountPercent || 0}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
-                {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code || ''}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
-                {lateDiscountAmount(o) ? <Bill l="Bồi thường thợ đến muộn" v={`−${formatVND(lateDiscountAmount(o))}`} green /> : null}
-                {o.bill?.paidAmount ? <Bill l="Đã thanh toán" v={formatVND(o.bill.paidAmount)} green /> : null}
-              </>
+              (() => {
+                const hasActiveQuote =
+                  o.quote &&
+                  !o.quote.rejectReason &&
+                  !o.quote.revisionRequested &&
+                  o.quote.status !== 'REJECTED';
+                const quoteExtra = hasActiveQuote
+                  ? Number(o.quote.extraAmount) ||
+                    Math.max(0, (Number(o.quote.total) || 0) - bookedValue(o))
+                  : Number(o.bill?.supplementalTotal) ||
+                    Math.max(0, (Number(o.bill?.quotationTotal) || 0) - (Number(o.bill?.bookedAmount) || bookedValue(o)));
+                return (
+                  <>
+                    <Bill l="Tổng tiền dịch vụ" v={formatVND(o.goods)} />
+                    {o.productDiscount ? <Bill l="Giảm giá dịch vụ" v={`-${formatVND(o.productDiscount)}`} green /> : null}
+                    {o.comboDiscount ? <Bill l={`Ưu đãi ${o.comboLabel || 'Combo nhiều máy'}`} v={`-${formatVND(o.comboDiscount)}`} green /> : null}
+                    {quoteExtra > 0 ? (
+                      <Bill
+                        l={o.quote?.approved ? 'Vật tư & chi phí phát sinh' : 'Vật tư & phát sinh (theo báo giá)'}
+                        v={`+${formatVND(quoteExtra)}`}
+                      />
+                    ) : null}
+                    {partDisc ? <Bill l={`Ưu đãi hạng thành viên (−${o.bill?.tierPartDiscountPercent || 0}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
+                    {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code || ''}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
+                    {lateDiscountAmount(o) ? <Bill l="Bồi thường thợ đến muộn" v={`−${formatVND(lateDiscountAmount(o))}`} green /> : null}
+                    {o.bill?.paidAmount ? <Bill l="Đã thanh toán" v={formatVND(o.bill.paidAmount)} green /> : null}
+                  </>
+                );
+              })()
             )}
             <Bill l="Hình thức" v={o.payment || 'Chuyển khoản VietQR'} />
             <Bill

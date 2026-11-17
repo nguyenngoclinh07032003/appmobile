@@ -746,6 +746,7 @@ export function TechAccountScreen() {
           <Text style={{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }}>Hỗ trợ kỹ thuật viên</Text>
           <View style={tx.menu}>
             <ListRow icon={a.isSoundMuted?.() ? 'bell-off' : 'bell'} label="Âm thanh chuông báo" value={a.isSoundMuted?.() ? 'Tắt' : 'Bật'} onPress={() => a.toggleSound?.()} />
+            <ListRow icon="refresh-cw" label="Đồng bộ lại từ máy chủ" onPress={async () => { await a.syncFromBackend(null, true); u.toast('Đã nạp lại dữ liệu máy chủ mới nhất', 'check'); }} />
             <ListRow icon="headphones" label="Liên hệ điều phối" value={HOTLINE} onPress={u.call} last />
           </View>
           <Btn
@@ -1090,10 +1091,15 @@ export function TechJobScreen({ params }) {
 
   // ---- báo giá ----
   const qTotal = draft.total;
-  // Tại nhà khách form chỉ chứa phần phát sinh (cộng thêm vào giá đã đặt) -> phát sinh = tổng các dòng.
-  // Trước khi xuất phát báo giá thay giá đã đặt -> chênh lệch = tổng báo giá − giá đã đặt.
   const onSiteQuote = isOnSiteQuote(o);
-  const diff = onSiteQuote ? qTotal : qTotal - bookedValue(o);
+  const extraItems = draft.lines.filter((l) => !l.isOriginal);
+  const extraTotal = extraItems.reduce((sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 1), 0);
+  const prodDisc = Number(o.productDiscount) || 0;
+  const comboDisc = Number(o.comboDiscount) || 0;
+  const netDraftTotal = Math.max(0, qTotal - prodDisc - comboDisc);
+  // Tại nhà khách form chỉ chứa phần phát sinh -> phát sinh = tổng các dòng mới.
+  // Trước khi xuất phát: chênh lệch = tổng sau giảm − giá đã đặt.
+  const diff = onSiteQuote ? extraTotal : Math.max(0, netDraftTotal - bookedValue(o));
   const mats = MATERIALS.filter((m) => matAll || m.category === 'all' || cats.includes(m.category));
   const addPart = (m) => {
     if (matMode === 'usage') { a.addMaterial(o.code, m); setMatMode(null); return; }
@@ -1113,8 +1119,9 @@ export function TechJobScreen({ params }) {
       return;
     }
     const text = [symptoms, diag].filter(Boolean).join('. ');
+    const hasExtra = draft.lines.some((l) => !l.isOriginal);
     // Tại nhà khách không có phát sinh: không gửi báo giá (nếu gửi, dịch vụ đã đặt bị tính 2 lần), chỉ ghi chẩn đoán rồi làm.
-    if (onSiteQuote && !draft.lines.length) {
+    if (onSiteQuote && !hasExtra) {
       run(K.quote, () => a.startRepairWithoutQuote(o.code, { diagnosis: text, symptoms, recommendation: reco }))
         .then((res) => { if (succeeded(res)) draft.markSaved(); });
       return;
@@ -1417,20 +1424,25 @@ export function TechJobScreen({ params }) {
         ) : null}
 
         {/* ===== Chẩn đoán & báo giá ===== */}
-        {(o.status === 'diagnosing' || (o.status === 'confirmed' && showPreQuote)) && mine ? (
+        {(o.status === 'diagnosing' || (o.status === 'confirmed' && (showPreQuote || o.quote?.revisionRequested))) && mine ? (
           <QuoteEditor o={o} draft={draft} cats={cats} matsCount={mats.length} onOpenMaterials={() => setMatMode('quote')} evidence={evidence} />
         ) : null}
 
         {/* ===== Báo giá đã gửi ===== */}
-        {o.quote && !(o.status === 'diagnosing' && o.quote.revisionRequested) ? (
+        {o.quote && !(mine && ['diagnosing', 'confirmed'].includes(o.status) && (o.quote.revisionRequested || showPreQuote)) ? (
           <Card style={{ marginTop: 12 }}>
             {(() => {
               // Báo giá trước khi đi (status confirmed) chưa duyệt và chưa bị từ chối = đang chờ khách.
               const waiting = !o.quote.approved && (o.status === 'quoted' || (o.status === 'confirmed' && !o.quote.rejectReason && !o.quote.revisionRequested));
+              const isRevise = Boolean(o.quote.revisionRequested);
               return (
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={tx.h}>🧾 Chẩn đoán & báo giá</Text>
-                  <Badge text={o.quote.approved ? 'Đã duyệt' : waiting ? 'Chờ khách duyệt' : 'Bị từ chối'} fg={o.quote.approved ? C.green : waiting ? C.goldInk : C.red} bg={o.quote.approved ? C.greenSoft : waiting ? C.goldSoft : C.redSoft} />
+                  <Badge
+                    text={o.quote.approved ? 'Đã duyệt' : waiting ? 'Chờ khách duyệt' : isRevise ? 'Yêu cầu báo giá lại' : 'Bị từ chối'}
+                    fg={o.quote.approved ? C.green : (waiting || isRevise) ? C.goldInk : C.red}
+                    bg={o.quote.approved ? C.greenSoft : (waiting || isRevise) ? C.goldSoft : C.redSoft}
+                  />
                 </View>
               );
             })()}
@@ -1442,8 +1454,40 @@ export function TechJobScreen({ params }) {
                 <Text style={{ color: C.ink, fontWeight: '700' }}>{formatVND(l.price * l.qty)}</Text>
               </View>
             ))}
+            {o.productDiscount ? (
+              <View style={tx.qRow}>
+                <AppIcon name="tag" size={13} color={C.green} style={{ marginTop: 2 }} />
+                <Text style={{ flex: 1, color: C.green }} numberOfLines={1}>Giảm giá dịch vụ</Text>
+                <Text style={{ color: C.green, fontWeight: '700' }}>-{formatVND(o.productDiscount)}</Text>
+              </View>
+            ) : null}
+            {o.comboDiscount ? (
+              <View style={tx.qRow}>
+                <AppIcon name="percent" size={13} color={C.green} style={{ marginTop: 2 }} />
+                <Text style={{ flex: 1, color: C.green }} numberOfLines={1}>Ưu đãi {o.comboLabel || 'Combo nhiều máy (-5%)'}</Text>
+                <Text style={{ color: C.green, fontWeight: '700' }}>-{formatVND(o.comboDiscount)}</Text>
+              </View>
+            ) : null}
             <View style={tx.totalRow}><Text style={{ fontWeight: '800', color: C.ink }}>Tổng</Text><Text style={[ui.price, { fontSize: 17 }]}>{formatVND(o.quote.total)}</Text></View>
-            {o.quote.rejectReason ? <Text style={[ui.meta, { color: C.red }]}>Lý do khách từ chối: {o.quote.rejectReason}</Text> : null}
+            {o.quote.rejectReason ? (
+              <Text style={[ui.meta, { color: o.quote.revisionRequested ? C.goldInk : C.red }]}>
+                {o.quote.revisionRequested ? 'Lý do khách yêu cầu báo giá lại: ' : 'Lý do khách từ chối: '}
+                {o.quote.rejectReason}
+              </Text>
+            ) : null}
+            {mine && o.quote.revisionRequested && o.status !== 'quoted' ? (
+              <View style={{ marginTop: 12 }}>
+                <Btn
+                  title="Sửa & gửi lại báo giá cho khách"
+                  icon="pencil"
+                  small
+                  onPress={() => {
+                    setShowPreQuote(true);
+                    a.reopenQuote(o.code);
+                  }}
+                />
+              </View>
+            ) : null}
             {o.status === 'quoted' && mine ? (
               <View style={{ marginTop: 12, gap: 8 }}>
                 <Text style={ui.meta}>
@@ -1713,8 +1757,8 @@ export function TechJobScreen({ params }) {
       {mine && ['confirmed', 'onway'].includes(o.status) ? (
         <View style={tx.dock}>
           <Btn title="Trả việc" variant="dangerSoft" style={{ flex: 1 }} onPress={() => { setReleaseReason(RELEASE_REASONS[0]); setReleaseNote(''); setShowRelease(true); }} />
-          {o.status === 'confirmed' && showPreQuote ? (
-            <Btn title={busyQuote ? 'Đang gửi…' : 'Gửi báo giá trước khi đi'} icon="receipt-text" style={{ flex: 2 }} disabled={busyQuote} onPress={sendQuote} />
+          {o.status === 'confirmed' && (showPreQuote || o.quote?.revisionRequested) ? (
+            <Btn title={busyQuote ? 'Đang gửi…' : (o.quote?.revisionRequested ? 'Gửi lại báo giá' : 'Gửi báo giá trước khi đi')} icon="receipt-text" style={{ flex: 2 }} disabled={busyQuote} onPress={sendQuote} />
           ) : next ? (
             <Btn title={next.label} icon={next.icon} variant={next.variant || 'primary'} style={{ flex: 2 }} disabled={Boolean(next.disabled)} onPress={next.run} />
           ) : null}
@@ -1731,9 +1775,20 @@ export function TechJobScreen({ params }) {
         <View style={tx.dock}>
           <View style={{ flex: 1 }}>
             <Text style={ui.meta}>{onSiteQuote ? 'Phát sinh thêm' : 'Tổng báo giá'}</Text>
-            <Text style={[ui.price, { fontSize: 18 }]}>{formatVND(qTotal)}</Text>
+            <Text style={[ui.price, { fontSize: 18 }]}>{formatVND(onSiteQuote ? extraTotal : netDraftTotal)}</Text>
           </View>
-          <Btn title={busyQuote ? 'Đang gửi…' : draft.lines.length ? 'Gửi báo giá phát sinh' : 'Xác nhận & bắt đầu'} style={{ flex: 2 }} disabled={busyQuote} onPress={sendQuote} />
+          <Btn
+            title={
+              busyQuote
+                ? 'Đang gửi…'
+                : o.quote?.revisionRequested
+                  ? (extraItems.length > 0 ? 'Gửi lại báo giá' : 'Xác nhận & bắt đầu (0đ phát sinh)')
+                  : (extraItems.length > 0 ? 'Gửi báo giá phát sinh' : 'Xác nhận & bắt đầu')
+            }
+            style={{ flex: 2 }}
+            disabled={busyQuote}
+            onPress={sendQuote}
+          />
         </View>
       ) : null}
       {mine && o.status === 'repairing' ? (

@@ -36,11 +36,22 @@ const webLocation = (timeoutMs) => new Promise((resolve) => {
     resolve(null);
     return;
   }
+  const halfTimeout = Math.max(1500, Math.min(timeoutMs, 3500));
   try {
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve(toPayload(pos?.coords)),
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 30000 },
+      () => {
+        try {
+          navigator.geolocation.getCurrentPosition(
+            (pos2) => resolve(toPayload(pos2?.coords)),
+            () => resolve(null),
+            { enableHighAccuracy: false, timeout: halfTimeout, maximumAge: 300000 },
+          );
+        } catch (_e2) {
+          resolve(null);
+        }
+      },
+      { enableHighAccuracy: true, timeout: halfTimeout, maximumAge: 30000 },
     );
   } catch (e) {
     resolve(null);

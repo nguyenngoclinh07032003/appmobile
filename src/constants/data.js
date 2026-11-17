@@ -456,8 +456,28 @@ export const TECH_STATUS_DESC = {
   cancelled: 'Việc đã kết thúc / bị huỷ.',
 };
 
-// Vật tư / linh kiện: nạp từ backend khi đồng bộ (syncCatalogFromBackend), không lưu giá cứng trong app.
-export const MATERIALS = [];
+// Vật tư / linh kiện: nạp từ backend khi đồng bộ (syncCatalogFromBackend), có sẵn danh mục 18 vật tư chuẩn làm fallback.
+export const DEFAULT_MATERIALS = [
+  { id: 'm-db-1', dbId: 1, name: 'Gas R32', unit: 'kg', price: 250000, category: 'all' },
+  { id: 'm-db-2', dbId: 2, name: 'Gas R410A', unit: 'kg', price: 280000, category: 'all' },
+  { id: 'm-db-3', dbId: 3, name: 'Gas R22', unit: 'kg', price: 220000, category: 'all' },
+  { id: 'm-db-4', dbId: 4, name: 'Tụ điện block máy lạnh', unit: 'cái', price: 350000, category: 'all' },
+  { id: 'm-db-5', dbId: 5, name: 'Ống đồng + bảo ôn', unit: 'm', price: 180000, category: 'all' },
+  { id: 'm-db-6', dbId: 6, name: 'Ống thoát nước', unit: 'm', price: 20000, category: 'all' },
+  { id: 'm-db-7', dbId: 7, name: 'Van xả máy giặt', unit: 'cái', price: 220000, category: 'all' },
+  { id: 'm-db-8', dbId: 8, name: 'Dây curoa máy giặt', unit: 'sợi', price: 180000, category: 'all' },
+  { id: 'm-db-9', dbId: 9, name: 'Bơm xả máy giặt cửa trước', unit: 'cái', price: 450000, category: 'all' },
+  { id: 'm-db-10', dbId: 10, name: 'Gioăng cửa tủ lạnh', unit: 'bộ', price: 350000, category: 'all' },
+  { id: 'm-db-11', dbId: 11, name: 'Rơ-le khởi động tủ lạnh', unit: 'cái', price: 120000, category: 'all' },
+  { id: 'm-db-12', dbId: 12, name: 'Cảm biến nhiệt tủ lạnh', unit: 'cái', price: 160000, category: 'all' },
+  { id: 'm-db-13', dbId: 13, name: 'Thanh nhiệt bình nóng lạnh', unit: 'cái', price: 280000, category: 'all' },
+  { id: 'm-db-14', dbId: 14, name: 'Thanh magie chống cặn', unit: 'cái', price: 150000, category: 'all' },
+  { id: 'm-db-15', dbId: 15, name: 'Lưới lọc máy hút mùi', unit: 'tấm', price: 190000, category: 'all' },
+  { id: 'm-db-16', dbId: 16, name: 'Màng lọc HEPA', unit: 'tấm', price: 450000, category: 'all' },
+  { id: 'm-db-17', dbId: 17, name: 'Dung dịch vệ sinh chuyên dụng', unit: 'chai', price: 60000, category: 'all' },
+  { id: 'm-db-18', dbId: 18, name: 'Dây điện + CB', unit: 'bộ', price: 120000, category: 'all' },
+];
+export const MATERIALS = [...DEFAULT_MATERIALS];
 
 // Ánh xạ giữa mã App Mobile ("s<service_id>") và service_id trong PostgreSQL.
 export const resolveDbServiceId = (serviceSlugOrId) => {
@@ -477,6 +497,8 @@ export const resolveServiceSlugFromBackend = (serviceId, serviceName = '') => {
 export const resolveDbMaterialId = (matIdOrSlug, matName = '') => {
   const raw = String(matIdOrSlug || '').trim();
   if (/^[1-9]\d*$/.test(raw)) return raw;
+  const m = /^m-db-([1-9]\d*)$/.exec(raw);
+  if (m) return m[1];
   const found = MATERIALS.find((m) => m.id === raw || normalize(m.name) === normalize(matName));
   return found?.dbId ? String(found.dbId) : null;
 };
@@ -554,24 +576,22 @@ export const syncCatalogFromBackend = ({ categories = null, services = null, mat
     ALL_SERVICES.forEach((x) => { SERVICE_MAP[x.id] = x; SERVICE_BY_DB_ID[String(x.dbId)] = x; });
   }
   if (Array.isArray(materials) && materials.length > 0) {
-    materials.forEach((dbMat) => {
+    const list = materials.filter(Boolean).map((dbMat) => {
       const matIdNum = Number(dbMat.material_id);
-      if (!matIdNum) return;
+      if (!matIdNum) return null;
       const price = dbMat.unit_price == null ? null : Number(dbMat.unit_price);
-      const existing = MATERIALS.find((m) => m.dbId === matIdNum);
-      const next = {
+      return {
         id: `m-db-${matIdNum}`,
         dbId: matIdNum,
-        name: dbMat.material_name || existing?.name || `Vật tư #${matIdNum}`,
-        unit: dbMat.unit_of_measure || existing?.unit || 'cái',
-        // Văn phòng chưa niêm yết giá -> 0 (thợ tự nhập giá khi lập báo giá)
-        price: price != null ? price : (existing?.price ?? 0),
-        category: 'all', // backend không gắn vật tư với danh mục
+        name: dbMat.material_name || `Vật tư #${matIdNum}`,
+        unit: dbMat.unit_of_measure || 'cái',
+        price: price != null ? price : 0,
+        category: 'all',
       };
-      if (existing) Object.assign(existing, next);
-      else MATERIALS.push(next);
-    });
-    MATERIALS.sort((x, y) => x.dbId - y.dbId);
+    }).filter(Boolean);
+    if (list.length > 0) {
+      replaceAll(MATERIALS, list.sort((x, y) => x.dbId - y.dbId));
+    }
   }
 };
 
