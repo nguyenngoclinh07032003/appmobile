@@ -982,22 +982,48 @@ export function OrderScreen({ params }) {
               <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>Tổng thanh toán</Text>
               <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(o.status === 'cancelled' ? (o.inspectionFee || 0) : orderTotal(o))}</Text>
             </View>
-            {o.status !== 'cancelled' && !isPaid(o) && !isQRPayment(o) ? (
-              <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <IconBox icon="qr-code" size={38} bg="#E0F2FE" color="#0284C7" radius={12} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '800', color: '#0369A1', fontSize: 13 }}>Muốn chuyển khoản bằng mã QR?</Text>
-                  <Text style={{ fontSize: 12, color: '#0C4A6E', marginTop: 2, lineHeight: 17 }}>
-                    Đổi sang VietQR để quét mã trên App — khoá thu tiền mặt bên App của Thợ.
-                  </Text>
+            {o.status !== 'cancelled' && !isPaid(o) && !o.bill?.cashClaimPending && o.kind !== 'warranty' && o.kind !== 'followup' ? (
+              isQRPayment(o) ? (
+                <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <IconBox icon="banknote" size={38} bg="#FEF3C7" color="#D97706" radius={12} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: '800', color: '#92400E', fontSize: 13 }}>Không chuyển khoản được?</Text>
+                    <Text style={{ fontSize: 12, color: '#78350F', marginTop: 2, lineHeight: 17 }}>
+                      Đổi sang tiền mặt để trả trực tiếp cho thợ tại nhà.
+                    </Text>
+                  </View>
+                  <Btn
+                    title="Đổi tiền mặt"
+                    small
+                    variant="soft"
+                    onPress={() => u.confirm(
+                      'Đổi sang tiền mặt?',
+                      'Thợ sẽ được mở lại quyền thu tiền mặt cho đơn này. Bạn có thể đổi lại sang VietQR bất cứ lúc nào khi chưa thanh toán.',
+                      () => callAction(a.switchPaymentMethod, o.code, 'CASH'),
+                    )}
+                  />
                 </View>
-                <Btn
-                  title="Đổi sang QR"
-                  small
-                  variant="primary"
-                  onPress={() => a.switchToQRPayment(o.code)}
-                />
-              </View>
+              ) : (
+                <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <IconBox icon="qr-code" size={38} bg="#E0F2FE" color="#0284C7" radius={12} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: '800', color: '#0369A1', fontSize: 13 }}>Muốn chuyển khoản bằng mã QR?</Text>
+                    <Text style={{ fontSize: 12, color: '#0C4A6E', marginTop: 2, lineHeight: 17 }}>
+                      Đổi sang VietQR để quét mã trên App — thợ sẽ không thu tiền mặt.
+                    </Text>
+                  </View>
+                  <Btn
+                    title="Đổi sang QR"
+                    small
+                    variant="primary"
+                    onPress={() => u.confirm(
+                      'Đổi sang VietQR?',
+                      'Thợ sẽ bị khoá quyền thu tiền mặt. Bạn vẫn có thể đổi lại sang tiền mặt nếu chuyển khoản gặp sự cố.',
+                      () => callAction(a.switchPaymentMethod, o.code, 'BANK_TRANSFER'),
+                    )}
+                  />
+                </View>
+              )
             ) : null}
             {o.status === 'cancelled' && (o.inspectionFee || 0) > 0 ? (
               <View style={{ marginTop: 14, alignItems: 'center', padding: 12, borderRadius: 14, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#F5D77A' }}>
@@ -1013,7 +1039,7 @@ export function OrderScreen({ params }) {
                 <View style={{ width: '100%', padding: 10, borderRadius: R.sm, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <AppIcon name="shield-check" size={18} color={C.orange} strokeWidth={2.3} />
                   <Text style={{ flex: 1, fontSize: 12, color: C.goldInk, fontWeight: '700', lineHeight: 17 }}>
-                    Đơn thanh toán qua VietQR: Kỹ thuật viên đã bị khoá quyền thu tiền mặt. Quý khách vui lòng chỉ quét mã QR dưới đây.
+                    Đang chọn VietQR: thợ không thu tiền mặt. Nếu ngân hàng lỗi, bấm “Đổi tiền mặt” phía trên để trả trực tiếp cho thợ.
                   </Text>
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -1023,11 +1049,7 @@ export function OrderScreen({ params }) {
                 <Text style={[ui.meta, { marginBottom: 10, textAlign: 'center', color: C.muted }]}>
                   Quét mã VietQR để thanh toán dịch vụ. Khi thanh toán đủ, đơn sẽ chuyển sang Hoàn thành.
                 </Text>
-                {o.status === 'pending_payment' ? (
-                  <VietQRPay requestId={o.dbRequestId} onPaid={() => a.confirmPayment(o.code, 'webhook')} />
-                ) : (
-                  <Text style={[ui.meta, { textAlign: 'center' }]}>Mã QR thanh toán hiện khi thợ hoàn thành công việc.</Text>
-                )}
+                <VietQRPay requestId={o.dbRequestId} onPaid={() => a.confirmPayment(o.code, 'webhook')} />
               </View>
             ) : null}
             {/* Nút "Xác nhận đã trả tiền" chỉ đặt ở thanh dưới (dock) để tránh hai nút trùng chức năng. */}

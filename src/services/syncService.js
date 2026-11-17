@@ -733,6 +733,16 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
       // Thợ đang sửa lại báo giá (reopenQuote): giữ form mở tới khi server có báo giá mới.
       const keepEditing = Boolean(lo.quoteEditing) && ['quoted', 'repairing'].includes(ro.status)
         && (ro.quote?.dbQuotationId || null) === (lo.quoteEditingFrom || null);
+      // Khách đã đổi CASH ↔ VietQR khi BE còn GD chờ → giữ lựa chọn local tới khi đã trả / BE nhận method mới.
+      const keepLockedMethod = Boolean(lo.paymentMethodLocked)
+        && (lo.paymentMethod === 'cash' || lo.paymentMethod === 'vietqr')
+        && !lo.report?.paid
+        && ro.paymentMethod !== lo.paymentMethod;
+      // Khách đã báo trả tiền mặt khi BE còn GD VietQR chờ → giữ cashClaimPending local.
+      const keepCashClaim = Boolean(lo.cashClaimLocked)
+        && !lo.report?.paid
+        && !ro.bill?.cashClaimPending
+        && !['PAID', 'NOTHING_TO_PAY'].includes(ro.bill?.paymentStatus);
       byKey.set(matchKey, {
         ...lo,
         ...ro,
@@ -753,6 +763,30 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         report: ro.report || lo.report || null,
         // Bảo toàn cờ đã thông báo quá hạn tiếp nhận để tránh vòng lặp thông báo/refresh
         expiredNotified: lo.expiredNotified !== undefined ? lo.expiredNotified : ro.expiredNotified,
+        ...(keepLockedMethod ? {
+          payment: lo.paymentMethod === 'vietqr' ? (lo.payment || 'Chuyển khoản VietQR') : (lo.payment || 'Tiền mặt tại nhà'),
+          paymentMethod: lo.paymentMethod,
+          qrPaymentRequested: lo.paymentMethod === 'vietqr',
+          paymentMethodLocked: true,
+        } : {
+          paymentMethodLocked: ro.paymentMethod === lo.paymentMethod ? false : Boolean(lo.paymentMethodLocked),
+        }),
+        ...(keepCashClaim ? {
+          cashClaimLocked: true,
+          bill: {
+            ...(ro.bill || lo.bill || {}),
+            cashClaimPending: true,
+            paymentMethod: 'cash',
+          },
+          payment: 'Tiền mặt tại nhà',
+          paymentMethod: 'cash',
+          qrPaymentRequested: false,
+          paymentMethodLocked: true,
+        } : {
+          cashClaimLocked: (ro.bill?.cashClaimPending || ['PAID', 'NOTHING_TO_PAY'].includes(ro.bill?.paymentStatus))
+            ? false
+            : Boolean(lo.cashClaimLocked),
+        }),
       });
     }
     // Tuyệt đối không giữ lại đơn không có trên backend: Backend là nguồn sự thật duy nhất (SSOT).

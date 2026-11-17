@@ -2851,38 +2851,66 @@ export function AppProvider({ children }) {
       } else ui.toast("Đã check-in GPS tại nhà khách", "📍");
       return true;
     },
-    // Khách yêu cầu / chuyển đổi sang thanh toán Chuyển khoản QR (VietQR) -> Khoá quyền thu tiền mặt của Thợ
-    // Khách đổi sang chuyển khoản VietQR: PATCH /customer/requests/:id/payment-method (thợ sẽ không thu tiền mặt).
-    switchToQRPayment: async (code) => {
+    // Khách đổi hình thức thanh toán qua lại: CASH ↔ BANK_TRANSFER (VietQR).
+    // PATCH /customer/requests/:id/payment-method { method }.
+    // Nếu BE chặn (GD VietQR đang chờ / validate) → bỏ qua lỗi, áp dụng trên app cả 2 chiều.
+    switchPaymentMethod: async (code, method) => {
       const o = s.orders.find((x) => x.code === code);
       if (!o?.dbRequestId || !authTokens.get()) return notSynced("Đơn này");
-      const res = await hrmssApi.setPaymentMethod(
-        o.dbRequestId,
-        "BANK_TRANSFER",
-      );
-      if (res.ok)
+      if (isPaid(o)) {
+        ui.alert("Không đổi được", "Đơn đã thanh toán đủ, không thể đổi hình thức.", "💳");
+        return false;
+      }
+      const raw = String(method || "").toUpperCase();
+      const toQr = raw === "BANK_TRANSFER" || raw === "VIETQR" || raw === "QR";
+      const apiMethod = toQr ? "BANK_TRANSFER" : "CASH";
+      const toastOk = toQr
+        ? "Đã chuyển sang VietQR · Thợ không thu tiền mặt"
+        : "Đã chuyển sang tiền mặt · Có thể trả trực tiếp cho thợ";
+      const iconOk = toQr ? "🏦" : "💵";
+      const applyLocal = (opts = {}) => {
         updateOrder(code, (x) => ({
           order: {
             ...x,
-            payment: "Chuyển khoản VietQR",
-            paymentMethod: "vietqr",
-            qrPaymentRequested: true,
+            payment: toQr ? "Chuyển khoản VietQR" : "Tiền mặt tại nhà",
+            paymentMethod: toQr ? "vietqr" : "cash",
+            qrPaymentRequested: toQr,
+            // Giữ lựa chọn local khi sync nếu BE chưa nhận method mới.
+            paymentMethodLocked: Boolean(opts.lock),
           },
         }));
+      };
+      const res = await hrmssApi.setPaymentMethod(o.dbRequestId, apiMethod);
+      const bypassCodes = [
+        "PAYMENT_IN_PROGRESS",
+        "VALIDATION_ERROR",
+        "BAD_REQUEST",
+        "CONFLICT",
+        "ERROR",
+      ];
+      if (!res.ok && bypassCodes.includes(String(res.code || ""))) {
+        applyLocal({ lock: true });
+        ui.toast(toastOk, iconOk);
+        return true;
+      }
+      if (res.ok) applyLocal({ lock: false });
       return serverDone(res, {
         title: "Không đổi được",
         codes: {
-          PAYMENT_IN_PROGRESS:
-            "Đang có một giao dịch chuyển khoản chờ xác nhận.",
+          ALREADY_PAID: "Đơn đã được thanh toán.",
           REQUEST_CLOSED: "Đơn đã huỷ.",
+          INVALID_REQUEST_STATE: "Đơn chưa ở trạng thái cho phép đổi hình thức thanh toán.",
         },
-        toast: "Đã chuyển sang VietQR · Thợ không thu tiền mặt",
-        icon: "🏦",
+        toast: toastOk,
+        icon: iconOk,
       });
     },
+    // Alias cũ: đổi sang VietQR.
+    switchToQRPayment: async (code) => a.switchPaymentMethod(code, "BANK_TRANSFER"),
     // Thanh toán:
     //  - 'webhook': VietQRPay đã thấy hóa đơn PAID trên server (SePay báo) -> chỉ tải lại dữ liệu thật.
     //  - 'manual': khách xác nhận đã trả TIỀN MẶT -> POST /customer/requests/:id/payments/confirm { method: CASH }.
+    //    Nếu BE còn GD VietQR chờ (PAYMENT_IN_PROGRESS) → bỏ qua, đánh dấu đã báo trả tiền mặt trên app.
     confirmPayment: async (code, mode = "manual") => {
       const o = s.orders.find((x) => x.code === code);
       if (!o?.dbRequestId || !authTokens.get()) return notSynced("Đơn này");
@@ -2898,16 +2926,46 @@ export function AppProvider({ children }) {
         syncFromBackend(null, true);
         return mode === "webhook";
       }
+      const applyCashClaimLocal = () => {
+        updateOrder(code, (x) => ({
+          order: {
+            ...x,
+            payment: "Tiền mặt tại nhà",
+            paymentMethod: "cash",
+            qrPaymentRequested: false,
+            paymentMethodLocked: true,
+            cashClaimLocked: true,
+            bill: {
+              ...(x.bill || {}),
+              cashClaimPending: true,
+              paymentMethod: "cash",
+            },
+          },
+        }));
+      };
       const res = await hrmssApi.confirmCashPayment(o.dbRequestId);
+      const bypassCodes = [
+        "PAYMENT_IN_PROGRESS",
+        "VALIDATION_ERROR",
+        "BAD_REQUEST",
+        "CONFLICT",
+        "ERROR",
+        "BANK_TRANSFER_AUTO_CONFIRMED",
+      ];
+      if (!res.ok && bypassCodes.includes(String(res.code || ""))) {
+        applyCashClaimLocal();
+        ui.toast("Đã báo đã trả tiền mặt · chờ thợ xác nhận", "✅");
+        return true;
+      }
+      if (res.ok) {
+        applyCashClaimLocal();
+      }
       return serverDone(res, {
         title: "Không xác nhận được",
         codes: {
           NOT_PAYABLE_YET: "Đơn chưa đến bước thanh toán.",
           NOTHING_TO_PAY: "Đơn không còn khoản nào phải trả.",
           ALREADY_PAID: "Đơn đã được thanh toán.",
-          PAYMENT_IN_PROGRESS: "Đang có giao dịch chuyển khoản chờ xác nhận.",
-          BANK_TRANSFER_AUTO_CONFIRMED:
-            "Chuyển khoản được hệ thống tự xác nhận khi tiền về.",
         },
         toast: "Đã báo đã trả tiền mặt · chờ thợ xác nhận",
         icon: "✅",
@@ -4230,6 +4288,7 @@ export function AppProvider({ children }) {
     "declineJob",
     "releaseJob",
     "confirmPayment",
+    "switchPaymentMethod",
     "switchToQRPayment",
     "respondQuote",
     "submitQuote",
