@@ -61,7 +61,8 @@ export function TrackingCard({ order, compact }) {
     return () => { cancelled = true; clearInterval(id); };
   }, [shouldTick, o.code, role]);
 
-  if (!active && !tr) return null;
+  const hasArrived = Boolean(o.arrivedAt || o.checkIn) || ['diagnosing', 'quoted', 'repairing', 'pending_payment', 'done'].includes(o.status);
+  if (!active && (!tr || !hasArrived)) return null;
   if (!active && tr) {
     return (
       <Card style={{ marginTop: 12, backgroundColor: C.greenSoft, borderColor: '#CDEFDD' }}>

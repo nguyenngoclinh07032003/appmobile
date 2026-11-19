@@ -7,6 +7,7 @@ import { formatVND, formatNumberInput } from '../../../constants/data';
 import { useApp, bookedValue } from '../../../context';
 import { Tap, Btn, Card, Badge, Field, Stepper, ui, AppIcon } from '../../../components';
 import { pickImage, pickCamera } from '../../../utils/media';
+import { computeQuoteRangeTotals, formatRangeVND } from '../../../utils/externalPartsPricing';
 import { tx } from './techStyles';
 import { isOnSiteQuote } from './useQuoteDraft';
 import { SymptomSection } from './SymptomSection';
@@ -14,56 +15,104 @@ import { SymptomSection } from './SymptomSection';
 export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, evidence }) {
   const { a, ui: u } = useApp();
   const [showCustomFee, setShowCustomFee] = useState(false);
+  const [customKind, setCustomKind] = useState('external'); // 'external' (VT ngoài giá dao động) | 'fixed' (Công / phụ phí cố định)
   const [customFeeName, setCustomFeeName] = useState('');
-  const [customFeePrice, setCustomFeePrice] = useState('');
+  const [customMinPrice, setCustomMinPrice] = useState('');
+  const [customMaxPrice, setCustomMaxPrice] = useState('');
+  const [customFixedPrice, setCustomFixedPrice] = useState('');
   const [addingPhoto, setAddingPhoto] = useState(false);
 
   const { lines, setLines } = draft;
   const booked = bookedValue(o);
-  // Phân loại: Dịch vụ gốc ban đầu vs Vật tư vs Phí phát sinh
+  // Phân loại: Dịch vụ gốc ban đầu vs Vật tư vs Vật tư mua ngoài
   const originalLines = lines.filter((l) => l.isOriginal);
   // Vật tư kho (chọn từ danh sách) tách riêng; phí phát sinh = vật tư mua ngoài (isCustom). Dòng công thêm của báo giá cũ vẫn hiện ở phát sinh.
   const partLines = lines.filter((l) => (l.type === 'part' || Boolean(l.matId)) && !l.isOriginal && !l.isCustom);
   const customLines = lines.filter((l) => !l.isOriginal && (l.isCustom || (l.type !== 'part' && !l.matId)));
 
-  // Phát sinh thực tế: tất cả các dòng không thuộc dịch vụ gốc đã đặt ban đầu
+  // Phát sinh thực tế: tất cả các dòng không thuộc dịch vụ gốc đã đặt ban đầu (có hỗ trợ khoảng giá dao động)
   const onSite = isOnSiteQuote(o);
-  const extraItems = lines.filter((l) => !l.isOriginal);
-  const extraTotal = extraItems.reduce((sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 1), 0);
   const prodDisc = Number(o.productDiscount) || 0;
   const comboDisc = Number(o.comboDiscount) || 0;
-  const qTotal = draft.total;
-  const netTotal = Math.max(0, qTotal - prodDisc - comboDisc);
-  // Tại nhà khách: chênh lệch = phát sinh thêm. Trước khi xuất phát: chênh lệch = tổng sau giảm - đã đặt.
-  const diff = onSite ? extraTotal : Math.max(0, netTotal - booked);
-  const customerPays = onSite ? booked + extraTotal : netTotal;
+  const priorApprovedExtra = Number(o.quote?.priorApprovedExtra) || 0;
+  const rangeTotals = computeQuoteRangeTotals(lines, {
+    bookedBase: booked,
+    priorApprovedExtra,
+    prodDisc,
+    comboDisc,
+    isOnSite: onSite,
+  });
+  const hasRange = rangeTotals.hasEstimatedRange;
+  const diffMin = onSite ? rangeTotals.extraMin : Math.max(0, rangeTotals.totalMin - booked);
+  const diffMax = onSite ? rangeTotals.extraMax : Math.max(diffMin, rangeTotals.totalMax - booked);
+  const paysMin = rangeTotals.totalMin;
+  const paysMax = rangeTotals.totalMax;
 
   const handleAddCustomFee = () => {
     const name = customFeeName.trim();
-    const priceNum = parseInt(String(customFeePrice).replace(/[^0-9]/g, ''), 10);
+    if (customKind === 'fixed') {
+      const fixedNum = parseInt(String(customFixedPrice).replace(/[^0-9]/g, ''), 10);
+      if (!name) {
+        u.alert('Thiếu tên hạng mục', 'Vui lòng nhập nội dung công thêm / phụ phí phát sinh.', 'alert-triangle');
+        return;
+      }
+      if (!fixedNum || fixedNum <= 0) {
+        u.alert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền phát sinh lớn hơn 0đ.', 'alert-triangle');
+        return;
+      }
+      const newFeeLine = {
+        key: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        type: 'labor',
+        name,
+        price: fixedNum,
+        qty: 1,
+        unit: 'lần',
+        isCustom: true,
+        isEstimatedRange: false,
+      };
+      setLines((prev) => [...prev, newFeeLine]);
+      setCustomFeeName('');
+      setCustomFixedPrice('');
+      setCustomMinPrice('');
+      setCustomMaxPrice('');
+      setShowCustomFee(false);
+      u.toast(`Đã thêm phát sinh: ${name} (+${formatVND(fixedNum)})`, 'check-circle-2');
+      return;
+    }
+
+    const minNum = parseInt(String(customMinPrice).replace(/[^0-9]/g, ''), 10);
+    const maxNum = parseInt(String(customMaxPrice).replace(/[^0-9]/g, ''), 10);
     if (!name) {
       u.alert('Thiếu tên vật tư', 'Vui lòng nhập tên vật tư mua ngoài.', 'alert-triangle');
       return;
     }
-    if (!priceNum || priceNum <= 0) {
-      u.alert('Giá không hợp lệ', 'Vui lòng nhập giá vật tư lớn hơn 0đ.', 'alert-triangle');
+    if (!minNum || minNum <= 0 || !maxNum || maxNum <= 0) {
+      u.alert('Giá không hợp lệ', 'Vui lòng nhập đầy đủ khoảng giá dao động (từ – đến) lớn hơn 0đ.', 'alert-triangle');
+      return;
+    }
+    if (minNum > maxNum) {
+      u.alert('Khoảng giá chưa hợp lệ', 'Giá tối đa (Đến) phải lớn hơn hoặc bằng giá tối thiểu (Từ).', 'alert-triangle');
       return;
     }
     const newFeeLine = {
       key: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      // Phí phát sinh chỉ còn vật tư mua ngoài (gửi lên server: MATERIAL + external_purchase).
       type: 'part',
       name,
-      price: priceNum,
+      minPrice: minNum,
+      maxPrice: maxNum,
+      price: 0,
       qty: 1,
       unit: 'cái',
       isCustom: true,
+      isEstimatedRange: true,
     };
     setLines((prev) => [...prev, newFeeLine]);
     setCustomFeeName('');
-    setCustomFeePrice('');
+    setCustomMinPrice('');
+    setCustomMaxPrice('');
+    setCustomFixedPrice('');
     setShowCustomFee(false);
-    u.toast(`Đã thêm vật tư ngoài: ${name} (+${formatVND(priceNum)})`, 'check-circle-2');
+    u.toast(`Đã thêm VT ngoài (giá dao động): ${name} (${formatRangeVND(minNum, maxNum)})`, 'check-circle-2');
   };
 
   const addDiagnosisPhoto = async () => {
@@ -146,9 +195,13 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={tx.h}>🧾 Báo giá chi tiết</Text>
           <Badge
-            text={diff > 0 ? `+${formatVND(diff)} phát sinh` : 'Đúng giá gốc (0đ)'}
-            fg={diff > 0 ? C.orange : C.green}
-            bg={diff > 0 ? C.orangeSoft : C.greenSoft}
+            text={
+              diffMax > 0
+                ? `${hasRange ? 'Dự kiến ' : ''}${formatRangeVND(diffMin, diffMax, { prefix: '+' })}`
+                : 'Đúng giá gốc (0đ)'
+            }
+            fg={diffMax > 0 ? C.orange : C.green}
+            bg={diffMax > 0 ? C.orangeSoft : C.greenSoft}
           />
         </View>
 
@@ -163,7 +216,11 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
               <Text style={ui.meta}>{formatVND(l.price)} x{l.qty} {l.unit || 'lần'} = <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(l.price * l.qty)}</Text></Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Stepper value={l.qty} onChange={(q) => setLines((p) => p.map((x) => (x.key === l.key ? { ...x, qty: q } : x)))} />
+              {!onSite ? (
+                <Stepper value={l.qty} onChange={(q) => setLines((p) => p.map((x) => (x.key === l.key ? { ...x, qty: q } : x)))} />
+              ) : (
+                <Badge text={`x${l.qty} ${l.unit || 'lần'}`} fg={C.ink2} bg="#F1F5F9" />
+              )}
             </View>
           </View>
         ))}
@@ -186,37 +243,73 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
             <Text style={[ui.meta, { fontWeight: '700', color: C.ink, marginTop: 12, marginBottom: 4 }]}>
               🔩 Vật tư / Linh kiện kho ({partLines.length})
             </Text>
-            {partLines.map((l) => (
-              <View key={l.key} style={tx.lineRow}>
-                <View style={{ flex: 1, paddingRight: 8 }}>
-                  <Text style={{ color: C.ink, fontWeight: '700' }} numberOfLines={2}>{l.name}</Text>
-                  <Text style={ui.meta}>{formatVND(l.price)} x{l.qty} {l.unit || 'cái'} = <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(l.price * l.qty)}</Text></Text>
+            {partLines.map((l) => {
+              const showPriceInput = Boolean(l.needsPriceInput || !(Number(l.price) > 0));
+              return (
+                <View key={l.key} style={[tx.lineRow, { flexDirection: 'column', alignItems: 'stretch', gap: 8 }]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={{ flex: 1, paddingRight: 8 }}>
+                      <Text style={{ color: C.ink, fontWeight: '700' }} numberOfLines={2}>{l.name}</Text>
+                      {Number(l.price) > 0 ? (
+                        <Text style={ui.meta}>
+                          {formatVND(l.price)} x{l.qty} {l.unit || 'cái'} = <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(l.price * l.qty)}</Text>
+                        </Text>
+                      ) : (
+                        <Text style={[ui.meta, { color: C.orange, fontWeight: '700' }]}>
+                          Chưa có đơn giá niêm yết · Vui lòng nhập giá bên dưới
+                        </Text>
+                      )}
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Stepper value={l.qty} onChange={(q) => setLines((p) => p.map((x) => (x.key === l.key ? { ...x, qty: q } : x)))} />
+                      <Tap onPress={() => setLines((p) => p.filter((x) => x.key !== l.key))} hitSlop={8} style={{ padding: 4 }}>
+                        <Text style={{ color: C.red, fontSize: 13, fontWeight: '700' }}>✕</Text>
+                      </Tap>
+                    </View>
+                  </View>
+                  {showPriceInput ? (
+                    <Field
+                      label={`Đơn giá vật tư (${l.unit || 'cái'}) *`}
+                      placeholder="Nhập đơn giá (VD: 50.000)"
+                      value={Number(l.price) > 0 ? formatNumberInput(String(l.price)) : ''}
+                      onChangeText={(t) => {
+                        const pNum = parseInt(String(t).replace(/[^0-9]/g, ''), 10) || 0;
+                        setLines((p) => p.map((x) => (x.key === l.key ? { ...x, price: pNum, needsPriceInput: true } : x)));
+                      }}
+                      keyboardType="numeric"
+                      style={{ marginTop: 0 }}
+                    />
+                  ) : null}
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Stepper value={l.qty} onChange={(q) => setLines((p) => p.map((x) => (x.key === l.key ? { ...x, qty: q } : x)))} />
-                  <Tap onPress={() => setLines((p) => p.filter((x) => x.key !== l.key))} hitSlop={8} style={{ padding: 4 }}>
-                    <Text style={{ color: C.red, fontSize: 13, fontWeight: '700' }}>✕</Text>
-                  </Tap>
-                </View>
-              </View>
-            ))}
+              );
+            })}
           </>
         ) : null}
 
-        {/* 3. Chi phí phát sinh tại chỗ (nếu có) */}
+        {/* 3. Vật tư mua ngoài & phát sinh (nếu có) */}
         {customLines.length ? (
           <>
             <Text style={[ui.meta, { fontWeight: '700', color: C.orange, marginTop: 12, marginBottom: 4 }]}>
-              📝 Vật tư mua ngoài ({customLines.length})
+              📝 Vật tư mua ngoài & phát sinh ({customLines.length})
             </Text>
             {customLines.map((l) => (
               <View key={l.key} style={tx.lineRow}>
                 <View style={{ flex: 1, paddingRight: 8 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <Text style={{ color: C.ink, fontWeight: '700' }} numberOfLines={2}>{l.name}</Text>
-                    <Badge text={l.type === 'labor' ? 'Công thêm' : 'Vật tư ngoài'} fg={C.orange} bg={C.orangeSoft} />
+                    <Badge
+                      text={l.isEstimatedRange ? 'Giá dao động' : (l.type === 'labor' ? 'Công / Phụ phí' : 'Vật tư ngoài')}
+                      fg={C.orange}
+                      bg={C.orangeSoft}
+                    />
                   </View>
-                  <Text style={ui.meta}>{formatVND(l.price)} x{l.qty} = <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(l.price * l.qty)}</Text></Text>
+                  {l.isEstimatedRange ? (
+                    <Text style={ui.meta}>
+                      {formatRangeVND(l.minPrice, l.maxPrice)} x{l.qty} = <Text style={{ fontWeight: '700', color: C.orange }}>{formatRangeVND(l.minPrice * l.qty, l.maxPrice * l.qty)}</Text>
+                    </Text>
+                  ) : (
+                    <Text style={ui.meta}>{formatVND(l.price)} x{l.qty} = <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(l.price * l.qty)}</Text></Text>
+                  )}
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Stepper value={l.qty} onChange={(q) => setLines((p) => p.map((x) => (x.key === l.key ? { ...x, qty: q } : x)))} />
@@ -248,33 +341,107 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
 
         {showCustomFee ? (
           <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1' }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>🔩 Nhập vật tư mua ngoài</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>
+                {customKind === 'external' ? '🔩 Nhập vật tư mua ngoài (Giá dao động)' : '🛠️ Nhập công / phụ phí phát sinh'}
+              </Text>
               <Tap onPress={() => setShowCustomFee(false)} hitSlop={8}><Text style={{ color: C.muted, fontWeight: '700' }}>Đóng</Text></Tap>
             </View>
-            <Text style={[ui.meta, { marginTop: -4, marginBottom: 10 }]}>
-              Vật tư / linh kiện không có trong kho, thợ mua ngoài cho khách. Nhớ chụp biên lai khi mua.
+
+            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
+              <Tap
+                onPress={() => setCustomKind('external')}
+                style={{
+                  flex: 1,
+                  paddingVertical: 8,
+                  paddingHorizontal: 8,
+                  borderRadius: R.sm,
+                  borderWidth: 1.2,
+                  borderColor: customKind === 'external' ? '#D97706' : C.line,
+                  backgroundColor: customKind === 'external' ? '#FEF3C7' : '#fff',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '800', color: customKind === 'external' ? '#B45309' : C.ink2 }}>
+                  🔩 VT ngoài (Giá dao động)
+                </Text>
+              </Tap>
+              <Tap
+                onPress={() => setCustomKind('fixed')}
+                style={{
+                  flex: 1,
+                  paddingVertical: 8,
+                  paddingHorizontal: 8,
+                  borderRadius: R.sm,
+                  borderWidth: 1.2,
+                  borderColor: customKind === 'fixed' ? C.primary : C.line,
+                  backgroundColor: customKind === 'fixed' ? C.primarySoft : '#fff',
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '800', color: customKind === 'fixed' ? C.primaryDark : C.ink2 }}>
+                  🛠️ Công / Phụ phí cố định
+                </Text>
+              </Tap>
+            </View>
+
+            <Text style={[ui.meta, { marginTop: -2, marginBottom: 10, lineHeight: 17 }]}>
+              {customKind === 'external'
+                ? 'Báo khoảng giá dự kiến trên thị trường. Khi hoàn thành sửa chữa, bạn sẽ nhập lại giá mua thực tế kèm hoá đơn để khách nghiệm thu.'
+                : 'Công làm thêm hoặc phụ phí phát sinh có mức giá cố định, cộng trực tiếp vào tổng thanh toán sau khi khách duyệt.'}
             </Text>
 
             <Field
-              label="Tên vật tư"
-              placeholder="Ví dụ: Dây đồng Thái Lan 2m, Cầu dao phụ Panasonic..."
+              label={customKind === 'external' ? 'Tên vật tư' : 'Nội dung công / phụ phí phát sinh'}
+              placeholder={customKind === 'external' ? 'Ví dụ: Dây đồng Thái Lan 2m, Cầu dao phụ Panasonic...' : 'Ví dụ: Hàn nối ống đồng, đi lại dây điện âm tường...'}
               value={customFeeName}
               onChangeText={setCustomFeeName}
             />
 
-            <View style={{ marginTop: 8 }}>
+            {customKind === 'external' ? (
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                <Field
+                  label="Giá dao động từ (VNĐ)"
+                  placeholder="VD: 120.000"
+                  value={customMinPrice}
+                  onChangeText={(t) => setCustomMinPrice(formatNumberInput(t))}
+                  keyboardType="numeric"
+                  style={{ flex: 1, marginTop: 0 }}
+                />
+                <Field
+                  label="Đến (VNĐ)"
+                  placeholder="VD: 180.000"
+                  value={customMaxPrice}
+                  onChangeText={(t) => setCustomMaxPrice(formatNumberInput(t))}
+                  keyboardType="numeric"
+                  style={{ flex: 1, marginTop: 0 }}
+                />
+              </View>
+            ) : (
               <Field
-                label="Giá vật tư (VNĐ)"
-                placeholder="Ví dụ: 150.000"
-                value={customFeePrice}
-                onChangeText={(t) => setCustomFeePrice(formatNumberInput(t))}
+                label="Số tiền phát sinh (VNĐ)"
+                placeholder="VD: 80.000"
+                value={customFixedPrice}
+                onChangeText={(t) => setCustomFixedPrice(formatNumberInput(t))}
                 keyboardType="numeric"
+                style={{ marginTop: 8 }}
               />
-            </View>
+            )}
 
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-              <Btn title="Hủy" variant="ghost" small style={{ flex: 1 }} onPress={() => { setShowCustomFee(false); setCustomFeeName(''); setCustomFeePrice(''); }} />
+              <Btn
+                title="Hủy"
+                variant="ghost"
+                small
+                style={{ flex: 1 }}
+                onPress={() => {
+                  setShowCustomFee(false);
+                  setCustomFeeName('');
+                  setCustomMinPrice('');
+                  setCustomMaxPrice('');
+                  setCustomFixedPrice('');
+                }}
+              />
               <Btn title="Thêm vào báo giá" small style={{ flex: 1.6 }} onPress={handleAddCustomFee} />
             </View>
           </View>
@@ -299,21 +466,53 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
           </View>
         ) : null}
         <View style={tx.totalRow}><Text style={{ color: C.muted }}>Giá khách đã đặt</Text><Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(booked)}</Text></View>
+        {priorApprovedExtra > 0 ? (
+          <View style={tx.totalRow}>
+            <Text style={{ color: C.muted }}>Phát sinh đã duyệt đợt trước</Text>
+            <Text style={{ fontWeight: '700', color: C.ink }}>+{formatVND(priorApprovedExtra)}</Text>
+          </View>
+        ) : null}
+        {partLines.length > 0 ? (
+          <View style={tx.totalRow}>
+            <Text style={{ color: C.muted }}>Sản phẩm vật tư kho ({partLines.length})</Text>
+            <Text style={{ fontWeight: '700', color: rangeTotals.warehouseExtra > 0 ? C.ink : C.orange }}>
+              +{formatVND(rangeTotals.warehouseExtra)}
+            </Text>
+          </View>
+        ) : null}
+        {customLines.length > 0 ? (
+          <View style={tx.totalRow}>
+            <Text style={{ color: C.orange }}>Chi phí / vật tư phát sinh ({customLines.length})</Text>
+            <Text style={{ fontWeight: '700', color: C.orange }}>
+              {formatRangeVND(rangeTotals.customExtraMin, rangeTotals.customExtraMax, { prefix: '+' })}
+            </Text>
+          </View>
+        ) : null}
         <View style={tx.totalRow}>
-          <Text style={{ color: diff > 0 ? C.orange : C.muted }}>Chi phí phát sinh thêm</Text>
-          <Text style={{ fontWeight: '700', color: diff > 0 ? C.orange : C.green }}>{diff > 0 ? `+${formatVND(diff)}` : '0 đ'}</Text>
+          <Text style={{ color: diffMax > 0 ? C.orange : C.muted }}>
+            {hasRange ? 'Tổng phát sinh thêm (dự kiến)' : 'Tổng phát sinh thêm'}
+          </Text>
+          <Text style={{ fontWeight: '700', color: diffMax > 0 ? C.orange : C.green }}>
+            {diffMax > 0 ? formatRangeVND(diffMin, diffMax, { prefix: '+' }) : '0 đ'}
+          </Text>
         </View>
         <View style={tx.totalRow}>
-          <Text style={{ fontWeight: '800', color: C.ink, fontSize: 15 }}>{onSite ? 'Khách phải trả (tạm tính)' : 'Tổng báo giá'}</Text>
-          <Text style={[ui.price, { fontSize: 20 }]}>{formatVND(customerPays)}</Text>
+          <Text style={{ fontWeight: '800', color: C.ink, fontSize: 15 }}>
+            {hasRange ? 'Tổng cộng khách phải trả (dự kiến)' : (onSite ? 'Tổng cộng khách phải trả' : 'Tổng báo giá')}
+          </Text>
+          <Text style={[ui.price, { fontSize: hasRange && paysMin !== paysMax ? 17 : 20 }]}>
+            {formatRangeVND(paysMin, paysMax)}
+          </Text>
         </View>
-        <View style={[tx.note, { backgroundColor: diff > 0 ? C.goldSoft : C.greenSoft }]}>
-          <Text style={{ color: diff > 0 ? C.goldInk : C.green, fontWeight: '700', lineHeight: 19 }}>
-            {diff > 0
-              ? `Phát sinh ${formatVND(diff)} → khách cần duyệt báo giá trên app trước khi làm.`
-              : onSite
-                ? 'Không có phát sinh → bấm "Xác nhận & bắt đầu" để sửa theo đúng dịch vụ khách đã đặt (không cần báo giá).'
-                : 'Không phát sinh thêm chi phí → đúng theo giá dịch vụ khách đã đặt ban đầu.'}
+        <View style={[tx.note, { backgroundColor: diffMax > 0 ? C.goldSoft : C.greenSoft }]}>
+          <Text style={{ color: diffMax > 0 ? C.goldInk : C.green, fontWeight: '700', lineHeight: 19 }}>
+            {hasRange
+              ? `Vật tư mua ngoài đang báo theo giá dao động (${formatRangeVND(diffMin, diffMax)}). Khách duyệt khoảng giá này để làm; khi hoàn thành sửa chữa bạn sẽ nhập lại giá mua thực tế + hoá đơn để khách nghiệm thu.`
+              : diffMax > 0
+                ? `Phát sinh ${formatVND(diffMax)} → khách cần duyệt báo giá trên app trước khi làm.`
+                : onSite
+                  ? 'Không có phát sinh → bấm "Xác nhận & bắt đầu" để sửa theo đúng dịch vụ khách đã đặt (không cần báo giá).'
+                  : 'Không phát sinh thêm chi phí → đúng theo giá dịch vụ khách đã đặt ban đầu.'}
           </Text>
         </View>
       </Card>

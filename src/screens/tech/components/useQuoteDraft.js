@@ -9,14 +9,18 @@ const splitTags = (s) => String(s || '').split(',').map((x) => x.trim()).filter(
 // Chữ ký nhận biết "báo giá server đã đổi".
 export const quoteSignature = (q) => {
   if (!q) return 'none';
+  const lineSig = (q.lines || [])
+    .map((l) => `${l.name || ''}:${l.qty || 1}:${l.price || 0}:${l.minPrice || ''}-${l.maxPrice || ''}:${l.isEstimatedRange ? 1 : 0}:${l.isFinalizedExternal ? 1 : 0}`)
+    .join(',');
   return [
-    q.id ?? q.quoteId ?? q.quote_id ?? '',
+    q.id ?? q.quoteId ?? q.quote_id ?? q.dbQuotationId ?? '',
     q.revision ?? q.version ?? '',
     q.updatedAt ?? q.updated_at ?? q.at ?? '',
     q.total ?? '',
     q.approved ? 1 : 0,
     q.revisionRequested ? 1 : 0,
     (q.lines || []).length,
+    lineSig,
   ].join('|');
 };
 
@@ -52,7 +56,7 @@ export function draftFromOrder(o) {
     // Báo giá trước đó ĐÃ ĐƯỢC KHÁCH DUYỆT (đã nằm trong hoá đơn) → "Thêm phát sinh" là một báo giá phụ MỚI:
     // không nạp lại các dòng đã duyệt, nếu không gửi lên sẽ bị cộng thêm lần nữa (khách trả 2 lần).
     // Chỉ nạp lại khi báo giá chưa duyệt (khách yêu cầu báo giá lại) để thợ chỉnh sửa.
-    const revising = q?.approved ? [] : (q?.lines || []).filter((l) => !l.isOriginal);
+    const revising = q?.approved ? [] : (q?.lines || []).filter((l) => !l.isOriginal && !l.isPriorApproved);
     const lines = [
       ...bookedLines,
       ...revising
@@ -114,6 +118,25 @@ export function useQuoteDraft(o) {
 
   const markDirty = useCallback((v) => { dirtyRef.current = v; setDirty(v); }, []);
 
+  const orderKey = o?.code || '';
+  const hasOrder = Boolean(o);
+  const lastOrderRef = useRef({ orderKey, hasOrder });
+  useEffect(() => {
+    if (
+      lastOrderRef.current.orderKey === orderKey &&
+      lastOrderRef.current.hasOrder === hasOrder
+    ) {
+      return;
+    }
+    const switchedOrder = lastOrderRef.current.orderKey !== orderKey;
+    lastOrderRef.current = { orderKey, hasOrder };
+    if (!switchedOrder && dirtyRef.current) return;
+    if (switchedOrder) markDirty(false);
+    lastSig.current = quoteSignature(orderRef.current?.quote);
+    lastPhase.current = isOnSiteQuote(orderRef.current) ? 'site' : 'pre';
+    setDraft(draftFromOrder(orderRef.current));
+  }, [orderKey, hasOrder, markDirty]);
+
   useEffect(() => {
     if (sig === lastSig.current) return;
     lastSig.current = sig;
@@ -156,6 +179,6 @@ export function useQuoteDraft(o) {
     setLines: makeSetter('lines'),
     markSaved: () => markDirty(false),
     resetFromServer,
-    total: draft.lines.reduce((sum, l) => sum + (Number(l.price) || 0) * (Number(l.qty) || 0), 0),
+    total: draft.lines.reduce((sum, l) => sum + (l.isEstimatedRange ? (Number(l.minPrice) || 0) : (Number(l.price) || 0)) * (Number(l.qty) || 0), 0),
   };
 }

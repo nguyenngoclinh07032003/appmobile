@@ -5,7 +5,7 @@ import {
   CATEGORIES, SERVICES, INSTALL_SERVICES, REPAIR_SERVICES, LIFETIME_SERVICES, SERVICE_TYPES, CAT_SHORT,
   formatVND, getService, catLabel, catIcon, tierOf, HOTLINE,
 } from '../../constants/data';
-import { useApp, warrantyInfo, fmtDate, isActiveOrder, orderTotal, customerStatusMeta } from '../../context';
+import { useApp, warrantyInfo, fmtDate, isActiveOrder, orderTotal, formatOrderTotal, customerStatusMeta, isPaid } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, PageHead, Pills, Chip, Segmented, ServiceGrid, EmptyState, Field, Badge,
   StatusChip, Progress, Media, ListRow, Sheet, ui, HScroll, AppIcon, WarrantyBookingSheet, ActivityTimeFilterSheet,
@@ -381,18 +381,26 @@ export function ActivityScreen() {
                 <View style={sx.oFoot}>
                   <View style={{ flexShrink: 0 }}>
                     <Text style={[ui.meta, { marginTop: 0 }]}>Tổng thanh toán</Text>
-                    <Text style={[ui.price, { fontSize: 16, marginTop: 2 }]}>{o.kind === 'warranty' ? 'Miễn phí' : formatVND(o.status === 'cancelled' ? o.total : orderTotal(o))}</Text>
+                    <Text style={[ui.price, { fontSize: 16, marginTop: 2 }]}>{o.kind === 'warranty' ? 'Miễn phí' : (o.status === 'cancelled' ? formatVND(orderTotal(o)) : formatOrderTotal(o))}</Text>
                     {o.status === 'done' && o.report?.paid ? <Text style={[ui.meta, { color: C.green, fontWeight: '700' }]}>Đã thanh toán</Text> : null}
                     {o.status === 'done' && !o.report?.paid && o.kind !== 'warranty' ? <Text style={[ui.meta, { color: C.orange, fontWeight: '700' }]}>Chờ xác nhận TT</Text> : null}
                   </View>
                   <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', flex: 1 }}>
-                    {o.status === 'quoted' ? <Btn title="Duyệt báo giá" icon="receipt-text" small variant="gold" onPress={() => nav.push('order', { code: o.code })} /> : null}
-                    {o.status === 'done' && !o.report?.paid && o.kind !== 'warranty' && o.kind !== 'followup' ? (
-                      <Btn title="Thanh toán" icon="credit-card" small variant="soft" onPress={() => nav.push('order', { code: o.code })} />
+                    {o.status === 'quoted' ? (
+                      <Btn
+                        title={o.quote?.isExternalFinalization ? 'Xác nhận Bill' : 'Duyệt báo giá'}
+                        icon="receipt-text"
+                        small
+                        variant="gold"
+                        onPress={() => nav.push('order', { code: o.code })}
+                      />
+                    ) : null}
+                    {o.status === 'pending_payment' && o.kind !== 'warranty' && o.kind !== 'followup' ? (
+                      <Btn title="Thanh toán" icon="credit-card" small variant="primary" onPress={() => nav.push('order', { code: o.code })} />
                     ) : null}
                     {o.status === 'done' && !o.rating && o.kind !== 'warranty' ? <Btn title="Đánh giá" icon="star" small variant="gold" onPress={() => nav.push('rate', { code: o.code })} /> : null}
                     {['done', 'cancelled'].includes(o.status) && o.kind !== 'warranty' ? <Btn title="Đặt lại" icon="rotate-ccw" small variant="soft" onPress={() => reorder(o)} /> : null}
-                    {isActiveOrder(o) && o.status !== 'quoted' ? <Btn title="Theo dõi" icon="eye" small variant="soft" onPress={() => nav.push('order', { code: o.code })} /> : null}
+                    {isActiveOrder(o) && !['quoted', 'pending_payment'].includes(o.status) ? <Btn title="Theo dõi" icon="eye" small variant="soft" onPress={() => nav.push('order', { code: o.code })} /> : null}
                   </View>
                 </View>
               </View>

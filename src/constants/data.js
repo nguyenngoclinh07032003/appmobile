@@ -350,19 +350,42 @@ export const ORDER_STEPS = [
 export const TECH_ORDER_STEPS = ORDER_STEPS.filter((s) => s.key !== 'quoted').map((s) => (
   s.key === 'diagnosing' ? { ...s, label: 'Kiểm tra & báo giá', desc: 'Chẩn đoán và gửi báo giá trước khi làm' } : s
 ));
-export const stepIndexOf = (status) => {
+export const stepIndexOf = (statusOrOrder) => {
+  const isObj = statusOrOrder && typeof statusOrOrder === 'object';
+  const status = isObj ? statusOrOrder.status : statusOrOrder;
+  const isFinalBillStage = isObj && Boolean(statusOrOrder.quote?.isExternalFinalization) && (
+    status === 'quoted' || (status === 'diagnosing' && statusOrOrder.quote?.revisionRequested)
+  );
+  const hasPriorApprovalRevision = isObj && Boolean(
+    status === 'diagnosing' &&
+    statusOrOrder.quote?.revisionRequested &&
+    statusOrOrder.quote?.approvedTotal != null &&
+    (statusOrOrder.arrivedAt || statusOrOrder.checkIn || statusOrOrder.quote?.quotationType === 'SUPPLEMENTAL')
+  );
+  if (isFinalBillStage || hasPriorApprovalRevision) return ORDER_STEPS.findIndex((x) => x.key === 'repairing');
   if (status === 'quoted') return ORDER_STEPS.findIndex((x) => x.key === 'quoted');
   if (status === 'warranty_pending') return 0;
   if (status === 'out_of_warranty') return ORDER_STEPS.findIndex((x) => x.key === 'diagnosing');
   return ORDER_STEPS.findIndex((x) => x.key === status);
 };
 /** Index bước trên timeline thợ (không có bước quoted riêng) */
-export const techStepIndexOf = (status) => {
+export const techStepIndexOf = (statusOrOrder) => {
+  const isObj = statusOrOrder && typeof statusOrOrder === 'object';
+  const status = isObj ? statusOrOrder.status : statusOrOrder;
+  const isFinalBillStage = isObj && Boolean(statusOrOrder.quote?.isExternalFinalization) && (
+    status === 'quoted' || (status === 'diagnosing' && statusOrOrder.quote?.revisionRequested)
+  );
+  const hasPriorApprovalRevision = isObj && Boolean(
+    status === 'diagnosing' &&
+    statusOrOrder.quote?.revisionRequested &&
+    statusOrOrder.quote?.approvedTotal != null &&
+    (statusOrOrder.arrivedAt || statusOrOrder.checkIn || statusOrOrder.quote?.quotationType === 'SUPPLEMENTAL')
+  );
+  if (isFinalBillStage || hasPriorApprovalRevision) return TECH_ORDER_STEPS.findIndex((x) => x.key === 'repairing');
   if (status === 'quoted') return TECH_ORDER_STEPS.findIndex((x) => x.key === 'diagnosing');
   if (status === 'warranty_pending') return 0;
   if (status === 'out_of_warranty') return TECH_ORDER_STEPS.findIndex((x) => x.key === 'diagnosing');
-  const i = TECH_ORDER_STEPS.findIndex((x) => x.key === status);
-  return i;
+  return TECH_ORDER_STEPS.findIndex((x) => x.key === status);
 };
 
 export const PAYMENT_METHODS = [
@@ -576,16 +599,38 @@ export const syncCatalogFromBackend = ({ categories = null, services = null, mat
     ALL_SERVICES.forEach((x) => { SERVICE_MAP[x.id] = x; SERVICE_BY_DB_ID[String(x.dbId)] = x; });
   }
   if (Array.isArray(materials) && materials.length > 0) {
+    // Giữ lại giá đã nạp từ /customer/materials hoặc bảng mặc định nếu API khác (vd. /technician/jobs/materials) không trả unit_price.
+    const prevById = new Map();
+    const prevByName = new Map();
+    [...DEFAULT_MATERIALS, ...MATERIALS].forEach((m) => {
+      const p = Number(m?.price);
+      if (!Number.isFinite(p) || p <= 0) return;
+      if (m.dbId) prevById.set(Number(m.dbId), p);
+      if (m.name) prevByName.set(normalize(m.name), p);
+    });
+
     const list = materials.filter(Boolean).map((dbMat) => {
       const matIdNum = Number(dbMat.material_id);
       if (!matIdNum) return null;
-      const price = dbMat.unit_price == null ? null : Number(dbMat.unit_price);
+      const name = dbMat.material_name || `Vật tư #${matIdNum}`;
+      const rawPrice =
+        dbMat.unit_price ??
+        dbMat.price ??
+        dbMat.selling_price ??
+        dbMat.reference_price ??
+        dbMat.default_price;
+      const numPrice = rawPrice == null || rawPrice === '' ? NaN : Number(rawPrice);
+      const resolvedPrice =
+        Number.isFinite(numPrice) && numPrice > 0
+          ? numPrice
+          : (prevById.get(matIdNum) ?? prevByName.get(normalize(name)) ?? 0);
       return {
         id: `m-db-${matIdNum}`,
         dbId: matIdNum,
-        name: dbMat.material_name || `Vật tư #${matIdNum}`,
+        name,
         unit: dbMat.unit_of_measure || 'cái',
-        price: price != null ? price : 0,
+        price: resolvedPrice,
+        unpricedInCatalog: !(resolvedPrice > 0),
         category: 'all',
       };
     }).filter(Boolean);

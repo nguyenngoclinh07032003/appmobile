@@ -349,8 +349,8 @@ export function Badge({ text, fg = C.primary, bg = C.primarySoft, style }) {
   return <View style={[ui.pill, { backgroundColor: bg }, style]}><Text style={[ui.pillText, { color: fg }]}>{text}</Text></View>;
 }
 
-export function StatusChip({ status }) {
-  const m = STATUS_META[status] || STATUS_META.pending;
+export function StatusChip({ status, meta }) {
+  const m = meta || STATUS_META[status] || STATUS_META.pending;
   return <Badge text={m.label} fg={m.fg} bg={m.bg} />;
 }
 

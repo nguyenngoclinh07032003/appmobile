@@ -4,7 +4,7 @@ import { C, R, shadow, toneOf, grad } from '../../theme';
 import {
   CATEGORIES, SERVICES, ALL_SERVICES, COMMITMENTS, SERVICE_TYPES, TIPS, PARTNERS, CAT_SHORT, HOTLINE, catLabel, catIcon, getService, formatVND, normalize,
 } from '../../constants/data';
-import { useApp } from '../../context';
+import { useApp, customerStatusMeta, formatOrderTotal, amountRemaining } from '../../context';
 import {
   Tap, IconBtn, IconBox, Card, SectionTitle, ServiceCard, Sheet, Btn, StatusChip, Media, Badge, ui, HScroll, AppIcon,
 } from '../../components';
@@ -119,7 +119,7 @@ export default function HomeScreen() {
   const tipService = tip ? ALL_SERVICES.find((x) => normalize(x.name).includes(tip.keyword)) : null;
   const firstName = (s.user.name || d.address?.name || '').trim().split(' ').pop();
   const active = d.activeOrders[0];
-  const activeSvc = active ? getService(active.items[0]?.id) : null;
+  const activeSvc = active ? getService(active.items?.[0]?.id) : null;
 
   const openType = (id) => (id === 'bao-hanh' ? nav.warranty() : nav.services(id));
 
@@ -180,26 +180,45 @@ export default function HomeScreen() {
 
       <View style={{ paddingHorizontal: 16 }}>
         {/* ---------------- Đơn đang xử lý ---------------- */}
-        {active ? (
-          <Card style={st.activeCard} onPress={() => nav.push('order', { code: active.code })}>
-            <Media item={activeSvc} height={52} width={52} radius={14} />
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={st.activeCode}>{active.code}</Text>
-                <StatusChip status={active.status} />
+        {active ? (() => {
+          const activeMeta = customerStatusMeta(active);
+          return (
+            <Card style={st.activeCard} onPress={() => nav.push('order', { code: active.code })}>
+              <Media item={activeSvc} height={52} width={52} radius={14} />
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={st.activeCode}>{active.code}</Text>
+                  <StatusChip status={active.status} meta={activeMeta} />
+                </View>
+                <Text style={st.activeName} numberOfLines={1}>{activeSvc?.name}</Text>
+                <Text style={ui.meta}>
+                  {active.status === 'quoted'
+                    ? (active.quote?.isExternalFinalization ? 'Thợ đã gửi chi phí cuối chờ xác nhận' : 'Có báo giá chờ bạn duyệt')
+                    : active.status === 'pending_payment'
+                      ? `Cần thanh toán ${formatVND(amountRemaining(active))}`
+                      : `${active.dateLabel} · ${active.slot}`}
+                </Text>
               </View>
-              <Text style={st.activeName} numberOfLines={1}>{activeSvc?.name}</Text>
-              <Text style={ui.meta}>
-                {active.status === 'quoted' ? 'Có báo giá chờ bạn duyệt' : `${active.dateLabel} · ${active.slot}`}
-              </Text>
-            </View>
-            {active.status === 'quoted' ? (
-              <Btn title="Duyệt" small variant="gold" onPress={() => nav.push('order', { code: active.code })} />
-            ) : (
-              <Text style={ui.chevron}>›</Text>
-            )}
-          </Card>
-        ) : null}
+              {active.status === 'quoted' ? (
+                <Btn
+                  title={active.quote?.isExternalFinalization ? 'Xác nhận' : 'Duyệt'}
+                  small
+                  variant="gold"
+                  onPress={() => nav.push('order', { code: active.code })}
+                />
+              ) : active.status === 'pending_payment' ? (
+                <Btn
+                  title="Thanh toán"
+                  small
+                  variant="primary"
+                  onPress={() => nav.push('order', { code: active.code })}
+                />
+              ) : (
+                <Text style={ui.chevron}>›</Text>
+              )}
+            </Card>
+          );
+        })() : null}
 
         {/* ---------------- Loại dịch vụ ---------------- */}
         <View style={st.types}>

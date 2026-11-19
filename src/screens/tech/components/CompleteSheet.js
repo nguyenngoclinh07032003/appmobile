@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text } from 'react-native';
 import { C, R } from '../../../theme';
 import { formatVND, SAFETY_CHECKLIST_ITEMS } from '../../../constants/data';
-import { useApp, orderTotal, cashToCollect, fmtDateTime, isQRPayment } from '../../../context';
+import { useApp, orderTotal, cashToCollect, fmtDateTime, isQRPayment, bookedValue, tierPartDiscountAmount, lateDiscountAmount } from '../../../context';
 import { Btn, Field, Sheet, Checkbox, ui, AppIcon } from '../../../components';
 import { useBusyRunner } from './useBusyRunner';
 import { tx } from './techStyles';
@@ -48,6 +48,10 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
   const hasAfter = evidence.some((e) => e.stage === 'after');
   const safetyTotal = SAFETY_ITEMS.length;
   const safetyDone = SAFETY_ITEMS.filter((it) => safetyChecks.includes(it)).length;
+  const bookedBase = bookedValue(o);
+  const finalTotal = orderTotal(o);
+  const extraAmount = Math.max(0, Number(o.quote?.extraAmount) || 0);
+  const deductAmount = tierPartDiscountAmount(o) + (Number(o.voucherDiscount) || 0) + lateDiscountAmount(o);
 
   const toggleAccepted = () => {
     if (accepted) { setAccepted(false); setAcceptedAt(null); return; }
@@ -62,6 +66,14 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
   const close = () => { if (!busy) onClose?.(); };
 
   const submit = () => run(busyKey, async () => {
+    if ((o.pendingExternalEstimates || []).length > 0) {
+      u.alert(
+        'Chưa chốt giá vật tư mua ngoài',
+        'Đơn có vật tư mua ngoài báo theo giá dao động. Vui lòng nhập giá mua thực tế + ảnh biên lai để khách nghiệm thu trước khi nộp biên bản hoàn thành.',
+        'receipt-text',
+      );
+      return false;
+    }
     if (!summary.trim()) {
       u.alert('Thiếu nội dung', 'Ghi ngắn công việc đã làm trước khi gửi biên bản.', 'file-text');
       return false;
@@ -99,7 +111,32 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
         <Btn title={busy ? 'Đang gửi biên bản…' : 'Gửi biên bản & hoàn thành'} disabled={busy} onPress={submit} />
       )}
     >
-      <Field label="Nội dung công việc đã làm" multiline value={summary} onChangeText={setSummary} style={{ marginTop: -8 }} />
+      <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F0F6FF', borderWidth: 1, borderColor: '#BFDBFE', marginTop: -8, marginBottom: 14 }}>
+        <Text style={{ fontWeight: '800', color: C.navy, fontSize: 13.5, marginBottom: 6 }}>
+          🧾 Tổng kết hoá đơn bàn giao
+        </Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+          <Text style={{ fontSize: 12.5, color: C.ink2 }}>Dịch vụ ban đầu</Text>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: C.ink }}>{formatVND(bookedBase)}</Text>
+        </View>
+        {extraAmount > 0 ? (
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+            <Text style={{ fontSize: 12.5, color: C.ink2 }}>Vật tư & phát sinh đã chốt</Text>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: C.orange }}>+{formatVND(extraAmount)}</Text>
+          </View>
+        ) : null}
+        {deductAmount > 0 ? (
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+            <Text style={{ fontSize: 12.5, color: C.green }}>Ưu đãi / giảm trừ</Text>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: C.green }}>-{formatVND(deductAmount)}</Text>
+          </View>
+        ) : null}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#BFDBFE' }}>
+          <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>Tổng thanh toán chốt với khách</Text>
+          <Text style={[ui.price, { fontSize: 18 }]}>{formatVND(finalTotal)}</Text>
+        </View>
+      </View>
+      <Field label="Nội dung công việc đã làm" multiline value={summary} onChangeText={setSummary} />
       <Text style={[ui.fieldLabel, { marginTop: 10, marginBottom: 6 }]}>
         ⚡ Checklist an toàn kỹ thuật & nghiệm thu ({safetyDone}/{safetyTotal})
       </Text>

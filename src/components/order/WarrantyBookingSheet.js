@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { C, R, shadow } from '../../theme';
 import { HOTLINE } from '../../constants/data';
+import { BASE_WARRANTY_DAYS } from '../../constants/appPolicy';
 import { useApp } from '../../context/AppContext';
 import {
   AppIcon,
@@ -23,6 +24,12 @@ import {
 import { pickImage, pickCamera } from '../../utils/media';
 import { formatYmd, getSlotsForDate } from '../../utils/warrantyPolicy';
 import { validateVietnamesePhone } from '../../utils/validators';
+
+const normalizeVnPhone = (v) => {
+  const d = String(v || '').replace(/\D/g, '');
+  if (d.startsWith('84') && d.length >= 11) return `0${d.slice(2)}`;
+  return d;
+};
 
 /**
  * Lấy số điện thoại của đơn hàng:
@@ -42,9 +49,9 @@ function resolveContactPhone(order, s) {
 
   // 1. Tìm trong đơn hàng nếu có số thật không bị che sao (*)
   const realOrderPhone = orderPhones.find(
-    (p) => !String(p).includes('*') && String(p).replace(/\D/g, '').length >= 10
+    (p) => !String(p).includes('*') && normalizeVnPhone(p).length >= 10
   );
-  if (realOrderPhone) return String(realOrderPhone).replace(/\D/g, '');
+  if (realOrderPhone) return normalizeVnPhone(realOrderPhone);
 
   // 2. Tìm trong danh sách địa chỉ đã lưu của khách hàng
   const matchedSaved = Array.isArray(s?.addresses)
@@ -54,15 +61,15 @@ function resolveContactPhone(order, s) {
     ))
     : null;
   if (matchedSaved?.phone && !String(matchedSaved.phone).includes('*')) {
-    return String(matchedSaved.phone).replace(/\D/g, '');
+    return normalizeVnPhone(matchedSaved.phone);
   }
 
   // 3. Tìm trong tài khoản đang đăng nhập (s.user, s.auth)
   const accountPhones = [s?.user?.phone, s?.auth?.phone].filter(Boolean);
   const realAccountPhone = accountPhones.find(
-    (p) => !String(p).includes('*') && String(p).replace(/\D/g, '').length >= 10
+    (p) => !String(p).includes('*') && normalizeVnPhone(p).length >= 10
   );
-  if (realAccountPhone) return String(realAccountPhone).replace(/\D/g, '');
+  if (realAccountPhone) return normalizeVnPhone(realAccountPhone);
 
   // 4. Nếu tất cả đều bị mask (hoặc chưa có số thật), điền luôn SĐT của đơn hàng đó
   const anyPhone = orderPhones[0] || accountPhones[0] || '';
@@ -190,6 +197,8 @@ export function WarrantyBookingSheet({
   if (!order) return null;
 
   const displayAddress = resolveOrderAddress(order);
+  const totalDays = winfo?.totalDays || BASE_WARRANTY_DAYS;
+  const daysLeft = winfo?.daysLeft ?? totalDays;
 
   const toggleItem = (itemId) => {
     setSelectedItemIds((prev) => {
@@ -235,7 +244,7 @@ export function WarrantyBookingSheet({
       return;
     }
 
-    const cleanPhone = rawPhone.replace(/\D/g, '');
+    const cleanPhone = normalizeVnPhone(rawPhone);
     const phoneError = validateVietnamesePhone(cleanPhone);
     if (phoneError) {
       u.toast(phoneError, '⚠️');
@@ -303,7 +312,7 @@ export function WarrantyBookingSheet({
           </View>
           <Text style={styles.cutoffTitle}>Đã quá ca làm việc của kỹ thuật viên</Text>
           <Text style={styles.cutoffDesc}>
-            Hôm nay là ngày cuối cùng trong thời hạn bảo hành 60 ngày của đơn{' '}
+            Hôm nay là ngày cuối cùng trong thời hạn bảo hành {totalDays} ngày của đơn{' '}
             <Text style={{ fontWeight: '800', color: C.ink }}>{order.code}</Text>.
             Khung giờ làm việc khả dụng của kỹ thuật viên trong ngày đã kết thúc (18h00).
           </Text>
@@ -350,12 +359,12 @@ export function WarrantyBookingSheet({
       }
     >
       <View style={{ paddingBottom: 16 }}>
-        {/* BANNER CẢNH BÁO NẾU LÀ NGÀY CUỐI CÙNG (NGÀY THỨ 60) */}
+        {/* BANNER CẢNH BÁO NẾU LÀ NGÀY CUỐI CÙNG */}
         {isFinalDay ? (
           <View style={styles.finalDayBanner}>
             <AppIcon name="alert-triangle" size={18} color="#991B1B" />
             <View style={{ flex: 1 }}>
-              <Text style={styles.finalDayTitle}>HÔM NAY LÀ HẠN CHÓT BẢO HÀNH (NGÀY THỨ 60)</Text>
+              <Text style={styles.finalDayTitle}>HÔM NAY LÀ HẠN CHÓT BẢO HÀNH (NGÀY THỨ {totalDays})</Text>
               <Text style={styles.finalDayDesc}>
                 Hệ thống chỉ tiếp nhận lịch hẹn trong ngày hôm nay trước 18h00. Sau 18h00, thời hạn bảo hành miễn phí sẽ chính thức kết thúc.
               </Text>
@@ -365,7 +374,7 @@ export function WarrantyBookingSheet({
           <View style={styles.normalDayBanner}>
             <AppIcon name="shield-check" size={18} color={C.primary} />
             <Text style={styles.normalDayText}>
-              Bảo hành miễn phí 100% · Còn {winfo?.daysLeft || 60} ngày bảo hành
+              Bảo hành miễn phí 100% · Còn {daysLeft} / {totalDays} ngày bảo hành
             </Text>
           </View>
         )}

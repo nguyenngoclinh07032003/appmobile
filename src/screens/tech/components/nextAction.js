@@ -2,7 +2,7 @@
 // và thanh hành động ở màn chi tiết.
 import { useCallback } from 'react';
 import { Platform } from 'react-native';
-import { useApp } from '../../../context';
+import { useApp, isQRPayment, isPaid } from '../../../context';
 import { distanceKm, getCheckInLocation } from '../../../utils/geo';
 import { useBusyRunner } from './useBusyRunner';
 
@@ -120,9 +120,44 @@ export function useNextAction({ inDetail = false } = {}) {
           run: () => run(key, () => checkInWithGps(o, a, u)),
         };
       }
-      case 'diagnosing': return inDetail ? null : { label: 'Chẩn đoán & báo giá', icon: 'receipt-text', run: open };
-      case 'quoted': return inDetail ? null : { label: 'Chờ khách duyệt', icon: 'clock', variant: 'ghost', run: open };
-      case 'repairing': return inDetail ? null : { label: 'Cập nhật công việc', icon: 'wrench', run: open };
+      case 'diagnosing': {
+        if (inDetail) return null;
+        if (o.quote?.isExternalFinalization && o.quote?.revisionRequested) {
+          return { label: 'Chỉnh lại giá vật tư', icon: 'receipt-text', variant: 'primary', run: open };
+        }
+        return { label: 'Chẩn đoán & báo giá', icon: 'receipt-text', run: open };
+      }
+      case 'quoted':
+        return inDetail
+          ? null
+          : {
+              label: o.quote?.isExternalFinalization ? 'Chờ khách xác nhận Bill' : 'Chờ khách duyệt',
+              icon: 'clock',
+              variant: 'ghost',
+              run: open,
+            };
+      case 'repairing': {
+        if (inDetail) return null;
+        if ((o.pendingExternalEstimates || []).length > 0) {
+          return { label: 'Chốt giá & Gửi Bill', icon: 'receipt-text', variant: 'primary', run: open };
+        }
+        if (o.externalPriceState === 'finalized') {
+          return { label: 'Ký bàn giao & Mở TT', icon: 'check-circle-2', variant: 'primary', run: open };
+        }
+        return { label: 'Cập nhật công việc', icon: 'wrench', run: open };
+      }
+      case 'pending_payment': {
+        if (inDetail || isPaid(o)) return null;
+        if (isQRPayment(o)) {
+          return { label: 'Chờ khách CK QR', icon: 'qr-code', variant: 'ghost', run: open };
+        }
+        return {
+          label: o.bill?.cashClaimPending ? 'Xác nhận đã thu TM' : 'Thu tiền mặt',
+          icon: 'banknote',
+          variant: o.bill?.cashClaimPending ? 'primary' : 'soft',
+          run: open,
+        };
+      }
       default: return null;
     }
   }, [a, nav, u, run, isBusy, inDetail]);

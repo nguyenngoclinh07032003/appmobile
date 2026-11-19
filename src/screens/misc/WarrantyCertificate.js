@@ -101,6 +101,15 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
             <Text style={st.itemQty}>x{it.qty || 1}</Text>
           </View>
         ))}
+        {(o.quote?.lines || [])
+          .filter((l) => !l.isOriginal && !l.isEstimatedRange)
+          .map((l, i) => (
+            <View key={`q-${l.name}-${i}`} style={st.itemRow}>
+              <View style={[st.itemDot, { backgroundColor: C.orange }]} />
+              <Text style={st.itemName}>[Linh kiện / Phát sinh] {l.name}</Text>
+              <Text style={st.itemQty}>x{l.qty || 1}</Text>
+            </View>
+          ))}
         {o.report?.summary ? (
           <View style={st.summary}>
             <Text style={st.summaryText}>{o.report.summary}</Text>

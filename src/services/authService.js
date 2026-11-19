@@ -116,9 +116,18 @@ export function deleteAccountById(id) {
   return true;
 }
 
+// Chuẩn hoá SĐT để so sánh: chỉ giữ chữ số, đầu số quốc tế +84 / 84 -> 0 (vd. "+84 912-345-678" -> "0912345678").
+const normalizePhoneDigits = (value) => {
+  const d = String(value || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d.startsWith('84') && d.length >= 11) return `0${d.slice(2)}`;
+  return d;
+};
+
 export function findAccountByPhone(phone, role) {
-  const p = String(phone || '').replace(/\D/g, '');
-  return loadAccounts().find((a) => a.phone === p && (!role || a.role === role)) || null;
+  const p = normalizePhoneDigits(phone);
+  if (!p) return null;
+  return loadAccounts().find((a) => normalizePhoneDigits(a.phone) === p && (!role || a.role === role)) || null;
 }
 
 export function findAccountByIdentifier(identifier, role) {
@@ -134,9 +143,9 @@ export function findAccountByIdentifier(identifier, role) {
     (a) => a.username && a.username.toLowerCase() === raw.toLowerCase() && (!role || a.role === role),
   );
   if (byUsername) return byUsername;
-  const digits = raw.replace(/\D/g, '');
+  const digits = normalizePhoneDigits(raw);
   if (!digits) return null;
-  return accounts.find((a) => a.phone === digits && (!role || a.role === role)) || null;
+  return accounts.find((a) => normalizePhoneDigits(a.phone) === digits && (!role || a.role === role)) || null;
 }
 
 export function getSession() {

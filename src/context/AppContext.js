@@ -26,6 +26,7 @@ import {
   resolveDbServiceId,
   PAYMENT_METHODS,
   STATUS_DESC,
+  TECH_STATUS_DESC,
 } from "../constants/data";
 import { STATUS_META } from "../theme/colors";
 export { matchJobForTech, comboDiscountFor } from "../constants/data";
@@ -67,6 +68,13 @@ import {
   analyzeWarrantyEligibility,
   isWarrantySlotBookable,
 } from "../utils/warrantyPolicy";
+import {
+  formatEstimatedExternalDesc,
+  formatFinalizedExternalDesc,
+  formatRangeVND,
+  parseExternalPartDesc,
+  normalizeExternalPartName,
+} from "../utils/externalPartsPricing";
 import { WARRANTY_ALERT_MILESTONES } from "../constants/appPolicy";
 
 // Ngày sinh: server lưu 'YYYY-MM-DD', app hiển thị 'DD/MM/YYYY'.
@@ -123,9 +131,6 @@ import {
   techLockReason,
   assessCancelAfterAccept,
   assessLateness,
-  applyTechPenalty,
-  applyTechBonus,
-  mintWalletVoucher,
   slotStartTs,
   getCancellationWindowStatus,
   isOfferExpired,
@@ -214,32 +219,102 @@ export const orderTotal = (o) => {
   if (!o) return 0;
   if (o.kind === "warranty" || o.kind === "followup") return 0;
   if (o.status === "cancelled") return o.inspectionFee || 0;
+  const deduct =
+    tierPartDiscountAmount(o) +
+    (Number(o.voucherDiscount) || 0) +
+    lateDiscountAmount(o);
+  const inQuoteOrRepairStage =
+    ["confirmed", "onway", "diagnosing", "quoted", "repairing"].includes(
+      o.status,
+    ) && o.externalPriceState !== "finalized";
   const hasActiveQuote =
     o.quote &&
     !o.quote.rejectReason &&
     !o.quote.revisionRequested &&
     o.quote.status !== "REJECTED";
-  if (o?.bill && o.bill.quotationTotal != null && o.status !== "quoted") {
+  if (
+    o?.bill &&
+    o.bill.quotationTotal != null &&
+    o.status !== "quoted" &&
+    !(o.quote?.hasEstimatedRange && inQuoteOrRepairStage)
+  ) {
     return Math.max(0, Number(o.bill.amountDue) || 0);
   }
   if (hasActiveQuote) {
-    const qTotal =
-      o.quote.approved && o.quote.approvedTotal != null
+    const qTotal = o.quote.hasEstimatedRange
+      ? Number(o.quote.totalMin ?? o.quote.total)
+      : o.quote.approved && o.quote.approvedTotal != null
         ? Number(o.quote.approvedTotal)
         : Number(o.quote.total);
     if (Number.isFinite(qTotal) && qTotal >= 0) {
-      return Math.max(
-        0,
-        qTotal -
-          tierPartDiscountAmount(o) -
-          (Number(o.voucherDiscount) || 0) -
-          lateDiscountAmount(o),
-      );
+      return Math.max(0, qTotal - deduct);
     }
+  } else if (o.quote?.approvedHasEstimatedRange && inQuoteOrRepairStage) {
+    return Math.max(0, (Number(o.quote.approvedTotalMin) || 0) - deduct);
+  } else if (
+    o.quote?.approvedTotal != null &&
+    (!o?.bill || o.bill.quotationTotal == null)
+  ) {
+    return Math.max(0, Number(o.quote.approvedTotal) - deduct);
   }
   if (o?.bill) return Math.max(0, Number(o.bill.amountDue) || 0);
   const base = o.finalTotal != null ? o.finalTotal : o.total;
   return Math.max(0, Number(base) || 0);
+};
+export const orderTotalRange = (o) => {
+  const inQuoteOrRepairStage =
+    o &&
+    ["confirmed", "onway", "diagnosing", "quoted", "repairing"].includes(
+      o.status,
+    ) &&
+    o.externalPriceState !== "finalized";
+  const deduct = o
+    ? tierPartDiscountAmount(o) +
+      (Number(o.voucherDiscount) || 0) +
+      lateDiscountAmount(o)
+    : 0;
+  if (
+    o &&
+    o.kind !== "warranty" &&
+    o.kind !== "followup" &&
+    o.status !== "cancelled" &&
+    inQuoteOrRepairStage
+  ) {
+    const hasActiveQuote =
+      o.quote &&
+      !o.quote.rejectReason &&
+      !o.quote.revisionRequested &&
+      o.quote.status !== "REJECTED";
+    if (hasActiveQuote) {
+      if (o.quote.hasEstimatedRange) {
+        const rawMin = Number(o.quote.totalMin ?? o.quote.total) || 0;
+        const rawMax = Number(o.quote.totalMax ?? o.quote.total) || rawMin;
+        const min = Math.max(0, rawMin - deduct);
+        const max = Math.max(min, rawMax - deduct);
+        return {
+          min,
+          max,
+          isRange: min !== max || Boolean(o.quote.hasEstimatedRange),
+        };
+      }
+    } else if (o.quote?.approvedHasEstimatedRange) {
+      const rawMin = Number(o.quote.approvedTotalMin) || 0;
+      const rawMax = Number(o.quote.approvedTotalMax) || rawMin;
+      const min = Math.max(0, rawMin - deduct);
+      const max = Math.max(min, rawMax - deduct);
+      return {
+        min,
+        max,
+        isRange: true,
+      };
+    }
+  }
+  const v = orderTotal(o);
+  return { min: v, max: v, isRange: false };
+};
+export const formatOrderTotal = (o) => {
+  const r = orderTotalRange(o);
+  return r.isRange ? formatRangeVND(r.min, r.max) : formatVND(r.min);
 };
 // Tiền mặt thợ cần thu: bill.cash_to_collect của server (0 nếu khách trả VietQR).
 export const cashToCollect = (o) =>
@@ -616,10 +691,88 @@ export const EXPIRED_META = {
   fg: "#B91C1C",
   bg: "#FEF2F2",
 };
-export const customerStatusMeta = (o, now = Date.now()) =>
-  isOfferExpired(o, now)
-    ? EXPIRED_META
-    : STATUS_META[o?.status] || STATUS_META.pending;
+export const customerStatusMeta = (o, now = Date.now()) => {
+  if (isOfferExpired(o, now)) {
+    return {
+      ...EXPIRED_META,
+      desc: "Chưa có thợ nhận trong khung giờ hẹn — vui lòng đổi giờ hẹn hoặc liên hệ hỗ trợ.",
+    };
+  }
+  if (o?.status === "quoted" && o?.quote?.isExternalFinalization) {
+    return {
+      label: "Chờ xác nhận chi phí cuối",
+      fg: "#0369A1",
+      bg: "#E0F2FE",
+      desc: "Thợ đã cập nhật chi phí vật tư thực tế — mở đơn để kiểm tra và xác nhận tổng hoá đơn.",
+    };
+  }
+  if (
+    o?.status === "diagnosing" &&
+    o?.quote?.isExternalFinalization &&
+    o?.quote?.revisionRequested
+  ) {
+    return {
+      label: "Đang chỉnh lại chi phí cuối",
+      fg: "#B45309",
+      bg: "#FFFBEB",
+      desc: "Kỹ thuật viên đang kiểm tra và cập nhật lại mức giá vật tư theo yêu cầu của bạn.",
+    };
+  }
+  if (o?.status === "repairing" && o?.externalPriceState === "finalized") {
+    return {
+      label: "Chờ bàn giao thiết bị",
+      fg: "#059669",
+      bg: "#ECFDF5",
+      desc: "Bạn đã xác nhận tổng chi phí cuối cùng. Thợ đang hoàn tất biên bản bàn giao để mở thanh toán.",
+    };
+  }
+  const base = STATUS_META[o?.status] || STATUS_META.pending;
+  return { ...base, desc: STATUS_DESC[o?.status] || "" };
+};
+
+export const techStatusMeta = (o) => {
+  if (o?.status === "quoted" && o?.quote?.isExternalFinalization) {
+    return {
+      label: "Chờ khách xác nhận Bill",
+      fg: "#0369A1",
+      bg: "#E0F2FE",
+      desc: "Đã gửi chi phí vật tư cuối cùng. Khi khách xác nhận, hãy ký bàn giao để mở thanh toán.",
+    };
+  }
+  if (
+    o?.status === "diagnosing" &&
+    o?.quote?.isExternalFinalization &&
+    o?.quote?.revisionRequested
+  ) {
+    return {
+      label: "Cần chỉnh lại giá vật tư",
+      fg: "#B45309",
+      bg: "#FEF3C7",
+      desc: "Khách yêu cầu kiểm tra lại mức giá vật tư cuối cùng. Hãy cập nhật và gửi lại Bill.",
+    };
+  }
+  if (o?.status === "repairing" && o?.externalPriceState === "finalized") {
+    return {
+      label: "Chờ ký bàn giao & Mở TT",
+      fg: "#059669",
+      bg: "#ECFDF5",
+      desc: "Khách đã xác nhận tổng Bill. Hãy bấm Ký bàn giao & Mở thanh toán để hoàn tất.",
+    };
+  }
+  if (
+    o?.status === "repairing" &&
+    (o?.pendingExternalEstimates || []).length > 0
+  ) {
+    return {
+      label: "Đang thực hiện · Chờ chốt VT",
+      fg: "#0062E0",
+      bg: "#DBEAFE",
+      desc: "Khi lắp đặt xong, hãy nhập mức giá cuối của vật tư phát sinh bên dưới để gửi Bill cho khách.",
+    };
+  }
+  const base = STATUS_META[o?.status] || STATUS_META.pending;
+  return { ...base, desc: TECH_STATUS_DESC[o?.status] || "" };
+};
 
 // So trạng thái đơn của khách trước / sau khi tải từ server -> thông báo cho khách biết đơn đang ở trạng thái gì.
 // Đơn đang có thợ mà quay về "chờ thợ" = thợ trả việc / hết hạn xác nhận -> báo đang điều phối lại thợ.
@@ -663,12 +816,12 @@ export const detectCustomerStatusChanges = (
         expiredNotified: false,
       };
     } else {
-      const label = STATUS_META[o.status]?.label || "Cập nhật mới";
-      title = `Đơn ${o.code}: ${label}`;
+      const cm = customerStatusMeta(o, now);
+      title = `Đơn ${o.code}: ${cm.label || "Cập nhật mới"}`;
       body =
         o.status === "confirmed" && o.tech?.name
           ? `Thợ ${o.tech.name} đã nhận đơn và sẽ gọi cho bạn trước khi đến.`
-          : STATUS_DESC[o.status] || "Đơn hàng có cập nhật mới.";
+          : cm.desc || STATUS_DESC[o.status] || "Đơn hàng có cập nhật mới.";
       icon = STATUS_ICON[o.status] || "🔔";
     }
     notifs.push({
@@ -1295,7 +1448,10 @@ export function AppProvider({ children }) {
             meRes.ok && meRes.data?.account ? meRes.data.account : null;
           const serverName =
             serverProfile?.full_name || serverAccount?.username || acc.name;
-          const serverPhone = serverProfile?.phone || "";
+          // getMe lỗi -> giữ SĐT đang có (không ghi "" đè lên).
+          const serverPhone = meRes.ok
+            ? serverProfile?.phone || ""
+            : acc.phone || "";
           const serverEmail = serverAccount?.email || acc.email;
 
           const remoteAddrs = okItems(addrRes)
@@ -1469,7 +1625,7 @@ export function AppProvider({ children }) {
               ? upsertBackendAccount({
                   ...p.auth,
                   name: serverName,
-                  phone: serverPhone,
+                  phone: meRes.ok ? serverPhone : p.auth.phone ?? acc.phone,
                   email: serverEmail,
                   emailVerified:
                     remoteEmailVerified !== null
@@ -1481,7 +1637,9 @@ export function AppProvider({ children }) {
               user: {
                 ...(p.user || {}),
                 name: serverName,
-                phone: serverPhone,
+                phone: meRes.ok
+                  ? serverPhone
+                  : (p.user?.phone ?? acc.phone ?? ""),
                 email: serverEmail,
               },
               ...(nextAuth ? { auth: nextAuth } : {}),
@@ -1644,7 +1802,7 @@ export function AppProvider({ children }) {
               ...base,
               ...(profRes.ok
                 ? { area: profRes.data?.work_area || "Hà Nội" }
-                : { area: "Hà Nội" }),
+                : { area: base.area || "Hà Nội" }),
               specialtiesAvailable: Boolean(specialtyInfo?.available),
               specialties: specialtyInfo?.specialties || [],
               specialtyCategoryIds: specialtyInfo?.categoryIds || [],
@@ -1856,14 +2014,17 @@ export function AppProvider({ children }) {
       }
       // Bản native lưu phiên trong SecureStore (sessionStorage/localStorage không có trên điện thoại):
       // mở lại app mà chưa có phiên trên máy -> dùng refresh token đã lưu để vào lại, không phải đăng nhập lại.
-      if (!s.auth) {
+      // Sau hydrate, `s.auth` của lần render đầu đã cũ: luôn đọc lại phiên từ kho lưu trữ.
+      const session = getSession() || s.auth || null;
+      if (!session) {
         const resumed = await hrmssApi.resumeSession().catch(() => null);
         if (resumed?.ok && resumed.data?.account) {
           a.applyAuth(await buildBackendAccount(resumed.data));
           return; // applyAuth tự đồng bộ dữ liệu
         }
+        return;
       }
-      syncFromBackend(s.auth);
+      syncFromBackend(session);
     })();
   }, []);
 
@@ -1896,6 +2057,9 @@ export function AppProvider({ children }) {
   syncRef.current = syncFromBackend;
   const uiRef = useRef(null);
   uiRef.current = ui;
+  // State mới nhất cho các handler socket (closure của effect giữ `s` cũ).
+  const stateRef = useRef(s);
+  stateRef.current = s;
   useEffect(() => {
     if (!s.auth?.id) return undefined;
     initSocket(() => authTokens.get());
@@ -1916,15 +2080,21 @@ export function AppProvider({ children }) {
           uiRef.current?.toast(viNotification(n).title, n.icon || "🔔");
         // Thợ bị gỡ khỏi đơn (văn phòng đổi thợ / trả việc): thoát màn chi tiết và ngừng chờ cập nhật của đơn đó.
         const nType = n?.notification_type || n?.type;
-        if (s.auth?.role === "tech" && nType === "JOB_REASSIGNED" && n?.request_id != null) {
-          let removedCode = null;
-          setS((p) => {
-            const target = p.orders.find((o) => String(o.dbRequestId) === String(n.request_id));
-            if (!target) return p;
-            removedCode = target.code;
-            return { ...p, orders: p.orders.filter((o) => o.code !== target.code) };
-          });
+        if (
+          stateRef.current?.auth?.role === "tech" &&
+          nType === "JOB_REASSIGNED" &&
+          n?.request_id != null
+        ) {
+          // Xác định đơn bị gỡ từ state hiện tại TRƯỚC khi setS (updater chạy trễ, không gán biến ngoài được).
+          const target = (stateRef.current?.orders || []).find(
+            (o) => String(o.dbRequestId) === String(n.request_id),
+          );
+          const removedCode = target?.code || null;
           if (removedCode) {
+            setS((p) => ({
+              ...p,
+              orders: p.orders.filter((o) => o.code !== removedCode),
+            }));
             setStack((st) => st.filter((x) => x.params?.code !== removedCode));
           }
         }
@@ -2993,10 +3163,28 @@ export function AppProvider({ children }) {
     // Đồng bộ giữ chế độ này tới khi thợ gửi báo giá mới (POST /technician/jobs/:id/quotation qua submitQuote).
     reopenQuote: (code) => {
       const now = Date.now();
-      let ok = false;
+      // Tính điều kiện từ state hiện tại TRƯỚC khi cập nhật (updater của setState chạy trễ).
+      const cur = s.orders.find((x) => x.code === code);
+      const ok = Boolean(
+        cur && (cur.status === "repairing" || cur.quote?.revisionRequested),
+      );
+      if (!ok) {
+        if (cur?.status === "quoted") {
+          ui.alert(
+            "Báo giá đang chờ khách duyệt",
+            "Chưa sửa được báo giá khi khách chưa phản hồi. Nhắc khách duyệt hoặc chờ khách yêu cầu báo giá lại rồi mới điều chỉnh.",
+            "ℹ️",
+          );
+        } else {
+          ui.alert(
+            "Chưa mở lại được báo giá",
+            "Chỉ điều chỉnh báo giá khi đang sửa chữa hoặc khi khách yêu cầu báo giá lại.",
+            "ℹ️",
+          );
+        }
+        return;
+      }
       updateOrder(code, (o) => {
-        if (!["quoted", "repairing", "confirmed", "diagnosing"].includes(o.status)) return {};
-        ok = true;
         const isOnSite = Boolean(
           o.arrivedAt ||
           o.checkIn ||
@@ -3010,7 +3198,7 @@ export function AppProvider({ children }) {
           }),
         };
       });
-      if (ok) ui.toast("Mở lại báo giá để điều chỉnh phát sinh", "✏️");
+      ui.toast("Mở lại báo giá để điều chỉnh phát sinh", "✏️");
     },
     // Lập chẩn đoán / báo giá:
     //  - Trước khi xuất phát (confirmed): gửi báo giá trên app, khách đồng ý thì thợ mới đi. Khách huỷ -> 0đ.
@@ -3072,10 +3260,44 @@ export function AppProvider({ children }) {
           recommendation,
         });
       }
-      const sendLines =
+      const rawSendLines =
         !isPre || isSupplemental ? lines.filter((l) => !l.isOriginal) : lines;
-      const items = sendLines.map((l) =>
-        l.type === "part"
+      const sendLines = rawSendLines.map((l) => {
+        // Chỉ vật tư tự nhập (mua ngoài) mới được tự gắn khoảng giá dự kiến.
+        if (
+          !l.isEstimatedRange &&
+          l.isCustom &&
+          Number(l.minPrice) > 0 &&
+          Number(l.maxPrice) > Number(l.minPrice)
+        ) {
+          return { ...l, isEstimatedRange: true };
+        }
+        return l;
+      });
+      for (const l of sendLines) {
+        if (!l.isOriginal && !l.isEstimatedRange && !(Number(l.price) > 0)) {
+          ui.alert(
+            "Thiếu đơn giá",
+            `Vui lòng nhập đơn giá lớn hơn 0đ cho hạng mục "${l.name || "Vật tư / phát sinh"}" trước khi gửi báo giá.`,
+            "⚠️",
+          );
+          return false;
+        }
+      }
+      const buildQuoteItemPayload = (l) => {
+        if (l.isCustom && l.isEstimatedRange) {
+          return {
+            item_type: "SERVICE",
+            description_snapshot: formatEstimatedExternalDesc({
+              name: l.name,
+              minPrice: l.minPrice,
+              maxPrice: l.maxPrice,
+            }),
+            quantity: Math.max(1, Number(l.qty) || 1),
+            unit_price: 0,
+          };
+        }
+        return l.type === "part"
           ? {
               item_type: "MATERIAL",
               ...(l.isCustom
@@ -3090,10 +3312,57 @@ export function AppProvider({ children }) {
               description_snapshot: l.name || "Dịch vụ sửa chữa & bảo dưỡng",
               quantity: Math.max(1, Number(l.qty) || 1),
               unit_price: Math.max(0, Number(l.price) || 0),
-            },
+            };
+      };
+      const items = sendLines.map(buildQuoteItemPayload);
+      const hasEstimatedLines = sendLines.some(
+        (l) => l.isCustom && l.isEstimatedRange,
       );
       // Không gửi quotation_type: server tự xác định (trước khi xuất phát INITIAL, sau check-in SUPPLEMENTAL).
-      const qRes = await hrmssApi.submitQuotation(aid, { items });
+      let qRes = await hrmssApi.submitQuotation(aid, { items });
+      // Dự phòng nếu backend từ chối unit_price = 0 ở bước dự kiến: gửi kèm đơn giá min ban đầu (sau đó Bước 2 trừ phần đã tạm tính).
+      // Chỉ thử lại khi lỗi thật sự là lỗi kiểm tra dữ liệu liên quan đơn giá (không retry với QUOTATION_PENDING, JOB_NOT_ACTIVE...).
+      const isZeroPriceRejection = (res) => {
+        if (!res || res.ok) return false;
+        if (![400, 422].includes(Number(res.status))) return false;
+        if (!["VALIDATION_ERROR", "BAD_REQUEST"].includes(res.code)) return false;
+        const errs = Array.isArray(res.errors) ? res.errors : [];
+        const errText = errs
+          .map((e) =>
+            typeof e === "string"
+              ? e
+              : [e?.field, e?.path, e?.param, e?.message, e?.msg]
+                  .filter(Boolean)
+                  .join(" "),
+          )
+          .join(" ");
+        const text = `${errText} ${res.message || ""}`.toLowerCase();
+        // Không có chi tiết lỗi để xác định -> vẫn cho retry (đã giới hạn ở VALIDATION_ERROR/BAD_REQUEST).
+        if (!errText.trim()) return true;
+        return /unit_price|price|đơn giá/.test(text);
+      };
+      if (hasEstimatedLines && isZeroPriceRejection(qRes)) {
+        const firstRes = qRes;
+        const fallbackItems = sendLines.map((l) =>
+          l.isCustom && l.isEstimatedRange
+            ? {
+                item_type: "SERVICE",
+                description_snapshot: formatEstimatedExternalDesc({
+                  name: l.name,
+                  minPrice: l.minPrice,
+                  maxPrice: l.maxPrice,
+                }),
+                quantity: Math.max(1, Number(l.qty) || 1),
+                unit_price: Math.max(1, Number(l.minPrice) || 0),
+              }
+            : buildQuoteItemPayload(l),
+        );
+        const retryRes = await hrmssApi.submitQuotation(aid, {
+          items: fallbackItems,
+        });
+        // Lần thử lại cũng lỗi -> báo lỗi gốc (lần 1) để thợ thấy nguyên nhân thật.
+        qRes = retryRes?.ok ? retryRes : firstRes;
+      }
       return serverDone(qRes, {
         title: "Không gửi được báo giá",
         codes: {
@@ -3110,6 +3379,199 @@ export function AppProvider({ children }) {
         toast: "Đã gửi báo giá cho khách",
         icon: "🧾",
       });
+    },
+    // Bước 2: Khi kết thúc sửa chữa, thợ nhập lại giá thực tế vật tư mua ngoài + ảnh biên lai để khách nghiệm thu.
+    submitExternalPartsActualPrice: async (code, { parts, summary } = {}) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
+      if (!Array.isArray(parts) || !parts.length) {
+        ui.alert(
+          "Thiếu vật tư",
+          "Không có vật tư mua ngoài nào cần chốt giá.",
+          "ℹ️",
+        );
+        return false;
+      }
+
+      for (const p of parts) {
+        const name = String(p.name || "").trim();
+        if (!name) {
+          ui.alert(
+            "Thiếu tên vật tư",
+            "Vui lòng nhập tên vật tư phát sinh trước khi gửi Bill.",
+            "⚠️",
+          );
+          return false;
+        }
+        const actualPrice = Math.round(Number(p.actualPrice) || 0);
+        if (actualPrice <= 0) {
+          ui.alert(
+            "Giá không hợp lệ",
+            `Vui lòng nhập mức giá cuối cùng lớn hơn 0đ cho "${name}".`,
+            "⚠️",
+          );
+          return false;
+        }
+        const priorDeposit = Math.max(
+          0,
+          Math.round(Number(p.alreadyBilledUnitPrice ?? p.priorDeposit) || 0),
+        );
+        if (priorDeposit > 0 && actualPrice < priorDeposit) {
+          ui.alert(
+            "Giá thấp hơn mức tạm tính",
+            `Mức giá cuối của "${name}" không thể thấp hơn mức tối thiểu đã tạm tính (${formatVND(priorDeposit)}).`,
+            "⚠️",
+          );
+          return false;
+        }
+      }
+
+      // 1. Tải ảnh biên lai lên server nếu thợ có đính kèm (không bắt buộc nếu vật tư phát sinh không có hoá đơn).
+      const resolved = [];
+      for (const p of parts) {
+        const cleanName = String(p.name || "").trim();
+        let attachmentId = p.receiptId || null;
+        if (p.receiptUri) {
+          const upRes = await hrmssApi.uploadJobPhoto(
+            o.dbAssignmentId,
+            p.receiptUri,
+            "DOCUMENT",
+            `Biên lai vật tư phát sinh: ${cleanName}`,
+          );
+          const newAttId = upRes?.data?.attachment?.attachment_id;
+          if (!upRes?.ok || !newAttId) {
+            return serverDone(upRes, {
+              title: "Không tải được ảnh biên lai",
+            });
+          }
+          attachmentId = newAttId;
+        }
+        const priorDeposit = Math.max(
+          0,
+          Math.round(Number(p.alreadyBilledUnitPrice ?? p.priorDeposit) || 0),
+        );
+        resolved.push({
+          part: { ...p, name: cleanName },
+          attachmentId,
+          priorDeposit,
+        });
+      }
+
+      // 2. Gửi báo giá phụ chốt chi phí cuối cùng để khách xác nhận Bill.
+      // Dòng có ảnh hoá đơn -> MATERIAL + external_purchase để gắn biên lai; dòng không kèm hoá đơn -> SERVICE kèm thẻ [VT ngoài chốt giá] để BE không chặn 422 RECEIPT_REQUIRED.
+      const items = resolved.map(({ part, attachmentId, priorDeposit }) => {
+        const actualPrice = Math.round(Number(part.actualPrice) || 0);
+        const unitPrice =
+          priorDeposit > 0 ? Math.max(0, actualPrice - priorDeposit) : actualPrice;
+        const desc = formatFinalizedExternalDesc({
+          name: part.name,
+          minPrice: part.minPrice,
+          maxPrice: part.maxPrice,
+          priorDeposit,
+        });
+        if (attachmentId) {
+          return {
+            item_type: "MATERIAL",
+            external_purchase: true,
+            description_snapshot: desc,
+            quantity: Math.max(1, Number(part.qty) || 1),
+            unit_price: unitPrice,
+          };
+        }
+        return {
+          item_type: "SERVICE",
+          description_snapshot: desc,
+          quantity: Math.max(1, Number(part.qty) || 1),
+          unit_price: unitPrice,
+        };
+      });
+      const qRes = await hrmssApi.submitQuotation(o.dbAssignmentId, { items });
+      if (!qRes.ok) {
+        return serverDone(qRes, {
+          title: "Không gửi được giá cuối",
+          codes: {
+            QUOTATION_PENDING:
+              "Đang có báo giá chờ khách nghiệm thu. Nhắc khách xác nhận hoặc chờ khách phản hồi.",
+            INVALID_VISIT_STATE: "Việc chưa ở trạng thái cho phép gửi Bill chi phí cuối.",
+            JOB_NOT_ACTIVE:
+              "Việc không còn được giao cho bạn.",
+          },
+        });
+      }
+
+      // 3. Gắn ảnh biên lai vào từng dòng linh kiện mua ngoài có đính kèm ảnh.
+      let createdItems =
+        qRes.data?.quotation?.items ||
+        qRes.data?.items ||
+        [];
+      if (!Array.isArray(createdItems) || !createdItems.length) {
+        const detailRes = await hrmssApi
+          .getTechnicianJobDetail(o.dbAssignmentId)
+          .catch(() => null);
+        const quotes =
+          detailRes?.data?.job?.quotations ||
+          detailRes?.data?.quotations ||
+          [];
+        const latest = Array.isArray(quotes) && quotes.length ? quotes[quotes.length - 1] : null;
+        createdItems = latest?.items || [];
+      }
+      // Chỉ dòng mua ngoài thật (is_external_purchase) mới gắn được biên lai; dòng SERVICE [VT ngoài chốt giá] thì không.
+      const extItems = (createdItems || []).filter(
+        (it) => it.is_external_purchase && it.quotation_item_id,
+      );
+      const usedItemIds = new Set();
+      const failedReceipts = [];
+      for (let i = 0; i < resolved.length; i += 1) {
+        const { part, attachmentId } = resolved[i];
+        if (!attachmentId) continue;
+        const normTarget = normalizeExternalPartName(part.name);
+        const matched =
+          extItems.find(
+            (it) =>
+              !usedItemIds.has(String(it.quotation_item_id)) &&
+              normalizeExternalPartName(
+                parseExternalPartDesc(it.description_snapshot)?.cleanName ||
+                  it.description_snapshot,
+              ) === normTarget,
+          ) ||
+          extItems.find(
+            (it) => !usedItemIds.has(String(it.quotation_item_id)),
+          );
+        const qItemId = matched?.quotation_item_id;
+        if (!qItemId) {
+          failedReceipts.push(part.name);
+          continue;
+        }
+        usedItemIds.add(String(qItemId));
+        const attRes = await hrmssApi
+          .attachPartReceipt(o.dbAssignmentId, qItemId, attachmentId)
+          .catch(() => null);
+        if (!attRes?.ok) failedReceipts.push(part.name);
+      }
+      if (failedReceipts.length) {
+        ui.alert(
+          "Chưa gắn được biên lai",
+          `Đã gửi giá nhưng chưa gắn được biên lai cho ${failedReceipts
+            .map((n) => `"${n}"`)
+            .join(", ")} — hãy gắn lại ở thẻ Biên lai.`,
+          "⚠️",
+        );
+      }
+
+      // 4. Lưu nhật ký tóm tắt hoàn tất sửa chữa nếu có.
+      if (summary && String(summary).trim()) {
+        await hrmssApi
+          .addJobProgress(o.dbAssignmentId, {
+            progress_percent: 100,
+            note: `Hoàn tất sửa chữa & chốt chi phí vật tư phát sinh: ${String(summary).trim()}`,
+          })
+          .catch(() => null);
+      }
+
+      if (!failedReceipts.length)
+        ui.toast("Đã gửi chi phí vật tư cuối cùng · Chờ khách xác nhận Bill", "🧾");
+      syncFromBackend(null, true);
+      return true;
     },
     // Tại nhà khách, không có phát sinh: chỉ ghi chẩn đoán (needs_quotation = false) rồi sửa theo dịch vụ đã đặt.
     // KHÔNG gửi báo giá chứa lại dịch vụ đã đặt (báo giá tại nhà được cộng thêm vào giá đã đặt -> tính tiền 2 lần).
@@ -3311,7 +3773,6 @@ export function AppProvider({ children }) {
         o.dbAssignmentId,
         uri,
         "DOCUMENT",
-        null,
         "Biên lai linh kiện mua ngoài",
       );
       const attId = up1.data?.attachment?.attachment_id;
@@ -3339,31 +3800,38 @@ export function AppProvider({ children }) {
       const o = s.orders.find((x) => x.code === code);
       if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
       const markPaidLocal = (cashAmount = 0) => {
-        const paidAmt = Number(cashAmount) || amountRemaining(o) || orderTotal(o) || 0;
-        updateOrder(code, (x) => ({
-          order: {
-            ...x,
-            payment: "Tiền mặt tại nhà",
-            paymentMethod: "cash",
-            qrPaymentRequested: false,
-            paymentMethodLocked: false,
-            cashClaimLocked: false,
-            status: "done",
-            report: {
-              ...(x.report || {}),
-              paid: true,
-              at: Date.now(),
-            },
-            bill: {
-              ...(x.bill || {}),
-              cashClaimPending: false,
-              paymentStatus: "PAID",
-              paidAmount: paidAmt,
-              remainingAmount: 0,
+        const prevRem = amountRemaining(o) || orderTotal(o) || 0;
+        const collected =
+          Number(cashAmount) > 0 ? Number(cashAmount) : prevRem;
+        const nextRem = Math.max(0, prevRem - collected);
+        const isFull = nextRem <= 0;
+        updateOrder(code, (x) => {
+          const nextPaidAmt = (Number(x.bill?.paidAmount) || 0) + collected;
+          return {
+            order: {
+              ...x,
+              payment: "Tiền mặt tại nhà",
               paymentMethod: "cash",
+              qrPaymentRequested: false,
+              paymentMethodLocked: false,
+              cashClaimLocked: false,
+              status: isFull ? "done" : x.status,
+              report: {
+                ...(x.report || {}),
+                paid: isFull,
+                at: Date.now(),
+              },
+              bill: {
+                ...(x.bill || {}),
+                cashClaimPending: false,
+                paymentStatus: isFull ? "PAID" : "PARTIALLY_PAID",
+                paidAmount: nextPaidAmt,
+                remainingAmount: nextRem,
+                paymentMethod: "cash",
+              },
             },
-          },
-        }));
+          };
+        });
       };
       const res = await hrmssApi.confirmCashReceived(o.dbAssignmentId);
       // Chỉ đánh dấu "đã thu tiền" khi server xác nhận. Lỗi (khách trả QR, đang có GD chờ, lỗi server...)
@@ -4405,6 +4873,7 @@ export function AppProvider({ children }) {
     "switchToQRPayment",
     "respondQuote",
     "submitQuote",
+    "submitExternalPartsActualPrice",
     "startRepairWithoutQuote",
     "completeJob",
     "cancelOrder",

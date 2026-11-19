@@ -72,7 +72,8 @@ export function VietQRPay({ requestId, onPaid, size = 220 }) {
         return;
       }
       if (res?.code === 'ALREADY_PAID') { setAlreadyPaid(true); setError(null); return; } // để vòng hỏi hoá đơn xác nhận
-      setError(res?.code === 'NOT_PAYABLE_YET' ? 'Đơn chưa đến bước thanh toán.' : (res?.message || 'Không kết nối được máy chủ.'));
+      if (res?.code === 'NOT_PAYABLE_YET') { stopPolling(); setError('Đơn chưa đến bước thanh toán.'); return; }
+      setError(res?.message || 'Không kết nối được máy chủ.');
     } catch (e) {
       if (!stopRef.current) setError((e && e.message) || 'Không kết nối được máy chủ.');
     } finally {
@@ -92,7 +93,10 @@ export function VietQRPay({ requestId, onPaid, size = 220 }) {
     }
     if (stopRef.current) return;
     if (!res?.ok || !res.data) {
-      setBillError(res?.message || 'Không lấy được hoá đơn.');
+      if (res?.code === 'NOT_PAYABLE_YET' || [400, 403, 404].includes(Number(res?.status))) {
+        stopPolling();
+      }
+      setBillError(res?.code === 'NOT_PAYABLE_YET' ? 'Đơn chưa đến bước thanh toán.' : (res?.message || 'Không lấy được hoá đơn.'));
       return;
     }
     setBillError(null);

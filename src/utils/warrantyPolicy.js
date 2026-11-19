@@ -5,17 +5,19 @@ import {
   WARRANTY_MIN_LEAD_MINUTES,
 } from '../constants/appPolicy.js';
 import { TIME_SLOTS } from '../constants/data.js';
+import { toVnParts, vnTimestamp } from './vnTime.js';
 
 export const DAY_MS = 86400000;
 
 export const padZero = (n) => String(n).padStart(2, '0');
 
 /**
- * Chuyển timestamp / Date sang chuỗi 'YYYY-MM-DD' (theo giờ địa phương).
+ * Chuyển timestamp / Date sang chuỗi 'YYYY-MM-DD' (theo giờ Việt Nam GMT+7 cố định).
  */
 export function formatYmd(d) {
-  const date = d instanceof Date ? d : new Date(d);
-  return `${date.getFullYear()}-${padZero(date.getMonth() + 1)}-${padZero(date.getDate())}`;
+  const p = toVnParts(d);
+  if (!p) return '';
+  return `${p.year}-${padZero(p.month)}-${padZero(p.day)}`;
 }
 
 /**
@@ -29,20 +31,27 @@ export function parseSlotStartHour(slotStr) {
 }
 
 /**
- * Ngày kết thúc bảo hành (23:59:59.999).
+ * Ngày kết thúc bảo hành (23:59:59.999 giờ Việt Nam GMT+7).
  * Quy ước: ngày hoàn thành là NGÀY 0, ngày thứ N là ngày hoàn thành + N ngày
  * (xong 19/09, bảo hành 60 ngày → hết hạn cuối ngày 18/11).
  * Nếu server có warranty_end_date thì ưu tiên mốc của server (nguồn sự thật).
  */
 export function getWarrantyEndTimestamp(completedAt, warrantyDays = BASE_WARRANTY_DAYS, serverEndAt = null) {
   if (serverEndAt) {
-    const e = new Date(serverEndAt);
-    if (!Number.isNaN(e.getTime())) {
-      return new Date(e.getFullYear(), e.getMonth(), e.getDate()).getTime() + (DAY_MS - 1);
+    if (typeof serverEndAt === 'string') {
+      const m = /^(\d{4})-(\d{2})-(\d{2})(?:T00:00:00(?:\.000)?)?$/.exec(serverEndAt.trim());
+      if (m) {
+        return vnTimestamp(Number(m[1]), Number(m[2]), Number(m[3])) + (DAY_MS - 1);
+      }
+    }
+    const ep = toVnParts(serverEndAt);
+    if (ep) {
+      return vnTimestamp(ep.year, ep.month, ep.day) + (DAY_MS - 1);
     }
   }
-  const startDate = new Date(completedAt);
-  const startDayZero = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime();
+  const sp = toVnParts(completedAt);
+  if (!sp) return Date.now();
+  const startDayZero = vnTimestamp(sp.year, sp.month, sp.day);
   return startDayZero + (warrantyDays * DAY_MS) + (DAY_MS - 1);
 }
 
@@ -52,10 +61,11 @@ export function isSlotBeforeFinalCutoff(slot) {
 }
 
 /**
- * Lọc danh sách ca làm việc của ngày hôm nay dựa trên giờ hiện tại và lead time thợ.
+ * Lọc danh sách ca làm việc của ngày hôm nay dựa trên giờ hiện tại (GMT+7) và lead time thợ.
  */
 export function getAvailableSlotsForToday(curDate = new Date(), leadMinutes = WARRANTY_MIN_LEAD_MINUTES) {
-  const curHour = curDate.getHours() + curDate.getMinutes() / 60;
+  const p = toVnParts(curDate);
+  const curHour = p ? (p.hour + p.minute / 60) : 0;
   return TIME_SLOTS.filter((slot) => parseSlotStartHour(slot) >= curHour + (leadMinutes / 60));
 }
 
@@ -80,7 +90,7 @@ export function isWarrantySlotBookable({ ymd, slot, now = new Date(), endYmd = n
 }
 
 /**
- * Thuật toán phân tích khả dụng bảo hành toàn diện.
+ * Thuật toán phân tích khả dụng bảo hành toàn diện (theo giờ Việt Nam GMT+7).
  * - Kiểm tra ngày thường / ngày cận hạn / ngày cuối cùng.
  * - Xét giờ cắt ca thợ (18h00) trong ngày cuối cùng.
  */
@@ -104,14 +114,18 @@ export function analyzeWarrantyEligibility({
   const endTimestamp = getWarrantyEndTimestamp(completedAt, warrantyDays, warrantyEndAt);
   const endDate = new Date(endTimestamp);
 
+  const np = toVnParts(now);
+  const ep = toVnParts(endTimestamp);
   const todayYmd = formatYmd(now);
   const endYmd = formatYmd(endDate);
 
-  if (todayYmd > endYmd || serverNow > endTimestamp) {
+  if (!np || !ep || todayYmd > endYmd || serverNow > endTimestamp) {
     return {
       eligible: false,
       reason: 'WARRANTY_EXPIRED',
-      message: `Đơn hàng đã hết thời hạn bảo hành ${warrantyDays} ngày (hết hạn ngày ${padZero(endDate.getDate())}/${padZero(endDate.getMonth() + 1)}/${endDate.getFullYear()}).`,
+      message: ep
+        ? `Đơn hàng đã hết thời hạn bảo hành ${warrantyDays} ngày (hết hạn ngày ${padZero(ep.day)}/${padZero(ep.month)}/${ep.year}).`
+        : `Đơn hàng đã hết thời hạn bảo hành ${warrantyDays} ngày.`,
       daysLeft: 0,
       isFinalDay: false,
       until: endTimestamp,
@@ -121,8 +135,8 @@ export function analyzeWarrantyEligibility({
 
   // Số ngày còn lại tính theo ngày lịch (bao gồm hôm nay), không vượt quá tổng số ngày bảo hành
   // (ngày hoàn thành là ngày 0 nên không hiển thị "61/60").
-  const todayZero = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const endDayZero = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()).getTime();
+  const todayZero = vnTimestamp(np.year, np.month, np.day);
+  const endDayZero = vnTimestamp(ep.year, ep.month, ep.day);
   const rawDaysLeft = Math.round((endDayZero - todayZero) / DAY_MS) + 1;
   const daysLeft = Math.max(1, Math.min(warrantyDays, rawDaysLeft));
 
@@ -132,7 +146,7 @@ export function analyzeWarrantyEligibility({
   // NGÀY CUỐI CÙNG: chỉ được đặt hôm nay, chỉ các ca bắt đầu trước 18h00
   // =========================================================================
   if (isFinalDay) {
-    const curHour = now.getHours() + now.getMinutes() / 60;
+    const curHour = np.hour + np.minute / 60;
     const finalSlots = getSlotsForDate(todayYmd, { now, endYmd });
     if (curHour >= WARRANTY_FINAL_DAY_CUTOFF_HOUR || finalSlots.length === 0) {
       return {

@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { C, R, shadow } from '../../theme';
-import { Btn, AppIcon } from './UIComponents';
+import { Btn } from './UIComponents';
+import { AppIcon } from './AppIcon';
 
 /**
  * ErrorBoundary bắt các lỗi JavaScript bất ngờ trong cây React component,

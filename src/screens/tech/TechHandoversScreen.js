@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { C, R, shadow } from '../../theme';
 import { formatVND } from '../../constants/data';
@@ -46,6 +46,9 @@ export function TechHandoversScreen({ params }) {
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [apiUnavailable, setApiUnavailable] = useState(false);
+  const statusFilterRef = useRef(statusFilter);
+  statusFilterRef.current = statusFilter;
+  const submittingRef = useRef(false);
 
   const loadPending = useCallback(async () => {
     const res = await hrmssApi.getTechnicianPendingHandovers();
@@ -61,7 +64,7 @@ export function TechHandoversScreen({ params }) {
     setSelectedIds(new Set(items.map((it) => String(it.payment_id))));
   }, []);
 
-  const loadHistory = useCallback(async (st = statusFilter) => {
+  const loadHistory = useCallback(async (st = statusFilterRef.current) => {
     const res = await hrmssApi.getTechnicianHandovers({ status: st, page: 1, limit: 30 });
     if (!res.ok) {
       if (res.status === 404) setApiUnavailable(true);
@@ -69,18 +72,18 @@ export function TechHandoversScreen({ params }) {
     }
     setApiUnavailable(false);
     setHistoryItems(Array.isArray(res.data?.items) ? res.data.items : []);
-  }, [statusFilter]);
+  }, []);
 
   const loadAll = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
     try {
-      await Promise.all([loadPending(), loadHistory(statusFilter)]);
+      await Promise.all([loadPending(), loadHistory(statusFilterRef.current)]);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [loadPending, loadHistory, statusFilter]);
+  }, [loadPending, loadHistory]);
 
   useEffect(() => {
     loadAll(false);
@@ -126,10 +129,12 @@ export function TechHandoversScreen({ params }) {
   };
 
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
     if (selectedIds.size === 0) {
       u.alert('Chưa chọn khoản nào', 'Chọn ít nhất một khoản tiền mặt để nộp cho văn phòng.', '💵');
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const res = await hrmssApi.submitTechnicianHandover({
@@ -155,6 +160,7 @@ export function TechHandoversScreen({ params }) {
       await loadAll(false);
       setTab('history');
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -199,7 +205,7 @@ export function TechHandoversScreen({ params }) {
               <EmptyState
                 icon="check-circle"
                 title={loading ? 'Đang tải…' : 'Không còn tiền mặt chờ nộp'}
-                sub="Mọi khoản tiền mặt bạn thu đã được lập đợt nộp hoặc chưa có khoản mới."
+                body="Mọi khoản tiền mặt bạn thu đã được lập đợt nộp hoặc chưa có khoản mới."
               />
             ) : (
               <>
@@ -272,7 +278,7 @@ export function TechHandoversScreen({ params }) {
               <EmptyState
                 icon="receipt"
                 title={loading ? 'Đang tải…' : 'Chưa có đợt nộp tiền nào'}
-                sub="Các đợt bàn giao tiền mặt bạn gửi về văn phòng sẽ hiển thị tại đây."
+                body="Các đợt bàn giao tiền mặt bạn gửi về văn phòng sẽ hiển thị tại đây."
               />
             ) : (
               historyItems.map((h) => {

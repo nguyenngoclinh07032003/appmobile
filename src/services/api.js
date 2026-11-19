@@ -124,7 +124,8 @@ async function refreshSession() {
       .then((res) => {
         if (res.ok && res.data?.access_token) {
           authTokens.set(res.data.access_token);
-          authTokens.setRefresh(res.data.refresh_token);
+          // Chỉ thay refresh token khi server trả token mới; thiếu thì giữ token cũ (không tự xoá phiên).
+          if (res.data.refresh_token) authTokens.setRefresh(res.data.refresh_token);
           return res;
         }
         if (res.status === 401 || res.status === 400) {
@@ -432,6 +433,7 @@ export const hrmssApi = {
 
     if (res.ok && res.data?.access_token) {
       authTokens.set(res.data.access_token);
+      // Đăng nhập mới: luôn thay refresh token (thiếu thì xoá) để không giữ nhầm token của tài khoản trước.
       authTokens.setRefresh(res.data.refresh_token);
     }
     return res;
