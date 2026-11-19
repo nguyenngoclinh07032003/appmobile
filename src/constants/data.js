@@ -546,7 +546,7 @@ export const kindFromName = (name) => {
   const n = normalize(name);
   if (/sua|chan doan|kiem tra|xu ly su co|thay /.test(n)) return 'repair';
   if (/lap dat|thao lap|di chuyen may/.test(n)) return 'install';
-  if (/tron doi|dinh ky|goi bao duong/.test(n)) return 'lifetime';
+  if (/tron doi|dinh ky|goi bao duong|\d+\s*lan\s*(trong\s*)?\d*\s*nam/.test(n)) return 'lifetime';
   if (/gas/.test(n)) return 'gas';
   return 'clean';
 };

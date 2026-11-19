@@ -323,7 +323,8 @@ async function rawRequest(endpoint, options = {}) {
       }
     } else {
       const text = await res.text();
-      resData = { message: text };
+      // Tránh trả raw HTML (ví dụ trang lỗi 502/504 từ reverse proxy) lên UI
+      resData = /<(!doctype|html|head|body)\b/i.test(text) ? { message: null } : { message: text };
     }
 
     if (!res.ok) {
@@ -531,7 +532,7 @@ export const hrmssApi = {
   async getServices() {
     const res = await apiRequest('/customer/services');
     if (res.ok && res.data?.items) {
-      return { ok: true, items: res.data.items };
+      return { ...res, items: res.data.items };
     }
     return res;
   },
@@ -734,8 +735,10 @@ export const hrmssApi = {
   },
   // Gắn ảnh biên lai (đã tải qua POST /uploads) vào dòng linh kiện mua ngoài của báo giá.
   async attachPartReceipt(jobId, itemId, attachmentId) {
+    const numId = Number(attachmentId);
     return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/quotation-items/${encodeURIComponent(itemId)}/receipt`, {
-      method: 'PATCH', body: { attachment_id: String(attachmentId) },
+      method: 'PATCH',
+      body: { attachment_id: Number.isFinite(numId) && numId > 0 ? numId : attachmentId },
     });
   },
   async getTechnicianJobDetail(id) {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TextInput, Platform, Image, Linking } from 'react-native';
 import { C, R, shadow, toneOf, STATUS_META, grad } from '../../theme';
 import {
@@ -17,6 +17,7 @@ import {
 } from '../../components';
 import {
   pickImage, validateVietnamesePhone, validateContactName, computeQuoteRangeTotals, formatRangeVND,
+  parseSymptomPhotoTitle,
 } from '../../utils';
 import {
   nextDays, minSelectableMinute, isDayOutOfSlots, clampToDay, parseSlotToMinutes, dayIndexOfKey, dobError,
@@ -28,7 +29,7 @@ import {
 import {
   callAction, errorText, isOk, useBusy, NotFoundView,
 } from '../shared/actionHelpers';
-import { TrackingCard, VietQRPay, WarrantyBookingSheet } from '../../components/order';
+import { TrackingCard, VietQRPay, WarrantyBookingSheet, SymptomBreakdownView } from '../../components/order';
 import { WarrantyCertificate } from './WarrantyCertificate';
 
 const newAttId = () => `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
@@ -234,7 +235,40 @@ export function OrderScreen({ params }) {
   const [payBusy, runPay] = useBusy();
   // Hook phải khai báo TRƯỚC mọi lệnh return sớm (nếu không: "Rendered fewer hooks" → crash toàn app).
   const [showWarrantyBooking, setShowWarrantyBooking] = useState(false);
+  const [previewOrderPhoto, setPreviewOrderPhoto] = useState(null);
+  const aRef = useRef(a);
+  aRef.current = a;
   const o = (s.orders || []).find((x) => x.code === params?.code);
+  const orderReqId = o?.dbRequestId || null;
+  const orderCode = o?.code || null;
+  const orderStatus = o?.status || null;
+  const orderActive = Boolean(o && isActiveOrder(o));
+
+  // Luôn tham gia room Socket.IO của đơn khi mở màn chi tiết để nhận báo giá / đổi trạng thái tức thì.
+  useEffect(() => {
+    if (!orderReqId) return undefined;
+    aRef.current?.joinOrderRoom?.(orderReqId);
+    return () => {
+      aRef.current?.leaveOrderRoom?.(orderReqId);
+    };
+  }, [orderReqId]);
+
+  // Bảo đảm đơn cũ / mới mở chi tiết đều tải đủ chẩn đoán & ảnh triệu chứng ban đầu.
+  useEffect(() => {
+    if (!orderCode) return;
+    aRef.current?.ensureOrderHydrated?.(orderCode);
+  }, [orderCode]);
+
+  // Đồng bộ ngay khi mở màn & mỗi 5s trong lúc đơn đang hoạt động (trường hợp mở 2 cửa sổ song song hoặc socket trễ).
+  useEffect(() => {
+    if (!orderCode || !orderActive) return undefined;
+    aRef.current?.syncFromBackend?.(null, true);
+    const timer = setInterval(() => {
+      aRef.current?.syncFromBackend?.(null, true);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [orderCode, orderStatus, orderActive]);
+
   if (!o) return <NotFoundView onBack={() => (nav.stack.length ? nav.back() : nav.activity())} />;
   const meta = customerStatusMeta(o);
   const acceptExpired = isOfferExpired(o);
@@ -614,9 +648,14 @@ export function OrderScreen({ params }) {
                 />
               </View>
 
-              {o.quote.symptoms ? <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 6 }]}>Triệu chứng: {o.quote.symptoms}</Text> : null}
-              <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 4 }]}>Chẩn đoán: {o.quote.diagnosis}</Text>
-              {o.quote.recommendation ? <Text style={[ui.meta, { fontSize: 13, color: C.ink2, marginTop: 4 }]}>Đề xuất: {o.quote.recommendation}</Text> : null}
+              <SymptomBreakdownView
+                symptoms={o.quote.symptoms}
+                diagnosis={o.quote.diagnosis}
+                recommendation={o.quote.recommendation}
+                evidence={evidence}
+                initialAttachments={o.attachments}
+                defaultExpandFirst
+              />
 
               {/* Danh sách dịch vụ ban đầu */}
               <View style={{ marginTop: 12 }}>
@@ -946,12 +985,12 @@ export function OrderScreen({ params }) {
           {o.note ? <InfoLine icon="file-text" label="Ghi chú" value={o.note} /> : null}
           {(o.attachments || []).length ? (
             <View style={{ marginTop: 4, marginBottom: 4 }}>
-              <Text style={{ fontSize: 12, color: C.muted, fontWeight: '600', marginBottom: 6 }}>📷 Ảnh đính kèm</Text>
+              <Text style={{ fontSize: 12, color: C.muted, fontWeight: '600', marginBottom: 6 }}>📷 Hình ảnh triệu chứng ban đầu</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {o.attachments.map((att) => (
-                  <View key={att.id} style={mx.thumb}>
+                  <Tap key={att.id} style={mx.thumb} onPress={() => att.uri && setPreviewOrderPhoto({ uri: att.uri, title: att.note || 'Hình ảnh triệu chứng ban đầu' })} scaleTo={0.97}>
                     {att.uri ? <Image source={{ uri: att.uri }} style={{ width: '100%', height: '100%' }} /> : <AppIcon name="image" size={22} color={C.muted} />}
-                  </View>
+                  </Tap>
                 ))}
               </View>
             </View>
@@ -967,9 +1006,13 @@ export function OrderScreen({ params }) {
           return svc ? <ServiceRow key={it.id} item={svc} right={<Text style={{ fontWeight: '800', color: C.ink2 }}>x{it.qty}</Text>} /> : null;
         })}
 
-        {/* ===== Thông tin thợ gửi lên ===== */}
-        {o.quote && o.status !== 'quoted' ? (() => {
-          const lines = o.quote.lines || [];
+        {/* ===== Thông tin thợ gửi lên & ảnh triệu chứng ban đầu ===== */}
+        {(() => {
+          const hasDiagData = Boolean(o.quote || o.diagnosisReport);
+          const hasDiagPhotos = (o.attachments || []).length > 0 || evidence.some((e) => e.stage === 'diagnosis');
+          if ((!hasDiagData && !hasDiagPhotos) || o.status === 'quoted') return null;
+          const diagSource = o.quote || o.diagnosisReport || {};
+          const lines = o.quote?.lines || [];
           const bookedIds = new Set((o.items || []).map((it) => it.id));
           const bookedNames = new Set((o.items || []).map((it) => String(it.name || '').trim().toLowerCase()));
           const isBooked = (l) => l.isOriginal || (!l.matId && !l.isCustom && l.type !== 'part' && (bookedIds.has(l.key) || bookedNames.has(String(l.name || '').trim().toLowerCase())));
@@ -982,47 +1025,58 @@ export function OrderScreen({ params }) {
           return (
             <Card style={{ marginTop: 4 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={mx.tlTitle}>Kết quả chẩn đoán kỹ thuật</Text>
-                <Badge
-                  text={
-                    extraRange.extraMax > 0
-                      ? `${hasExtraRange ? 'Dự kiến ' : ''}${formatRangeVND(extraRange.extraMin, extraRange.extraMax, { prefix: '+' })}`
-                      : 'Không phát sinh (0đ)'
-                  }
-                  fg={extraRange.extraMax > 0 ? C.orange : C.green}
-                  bg={extraRange.extraMax > 0 ? C.orangeSoft : C.greenSoft}
-                />
+                <Text style={mx.tlTitle}>{hasDiagData ? 'Kết quả chẩn đoán kỹ thuật' : 'Triệu chứng & hiện trạng ban đầu'}</Text>
+                {hasDiagData ? (
+                  <Badge
+                    text={
+                      extraRange.extraMax > 0
+                        ? `${hasExtraRange ? 'Dự kiến ' : ''}${formatRangeVND(extraRange.extraMin, extraRange.extraMax, { prefix: '+' })}`
+                        : 'Không phát sinh (0đ)'
+                    }
+                    fg={extraRange.extraMax > 0 ? C.orange : C.green}
+                    bg={extraRange.extraMax > 0 ? C.orangeSoft : C.greenSoft}
+                  />
+                ) : (
+                  <Badge text="Đã gửi cho thợ" fg={C.primary} bg={C.primarySoft} />
+                )}
               </View>
-              {o.quote.symptoms ? <Text style={[ui.meta, { marginTop: 6 }]}>Triệu chứng: {o.quote.symptoms}</Text> : null}
-              <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>{o.quote.diagnosis}</Text>
-              {o.quote.recommendation ? <Text style={[ui.meta, { marginTop: 6 }]}>Đề xuất: {o.quote.recommendation}</Text> : null}
+              <SymptomBreakdownView
+                symptoms={diagSource.symptoms}
+                diagnosis={diagSource.diagnosis}
+                recommendation={diagSource.recommendation}
+                evidence={evidence}
+                initialAttachments={o.attachments}
+                defaultExpandFirst
+              />
 
               {/* Danh sách dịch vụ */}
-              <View style={{ marginTop: 8 }}>
-                <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.ink, marginBottom: 2 }}>
-                  🛠️ Dịch vụ kỹ thuật ({laborItems.length})
-                </Text>
-                {laborItems.map((l, i) => (
-                  <View key={`d_labor_${l.name}_${i}`} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
-                    <Text style={[ui.meta, { fontSize: 13, color: C.ink2, flex: 1, paddingRight: 6 }]} numberOfLines={2}>
-                      {l.name} x{l.qty} {l.unit || 'lần'}
-                    </Text>
-                    <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.ink }]}>{formatVND(l.price * l.qty)}</Text>
-                  </View>
-                ))}
-                {o.productDiscount ? (
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
-                    <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Giảm giá dịch vụ</Text>
-                    <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.green }]}>-{formatVND(o.productDiscount)}</Text>
-                  </View>
-                ) : null}
-                {o.comboDiscount ? (
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
-                    <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Ưu đãi {o.comboLabel || 'Combo nhiều máy (-5%)'}</Text>
-                    <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.green }]}>-{formatVND(o.comboDiscount)}</Text>
-                  </View>
-                ) : null}
-              </View>
+              {laborItems.length ? (
+                <View style={{ marginTop: 8 }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.ink, marginBottom: 2 }}>
+                    🛠️ Dịch vụ kỹ thuật ({laborItems.length})
+                  </Text>
+                  {laborItems.map((l, i) => (
+                    <View key={`d_labor_${l.name}_${i}`} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
+                      <Text style={[ui.meta, { fontSize: 13, color: C.ink2, flex: 1, paddingRight: 6 }]} numberOfLines={2}>
+                        {l.name} x{l.qty} {l.unit || 'lần'}
+                      </Text>
+                      <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.ink }]}>{formatVND(l.price * l.qty)}</Text>
+                    </View>
+                  ))}
+                  {o.productDiscount ? (
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
+                      <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Giảm giá dịch vụ</Text>
+                      <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.green }]}>-{formatVND(o.productDiscount)}</Text>
+                    </View>
+                  ) : null}
+                  {o.comboDiscount ? (
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
+                      <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Ưu đãi {o.comboLabel || 'Combo nhiều máy (-5%)'}</Text>
+                      <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.green }]}>-{formatVND(o.comboDiscount)}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
 
               {/* Danh sách vật tư (nếu có) */}
               {partItems.length ? (
@@ -1078,16 +1132,16 @@ export function OrderScreen({ params }) {
                 );
               })() : null}
 
-              {o.quote.rejectReason ? (
-                <Text style={[ui.meta, { color: o.quote.revisionRequested && o.status === 'diagnosing' ? C.orange : C.red, fontWeight: '700', marginTop: 8 }]}>
-                  {o.quote.revisionRequested && o.status === 'diagnosing'
+              {o.quote?.rejectReason ? (
+                <Text style={[ui.meta, { color: o.quote?.revisionRequested && o.status === 'diagnosing' ? C.orange : C.red, fontWeight: '700', marginTop: 8 }]}>
+                  {o.quote?.revisionRequested && o.status === 'diagnosing'
                     ? `Bạn đã yêu cầu thợ điều chỉnh báo giá: ${o.quote.rejectReason}`
                     : `Bạn đã từ chối báo giá: ${o.quote.rejectReason}`}
                 </Text>
               ) : null}
             </Card>
           );
-        })() : null}
+        })()}
         {!o.quote && (o.materials || []).length && ['diagnosing', 'quoted', 'repairing', 'done'].includes(o.status) ? (
           <Card style={{ marginTop: 12 }}>
             <Text style={mx.tlTitle}>Vật tư & linh kiện thay thế</Text>
@@ -1110,57 +1164,85 @@ export function OrderScreen({ params }) {
             ))}
           </Card>
         ) : null}
-        {evidence.some((e) => e.stage !== 'receipt') ? (
-          <Card style={{ marginTop: 12 }}>
-            <Text style={mx.tlTitle}>Hình ảnh nghiệm thu & minh chứng</Text>
-            {[
-              { id: 'diagnosis', label: 'Chẩn đoán' },
-              { id: 'before', label: 'Trước khi làm' },
-              { id: 'after', label: 'Sau khi làm' },
-            ].map((stg) => (evidence.some((e) => e.stage === stg.id) ? (
-              <View key={stg.id} style={{ marginTop: 10 }}>
-                <Text style={[ui.meta, { fontWeight: '700', marginBottom: 6 }]}>{stg.label}</Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                  {evidence.filter((e) => e.stage === stg.id).map((e) => (
-                    <View key={e.id} style={mx.thumb}>
-                      {e.uri ? <Image source={{ uri: e.uri }} style={{ width: '100%', height: '100%' }} /> : <Text style={{ fontSize: 24 }}>🖼️</Text>}
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : null))}
-          </Card>
-        ) : null}
-        {o.report ? (
-          <Card style={{ marginTop: 12, backgroundColor: '#F3FBF7', borderColor: '#CDEFDD' }}>
-            <Text style={mx.tlTitle}>Biên bản nghiệm thu kỹ thuật</Text>
-            <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>{o.report.summary}</Text>
-            {(o.report.safetyChecklist || []).length ? (
-              <View style={{ marginTop: 8, gap: 3 }}>
-                {o.report.safetyChecklist.map((chk, i) => (
-                  <Text key={i} style={{ fontSize: 12, color: C.green, fontWeight: '700' }}>✓ {chk}</Text>
+        {(() => {
+          const unlinkedPhotos = evidence.filter(
+            (e) =>
+              e.stage !== 'receipt' &&
+              e.stage !== 'diagnosis' &&
+              !(o.report && e.stage === 'after') &&
+              !parseSymptomPhotoTitle(e.note),
+          );
+          if (!unlinkedPhotos.length) return null;
+          return (
+            <Card style={{ marginTop: 12 }}>
+              <Text style={mx.tlTitle}>Hình ảnh đính kèm đơn ({unlinkedPhotos.length})</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                {unlinkedPhotos.map((e) => (
+                  <Tap
+                    key={e.id}
+                    style={mx.thumb}
+                    onPress={() => e.uri && setPreviewOrderPhoto({ uri: e.uri, title: e.note || 'Hình ảnh đính kèm đơn' })}
+                    scaleTo={0.97}
+                  >
+                    {e.uri ? <Image source={{ uri: e.uri }} style={{ width: '100%', height: '100%' }} /> : <Text style={{ fontSize: 24 }}>🖼️</Text>}
+                  </Tap>
                 ))}
               </View>
-            ) : null}
-            {o.report.customerSignature ? (
-              <View style={{ marginTop: 8, padding: 8, borderRadius: R.sm, backgroundColor: '#fff', borderWidth: 1, borderColor: '#D1FAE5' }}>
-                <Text style={{ fontSize: 12, color: C.green, fontWeight: '800' }}>Chữ ký xác nhận của khách hàng:</Text>
-                <Text style={{ fontStyle: 'italic', fontSize: 16, fontWeight: '800', color: C.navy, marginTop: 2 }}>{o.report.customerSignature}</Text>
-              </View>
-            ) : null}
-            {(o.materials || []).length ? <Text style={[ui.meta, { marginTop: 6 }]}>Vật tư: {o.materials.map((m) => `${m.name} (${m.qty} ${m.unit})`).join(', ')}</Text> : null}
-            <Text style={[ui.meta, { marginTop: 6 }]}>{fmtDateTime(o.report.at)} · Thợ {o.report.tech}</Text>
-            {o.status === 'done' && (isPaid(o) || o.kind === 'warranty') ? (
-              <Btn
-                title="📜 Xem Phiếu Nghiệm Thu & Bảo Hành Điện Tử"
-                variant="soft"
-                small
-                style={{ marginTop: 12 }}
-                onPress={() => setShowCertificate(true)}
-              />
-            ) : null}
-          </Card>
-        ) : null}
+            </Card>
+          );
+        })()}
+        {o.report ? (() => {
+          const completionPhotos = evidence.filter((e) => e.stage === 'after' && e.uri);
+          return (
+            <Card style={{ marginTop: 12, backgroundColor: '#F3FBF7', borderColor: '#CDEFDD' }}>
+              <Text style={mx.tlTitle}>Biên bản nghiệm thu kỹ thuật</Text>
+              <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>{o.report.summary}</Text>
+              {(o.report.safetyChecklist || []).length ? (
+                <View style={{ marginTop: 8, gap: 3 }}>
+                  {o.report.safetyChecklist.map((chk, i) => (
+                    <Text key={i} style={{ fontSize: 12, color: C.green, fontWeight: '700' }}>✓ {chk}</Text>
+                  ))}
+                </View>
+              ) : null}
+              {completionPhotos.length ? (
+                <View style={{ marginTop: 10 }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '800', color: '#065F46', marginBottom: 6 }}>
+                    📷 Hình ảnh hoàn thành công việc ({completionPhotos.length})
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {completionPhotos.map((ph, idx) => (
+                      <Tap
+                        key={ph.id || `done_ph_${idx}`}
+                        style={{ width: 78, height: 78, borderRadius: R.md, overflow: 'hidden', borderWidth: 1.5, borderColor: '#A7F3D0', backgroundColor: '#fff' }}
+                        onPress={() => setPreviewOrderPhoto({ uri: ph.uri, title: ph.note || 'Hình ảnh hoàn thành công việc' })}
+                        scaleTo={0.97}
+                      >
+                        <Image source={{ uri: ph.uri }} style={{ width: '100%', height: '100%' }} />
+                      </Tap>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+              {o.report.customerSignature ? (
+                <View style={{ marginTop: 8, padding: 8, borderRadius: R.sm, backgroundColor: '#fff', borderWidth: 1, borderColor: '#D1FAE5' }}>
+                  <Text style={{ fontSize: 12, color: C.green, fontWeight: '800' }}>Chữ ký xác nhận của khách hàng:</Text>
+                  <Text style={{ fontStyle: 'italic', fontSize: 16, fontWeight: '800', color: C.navy, marginTop: 2 }}>{o.report.customerSignature}</Text>
+                </View>
+              ) : null}
+              {(o.materials || []).length ? <Text style={[ui.meta, { marginTop: 6 }]}>Vật tư: {o.materials.map((m) => `${m.name} (${m.qty} ${m.unit})`).join(', ')}</Text> : null}
+              <Text style={[ui.meta, { marginTop: 6 }]}>{fmtDateTime(o.report.at)} · Thợ {o.report.tech}</Text>
+              {o.status === 'done' && (isPaid(o) || o.kind === 'warranty') ? (
+                <Btn
+                  title="📜 Xem Phiếu Nghiệm Thu & Bảo Hành Điện Tử"
+                  variant="soft"
+                  small
+                  style={{ marginTop: 12 }}
+                  onPress={() => setShowCertificate(true)}
+                />
+              ) : null}
+            </Card>
+          );
+        })() : null}
 
         {o.kind !== 'warranty' && o.kind !== 'followup' ? (
           <Card style={{ marginTop: 12 }}>
@@ -1376,6 +1458,15 @@ export function OrderScreen({ params }) {
         </View>
       ) : null}
 
+      <Sheet
+        visible={Boolean(previewOrderPhoto)}
+        onClose={() => setPreviewOrderPhoto(null)}
+        title={previewOrderPhoto?.title || 'Hình ảnh đơn hàng'}
+      >
+        {previewOrderPhoto?.uri ? (
+          <Image source={{ uri: previewOrderPhoto.uri }} style={{ width: '100%', height: 280, borderRadius: R.md, backgroundColor: '#F1F5F9' }} resizeMode="contain" />
+        ) : null}
+      </Sheet>
       <Sheet
         visible={showMatPrice}
         onClose={() => setShowMatPrice(false)}

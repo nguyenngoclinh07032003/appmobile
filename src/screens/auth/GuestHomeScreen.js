@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AppIcon } from '../../components';
-import { CATEGORIES, SERVICES, catLabel, catIcon, formatVND } from '../../constants/data';
+import { ALL_SERVICES, CATEGORIES, SERVICES, catLabel, catIcon, formatVND } from '../../constants/data';
+import { useApp } from '../../context';
 
 const TABS = [
   { id: 'home', label: 'Trang chủ', icon: 'home' },
@@ -33,7 +34,7 @@ function ServiceTile({ service, onPress }) {
 }
 
 function HomeTab({ onTab, onLogin, onRegister }) {
-  const featured = SERVICES.filter((service) => !service.hidden).slice(0, 4);
+  const featured = (SERVICES.length ? SERVICES : ALL_SERVICES).filter((service) => !service.hidden).slice(0, 4);
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
       <View style={styles.topbar}>
@@ -78,7 +79,7 @@ function HomeTab({ onTab, onLogin, onRegister }) {
 }
 
 function ServicesTab({ onLogin }) {
-  const publicServices = SERVICES.filter((service) => !service.hidden);
+  const publicServices = (ALL_SERVICES.length ? ALL_SERVICES : SERVICES).filter((service) => !service.hidden);
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.innerPage}>
       <Text style={styles.eyebrow}>DANH MỤC CÔNG KHAI</Text><Text style={styles.pageTitle}>Dịch vụ tại nhà</Text>
@@ -117,12 +118,13 @@ function LockedTab({ tab, onLogin, onRegister }) {
 }
 
 export default function GuestHomeScreen({ onLogin, onRegister }) {
+  const { s } = useApp();
   const [tab, setTab] = useState('home');
   return (
     <View style={styles.page}>
       <View style={styles.content}>
-        {tab === 'home' ? <HomeTab onTab={setTab} onLogin={onLogin} onRegister={onRegister} /> : null}
-        {tab === 'services' ? <ServicesTab onLogin={onLogin} /> : null}
+        {tab === 'home' ? <HomeTab onTab={setTab} onLogin={onLogin} onRegister={onRegister} catalogVersion={s?.catalogVersion} /> : null}
+        {tab === 'services' ? <ServicesTab onLogin={onLogin} catalogVersion={s?.catalogVersion} /> : null}
         {tab === 'activity' || tab === 'personal' ? <LockedTab tab={tab} onLogin={onLogin} onRegister={onRegister} /> : null}
       </View>
       <View style={styles.bottomNav}>

@@ -8,3 +8,4 @@ export * from './async';
 export * from './warrantyPolicy';
 export * from './activityFilter';
 export * from './externalPartsPricing';
+export * from './symptomItems';

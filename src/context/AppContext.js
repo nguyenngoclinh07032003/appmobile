@@ -74,7 +74,13 @@ import {
   formatRangeVND,
   parseExternalPartDesc,
   normalizeExternalPartName,
+  sortQuotationsAsc,
 } from "../utils/externalPartsPricing";
+import {
+  formatSymptomPhotoNote,
+  parseSymptomPhotoMeta,
+  splitSymptomTokens,
+} from "../utils/symptomItems";
 import { WARRANTY_ALERT_MILESTONES } from "../constants/appPolicy";
 
 // Ngày sinh: server lưu 'YYYY-MM-DD', app hiển thị 'DD/MM/YYYY'.
@@ -112,6 +118,8 @@ const networkError = (res) =>
 import {
   mapBackendAddressToApp,
   mapBackendCustomerRequestToOrder,
+  mergeCustomerRequestDetail,
+  extractInitialAttachments,
   mapBackendTechJobToOrder,
   mapBackendOpenRequestToOrder,
   mergeBackendOrdersWithLocal,
@@ -1312,6 +1320,7 @@ export function AppProvider({ children }) {
   //  - danh mục / cấu hình / bảng giá vật tư ít đổi -> tải lại tối đa 10 phút / lần;
   //  - đơn đã hoàn thành / đã huỷ không đổi nữa -> giữ tracking + hoá đơn đã tải, không gọi lại mỗi lần.
   const catalogFetchedAt = useRef(0);
+  const catalogSyncPromiseRef = useRef(null);
   const finishedOrderCache = useRef(new Map()); // request_id -> { status, technician, journey, bill }
   const statusToastRef = useRef(null); // thông báo đổi trạng thái đơn vừa phát hiện khi đồng bộ (hiện toast sau khi cập nhật)
   const syncingRef = useRef(false);
@@ -1319,6 +1328,93 @@ export function AppProvider({ children }) {
   // Sync bắt buộc (sau thao tác: hoàn thành đơn, thanh toán, đổi điểm...) gọi lúc đang có sync khác chạy:
   // không bỏ đi mà xếp hàng chạy ngay khi sync hiện tại xong (nếu không sẽ thấy điểm / trạng thái cũ).
   const pendingForceSyncRef = useRef(null);
+
+  // Đồng bộ danh mục dịch vụ & cấu hình công khai (không cần đăng nhập): GuestHomeScreen và phiên đăng nhập dùng chung.
+  const syncPublicCatalog = async (force = false) => {
+    if (catalogSyncPromiseRef.current) return catalogSyncPromiseRef.current;
+    if (
+      !force &&
+      Date.now() - catalogFetchedAt.current < 10 * 60 * 1000 &&
+      MATERIALS.length > 0 &&
+      SERVICES.length > 0
+    ) {
+      return;
+    }
+    catalogSyncPromiseRef.current = (async () => {
+      try {
+        const [catRes, svcRes, cfgRes, matRes] = await Promise.all([
+          hrmssApi.getServiceCategories(),
+          hrmssApi.getServices(),
+          hrmssApi.getPublicConfig(),
+          hrmssApi.getPublicMaterials(),
+        ]);
+        if (catRes.ok && svcRes.ok && matRes.ok)
+          catalogFetchedAt.current = Date.now();
+        const catItems = catRes.ok
+          ? Array.isArray(catRes.data?.items)
+            ? catRes.data.items
+            : Array.isArray(catRes.data)
+              ? catRes.data
+              : null
+          : null;
+        if (catItems) syncCatalogFromBackend({ categories: catItems });
+        if (matRes.ok && Array.isArray(matRes.data?.items)) {
+          syncCatalogFromBackend({ materials: matRes.data.items });
+          up(() => ({ catalogVersion: Date.now() }));
+        }
+        if (svcRes.ok && Array.isArray(svcRes.items)) {
+          syncCatalogFromBackend({ services: svcRes.items });
+          // Giỏ hàng / yêu thích của bản cũ có mã dịch vụ mẫu: bỏ những món không còn trong danh mục.
+          up((p) => ({
+            cart: (p.cart || []).filter(
+              (it) => getService(it.id) && !getService(it.id).hidden,
+            ),
+            favorites: (p.favorites || []).filter(
+              (id) => getService(id) && !getService(id).hidden,
+            ),
+            catalogVersion: Date.now(),
+          }));
+          setSvc((p) =>
+            p.category && CATEGORIES.some((c) => c.id === p.category)
+              ? p
+              : {
+                  ...p,
+                  category:
+                    (
+                      CATEGORIES.find((c) =>
+                        SERVICES.some((x) => x.category === c.id),
+                      ) || CATEGORIES[0]
+                    )?.id || null,
+                },
+          );
+        }
+        if (cfgRes.ok && cfgRes.data) {
+          syncPolicyFromBackend(cfgRes.data);
+          const tech = cfgRes.data.technician || {};
+          const late = (cfgRes.data.lateness?.tiers || []).reduce(
+            (m, t) => ({ ...m, [t.tier]: t.max_minutes }),
+            {},
+          );
+          if (tech.max_active_jobs != null)
+            TECH_POLICY.maxActiveJobs = Number(tech.max_active_jobs);
+          if (tech.free_release_minutes != null)
+            TECH_POLICY.freeCancelMs = Number(tech.free_release_minutes) * 60000;
+          if (tech.near_slot_minutes != null)
+            TECH_POLICY.nearSlotMs = Number(tech.near_slot_minutes) * 60000;
+          if (late.ok != null) TECH_POLICY.lateGraceMin = Number(late.ok);
+          if (late.soft != null) TECH_POLICY.lateMidMin = Number(late.soft);
+          if (late.mid != null) TECH_POLICY.lateSevereMin = Number(late.mid);
+          up(() => ({ policy: cfgRes.data }));
+        }
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error("[HRMSS Sync Error][Catalog]", e);
+      } finally {
+        catalogSyncPromiseRef.current = null;
+      }
+    })();
+    return catalogSyncPromiseRef.current;
+  };
 
   const syncFromBackend = async (overrideAccount = null, force = false) => {
     const acc = overrideAccount || s.auth;
@@ -1343,82 +1439,7 @@ export function AppProvider({ children }) {
       // Đảm bảo access token còn hạn trước khi bắn hàng loạt request đồng bộ song song
       const hasValidToken = await ensureAccessToken();
       if (!hasValidToken) return;
-      if (
-        Date.now() - catalogFetchedAt.current >= 10 * 60 * 1000 ||
-        MATERIALS.length === 0 ||
-        SERVICES.length === 0
-      ) {
-        try {
-          const [catRes, svcRes, cfgRes, matRes] = await Promise.all([
-            hrmssApi.getServiceCategories(),
-            hrmssApi.getServices(),
-            hrmssApi.getPublicConfig(),
-            hrmssApi.getPublicMaterials(),
-          ]);
-          if (catRes.ok && svcRes.ok && matRes.ok)
-            catalogFetchedAt.current = Date.now();
-          const catItems = catRes.ok
-            ? Array.isArray(catRes.data?.items)
-              ? catRes.data.items
-              : Array.isArray(catRes.data)
-                ? catRes.data
-                : null
-            : null;
-          if (catItems) syncCatalogFromBackend({ categories: catItems });
-          if (matRes.ok && Array.isArray(matRes.data?.items)) {
-            syncCatalogFromBackend({ materials: matRes.data.items });
-            up(() => ({ catalogVersion: Date.now() }));
-          }
-          if (svcRes.ok && Array.isArray(svcRes.items)) {
-            syncCatalogFromBackend({ services: svcRes.items });
-            // Giỏ hàng / yêu thích của bản cũ có mã dịch vụ mẫu: bỏ những món không còn trong danh mục.
-            up((p) => ({
-              cart: (p.cart || []).filter(
-                (it) => getService(it.id) && !getService(it.id).hidden,
-              ),
-              favorites: (p.favorites || []).filter(
-                (id) => getService(id) && !getService(id).hidden,
-              ),
-              catalogVersion: Date.now(),
-            }));
-            setSvc((p) =>
-              p.category && CATEGORIES.some((c) => c.id === p.category)
-                ? p
-                : {
-                    ...p,
-                    category:
-                      (
-                        CATEGORIES.find((c) =>
-                          SERVICES.some((x) => x.category === c.id),
-                        ) || CATEGORIES[0]
-                      )?.id || null,
-                  },
-            );
-          }
-          if (cfgRes.ok && cfgRes.data) {
-            syncPolicyFromBackend(cfgRes.data);
-            const tech = cfgRes.data.technician || {};
-            const late = (cfgRes.data.lateness?.tiers || []).reduce(
-              (m, t) => ({ ...m, [t.tier]: t.max_minutes }),
-              {},
-            );
-            if (tech.max_active_jobs != null)
-              TECH_POLICY.maxActiveJobs = Number(tech.max_active_jobs);
-            if (tech.free_release_minutes != null)
-              TECH_POLICY.freeCancelMs =
-                Number(tech.free_release_minutes) * 60000;
-            if (tech.near_slot_minutes != null)
-              TECH_POLICY.nearSlotMs = Number(tech.near_slot_minutes) * 60000;
-            if (late.ok != null) TECH_POLICY.lateGraceMin = Number(late.ok);
-            if (late.soft != null) TECH_POLICY.lateMidMin = Number(late.soft);
-            if (late.mid != null) TECH_POLICY.lateSevereMin = Number(late.mid);
-            up(() => ({ policy: cfgRes.data }));
-          }
-        } catch (e) {
-          // eslint-disable-next-line no-console
-          console.error("[HRMSS Sync Error][Catalog]", e);
-        }
-      }
+      await syncPublicCatalog();
 
       if (acc.role === "customer") {
         try {
@@ -1463,23 +1484,51 @@ export function AppProvider({ children }) {
             const isFinished = (r) =>
               r.request_status === "COMPLETED" ||
               String(r.request_status || "").startsWith("CANCELLED");
-            // Đơn đã xong / huỷ đã tải đủ ở lần trước (cùng trạng thái): dùng lại, không gọi API.
+            // Đơn đã xong / huỷ đã tải đủ ở lần trước (cùng trạng thái & phiên bản cache mới): dùng lại, không gọi API.
             const cached = (r) => {
               const c = isFinished(r)
                 ? finishedOrderCache.current.get(String(r.request_id))
                 : null;
-              return c && c.status === r.request_status ? c : null;
+              return c && c.cacheVer === 3 && c.status === r.request_status ? c : null;
             };
             rawRequests.forEach((r) => {
               const c = cached(r);
               if (c)
                 Object.assign(r, {
+                  ...(c.items ? { items: c.items } : {}),
+                  ...(c.quotations ? { quotations: c.quotations } : {}),
+                  ...(c.diagnoses ? { diagnoses: c.diagnoses } : {}),
+                  ...(c.visits ? { visits: c.visits } : {}),
+                  ...(c.timeline ? { timeline: c.timeline } : {}),
+                  ...(c._detailAttachments ? { _detailAttachments: c._detailAttachments } : {}),
                   technician: c.technician,
                   journey: c.journey,
                   bill: c.bill,
+                  ...(c._evidence ? { _evidence: c._evidence } : {}),
+                  _detailLoaded: true,
                 });
             });
-            const needTech = rawRequests
+            // Ưu tiên đơn đang hoạt động lên trước để không bị trôi khỏi giới hạn tải chi tiết khi khách có nhiều đơn cũ.
+            const prioritySorted = [...rawRequests].sort((x, y) => {
+              const xAct = !isFinished(x) && x.request_status !== "READY_FOR_ACCEPTANCE" ? 0 : 1;
+              const yAct = !isFinished(y) && y.request_status !== "READY_FOR_ACCEPTANCE" ? 0 : 1;
+              if (xAct !== yAct) return xAct - yAct;
+              return (
+                new Date(y.updated_at || y.created_at || 0).getTime() -
+                new Date(x.updated_at || x.created_at || 0).getTime()
+              );
+            });
+            // Chi tiết đầy đủ của đơn (quotations + items, diagnoses, visits, timeline): GET /customer/requests/:id.
+            const needDetail = prioritySorted
+              .filter(
+                (r) =>
+                  r.request_id &&
+                  r.request_status !== "RECEIVED" &&
+                  !String(r.request_status || "").startsWith("CANCELLED") &&
+                  !cached(r),
+              )
+              .slice(0, 25);
+            const needTech = prioritySorted
               .filter(
                 (r) =>
                   r.request_status !== "RECEIVED" &&
@@ -1488,10 +1537,15 @@ export function AppProvider({ children }) {
               )
               .slice(0, 20);
             // Hoá đơn thật (tiền phải trả, đã trả, giảm giá, phí kiểm tra): GET /customer/requests/:id/bill.
-            const needBill = rawRequests
+            const needBill = prioritySorted
               .filter((r) => r.request_status !== "RECEIVED" && !cached(r))
               .slice(0, 20);
-            const [trackings, bills] = await Promise.all([
+            const [details, trackings, bills] = await Promise.all([
+              Promise.all(
+                needDetail.map((r) =>
+                  hrmssApi.getCustomerRequestDetail(r.request_id).catch(() => null),
+                ),
+              ),
               Promise.all(
                 needTech.map((r) =>
                   hrmssApi.getRequestTracking(r.request_id).catch(() => null),
@@ -1503,6 +1557,13 @@ export function AppProvider({ children }) {
                 ),
               ),
             ]);
+            needDetail.forEach((r, i) => {
+              const d = details[i];
+              if (d?.ok && d.data) {
+                Object.assign(r, mergeCustomerRequestDetail(r, d.data));
+                r._detailLoaded = true;
+              }
+            });
             needTech.forEach((r, i) => {
               const t = trackings[i];
               if (t?.ok && t.data?.technician) r.technician = t.data.technician;
@@ -1511,13 +1572,13 @@ export function AppProvider({ children }) {
             needBill.forEach((r, i) => {
               if (bills[i]?.ok && bills[i].data?.bill) r.bill = bills[i].data;
             });
-            // Ảnh minh chứng đơn đang xử lý / chờ thanh toán: GET /uploads?request_id=
-            const needPhotos = rawRequests
+            // Ảnh minh chứng & triệu chứng trên đơn (kể cả đơn mới tạo / đang xử lý / chờ thanh toán): GET /uploads?request_id=
+            const needPhotos = prioritySorted
               .filter((r) => {
                 const st = String(r.request_status || "").toUpperCase();
-                return r.request_id && !st.startsWith("CANCEL") && st !== "RECEIVED";
+                return r.request_id && !st.startsWith("CANCEL") && (!cached(r) || !r._evidence);
               })
-              .slice(0, 12);
+              .slice(0, 25);
             const photoLists = await Promise.all(
               needPhotos.map((r) =>
                 hrmssApi.listRequestPhotos(r.request_id).catch(() => null),
@@ -1530,21 +1591,53 @@ export function AppProvider({ children }) {
                   res.data?.attachments ||
                   (Array.isArray(res.data) ? res.data : [])
                 : null;
-              if (rows) {
-                r._evidence = rows
-                  .filter((row) => !row.procedure_step_id)
-                  .map(mapBackendPhotoToEvidence);
+              const combined = [...(Array.isArray(rows) ? rows : []), ...(Array.isArray(r._detailAttachments) ? r._detailAttachments : [])]
+                .filter(
+                  (row) =>
+                    row &&
+                    (!row.procedure_step_id || String(row.evidence_type || "").toUpperCase() === "AFTER_REPAIR"),
+                );
+              if (rows || combined.length) {
+                const seen = new Set();
+                const mergedRows = [];
+                combined.forEach((row) => {
+                  const key = row.attachment_id != null ? `id:${row.attachment_id}` : `uri:${row.image_url || row.file_url || row.url || row.uri || ''}`;
+                  if (!key || key === 'uri:' || seen.has(key)) return;
+                  seen.add(key);
+                  mergedRows.push(row);
+                });
+                r._evidence = mergedRows.map(mapBackendPhotoToEvidence);
               }
             });
-            // Ghi nhớ đơn đã xong / huỷ khi đã có hoá đơn (lần sau không gọi lại).
+            // Nếu đơn ngoài top needPhotos nhưng detail đã trả ảnh -> vẫn map _evidence.
+            rawRequests.forEach((r) => {
+              if (!r._evidence && Array.isArray(r._detailAttachments) && r._detailAttachments.length) {
+                r._evidence = r._detailAttachments.map(mapBackendPhotoToEvidence);
+              }
+            });
+            // Ghi nhớ đơn đã xong / huỷ khi đã có hoá đơn & chi tiết (lần sau không gọi lại).
             rawRequests
-              .filter((r) => isFinished(r) && r.bill && !cached(r))
+              .filter(
+                (r) =>
+                  isFinished(r) &&
+                  r.bill &&
+                  (r._detailLoaded || r.request_status !== "COMPLETED") &&
+                  !cached(r),
+              )
               .forEach((r) => {
                 finishedOrderCache.current.set(String(r.request_id), {
+                  cacheVer: 3,
                   status: r.request_status,
+                  items: r.items,
+                  quotations: r.quotations,
+                  diagnoses: r.diagnoses,
+                  visits: r.visits,
+                  timeline: r.timeline,
+                  _detailAttachments: r._detailAttachments,
                   technician: r.technician,
                   journey: r.journey,
                   bill: r.bill,
+                  _evidence: r._evidence,
                 });
               });
           }
@@ -1556,7 +1649,14 @@ export function AppProvider({ children }) {
                     serverPhone || acc.phone,
                   );
                   if (!mapped) return null;
-                  return r._evidence ? { ...mapped, evidence: r._evidence } : mapped;
+                  const ev = r._evidence || null;
+                  const atts = extractInitialAttachments(ev || [], mapped.attachments);
+                  return {
+                    ...mapped,
+                    ...(ev ? { evidence: ev } : {}),
+                    ...(atts.length ? { attachments: atts } : {}),
+                    ...(r._detailLoaded ? { _detailHydrated: true } : {}),
+                  };
                 })
                 .filter(Boolean)
             : null;
@@ -1731,15 +1831,17 @@ export function AppProvider({ children }) {
           const specialtyInfo = profRes.ok
             ? readTechnicianSpecialties(profRes.data)
             : null;
-          // Ảnh minh chứng của các việc đang làm: GET /uploads?job_id= (bỏ ảnh đã gắn vào bước thực hiện).
-          const activeJobIds = (
+          // Ảnh minh chứng, ảnh triệu chứng ban đầu & ảnh hoàn thành của các việc (ưu tiên việc ACTIVE trước, sau đó việc vừa xong):
+          // GET /uploads?job_id= (ảnh thợ chụp) + GET /uploads?request_id= (ảnh khách đính kèm khi đặt lịch).
+          const allJobsRaw =
             jobsRes.ok && Array.isArray(jobsRes.data?.items)
               ? jobsRes.data.items
-              : []
-          )
-            .filter((j) => j.assignment_status === "ACTIVE" && j.assignment_id)
-            .map((j) => String(j.assignment_id))
-            .slice(0, 10);
+              : [];
+          const activeJobsList = [
+            ...allJobsRaw.filter((j) => j.assignment_status === "ACTIVE" && j.assignment_id),
+            ...allJobsRaw.filter((j) => j.assignment_status !== "ACTIVE" && j.assignment_id),
+          ].slice(0, 15);
+          const activeJobIds = activeJobsList.map((j) => String(j.assignment_id));
           // Hoá đơn: việc đang làm + việc đã nộp biên bản còn chờ khách trả tiền (thợ cần biết số tiền mặt / xác nhận đã nhận).
           const billJobIds = [
             ...new Set([
@@ -1761,10 +1863,17 @@ export function AppProvider({ children }) {
                 .map((j) => String(j.assignment_id)),
             ]),
           ].slice(0, 15);
-          const [photoLists, jobBills] = await Promise.all([
+          const [photoLists, reqPhotoLists, jobBills] = await Promise.all([
             Promise.all(
-              activeJobIds.map((id) =>
-                hrmssApi.listJobPhotos(id).catch(() => null),
+              activeJobsList.map((j) =>
+                hrmssApi.listJobPhotos(String(j.assignment_id)).catch(() => null),
+              ),
+            ),
+            Promise.all(
+              activeJobsList.map((j) =>
+                j.request?.request_id
+                  ? hrmssApi.listRequestPhotos(j.request.request_id).catch(() => null)
+                  : Promise.resolve(null),
               ),
             ),
             // Hoá đơn của việc (tiền mặt cần thu, giảm giá): GET /technician/jobs/:id/bill.
@@ -1780,20 +1889,33 @@ export function AppProvider({ children }) {
               billByJob.set(id, jobBills[i].data);
           });
           const evidenceByJob = new Map();
-          activeJobIds.forEach((id, i) => {
-            const res = photoLists[i];
-            const rows = res?.ok
-              ? res.data?.items ||
-                res.data?.attachments ||
-                (Array.isArray(res.data) ? res.data : [])
-              : null;
-            if (rows)
-              evidenceByJob.set(
-                id,
-                rows
-                  .filter((r) => !r.procedure_step_id)
-                  .map(mapBackendPhotoToEvidence),
-              );
+          activeJobsList.forEach((j, i) => {
+            const id = String(j.assignment_id);
+            const extractRows = (res) =>
+              res?.ok
+                ? res.data?.items ||
+                  res.data?.attachments ||
+                  (Array.isArray(res.data) ? res.data : [])
+                : [];
+            const jobRows = extractRows(photoLists[i]);
+            const reqRows = extractRows(reqPhotoLists[i]);
+            if (photoLists[i]?.ok || reqPhotoLists[i]?.ok) {
+              const seen = new Set();
+              const mergedRows = [];
+              [...jobRows, ...reqRows]
+                .filter(
+                  (r) =>
+                    r &&
+                    (!r.procedure_step_id || String(r.evidence_type || "").toUpperCase() === "AFTER_REPAIR"),
+                )
+                .forEach((r) => {
+                  const key = r.attachment_id != null ? `id:${r.attachment_id}` : `uri:${r.image_url || r.file_url || r.url || ''}`;
+                  if (!key || key === 'uri:' || seen.has(key)) return;
+                  seen.add(key);
+                  mergedRows.push(r);
+                });
+              evidenceByJob.set(id, mergedRows.map(mapBackendPhotoToEvidence));
+            }
           });
           up((p) => {
             if (!isSameAccount(p)) return {};
@@ -1844,7 +1966,14 @@ export function AppProvider({ children }) {
                         techProf,
                       );
                       const ev = evidenceByJob.get(String(j.assignment_id));
-                      if (o && ev) o = { ...o, evidence: ev };
+                      if (o && ev) {
+                        const mergedAtts = extractInitialAttachments(ev, o.attachments);
+                        o = {
+                          ...o,
+                          evidence: ev,
+                          ...(mergedAtts.length ? { attachments: mergedAtts } : {}),
+                        };
+                      }
                       const rv = o && !o.rating ? reviewOf(j) : null;
                       if (rv)
                         o = {
@@ -1931,9 +2060,13 @@ export function AppProvider({ children }) {
       hrmssApi.getServiceProcedure(serviceDbId).catch(() => null),
     ]);
     if (!det?.ok && !proc?.ok) return null;
+    const svcDetail = det?.ok ? det.data?.service : null;
     const info = {
-      description: det?.ok ? det.data?.service?.description || "" : "",
-      bookingCount: det?.ok ? (det.data?.service?.booking_count ?? null) : null,
+      description: svcDetail?.description || "",
+      bookingCount: svcDetail?.booking_count ?? null,
+      ratingAverage: svcDetail?.rating?.average ?? null,
+      ratingCount: svcDetail?.rating?.count ?? null,
+      images: Array.isArray(svcDetail?.images) ? svcDetail.images : [],
       steps: proc?.ok ? proc.data?.steps || [] : null,
       at: Date.now(),
     };
@@ -2012,6 +2145,8 @@ export function AppProvider({ children }) {
           }));
         }
       }
+      // Tải danh mục & cấu hình công khai ngay khi mở app (dù chưa đăng nhập).
+      syncPublicCatalog();
       // Bản native lưu phiên trong SecureStore (sessionStorage/localStorage không có trên điện thoại):
       // mở lại app mà chưa có phiên trên máy -> dùng refresh token đã lưu để vào lại, không phải đăng nhập lại.
       // Sau hydrate, `s.auth` của lần render đầu đã cũ: luôn đọc lại phiên từ kho lưu trữ.
@@ -2028,38 +2163,62 @@ export function AppProvider({ children }) {
     })();
   }, []);
 
-  // Tự động đồng bộ khi app quay lại foreground và định kỳ mỗi 60s khi đang đăng nhập (thay đổi bình thường đến qua socket)
-  useEffect(() => {
-    const onAppStateChange = (nextState) => {
-      if (nextState === "active") {
-        syncFromBackend();
-        reconnectSocket(); // socket bị ngắt khi app chạy nền: kết nối lại ngay (không làm gì nếu đang kết nối)
-      }
-    };
-    const sub = AppState.addEventListener("change", onAppStateChange);
-    let timer = null;
-    if (s.auth) {
-      // Dự phòng khi realtime mất kết nối; bình thường socket đã báo thay đổi ngay.
-      timer = setInterval(() => {
-        syncFromBackend();
-        reconnectSocket();
-      }, 60000);
-    }
-    return () => {
-      sub.remove();
-      if (timer) clearInterval(timer);
-    };
-  }, [s.auth?.id]);
-
   // Kết nối Socket.IO thời gian thực khi có người dùng đăng nhập (backend/README.md, mục Realtime).
   // Hàm xử lý sự kiện đọc syncFromBackend / ui qua ref để luôn dùng bản của lần render mới nhất.
   const syncRef = useRef(null);
   syncRef.current = syncFromBackend;
   const uiRef = useRef(null);
   uiRef.current = ui;
-  // State mới nhất cho các handler socket (closure của effect giữ `s` cũ).
+  // State mới nhất cho các handler socket / foreground / timer (closure của effect giữ `s` cũ).
   const stateRef = useRef(s);
   stateRef.current = s;
+
+  // Tự động đồng bộ khi app quay lại foreground (mobile + focus/visibility trên Web) và định kỳ:
+  // mỗi 10s khi còn đơn đang xử lý (dự phòng realtime), 60s khi rảnh.
+  useEffect(() => {
+    let lastFocusSync = 0;
+    const syncOnResume = () => {
+      const now = Date.now();
+      if (now - lastFocusSync < 2000) return;
+      lastFocusSync = now;
+      syncRef.current?.(null, true);
+      reconnectSocket(); // socket bị ngắt khi app chạy nền: kết nối lại ngay (không làm gì nếu đang kết nối)
+    };
+    const onAppStateChange = (nextState) => {
+      if (nextState === "active") syncOnResume();
+    };
+    const sub = AppState.addEventListener("change", onAppStateChange);
+
+    const hasWin = typeof window !== "undefined" && typeof window.addEventListener === "function";
+    const hasDoc = typeof document !== "undefined" && typeof document.addEventListener === "function";
+    const onFocus = () => syncOnResume();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") syncOnResume();
+    };
+    if (hasWin) window.addEventListener("focus", onFocus);
+    if (hasDoc) document.addEventListener("visibilitychange", onVisibility);
+
+    let timer = null;
+    if (s.auth) {
+      let tickCount = 0;
+      timer = setInterval(() => {
+        tickCount += 1;
+        const hasActive = (stateRef.current?.orders || []).some(isActiveOrder);
+        if (hasActive || tickCount % 6 === 0) {
+          syncRef.current?.(null, true);
+        }
+        if (hasActive || tickCount % 6 === 0) {
+          reconnectSocket();
+        }
+      }, 10000);
+    }
+    return () => {
+      sub.remove();
+      if (hasWin) window.removeEventListener("focus", onFocus);
+      if (hasDoc) document.removeEventListener("visibilitychange", onVisibility);
+      if (timer) clearInterval(timer);
+    };
+  }, [s.auth?.id]);
   useEffect(() => {
     if (!s.auth?.id) return undefined;
     initSocket(() => authTokens.get());
@@ -2254,8 +2413,163 @@ export function AppProvider({ children }) {
     return false;
   };
 
+  const isExternalQuoteItem = (it) =>
+    Boolean(
+      it?.quotation_item_id &&
+        (it.is_external_purchase ||
+          it.external_purchase ||
+          (it.item_type === "MATERIAL" && !it.material_id)),
+    );
+
+  // Tự động rà soát & gắn các ảnh biên lai đã tải lên (POST /uploads) vào các dòng
+  // linh kiện mua ngoài chưa được liên kết receipt_attachment_id trên server.
+  const reconcileMissingPartReceipts = async (assignmentId) => {
+    if (!assignmentId || !authTokens.get()) return 0;
+    const [detailRes, photosRes] = await Promise.all([
+      hrmssApi.getTechnicianJobDetail(assignmentId).catch(() => null),
+      hrmssApi.listJobPhotos(assignmentId).catch(() => null),
+    ]);
+    const jobData = detailRes?.data?.job || detailRes?.data || {};
+    const quotes = Array.isArray(jobData.quotations) ? jobData.quotations : [];
+    const approvedQuotes = quotes.filter((q) => q.quotation_status === "APPROVED");
+    const orderedQuotes = [
+      ...sortQuotationsAsc(approvedQuotes),
+      ...sortQuotationsAsc(quotes.filter((q) => q.quotation_status !== "APPROVED")),
+    ];
+    const unlinkedItems = orderedQuotes
+      .flatMap((q) => (Array.isArray(q.items) ? q.items : []))
+      .filter((it) => isExternalQuoteItem(it) && !it.receipt_attachment_id);
+    if (!unlinkedItems.length) return 0;
+
+    const rows = photosRes?.ok
+      ? photosRes.data?.items ||
+        photosRes.data?.attachments ||
+        (Array.isArray(photosRes.data) ? photosRes.data : [])
+      : [];
+    const jobUploads = (Array.isArray(rows) ? rows : []).filter(
+      (r) => !r.procedure_step_id && r.attachment_id,
+    );
+    if (!jobUploads.length) return 0;
+
+    const sortedUploads = [...jobUploads].sort(
+      (x, y) => Number(y.attachment_id) - Number(x.attachment_id),
+    );
+    const docUploads = sortedUploads.filter(
+      (r) => String(r.evidence_type || "").toUpperCase() === "DOCUMENT",
+    );
+    const usedAttIds = new Set(
+      orderedQuotes
+        .flatMap((q) => (Array.isArray(q.items) ? q.items : []))
+        .map((it) => it.receipt_attachment_id)
+        .filter(Boolean)
+        .map(String),
+    );
+
+    let linkedCount = 0;
+    for (const it of unlinkedItems) {
+      const cleanName =
+        parseExternalPartDesc(it.description_snapshot)?.cleanName ||
+        it.description_snapshot ||
+        "";
+      const normName = normalizeExternalPartName(cleanName);
+      const matchesDesc = (r) => {
+        if (!normName) return false;
+        const d = normalizeExternalPartName(r.description || "");
+        return d.includes(normName) || (d && normName.includes(d));
+      };
+      const nonSymptomUploads = sortedUploads.filter(
+        (r) =>
+          String(r.evidence_type || "").toUpperCase() !== "PROBLEM_PHOTO" &&
+          !parseSymptomPhotoMeta(r.description || ""),
+      );
+      const candidate =
+        docUploads.find((r) => !usedAttIds.has(String(r.attachment_id)) && matchesDesc(r)) ||
+        docUploads.find(matchesDesc) ||
+        docUploads.find((r) => !usedAttIds.has(String(r.attachment_id))) ||
+        docUploads[0] ||
+        nonSymptomUploads.find((r) => !usedAttIds.has(String(r.attachment_id)) && matchesDesc(r)) ||
+        nonSymptomUploads.find(matchesDesc);
+      if (!candidate) continue;
+      const res = await hrmssApi
+        .attachPartReceipt(assignmentId, it.quotation_item_id, candidate.attachment_id)
+        .catch(() => null);
+      if (res?.ok) {
+        linkedCount += 1;
+        usedAttIds.add(String(candidate.attachment_id));
+      }
+    }
+    return linkedCount;
+  };
+
   const a = {
     syncFromBackend,
+    ensureOrderHydrated: async (code) => {
+      if (!code || s.auth?.role !== "customer" || !authTokens.get()) return false;
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbRequestId || o._detailHydrated) return false;
+      const [detRes, photoRes, billRes] = await Promise.all([
+        hrmssApi.getCustomerRequestDetail(o.dbRequestId).catch(() => null),
+        hrmssApi.listRequestPhotos(o.dbRequestId).catch(() => null),
+        o.bill ? Promise.resolve(null) : hrmssApi.getBill(o.dbRequestId).catch(() => null),
+      ]);
+      const baseReq = {
+        request_id: o.dbRequestId,
+        request_code: o.code,
+        request_status: o.backendStatus || "COMPLETED",
+        problem_description: o.note || "",
+        created_at: new Date(o.createdAt || Date.now()).toISOString(),
+        updated_at: new Date(o.doneAt || o.createdAt || Date.now()).toISOString(),
+      };
+      let mergedReq =
+        detRes?.ok && detRes.data
+          ? mergeCustomerRequestDetail(baseReq, detRes.data)
+          : baseReq;
+      if (billRes?.ok && billRes.data?.bill) mergedReq.bill = billRes.data;
+      const photoRows = photoRes?.ok
+        ? photoRes.data?.items ||
+          photoRes.data?.attachments ||
+          (Array.isArray(photoRes.data) ? photoRes.data : [])
+        : [];
+      const rawRows = [
+        ...(Array.isArray(photoRows) ? photoRows : []),
+        ...(Array.isArray(mergedReq._detailAttachments) ? mergedReq._detailAttachments : []),
+      ].filter(
+        (r) =>
+          r &&
+          (!r.procedure_step_id || String(r.evidence_type || "").toUpperCase() === "AFTER_REPAIR"),
+      );
+      const seen = new Set();
+      const dedupRows = [];
+      rawRows.forEach((r) => {
+        const key = r.attachment_id != null ? `id:${r.attachment_id}` : `uri:${r.image_url || r.file_url || r.url || r.uri || ""}`;
+        if (!key || key === "uri:" || seen.has(key)) return;
+        seen.add(key);
+        dedupRows.push(r);
+      });
+      const ev = dedupRows.map(mapBackendPhotoToEvidence);
+      mergedReq._evidence = ev;
+      const remapped = mapBackendCustomerRequestToOrder(mergedReq, o.customerPhone || s.auth?.phone || "");
+      const mergedAtts = extractInitialAttachments(ev, remapped?.attachments || o.attachments);
+      updateOrder(code, (cur) => ({
+        order: {
+          ...cur,
+          ...(remapped?.quote ? { quote: remapped.quote } : {}),
+          ...(remapped?.diagnosisReport ? { diagnosisReport: remapped.diagnosisReport } : {}),
+          ...(remapped?.report ? { report: { ...(cur.report || {}), ...remapped.report } } : {}),
+          ...(ev.length ? { evidence: ev } : {}),
+          ...(mergedAtts.length ? { attachments: mergedAtts } : {}),
+          _detailHydrated: true,
+        },
+      }));
+      return true;
+    },
+    reconcilePartReceipts: async (code) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbAssignmentId || !authTokens.get()) return 0;
+      const n = await reconcileMissingPartReceipts(o.dbAssignmentId);
+      if (n > 0) syncFromBackend(null, true);
+      return n;
+    },
     completeProcedureStep: async (
       code,
       step,
@@ -2565,27 +2879,41 @@ export function AppProvider({ children }) {
         dbReq,
         address?.phone || "",
       );
-      // Ảnh khách đính kèm: POST /uploads (request_id). Lỗi tải ảnh không làm hỏng đơn đã tạo.
+      // Ảnh khách đính kèm: POST /uploads (request_id). Đợi tải xong trước khi sync để đơn có ảnh ngay.
       const pics = (payload.attachments || [])
         .filter((x) => x?.uri)
         .slice(0, 5);
       if (pics.length) {
-        Promise.all(
+        const rs = await Promise.all(
           pics.map((x) =>
             hrmssApi
               .uploadRequestPhoto(dbReq.request_id, x.uri)
               .catch(() => null),
           ),
-        ).then((rs) => {
-          if (rs.some((r) => !r?.ok))
-            ui.toast("Một số ảnh chưa tải lên được", "⚠️");
-        });
+        );
+        if (rs.some((r) => !r?.ok))
+          ui.toast("Một số ảnh chưa tải lên được", "⚠️");
       }
+      const createdWithPics =
+        created && pics.length
+          ? {
+              ...created,
+              attachments: pics,
+              evidence: pics.map((x, idx) => ({
+                id: x.id || `local-att-${idx}`,
+                uri: x.uri,
+                stage: "diagnosis",
+                note: x.note || "",
+                isCustomerInitial: true,
+                at: x.at || Date.now(),
+              })),
+            }
+          : created;
       up((p) => ({
-        orders: created
+        orders: createdWithPics
           ? [
-              { ...created, customerAccountId: s.auth?.id || null },
-              ...p.orders.filter((x) => x.code !== created.code),
+              { ...createdWithPics, customerAccountId: s.auth?.id || null },
+              ...p.orders.filter((x) => x.code !== createdWithPics.code),
             ]
           : p.orders,
         cart: payload.fromCart
@@ -3231,18 +3559,54 @@ export function AppProvider({ children }) {
         return false;
       }
       const aid = o.dbAssignmentId;
+      // Đồng bộ hậu tố (Thay thế)/(Sửa chữa) lên ghi chú ảnh [Triệu chứng] trước khi lưu chẩn đoán / báo giá
+      // để kể cả báo giá trước khi xuất phát (không gọi /diagnosis) vẫn giữ đủ dữ liệu collapsible cho khách.
+      const symptomTokens = splitSymptomTokens(symptoms);
+      const actionByTitle = new Map();
+      symptomTokens.forEach((tok) => {
+        const m = /^(.+?)\s*\((Thay thế|Sửa chữa)\)\s*$/i.exec(tok);
+        if (m) {
+          actionByTitle.set(m[1].trim().toLowerCase(), {
+            title: m[1].trim(),
+            action: /^thay/i.test(m[2]) ? "replace" : "repair",
+          });
+        }
+      });
+      if (actionByTitle.size > 0 && Array.isArray(o.evidence)) {
+        const noteSyncs = [];
+        for (const ev of o.evidence) {
+          if (ev?.stage !== "diagnosis" || !ev.dbAttachmentId) continue;
+          const meta = parseSymptomPhotoMeta(ev.note);
+          if (!meta?.title) continue;
+          const target = actionByTitle.get(meta.title.toLowerCase());
+          if (!target) continue;
+          const desiredNote = formatSymptomPhotoNote(target.title, target.action);
+          if (desiredNote && ev.note !== desiredNote) {
+            noteSyncs.push(
+              hrmssApi.updatePhotoNote(ev.dbAttachmentId, desiredNote).catch(() => null),
+            );
+          }
+        }
+        if (noteSyncs.length) await Promise.all(noteSyncs);
+      }
+
       const isPre = o.status === "confirmed";
       const isSupplemental = Boolean(
         o.quote && (o.quote.approved || o.status === "repairing"),
       );
-      if (!isPre && !isSupplemental) {
+      const hasDiagPayload = Boolean(
+        String(symptoms || "").trim() ||
+          String(diagnosis || "").trim() ||
+          String(recommendation || "").trim(),
+      );
+      if (!isPre && hasDiagPayload && (!isSupplemental || o.arrivedAt || o.checkIn)) {
         const dRes = await saveDiagnosisOnce(o, {
           diagnosis,
           symptoms,
           recommendation,
           needsQuotation: true,
         });
-        if (dRes && !dRes.ok)
+        if (!isSupplemental && dRes && !dRes.ok)
           return serverDone(dRes, {
             title: "Không lưu được chẩn đoán",
             codes: {
@@ -3500,11 +3864,18 @@ export function AppProvider({ children }) {
       }
 
       // 3. Gắn ảnh biên lai vào từng dòng linh kiện mua ngoài có đính kèm ảnh.
+      const createdQuotationId =
+        qRes.data?.quotation?.quotation_id || qRes.data?.quotation_id || null;
       let createdItems =
         qRes.data?.quotation?.items ||
         qRes.data?.items ||
         [];
-      if (!Array.isArray(createdItems) || !createdItems.length) {
+      const neededReceiptCount = resolved.filter((r) => Boolean(r.attachmentId)).length;
+      if (
+        neededReceiptCount > 0 &&
+        (!Array.isArray(createdItems) ||
+          createdItems.filter(isExternalQuoteItem).length < neededReceiptCount)
+      ) {
         const detailRes = await hrmssApi
           .getTechnicianJobDetail(o.dbAssignmentId)
           .catch(() => null);
@@ -3512,15 +3883,21 @@ export function AppProvider({ children }) {
           detailRes?.data?.job?.quotations ||
           detailRes?.data?.quotations ||
           [];
-        const latest = Array.isArray(quotes) && quotes.length ? quotes[quotes.length - 1] : null;
-        createdItems = latest?.items || [];
+        const sortedQuotes = sortQuotationsAsc(Array.isArray(quotes) ? quotes : []);
+        const targetQuote =
+          (createdQuotationId != null
+            ? sortedQuotes.find((q) => String(q.quotation_id) === String(createdQuotationId))
+            : null) ||
+          (sortedQuotes.length ? sortedQuotes[sortedQuotes.length - 1] : null);
+        if (Array.isArray(targetQuote?.items) && targetQuote.items.length) {
+          createdItems = targetQuote.items;
+        }
       }
-      // Chỉ dòng mua ngoài thật (is_external_purchase) mới gắn được biên lai; dòng SERVICE [VT ngoài chốt giá] thì không.
-      const extItems = (createdItems || []).filter(
-        (it) => it.is_external_purchase && it.quotation_item_id,
-      );
+      // Chỉ dòng mua ngoài thật (is_external_purchase / MATERIAL không có material_id) mới gắn được biên lai.
+      const extItems = (createdItems || []).filter(isExternalQuoteItem);
       const usedItemIds = new Set();
       const failedReceipts = [];
+      let deferredUntilApproval = false;
       for (let i = 0; i < resolved.length; i += 1) {
         const { part, attachmentId } = resolved[i];
         if (!attachmentId) continue;
@@ -3546,7 +3923,14 @@ export function AppProvider({ children }) {
         const attRes = await hrmssApi
           .attachPartReceipt(o.dbAssignmentId, qItemId, attachmentId)
           .catch(() => null);
-        if (!attRes?.ok) failedReceipts.push(part.name);
+        if (!attRes?.ok) {
+          // Một số phiên bản backend chỉ cho gắn biên lai sau khi báo giá được duyệt (409/400) — ảnh đã lưu sẵn trên job để tự gắn trước khi hoàn thành.
+          const isPendingLock =
+            Number(attRes?.status) === 409 ||
+            /APPROV|PENDING|STATUS|QUOTATION/i.test(String(attRes?.code || ""));
+          if (isPendingLock) deferredUntilApproval = true;
+          else failedReceipts.push(part.name);
+        }
       }
       if (failedReceipts.length) {
         ui.alert(
@@ -3735,6 +4119,16 @@ export function AppProvider({ children }) {
         type,
         note || null,
       );
+      if (
+        res.ok &&
+        note &&
+        res.data?.attachment?.attachment_id &&
+        !res.data.attachment.description
+      ) {
+        await hrmssApi
+          .updatePhotoNote(res.data.attachment.attachment_id, note)
+          .catch(() => null);
+      }
       return serverDone(res, {
         title: "Không tải được ảnh",
         codes: { INVALID_PHOTO: "Ảnh không hợp lệ (chỉ nhận JPG, PNG, WEBP)." },
@@ -4003,7 +4397,7 @@ export function AppProvider({ children }) {
     // bắt buộc -> 409 PROCEDURE_INCOMPLETE) thì báo thợ và KHÔNG đổi trạng thái trên máy. Trả true khi nộp được.
     completeJob: async (
       code,
-      { summary, paid, safetyChecklist, customerSignature },
+      { summary, paid, safetyChecklist, customerSignature, completionPhotoUris = [] },
     ) => {
       const now = Date.now();
       const o0 = s.orders.find((x) => x.code === code);
@@ -4035,7 +4429,27 @@ export function AppProvider({ children }) {
       const handoverBase = paid
         ? "Đã thu tiền dịch vụ, bàn giao thiết bị và kích hoạt bảo hành điện tử"
         : "Đã bàn giao thiết bị cho khách hàng và kích hoạt bảo hành điện tử";
-      const res = await hrmssApi.completeTechnicianJob(o0.dbAssignmentId, {
+      if (Array.isArray(completionPhotoUris) && completionPhotoUris.length) {
+        for (const uri of completionPhotoUris) {
+          if (!uri) continue;
+          const upRes = await hrmssApi
+            .uploadJobPhoto(o0.dbAssignmentId, uri, "AFTER_REPAIR", "Ảnh hoàn thành bàn giao thiết bị")
+            .catch(() => null);
+          if (
+            upRes?.ok &&
+            upRes.data?.attachment?.attachment_id &&
+            !upRes.data.attachment.description
+          ) {
+            await hrmssApi
+              .updatePhotoNote(upRes.data.attachment.attachment_id, "Ảnh hoàn thành bàn giao thiết bị")
+              .catch(() => null);
+          }
+        }
+      }
+      if ((o0.externalParts || []).some((p) => p.itemId && !p.receiptId)) {
+        await reconcileMissingPartReceipts(o0.dbAssignmentId).catch(() => 0);
+      }
+      const completePayload = {
         work_performed: cleanSummary,
         testing_result: testingBase,
         handover_result: sig
@@ -4044,7 +4458,22 @@ export function AppProvider({ children }) {
         cash_collected: Boolean(paid) && !isQRPayment(o0),
         customer_signature: sig || null,
         safety_checklist: checklist,
-      });
+      };
+      let res = await hrmssApi.completeTechnicianJob(
+        o0.dbAssignmentId,
+        completePayload,
+      );
+      if (!res.ok && res.code === "RECEIPT_REQUIRED") {
+        const linked = await reconcileMissingPartReceipts(
+          o0.dbAssignmentId,
+        ).catch(() => 0);
+        if (linked > 0) {
+          res = await hrmssApi.completeTechnicianJob(
+            o0.dbAssignmentId,
+            completePayload,
+          );
+        }
+      }
       if (!res.ok) {
         if (res.code === "PROCEDURE_INCOMPLETE") {
           const missing = (res.errors || [])

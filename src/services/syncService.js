@@ -14,7 +14,9 @@ import {
   normalizeExternalPartName,
   computeQuoteRangeTotals,
   sortQuotationsAsc,
+  isQuotationPendingCustomer,
 } from '../utils/externalPartsPricing';
+import { parseSymptomPhotoMeta } from '../utils/symptomItems';
 
 // Tên hiển thị khi đơn đã có thợ nhưng chưa tải được thông tin thợ (GET /customer/requests/:id/tracking).
 const ASSIGNED_TECH_PLACEHOLDER = 'Thợ được phân công';
@@ -254,8 +256,8 @@ export const mapBackendQuotationToAppQuote = (
       Number.isFinite(parsedUnit) && parsedUnit > 0
         ? parsedUnit
         : (fallbackFromLineTotal > 0
-            ? fallbackFromLineTotal
-            : (qi.material_id ? materialPriceOf(qi.material_id) : (Number.isFinite(parsedUnit) ? parsedUnit : 0)));
+          ? fallbackFromLineTotal
+          : (qi.material_id ? materialPriceOf(qi.material_id) : (Number.isFinite(parsedUnit) ? parsedUnit : 0)));
     return {
       type: qi.item_type === 'MATERIAL' ? 'part' : 'service',
       matId: qi.material_id ? `m-db-${qi.material_id}` : undefined,
@@ -382,7 +384,7 @@ export const mapBackendQuotationToAppQuote = (
     dbQuotationId: latestQuote.quotation_id,
     quotationCode: latestQuote.quotation_code,
     quotationType: latestQuote.quotation_type || 'INITIAL',
-    status: latestQuote.quotation_status,
+    status: isQuotationPendingCustomer(latestQuote) ? 'SENT' : latestQuote.quotation_status,
     revisionRequested: latestQuote.quotation_status === 'REVISION_REQUESTED' || latestQuote.customer_decision === 'REVISE',
     rejectReason: latestQuote.rejection_reason || latestQuote.revision_note || '',
     approvedTotal,
@@ -442,6 +444,87 @@ const kindOf = (req) => (req?.request_type === 'WARRANTY' && !req?.out_of_warran
 const dateMs = (v) => (v ? new Date(v).getTime() : null);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+export const mergeCustomerRequestDetail = (rawReq, detailData) => {
+  if (!rawReq || !detailData || typeof detailData !== 'object') return rawReq;
+  const detReq = detailData.request && typeof detailData.request === 'object' ? detailData.request : detailData;
+  const pickList = (a, b, fallback, singleFallback = null) =>
+    (Array.isArray(a) && a.length ? a : null) ||
+    (Array.isArray(b) && b.length ? b : null) ||
+    (singleFallback ? [singleFallback] : null) ||
+    (Array.isArray(fallback) && fallback.length ? fallback : null) ||
+    (Array.isArray(a) ? a : Array.isArray(b) ? b : fallback);
+
+  const singleQuote = detReq.latest_quotation || detReq.quotation || detailData.latest_quotation || detailData.quotation || null;
+  const singleDiag = detReq.latest_diagnosis || detReq.diagnosis || detailData.latest_diagnosis || detailData.diagnosis || null;
+  const mergedQuotes = pickList(detReq.quotations, detailData.quotations, rawReq.quotations, singleQuote);
+  const mergedVisits = pickList(detReq.visits, detailData.visits, rawReq.visits);
+  const visitDiags = (Array.isArray(mergedVisits) ? mergedVisits : [])
+    .flatMap((v) => (Array.isArray(v?.diagnoses) ? v.diagnoses : (v?.diagnosis && typeof v.diagnosis === 'object' ? [v.diagnosis] : [])))
+    .filter(Boolean);
+  const quoteDiags = (Array.isArray(mergedQuotes) ? mergedQuotes : [])
+    .map((q) => (q?.diagnosis && typeof q.diagnosis === 'object' ? q.diagnosis : null))
+    .filter(Boolean);
+  const nestedDiags = visitDiags.length ? visitDiags : quoteDiags;
+  const mergedDiags = pickList(
+    detReq.diagnoses,
+    detailData.diagnoses,
+    nestedDiags.length ? nestedDiags : rawReq.diagnoses,
+    singleDiag,
+  );
+  const mergedItems = pickList(detReq.items, detailData.items, rawReq.items);
+  const mergedTimeline = pickList(
+    detReq.timeline || detReq.status_history,
+    detailData.timeline || detailData.status_history,
+    rawReq.timeline,
+  );
+  const detailBill = detReq.bill?.bill ? detReq.bill : (detailData.bill?.bill ? detailData.bill : undefined);
+
+  const visitPhotos = (Array.isArray(mergedVisits) ? mergedVisits : [])
+    .flatMap((v) => [...(Array.isArray(v?.attachments) ? v.attachments : []), ...(Array.isArray(v?.photos) ? v.photos : [])])
+    .filter(Boolean);
+  const rawPhotoCandidates = [
+    ...(Array.isArray(detReq.attachments) ? detReq.attachments : []),
+    ...(Array.isArray(detReq.initial_attachments) ? detReq.initial_attachments : []),
+    ...(Array.isArray(detReq.evidence) ? detReq.evidence : []),
+    ...(Array.isArray(detReq.photos) ? detReq.photos : []),
+    ...(Array.isArray(detailData.attachments) ? detailData.attachments : []),
+    ...(Array.isArray(detailData.initial_attachments) ? detailData.initial_attachments : []),
+    ...(Array.isArray(detailData.evidence) ? detailData.evidence : []),
+    ...(Array.isArray(detailData.photos) ? detailData.photos : []),
+    ...visitPhotos,
+    ...(Array.isArray(rawReq._detailAttachments) ? rawReq._detailAttachments : []),
+  ].filter(
+    (row) =>
+      row &&
+      (!row.procedure_step_id || String(row.evidence_type || '').toUpperCase() === 'AFTER_REPAIR'),
+  );
+
+  const dedupPhotos = [];
+  const seenPhotoKeys = new Set();
+  rawPhotoCandidates.forEach((row) => {
+    const uri = row.image_url || row.file_url || row.url || row.uri || '';
+    const key = row.attachment_id != null ? `id:${row.attachment_id}` : (uri ? `uri:${uri}` : null);
+    if (!key || seenPhotoKeys.has(key)) return;
+    seenPhotoKeys.add(key);
+    dedupPhotos.push(row);
+  });
+
+  return {
+    ...rawReq,
+    ...detReq,
+    request_status: detReq.request_status || rawReq.request_status,
+    items: mergedItems,
+    quotations: mergedQuotes,
+    diagnoses: mergedDiags,
+    visits: mergedVisits,
+    timeline: mergedTimeline,
+    technician: detReq.technician || detailData.technician || rawReq.technician,
+    journey: rawReq.journey || detReq.journey || detailData.journey,
+    ...(dedupPhotos.length ? { _detailAttachments: dedupPhotos } : {}),
+    ...(rawReq.bill || detailBill ? { bill: rawReq.bill || detailBill } : {}),
+  };
+};
+
 export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = '') => {
   if (!req) return null;
   const isWarranty = kindOf(req) === 'warranty';
@@ -455,15 +538,36 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
   const productDiscount = isWarranty ? 0 : (Number(req.product_discount_amount) || 0);
   const comboDiscount = isWarranty ? 0 : (Number(req.combo_discount_amount) || 0);
   const booked = isWarranty ? 0 : Math.max(0, goods - productDiscount - comboDiscount);
+  const wpDiagMatch = /Tình trạng:\s*(.+?)(?:\.\s*Thiết bị hoạt động ổn định|\.\s*$|$)/i.exec(latestVisit?.work_performed || '');
+  const effectiveDiagnoses =
+    Array.isArray(req.diagnoses) && req.diagnoses.length > 0
+      ? req.diagnoses
+      : wpDiagMatch?.[1]?.trim()
+        ? [{
+          symptoms: '',
+          findings: wpDiagMatch[1].trim(),
+          repair_recommendation: '',
+          recorded_at: latestVisit?.actual_end || latestVisit?.scheduled_start || req.updated_at,
+        }]
+        : [];
+  const latestDiag = effectiveDiagnoses.length > 0 ? effectiveDiagnoses[effectiveDiagnoses.length - 1] : null;
+  const diagnosisReport = latestDiag
+    ? {
+      symptoms: latestDiag.symptoms || '',
+      diagnosis: latestDiag.findings || '',
+      recommendation: latestDiag.repair_recommendation || '',
+      at: ts(latestDiag.recorded_at),
+    }
+    : null;
   const quote = mapBackendQuotationToAppQuote(
     req.quotations || [],
-    req.diagnoses || [],
+    effectiveDiagnoses,
     booked,
     req.problem_description,
     productDiscount + comboDiscount,
     items,
   );
-  const hasPendingQuote = (req.quotations || []).some((q) => q.quotation_status === 'SENT');
+  const hasPendingQuote = (req.quotations || []).some(isQuotationPendingCustomer);
   const anyQuoteApproved = (req.quotations || []).some(
     (q) => q.quotation_status === 'APPROVED' || q.customer_decision === 'APPROVED',
   );
@@ -501,15 +605,15 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     : [];
   const history = timeline.length > 0
     ? timeline.map((h) => ({
-        status: mapBackendStatusToAppStatus(
-          h.new_status,
-          null,
-          anyQuoteApproved,
-          String(h.new_status || '').toUpperCase() === 'DIAGNOSED_PENDING_QUOTATION',
-        ),
-        at: h.changed_at ? new Date(h.changed_at).getTime() : createdAt,
-        note: toVietnamese(h.reason, ''),
-      }))
+      status: mapBackendStatusToAppStatus(
+        h.new_status,
+        null,
+        anyQuoteApproved,
+        String(h.new_status || '').toUpperCase() === 'DIAGNOSED_PENDING_QUOTATION',
+      ),
+      at: h.changed_at ? new Date(h.changed_at).getTime() : createdAt,
+      note: toVietnamese(h.reason, ''),
+    }))
     : [{ status, at: createdAt }];
 
   const isDone = status === 'done';
@@ -593,11 +697,11 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     arrivedAt: dateMs(journey?.arrived_at),
     lateCompensation: (bill?.lateDiscount || Number(req.late_minutes) > 0)
       ? {
-          amount: bill?.lateDiscount || 0,
-          minutesLate: Number(req.late_minutes) || null,
-          minutes: Number(req.late_minutes) || null,
-          tier: req.late_tier || null,
-        }
+        amount: bill?.lateDiscount || 0,
+        minutesLate: Number(req.late_minutes) || null,
+        minutes: Number(req.late_minutes) || null,
+        tier: req.late_tier || null,
+      }
       : null,
     tech: (status === 'pending' || (['cancelled', 'warranty_pending'].includes(status) && !techInfo)) ? null : {
       name: techName,
@@ -608,6 +712,11 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
       avatar: techInfo?.avatar_url || null,
     },
     quote,
+    diagnosisReport,
+    attachments: extractInitialAttachments(
+      req._evidence || [],
+      req.attachments || req.initial_attachments || req._detailAttachments || [],
+    ),
     ...(() => {
       const extLifecycle = extractExternalPartLifecycle(req.quotations || []);
       return {
@@ -656,7 +765,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
   const productDiscount = isWarranty ? 0 : (Number(req.product_discount_amount) || Number(job.bill?.bill?.product_discount_amount) || 0);
   const comboDiscount = isWarranty ? 0 : (Number(req.combo_discount_amount) || Number(job.bill?.bill?.combo_discount_amount) || 0);
   const booked = isWarranty ? 0 : Math.max(0, goods - productDiscount - comboDiscount);
-  const hasPendingQuote = (job.quotations || []).some((q) => q.quotation_status === 'SENT');
+  const hasPendingQuote = (job.quotations || []).some(isQuotationPendingCustomer);
   const anyQuoteApproved = (job.quotations || []).some(
     (q) => q.quotation_status === 'APPROVED' || q.customer_decision === 'APPROVED',
   );
@@ -798,6 +907,10 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     doneAt,
     tech: myTech,
     quote,
+    attachments: extractInitialAttachments(
+      job._evidence || [],
+      req.attachments || req.initial_attachments || job.attachments || req.photos || [],
+    ),
     ...(() => {
       const extLifecycle = extractExternalPartLifecycle(job.quotations || req.quotations || []);
       return {
@@ -809,13 +922,13 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     materials: materialsFromUsages.length > 0
       ? materialsFromUsages
       : (quote?.lines || []).filter((l) => l.type === 'part' && !l.isEstimatedRange).map((l, idx) => ({
-          id: `qmat-${job.assignment_id}-${idx}`,
-          matId: l.matId || null,
-          name: l.name,
-          unit: l.unit,
-          qty: l.qty,
-          price: l.isFinalizedExternal ? l.actualPrice : l.price,
-        })),
+        id: `qmat-${job.assignment_id}-${idx}`,
+        matId: l.matId || null,
+        name: l.name,
+        unit: l.unit,
+        qty: l.qty,
+        price: l.isFinalizedExternal ? l.actualPrice : l.price,
+      })),
     // Các bước thực hiện (backend: job.procedure; null = đơn không có bước bắt buộc)
     procedure: job.procedure || null,
     // Tiến độ / ghi chú thợ gửi (POST /technician/jobs/:id/progress).
@@ -901,6 +1014,7 @@ export const mapBackendOpenRequestToOrder = (req) => {
     offerExpiresAt: dateMs(req.offer_expires_at || req.expires_at || req.accept_deadline),
     payment: paymentLabelOf(req.preferred_payment_method),
     note: req.problem_description || '',
+    attachments: extractInitialAttachments([], req.attachments || req.initial_attachments || req.photos || []),
     address: {
       id: `addr-open-${req.request_id}`,
       name: req.contact_name || 'Khách hàng',
@@ -915,18 +1029,74 @@ export const mapBackendOpenRequestToOrder = (req) => {
   };
 };
 
-// Ảnh của việc (GET /uploads?job_id=) -> evidence trên app.
+// Ảnh của việc (GET /uploads?job_id= hoặc ?request_id=) -> evidence trên app.
 // DOCUMENT = ảnh biên lai linh kiện mua ngoài: tách riêng stage 'receipt' (hiện ở khối Biên lai), KHÔNG gộp vào
 // "Sau khi làm" (trước đây gộp chung nên dễ nhầm ảnh biên lai với ảnh minh chứng sau khi sửa).
-const EVIDENCE_STAGE = { PROBLEM_PHOTO: 'diagnosis', BEFORE_REPAIR: 'before', AFTER_REPAIR: 'after', DOCUMENT: 'receipt' };
-export const mapBackendPhotoToEvidence = (row) => ({
-  id: `att-${row.attachment_id}`,
-  dbAttachmentId: row.attachment_id,
-  uri: row.image_url,
-  stage: EVIDENCE_STAGE[row.evidence_type] || 'after',
-  note: row.description || '',
-  at: row.uploaded_at ? new Date(row.uploaded_at).getTime() : Date.now(),
-});
+// Ảnh khách gửi khi đặt lịch qua request_id (không có job_id / evidence_type hoặc là CUSTOMER_PHOTO) giữ stage 'diagnosis'.
+const EVIDENCE_STAGE = {
+  PROBLEM_PHOTO: 'diagnosis',
+  INITIAL_PHOTO: 'diagnosis',
+  CUSTOMER_PHOTO: 'diagnosis',
+  REQUEST_PHOTO: 'diagnosis',
+  BEFORE_REPAIR: 'before',
+  AFTER_REPAIR: 'after',
+  DOCUMENT: 'receipt',
+};
+export const mapBackendPhotoToEvidence = (row) => {
+  const rawType = String(row?.evidence_type || row?.type || '').trim().toUpperCase();
+  const hasJob = Boolean(row?.job_id || row?.assignment_id || row?.visit_id || row?.procedure_step_id);
+  const stage = EVIDENCE_STAGE[rawType] || (!rawType && !hasJob ? 'diagnosis' : 'after');
+  const uploaderRole = String(row?.uploaded_by_role || row?.uploader_role || row?.role || '').trim().toUpperCase();
+  const note = row?.description || row?.note || '';
+  const isCustomerInitial = Boolean(
+    stage === 'diagnosis' &&
+    (uploaderRole === 'CUSTOMER' || (!hasJob && !parseSymptomPhotoMeta(note))),
+  );
+  return {
+    id: row?.attachment_id != null ? `att-${row.attachment_id}` : `att-${row?.id || Math.random().toString(36).slice(2, 8)}`,
+    dbAttachmentId: row?.attachment_id ?? row?.id ?? null,
+    uri: row?.image_url || row?.file_url || row?.url || row?.uri || '',
+    stage,
+    note,
+    isCustomerInitial,
+    at: row?.uploaded_at ? new Date(row.uploaded_at).getTime() : Date.now(),
+  };
+};
+
+// Trích xuất danh sách ảnh hiện trạng / triệu chứng ban đầu khách đính kèm khi đặt đơn.
+export const extractInitialAttachments = (evidence = [], rawAttachments = []) => {
+  const out = [];
+  const seen = new Set();
+  const pushOne = (item) => {
+    if (!item?.uri) return;
+    const key = item.dbAttachmentId != null ? `id:${item.dbAttachmentId}` : `uri:${item.uri}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({
+      id: item.id || (item.dbAttachmentId != null ? `att-${item.dbAttachmentId}` : key),
+      dbAttachmentId: item.dbAttachmentId ?? null,
+      uri: item.uri,
+      note: item.note || '',
+      at: item.at || Date.now(),
+      isCustomerInitial: Boolean(item.isCustomerInitial),
+    });
+  };
+  (Array.isArray(rawAttachments) ? rawAttachments : []).forEach((row) => {
+    if (!row) return;
+    if (row.image_url || row.file_url || row.url) {
+      const mapped = mapBackendPhotoToEvidence(row);
+      if (!mapped.stage || mapped.stage === 'diagnosis') {
+        pushOne({ ...mapped, isCustomerInitial: true });
+      }
+    } else if (row.uri) {
+      pushOne({ ...row, isCustomerInitial: true });
+    }
+  });
+  (Array.isArray(evidence) ? evidence : []).forEach((e) => {
+    if (e?.isCustomerInitial) pushOne(e);
+  });
+  return out;
+};
 
 export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = []) => {
   // remoteOrders là nguồn sự thật từ backend. Nếu không có (lỗi mạng/chưa gọi) thì giữ localOrders.
@@ -980,11 +1150,15 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         evidence: (Array.isArray(ro.evidence) && ro.evidence.length)
           ? ro.evidence
           : (lo.evidence || ro.evidence || []),
+        attachments: (Array.isArray(ro.attachments) && ro.attachments.length)
+          ? ro.attachments
+          : (lo.attachments || ro.attachments || []),
         progress: ro.progress !== undefined ? ro.progress : (lo.progress || []),
         repairNotes: ro.repairNotes !== undefined ? ro.repairNotes : (lo.repairNotes || []),
         materials: ro.materials !== undefined ? ro.materials : (lo.materials || []),
         // Đang sửa lại báo giá thì giữ bản trên máy (trước đây dòng này ghi đè mất bản đang sửa).
         quote: keepEditing ? lo.quote : (ro.quote || lo.quote || null),
+        diagnosisReport: ro.diagnosisReport || lo.diagnosisReport || null,
         rating: ro.rating || lo.rating || null,
         report: (ro.report || lo.report) ? {
           ...(lo.report || {}),
@@ -1035,21 +1209,22 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
 // Thông báo backend (GET /notifications) -> dạng thông báo của app. Link mở đơn theo request_id nếu app có đơn đó.
 export const mapBackendNotification = (n, orders = [], linkName = 'order') => {
   if (!n) return null;
+  const nType = n.type || n.notification_type || null;
   const order = n.request_id != null ? orders.find((o) => String(o.dbRequestId) === String(n.request_id)) : null;
   // Backend có thể gửi tiêu đề / nội dung tiếng Anh: luôn Việt hoá.
-  const vi = viNotification({ ...n, request_code: n.request_code || order?.code });
+  const vi = viNotification({ ...n, type: nType, request_code: n.request_code || order?.code });
   return {
     id: `notif-db-${n.notification_id}`,
     dbNotificationId: n.notification_id,
     at: ts(n.created_at),
     read: Boolean(n.is_read),
     icon: n.icon || '🔔',
-    type: n.type || null,
+    type: nType,
     title: vi.title,
     body: vi.body,
     ...(order
       ? { link: { name: linkName, params: { code: order.code } } }
-      : (['HANDOVER_CONFIRMED', 'HANDOVER_REJECTED'].includes(n.type)
+      : (['HANDOVER_CONFIRMED', 'HANDOVER_REJECTED'].includes(nType)
         ? { link: { name: 'tech-handovers', params: { tab: 'history' } } }
         : {})),
   };

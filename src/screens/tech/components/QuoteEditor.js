@@ -9,24 +9,22 @@ import { Tap, Btn, Card, Badge, Field, Stepper, ui, AppIcon } from '../../../com
 import { pickImage, pickCamera } from '../../../utils/media';
 import { computeQuoteRangeTotals, formatRangeVND } from '../../../utils/externalPartsPricing';
 import { tx } from './techStyles';
-import { isOnSiteQuote } from './useQuoteDraft';
+import { isOnSiteQuote, formatSymptomPhotoNote, parseSymptomPhotoTitle } from './useQuoteDraft';
 import { SymptomSection } from './SymptomSection';
 
 export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, evidence }) {
   const { a, ui: u } = useApp();
   const [showCustomFee, setShowCustomFee] = useState(false);
-  const [customKind, setCustomKind] = useState('external'); // 'external' (VT ngoài giá dao động) | 'fixed' (Công / phụ phí cố định)
   const [customFeeName, setCustomFeeName] = useState('');
   const [customMinPrice, setCustomMinPrice] = useState('');
   const [customMaxPrice, setCustomMaxPrice] = useState('');
-  const [customFixedPrice, setCustomFixedPrice] = useState('');
-  const [addingPhoto, setAddingPhoto] = useState(false);
+  const [busySymptomPhotoId, setBusySymptomPhotoId] = useState(null);
 
   const { lines, setLines } = draft;
   const booked = bookedValue(o);
   // Phân loại: Dịch vụ gốc ban đầu vs Vật tư vs Vật tư mua ngoài
   const originalLines = lines.filter((l) => l.isOriginal);
-  // Vật tư kho (chọn từ danh sách) tách riêng; phí phát sinh = vật tư mua ngoài (isCustom). Dòng công thêm của báo giá cũ vẫn hiện ở phát sinh.
+  // Vật tư kho (chọn từ danh sách) tách riêng; phần còn lại là vật tư mua ngoài (isCustom) và giữ tương thích hiển thị cho các dòng cũ nếu có.
   const partLines = lines.filter((l) => (l.type === 'part' || Boolean(l.matId)) && !l.isOriginal && !l.isCustom);
   const customLines = lines.filter((l) => !l.isOriginal && (l.isCustom || (l.type !== 'part' && !l.matId)));
 
@@ -50,36 +48,6 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
 
   const handleAddCustomFee = () => {
     const name = customFeeName.trim();
-    if (customKind === 'fixed') {
-      const fixedNum = parseInt(String(customFixedPrice).replace(/[^0-9]/g, ''), 10);
-      if (!name) {
-        u.alert('Thiếu tên hạng mục', 'Vui lòng nhập nội dung công thêm / phụ phí phát sinh.', 'alert-triangle');
-        return;
-      }
-      if (!fixedNum || fixedNum <= 0) {
-        u.alert('Số tiền không hợp lệ', 'Vui lòng nhập số tiền phát sinh lớn hơn 0đ.', 'alert-triangle');
-        return;
-      }
-      const newFeeLine = {
-        key: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        type: 'labor',
-        name,
-        price: fixedNum,
-        qty: 1,
-        unit: 'lần',
-        isCustom: true,
-        isEstimatedRange: false,
-      };
-      setLines((prev) => [...prev, newFeeLine]);
-      setCustomFeeName('');
-      setCustomFixedPrice('');
-      setCustomMinPrice('');
-      setCustomMaxPrice('');
-      setShowCustomFee(false);
-      u.toast(`Đã thêm phát sinh: ${name} (+${formatVND(fixedNum)})`, 'check-circle-2');
-      return;
-    }
-
     const minNum = parseInt(String(customMinPrice).replace(/[^0-9]/g, ''), 10);
     const maxNum = parseInt(String(customMaxPrice).replace(/[^0-9]/g, ''), 10);
     if (!name) {
@@ -110,27 +78,93 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
     setCustomFeeName('');
     setCustomMinPrice('');
     setCustomMaxPrice('');
-    setCustomFixedPrice('');
     setShowCustomFee(false);
     u.toast(`Đã thêm VT ngoài (giá dao động): ${name} (${formatRangeVND(minNum, maxNum)})`, 'check-circle-2');
   };
 
-  const addDiagnosisPhoto = async () => {
-    if (addingPhoto) return;
-    setAddingPhoto(true);
+  const findSymptomDiagnosisPhotos = (title) => {
+    const key = String(title || '').trim().toLowerCase();
+    return (evidence || []).filter(
+      (e) => e.stage === 'diagnosis' && (parseSymptomPhotoTitle(e.note) || '').toLowerCase() === key,
+    );
+  };
+
+  const handlePickSymptomPhoto = async (item, source = 'camera') => {
+    if (!item || busySymptomPhotoId) return;
+    const prevLocal = item.localPhotoUri || null;
+    setBusySymptomPhotoId(item.id);
     try {
-      let uri = await pickCamera();
-      if (uri === null) uri = await pickImage();
+      let uri = source === 'camera' ? await pickCamera() : await pickImage();
+      if (source === 'camera' && uri === null) uri = await pickImage();
       if (uri == null) {
-        if (uri === null) u.alert('Chưa hỗ trợ camera', 'Trên web/mobile browser hãy cho phép camera hoặc chọn ảnh thư viện.', 'camera');
+        if (uri === null) {
+          u.alert('Chưa hỗ trợ camera', 'Trên web/mobile browser hãy cho phép camera hoặc chọn ảnh thư viện.', 'camera');
+        }
         return;
       }
-      await Promise.resolve(a.addEvidence(o.code, { uri, stage: 'diagnosis', note: 'Minh chứng chẩn đoán' }));
+      const existing = findSymptomDiagnosisPhotos(item.title);
+      draft.setSymptomItems?.((prev) =>
+        (prev || []).map((x) => (x.id === item.id ? { ...x, localPhotoUri: uri } : x)),
+      );
+      if (o?.dbAssignmentId) {
+        const ok = await Promise.resolve(
+          a.addEvidence(o.code, { uri, stage: 'diagnosis', note: formatSymptomPhotoNote(item.title, item.action) }),
+        );
+        if (ok) {
+          for (const old of existing) {
+            await Promise.resolve(a.removeEvidence(o.code, old.id));
+          }
+        } else {
+          draft.setSymptomItems?.((prev) =>
+            (prev || []).map((x) => (x.id === item.id ? { ...x, localPhotoUri: prevLocal } : x)),
+          );
+        }
+      }
     } catch (e) {
+      draft.setSymptomItems?.((prev) =>
+        (prev || []).map((x) => (x.id === item.id ? { ...x, localPhotoUri: prevLocal } : x)),
+      );
       u.alert('Không thêm được ảnh', (e && e.message) || 'Vui lòng thử lại.', 'camera');
     } finally {
-      setAddingPhoto(false);
+      setBusySymptomPhotoId(null);
     }
+  };
+
+  const handleRemoveSymptomPhoto = async (item) => {
+    if (!item || busySymptomPhotoId) return;
+    draft.setSymptomItems?.((prev) =>
+      (prev || []).map((x) => (x.id === item.id ? { ...x, localPhotoUri: null } : x)),
+    );
+    const existing = findSymptomDiagnosisPhotos(item.title);
+    if (!existing.length) return;
+    setBusySymptomPhotoId(item.id);
+    try {
+      for (const old of existing) {
+        await Promise.resolve(a.removeEvidence(o.code, old.id));
+      }
+    } finally {
+      setBusySymptomPhotoId(null);
+    }
+  };
+
+  const handleRemoveSymptomItem = async (item) => {
+    if (!item) return;
+    draft.setSymptomItems?.((prev) => (prev || []).filter((x) => x.id !== item.id));
+    const existing = findSymptomDiagnosisPhotos(item.title);
+    for (const old of existing) {
+      await Promise.resolve(a.removeEvidence(o.code, old.id));
+    }
+  };
+
+  const handleChangeSymptomAction = (item, nextAction) => {
+    if (!item || !o?.dbAssignmentId) return;
+    const existing = findSymptomDiagnosisPhotos(item.title);
+    const nextNote = formatSymptomPhotoNote(item.title, nextAction);
+    existing.forEach((old) => {
+      if (old?.dbAttachmentId && old.note !== nextNote) {
+        Promise.resolve(a.updateEvidenceNote?.(o.code, old.id, nextNote)).catch(() => null);
+      }
+    });
   };
 
   return (
@@ -187,9 +221,11 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
         cats={cats}
         draft={draft}
         evidence={evidence}
-        addingPhoto={addingPhoto}
-        onAddPhoto={addDiagnosisPhoto}
-        onRemovePhoto={(id) => a.removeEvidence(o.code, id)}
+        busySymptomPhotoId={busySymptomPhotoId}
+        onPickSymptomPhoto={handlePickSymptomPhoto}
+        onRemoveSymptomPhoto={handleRemoveSymptomPhoto}
+        onRemoveSymptomItem={handleRemoveSymptomItem}
+        onChangeSymptomAction={handleChangeSymptomAction}
       />
       <Card style={{ marginTop: 12 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -286,11 +322,11 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
           </>
         ) : null}
 
-        {/* 3. Vật tư mua ngoài & phát sinh (nếu có) */}
+        {/* 3. Vật tư mua ngoài (nếu có) */}
         {customLines.length ? (
           <>
             <Text style={[ui.meta, { fontWeight: '700', color: C.orange, marginTop: 12, marginBottom: 4 }]}>
-              📝 Vật tư mua ngoài & phát sinh ({customLines.length})
+              📝 Vật tư mua ngoài ({customLines.length})
             </Text>
             {customLines.map((l) => (
               <View key={l.key} style={tx.lineRow}>
@@ -298,7 +334,7 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <Text style={{ color: C.ink, fontWeight: '700' }} numberOfLines={2}>{l.name}</Text>
                     <Badge
-                      text={l.isEstimatedRange ? 'Giá dao động' : (l.type === 'labor' ? 'Công / Phụ phí' : 'Vật tư ngoài')}
+                      text={l.isEstimatedRange ? 'Giá dao động' : 'Vật tư ngoài'}
                       fg={C.orange}
                       bg={C.orangeSoft}
                     />
@@ -335,7 +371,7 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
             onPress={() => setShowCustomFee((v) => !v)}
           >
             <AppIcon name="plus" size={14} color="#D97706" strokeWidth={2.5} />
-            <Text style={{ color: '#D97706', fontWeight: '700', fontSize: 13 }}>Phí phát sinh</Text>
+            <Text style={{ color: '#D97706', fontWeight: '700', fontSize: 13 }}>Vật tư mua ngoài</Text>
           </Tap>
         </View>
 
@@ -343,90 +379,40 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
           <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1' }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>
-                {customKind === 'external' ? '🔩 Nhập vật tư mua ngoài (Giá dao động)' : '🛠️ Nhập công / phụ phí phát sinh'}
+                🔩 Nhập vật tư mua ngoài (Giá dao động)
               </Text>
               <Tap onPress={() => setShowCustomFee(false)} hitSlop={8}><Text style={{ color: C.muted, fontWeight: '700' }}>Đóng</Text></Tap>
             </View>
 
-            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 10 }}>
-              <Tap
-                onPress={() => setCustomKind('external')}
-                style={{
-                  flex: 1,
-                  paddingVertical: 8,
-                  paddingHorizontal: 8,
-                  borderRadius: R.sm,
-                  borderWidth: 1.2,
-                  borderColor: customKind === 'external' ? '#D97706' : C.line,
-                  backgroundColor: customKind === 'external' ? '#FEF3C7' : '#fff',
-                  alignItems: 'center',
-                }}
-              >
-                <Text style={{ fontSize: 12, fontWeight: '800', color: customKind === 'external' ? '#B45309' : C.ink2 }}>
-                  🔩 VT ngoài (Giá dao động)
-                </Text>
-              </Tap>
-              <Tap
-                onPress={() => setCustomKind('fixed')}
-                style={{
-                  flex: 1,
-                  paddingVertical: 8,
-                  paddingHorizontal: 8,
-                  borderRadius: R.sm,
-                  borderWidth: 1.2,
-                  borderColor: customKind === 'fixed' ? C.primary : C.line,
-                  backgroundColor: customKind === 'fixed' ? C.primarySoft : '#fff',
-                  alignItems: 'center',
-                }}
-              >
-                <Text style={{ fontSize: 12, fontWeight: '800', color: customKind === 'fixed' ? C.primaryDark : C.ink2 }}>
-                  🛠️ Công / Phụ phí cố định
-                </Text>
-              </Tap>
-            </View>
-
             <Text style={[ui.meta, { marginTop: -2, marginBottom: 10, lineHeight: 17 }]}>
-              {customKind === 'external'
-                ? 'Báo khoảng giá dự kiến trên thị trường. Khi hoàn thành sửa chữa, bạn sẽ nhập lại giá mua thực tế kèm hoá đơn để khách nghiệm thu.'
-                : 'Công làm thêm hoặc phụ phí phát sinh có mức giá cố định, cộng trực tiếp vào tổng thanh toán sau khi khách duyệt.'}
+              Báo khoảng giá dự kiến trên thị trường. Khi hoàn thành sửa chữa, bạn sẽ nhập lại giá mua thực tế kèm hoá đơn để khách nghiệm thu.
             </Text>
 
             <Field
-              label={customKind === 'external' ? 'Tên vật tư' : 'Nội dung công / phụ phí phát sinh'}
-              placeholder={customKind === 'external' ? 'Ví dụ: Dây đồng Thái Lan 2m, Cầu dao phụ Panasonic...' : 'Ví dụ: Hàn nối ống đồng, đi lại dây điện âm tường...'}
+              label="Tên vật tư"
+              placeholder="Ví dụ: Dây đồng Thái Lan 2m, Cầu dao phụ Panasonic..."
               value={customFeeName}
               onChangeText={setCustomFeeName}
             />
 
-            {customKind === 'external' ? (
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                <Field
-                  label="Giá dao động từ (VNĐ)"
-                  placeholder="VD: 120.000"
-                  value={customMinPrice}
-                  onChangeText={(t) => setCustomMinPrice(formatNumberInput(t))}
-                  keyboardType="numeric"
-                  style={{ flex: 1, marginTop: 0 }}
-                />
-                <Field
-                  label="Đến (VNĐ)"
-                  placeholder="VD: 180.000"
-                  value={customMaxPrice}
-                  onChangeText={(t) => setCustomMaxPrice(formatNumberInput(t))}
-                  keyboardType="numeric"
-                  style={{ flex: 1, marginTop: 0 }}
-                />
-              </View>
-            ) : (
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
               <Field
-                label="Số tiền phát sinh (VNĐ)"
-                placeholder="VD: 80.000"
-                value={customFixedPrice}
-                onChangeText={(t) => setCustomFixedPrice(formatNumberInput(t))}
+                label="Giá dao động từ (VNĐ)"
+                placeholder="VD: 120.000"
+                value={customMinPrice}
+                onChangeText={(t) => setCustomMinPrice(formatNumberInput(t))}
                 keyboardType="numeric"
-                style={{ marginTop: 8 }}
+                style={{ flex: 1, marginTop: 0 }}
               />
-            )}
+              <Field
+                label="Đến (VNĐ)"
+                placeholder="VD: 180.000"
+                value={customMaxPrice}
+                onChangeText={(t) => setCustomMaxPrice(formatNumberInput(t))}
+                keyboardType="numeric"
+                style={{ flex: 1, marginTop: 0 }}
+              />
+            </View>
 
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
               <Btn
@@ -439,7 +425,6 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
                   setCustomFeeName('');
                   setCustomMinPrice('');
                   setCustomMaxPrice('');
-                  setCustomFixedPrice('');
                 }}
               />
               <Btn title="Thêm vào báo giá" small style={{ flex: 1.6 }} onPress={handleAddCustomFee} />
@@ -482,7 +467,7 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
         ) : null}
         {customLines.length > 0 ? (
           <View style={tx.totalRow}>
-            <Text style={{ color: C.orange }}>Chi phí / vật tư phát sinh ({customLines.length})</Text>
+            <Text style={{ color: C.orange }}>Vật tư mua ngoài ({customLines.length})</Text>
             <Text style={{ fontWeight: '700', color: C.orange }}>
               {formatRangeVND(rangeTotals.customExtraMin, rangeTotals.customExtraMax, { prefix: '+' })}
             </Text>

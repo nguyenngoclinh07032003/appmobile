@@ -3,55 +3,98 @@
 // - Thu tiền mặt: chỉ hiện khi có tiền mặt cần thu (cashToCollect), mặc định CHƯA tick.
 // - Xác nhận nghiệm thu của khách: họ tên người nghiệm thu + tick đồng ý; thời điểm ghi lúc bấm xác nhận.
 import React, { useEffect, useState } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, Image } from 'react-native';
 import { C, R } from '../../../theme';
 import { formatVND, SAFETY_CHECKLIST_ITEMS } from '../../../constants/data';
 import { useApp, orderTotal, cashToCollect, fmtDateTime, isQRPayment, bookedValue, tierPartDiscountAmount, lateDiscountAmount } from '../../../context';
-import { Btn, Field, Sheet, Checkbox, ui, AppIcon } from '../../../components';
+import { Btn, Field, Sheet, Checkbox, Tap, Badge, ui, AppIcon } from '../../../components';
+import { pickCamera, pickImage } from '../../../utils/media';
 import { useBusyRunner } from './useBusyRunner';
 import { tx } from './techStyles';
 
 const SAFETY_ITEMS = Array.isArray(SAFETY_CHECKLIST_ITEMS) ? SAFETY_CHECKLIST_ITEMS : [];
+const AFTER_NOTE = 'Ảnh hoàn thành bàn giao thiết bị';
 
-export function CompleteSheet({ o, visible, onClose, initialSummary = '', evidence = [] }) {
+export function CompleteSheet({ o, visible, onClose, initialSummary = '', evidence }) {
   const { a, ui: u } = useApp();
   const { run, isBusy } = useBusyRunner();
   const [summary, setSummary] = useState(initialSummary);
   const [paid, setPaid] = useState(false);
-  const [forceDone, setForceDone] = useState(false);
   const [safetyChecks, setSafetyChecks] = useState([]);
   const [acceptName, setAcceptName] = useState('');
   const [accepted, setAccepted] = useState(false);
   const [acceptedAt, setAcceptedAt] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [localPendingUris, setLocalPendingUris] = useState([]);
 
   // Mỗi lần mở sheet: làm mới bản nháp (không giữ tick từ lần trước).
   useEffect(() => {
     if (!visible) return;
     setSummary(initialSummary);
     setPaid(false);
-    setForceDone(false);
     setSafetyChecks([]);
     setAcceptName(o?.report?.customerSignature && typeof o.report.customerSignature === 'string'
       ? o.report.customerSignature
       : (o?.address?.name || ''));
     setAccepted(false);
     setAcceptedAt(null);
+    setLocalPendingUris([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   if (!o) return null;
+  const allEvidence = Array.isArray(evidence) ? evidence : (o.evidence || []);
+  const serverAfterPhotos = allEvidence.filter((e) => e?.stage === 'after' && e?.uri);
+  const hasInitialPhotos =
+    (o.attachments || []).length > 0 || allEvidence.some((e) => e?.stage === 'diagnosis' && e?.uri);
+  const totalAfterCount = serverAfterPhotos.length + localPendingUris.length;
   const busyKey = `complete:${o.code}`;
   const busy = isBusy(busyKey);
   const qr = isQRPayment(o);
   const cashDue = qr ? 0 : cashToCollect(o);
   const needsCash = !qr && cashDue > 0;
-  const hasAfter = evidence.some((e) => e.stage === 'after');
   const safetyTotal = SAFETY_ITEMS.length;
   const safetyDone = SAFETY_ITEMS.filter((it) => safetyChecks.includes(it)).length;
   const bookedBase = bookedValue(o);
   const finalTotal = orderTotal(o);
   const extraAmount = Math.max(0, Number(o.quote?.extraAmount) || 0);
   const deductAmount = tierPartDiscountAmount(o) + (Number(o.voucherDiscount) || 0) + lateDiscountAmount(o);
+
+  const handleAddCompletionPhoto = async (source = 'camera') => {
+    if (uploadingPhoto || totalAfterCount >= 5) return;
+    setUploadingPhoto(true);
+    try {
+      let uri = source === 'camera' ? await pickCamera() : await pickImage();
+      if (source === 'camera' && uri === null) uri = await pickImage();
+      if (!uri) {
+        if (uri === null) {
+          u.alert('Chưa hỗ trợ camera', 'Hãy cấp quyền camera hoặc chọn ảnh từ máy.', 'camera');
+        }
+        return;
+      }
+      setLocalPendingUris((prev) => (prev.includes(uri) ? prev : [...prev, uri]));
+      if (o.dbAssignmentId) {
+        const ok = await Promise.resolve(a.addEvidence(o.code, { uri, stage: 'after', note: AFTER_NOTE }));
+        if (ok) {
+          setLocalPendingUris((prev) => prev.filter((x) => x !== uri));
+        }
+      }
+    } catch (e) {
+      u.alert('Không tải được ảnh', (e && e.message) || 'Vui lòng thử lại.', 'camera');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleRemoveServerPhoto = async (ph) => {
+    if (!ph?.id || uploadingPhoto) return;
+    setUploadingPhoto(true);
+    try {
+      await Promise.resolve(a.removeEvidence(o.code, ph.id));
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   const toggleAccepted = () => {
     if (accepted) { setAccepted(false); setAcceptedAt(null); return; }
@@ -63,7 +106,7 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
     setAcceptedAt(Date.now());
   };
 
-  const close = () => { if (!busy) onClose?.(); };
+  const close = () => { if (!busy && !uploadingPhoto) onClose?.(); };
 
   const submit = () => run(busyKey, async () => {
     if ((o.pendingExternalEstimates || []).length > 0) {
@@ -71,6 +114,18 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
         'Chưa chốt giá vật tư mua ngoài',
         'Đơn có vật tư mua ngoài báo theo giá dao động. Vui lòng nhập giá mua thực tế + ảnh biên lai để khách nghiệm thu trước khi nộp biên bản hoàn thành.',
         'receipt-text',
+      );
+      return false;
+    }
+    if (uploadingPhoto) {
+      u.alert('Đang tải ảnh', 'Vui lòng đợi ảnh hoàn thành tải lên xong rồi gửi biên bản.', 'camera');
+      return false;
+    }
+    if (totalAfterCount === 0) {
+      u.alert(
+        'Thiếu ảnh hoàn thành',
+        'Vui lòng chụp hoặc tải lên ít nhất 1 hình ảnh thiết bị sau khi hoàn thành công việc trước khi gửi biên bản.',
+        'camera',
       );
       return false;
     }
@@ -87,16 +142,13 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
       u.alert('Chưa có xác nhận nghiệm thu', 'Nhập họ tên người nghiệm thu và tick “Khách đã kiểm tra và đồng ý nghiệm thu”.', 'pen-tool');
       return false;
     }
-    if (!hasAfter && !forceDone) {
-      u.alert('Thiếu ảnh sau khi làm', 'Nên thêm ảnh “Sau khi làm” làm minh chứng. Tick xác nhận nếu khách đồng ý bỏ qua.', 'camera');
-      return false;
-    }
     const ok = await Promise.resolve(a.completeJob(o.code, {
       summary: summary.trim(),
       paid: qr ? Boolean(o.report?.paid) : (needsCash ? paid : true),
       safetyChecklist: SAFETY_ITEMS.filter((it) => safetyChecks.includes(it)),
       customerSignature: name, // giữ kiểu cũ: chuỗi họ tên
       customerAcceptance: { name, confirmedAt: acceptedAt },
+      completionPhotoUris: localPendingUris,
     }));
     if (ok) onClose?.();
     return ok;
@@ -137,6 +189,72 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
         </View>
       </View>
       <Field label="Nội dung công việc đã làm" multiline value={summary} onChangeText={setSummary} />
+
+      <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: totalAfterCount > 0 ? '#A7F3D0' : '#FCD34D', marginBottom: 4 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5, flex: 1 }}>
+            📷 Hình ảnh hoàn thành công việc
+          </Text>
+          <Badge
+            text={totalAfterCount > 0 ? `Đã có ${totalAfterCount} ảnh` : 'Bắt buộc ≥ 1 ảnh'}
+            fg={totalAfterCount > 0 ? C.green : C.orange}
+            bg={totalAfterCount > 0 ? C.greenSoft : '#FFFBEB'}
+          />
+        </View>
+        <Text style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 17 }}>
+          {hasInitialPhotos
+            ? 'Đơn đã có ảnh triệu chứng/hiện trạng ban đầu — chụp hoặc tải ảnh thiết bị sau khi hoàn thành để đối chứng Trước & Sau với khách.'
+            : 'Chụp hoặc tải lên ít nhất 1 ảnh thiết bị đã sửa xong & bàn giao gọn gàng (tối đa 5 ảnh).'}
+        </Text>
+        {totalAfterCount > 0 ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+            {serverAfterPhotos.map((ph) => (
+              <View key={ph.id} style={tx.photo}>
+                <Image source={{ uri: ph.uri }} style={{ width: '100%', height: '100%' }} />
+                <Tap style={tx.photoX} disabled={uploadingPhoto} onPress={() => handleRemoveServerPhoto(ph)} hitSlop={6}>
+                  <AppIcon name="x" size={11} color="#fff" strokeWidth={3} />
+                </Tap>
+              </View>
+            ))}
+            {localPendingUris.map((uri, idx) => (
+              <View key={`local_after_${idx}`} style={tx.photo}>
+                <Image source={{ uri }} style={{ width: '100%', height: '100%' }} />
+                <Tap
+                  style={tx.photoX}
+                  disabled={uploadingPhoto}
+                  onPress={() => setLocalPendingUris((prev) => prev.filter((x) => x !== uri))}
+                  hitSlop={6}
+                >
+                  <AppIcon name="x" size={11} color="#fff" strokeWidth={3} />
+                </Tap>
+              </View>
+            ))}
+          </View>
+        ) : null}
+        {totalAfterCount < 5 ? (
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+            <Btn
+              title={uploadingPhoto ? 'Đang tải…' : 'Chụp ảnh hoàn thành'}
+              icon="camera"
+              variant="soft"
+              small
+              style={{ flex: 1 }}
+              disabled={uploadingPhoto || busy}
+              onPress={() => handleAddCompletionPhoto('camera')}
+            />
+            <Btn
+              title="Tải ảnh từ máy"
+              icon="image"
+              variant="outline"
+              small
+              style={{ flex: 1 }}
+              disabled={uploadingPhoto || busy}
+              onPress={() => handleAddCompletionPhoto('library')}
+            />
+          </View>
+        ) : null}
+      </View>
+
       <Text style={[ui.fieldLabel, { marginTop: 10, marginBottom: 6 }]}>
         ⚡ Checklist an toàn kỹ thuật & nghiệm thu ({safetyDone}/{safetyTotal})
       </Text>
@@ -211,12 +329,6 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
           {!paid ? (
             <Text style={[ui.meta, { marginTop: 6 }]}>Chưa thu thì để trống — khách có thể báo đã trả sau, bạn xác nhận khi nhận đủ.</Text>
           ) : null}
-        </View>
-      ) : null}
-      {!hasAfter ? (
-        <View style={[tx.note, { backgroundColor: C.orangeSoft, marginTop: 14 }]}>
-          <Text style={{ color: C.orange, fontWeight: '700', marginBottom: 8 }}>⚠ Chưa có ảnh “Sau khi làm”.</Text>
-          <Checkbox on={forceDone} onPress={() => setForceDone(!forceDone)} label="Khách đồng ý hoàn thành không kèm ảnh sau" />
         </View>
       ) : null}
       <Text style={[ui.meta, { marginTop: 12 }]}>Sau khi gửi, khách nhận thông báo hoàn thành và có thể đánh giá.</Text>

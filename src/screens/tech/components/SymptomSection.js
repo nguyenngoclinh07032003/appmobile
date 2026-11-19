@@ -8,6 +8,7 @@ import { View, Text, Image, TextInput, StyleSheet } from 'react-native';
 import { C, R } from '../../../theme';
 import { DIAG_TAGS, DIAG_FINDINGS, DIAG_ACTIONS } from '../../../constants/data';
 import { Tap, Card, Field, AppIcon } from '../../../components';
+import { parseSymptomPhotoTitle } from './useQuoteDraft';
 
 // Chèn / bỏ một cụm từ gợi ý trong ô văn bản (ngăn cách bằng dấu phẩy).
 const hasPhrase = (text, phrase) => String(text || '').toLowerCase().includes(phrase.toLowerCase());
@@ -73,29 +74,71 @@ function QuickPhrases({ items, value, onChange }) {
   );
 }
 
-export function SymptomSection({ cats = [], draft, evidence = [], addingPhoto, onAddPhoto, onRemovePhoto }) {
-  const { tags, setTags, diagnosis, setDiagnosis, recommendation, setRecommendation } = draft;
-  const [showOther, setShowOther] = useState(false);
-  const [other, setOther] = useState('');
+export function SymptomSection({
+  cats = [],
+  draft,
+  evidence = [],
+  busySymptomPhotoId,
+  onPickSymptomPhoto,
+  onRemoveSymptomPhoto,
+  onRemoveSymptomItem,
+  onChangeSymptomAction,
+}) {
+  const {
+    tags = [],
+    setTags,
+    symptomItems = [],
+    setSymptomItems,
+    diagnosis,
+    setDiagnosis,
+    recommendation,
+    setRecommendation,
+  } = draft;
+  const [symptomInput, setSymptomInput] = useState('');
+  const [expandedIds, setExpandedIds] = useState({});
 
   const deviceTags = [...new Set(cats.flatMap((c) => DIAG_TAGS[c] || []))];
-  const commonTags = (DIAG_TAGS.all || []).filter((t) => !deviceTags.includes(t));
-  const suggested = new Set([...deviceTags, ...commonTags]);
-  const customTags = tags.filter((t) => !suggested.has(t));
+  const customTags = tags.filter((t) => !deviceTags.includes(t));
   const findings = [...new Set([...cats.flatMap((c) => DIAG_FINDINGS[c] || []), ...(DIAG_FINDINGS.all || [])])];
   const actions = [...new Set([...cats.flatMap((c) => DIAG_ACTIONS[c] || []), ...(DIAG_ACTIONS.all || [])])];
   const photos = evidence.filter((e) => e.stage === 'diagnosis');
 
   const toggleTag = (t) => setTags((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));
-  const addOther = () => {
-    const t = other.trim().replace(/,/g, ' ');
-    if (!t) return;
-    setTags((p) => (p.some((x) => x.toLowerCase() === t.toLowerCase()) ? p : [...p, t]));
-    setOther('');
-    setShowOther(false);
+  const confirmSymptom = () => {
+    const clean = symptomInput.trim().replace(/,/g, ' -').replace(/\s+/g, ' ');
+    if (!clean) return;
+    const existing = symptomItems.find((it) => String(it.title || '').trim().toLowerCase() === clean.toLowerCase());
+    if (existing) {
+      setExpandedIds((p) => ({ ...p, [existing.id]: true }));
+      setSymptomInput('');
+      return;
+    }
+    const newItem = {
+      id: `sym_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      title: clean,
+      action: '',
+      localPhotoUri: null,
+    };
+    setSymptomItems?.((p) => [...(p || []), newItem]);
+    setExpandedIds((p) => ({ ...p, [newItem.id]: true }));
+    setSymptomInput('');
   };
 
-  const doneCount = [tags.length > 0, diagnosis.trim().length > 0, recommendation.trim().length > 0, photos.length > 0].filter(Boolean).length;
+  const toggleCollapse = (id) => {
+    setExpandedIds((p) => ({ ...p, [id]: !p[id] }));
+  };
+
+  const setItemAction = (id, action) => {
+    const target = symptomItems.find((x) => x.id === id);
+    setSymptomItems?.((p) => (p || []).map((x) => (x.id === id ? { ...x, action } : x)));
+    if (target && target.action !== action) {
+      onChangeSymptomAction?.(target, action);
+    }
+  };
+
+  const totalSelectedSymptoms = tags.length + symptomItems.length;
+  const hasAnyReco = recommendation.trim().length > 0 || symptomItems.some((it) => Boolean(it.action));
+  const doneCount = [totalSelectedSymptoms > 0, diagnosis.trim().length > 0, hasAnyReco].filter(Boolean).length;
 
   return (
     <Card style={{ marginTop: 12 }}>
@@ -104,21 +147,21 @@ export function SymptomSection({ cats = [], draft, evidence = [], addingPhoto, o
         <View style={st.headIcon}><AppIcon name="search" size={20} color={C.primary} strokeWidth={2.4} /></View>
         <View style={{ flex: 1 }}>
           <Text style={st.headTitle}>Triệu chứng & chẩn đoán</Text>
-          <Text style={st.headSub}>Chạm để chọn nhanh, không cần gõ nhiều</Text>
+          <Text style={st.headSub}>Chạm để chọn nhanh hoặc nhập triệu chứng chi tiết</Text>
         </View>
-        <View style={[st.progress, doneCount === 4 && { backgroundColor: C.greenSoft }]}>
-          <Text style={[st.progressText, doneCount === 4 && { color: C.green }]}>{doneCount}/4</Text>
+        <View style={[st.progress, doneCount === 3 && { backgroundColor: C.greenSoft }]}>
+          <Text style={[st.progressText, doneCount === 3 && { color: C.green }]}>{doneCount}/3</Text>
         </View>
       </View>
-      <View style={st.progressBar}><View style={[st.progressFill, { width: `${(doneCount / 4) * 100}%` }]} /></View>
+      <View style={st.progressBar}><View style={[st.progressFill, { width: `${(doneCount / 3) * 100}%` }]} /></View>
 
       {/* 1. Triệu chứng */}
       <StepHead
         no={1}
         title="Triệu chứng thiết bị"
-        hint="Chọn một hoặc nhiều"
-        done={tags.length > 0}
-        right={tags.length ? <Text style={st.counter}>Đã chọn {tags.length}</Text> : null}
+        hint={deviceTags.length ? 'Chọn gợi ý hoặc nhập triệu chứng để gắn ảnh & hướng xử lý' : 'Nhập triệu chứng để gắn ảnh & hướng xử lý'}
+        done={totalSelectedSymptoms > 0}
+        right={totalSelectedSymptoms ? <Text style={st.counter}>Đã chọn {totalSelectedSymptoms}</Text> : null}
       />
       {deviceTags.length ? (
         <>
@@ -128,37 +171,197 @@ export function SymptomSection({ cats = [], draft, evidence = [], addingPhoto, o
           </View>
         </>
       ) : null}
-      <Text style={st.groupLabel}>Tình trạng chung</Text>
-      <View style={st.pillWrap}>
-        {commonTags.map((t) => <TogglePill key={t} label={t} on={tags.includes(t)} onPress={() => toggleTag(t)} />)}
-        {customTags.map((t) => (
-          <TogglePill key={t} label={t} on tone="amber" onPress={() => toggleTag(t)} onRemove={() => toggleTag(t)} />
-        ))}
-        {!showOther ? (
-          <Tap onPress={() => setShowOther(true)} scaleTo={0.96} style={st.pillAdd}>
-            <AppIcon name="plus" size={13} color={C.primary} strokeWidth={2.6} />
-            <Text style={st.pillAddText}>Triệu chứng khác</Text>
-          </Tap>
-        ) : null}
+      {customTags.length ? (
+        <View style={st.pillWrap}>
+          {customTags.map((t) => (
+            <TogglePill key={t} label={t} on tone="amber" onPress={() => toggleTag(t)} onRemove={() => toggleTag(t)} />
+          ))}
+        </View>
+      ) : null}
+
+      {/* Ô nhập triệu chứng + nút Xác nhận -> tạo Collapsible */}
+      <Text style={st.groupLabel}>Nhập triệu chứng chi tiết</Text>
+      <View style={st.otherRow}>
+        <TextInput
+          value={symptomInput}
+          onChangeText={setSymptomInput}
+          onSubmitEditing={confirmSymptom}
+          returnKeyType="done"
+          placeholder="Nhập triệu chứng (VD: Chảy nước dàn lạnh, Hỏng tụ…)"
+          placeholderTextColor={C.faint}
+          style={[st.otherInput, !symptomInput.trim() && { borderColor: C.line }]}
+        />
+        <Tap
+          onPress={confirmSymptom}
+          style={[st.otherBtn, !symptomInput.trim() && { opacity: 0.5 }]}
+          disabled={!symptomInput.trim()}
+        >
+          <AppIcon name="check" size={14} color="#fff" strokeWidth={2.8} />
+          <Text style={st.otherBtnText}>Xác nhận</Text>
+        </Tap>
       </View>
-      {showOther ? (
-        <View style={st.otherRow}>
-          <TextInput
-            autoFocus
-            value={other}
-            onChangeText={setOther}
-            onSubmitEditing={addOther}
-            returnKeyType="done"
-            placeholder="VD: Chảy nước dàn lạnh"
-            placeholderTextColor={C.faint}
-            style={st.otherInput}
-          />
-          <Tap onPress={addOther} style={[st.otherBtn, !other.trim() && { opacity: 0.5 }]} disabled={!other.trim()}>
-            <Text style={st.otherBtnText}>Thêm</Text>
-          </Tap>
-          <Tap onPress={() => { setShowOther(false); setOther(''); }} hitSlop={8} style={{ padding: 6 }}>
-            <AppIcon name="x" size={16} color={C.muted} strokeWidth={2.4} />
-          </Tap>
+
+      {/* Danh sách triệu chứng đã xác nhận dạng Collapsible */}
+      {symptomItems.length ? (
+        <View style={st.symList}>
+          {symptomItems.map((item) => {
+            const titleKey = String(item.title || '').trim().toLowerCase();
+            const matched = photos.filter((e) => (parseSymptomPhotoTitle(e.note) || '').toLowerCase() === titleKey);
+            const photoUri = matched[matched.length - 1]?.uri || item.localPhotoUri || null;
+            const isOpen = Boolean(expandedIds[item.id]);
+            const isBusy = busySymptomPhotoId === item.id;
+            const actionLabel = item.action === 'replace' ? 'Thay thế' : item.action === 'repair' ? 'Sửa chữa' : 'Chọn xử lý';
+            const actionStyle =
+              item.action === 'replace'
+                ? { bg: '#FFFBEB', fg: '#B45309', bd: '#FCD34D' }
+                : item.action === 'repair'
+                  ? { bg: C.primarySoft, fg: C.primary, bd: '#93C5FD' }
+                  : { bg: '#F1F5F9', fg: C.muted, bd: '#E2E8F0' };
+
+            return (
+              <View key={item.id} style={st.symCard}>
+                <Tap onPress={() => toggleCollapse(item.id)} style={st.symHead} scaleTo={0.99}>
+                  <View style={[st.symChevron, isOpen && { transform: [{ rotate: '90deg' }] }]}>
+                    <AppIcon name="chevron-right" size={16} color={C.ink2} strokeWidth={2.6} />
+                  </View>
+                  <Text style={st.symTitle} numberOfLines={2}>{item.title}</Text>
+                  <View style={st.symHeadRight}>
+                    {photoUri ? (
+                      <View style={st.symPhotoDot}>
+                        <AppIcon name="camera" size={12} color={C.green} strokeWidth={2.4} />
+                      </View>
+                    ) : null}
+                    <View style={[st.symBadge, { backgroundColor: actionStyle.bg, borderColor: actionStyle.bd }]}>
+                      <Text style={[st.symBadgeText, { color: actionStyle.fg }]}>{actionLabel}</Text>
+                    </View>
+                    <Tap
+                      onPress={() => {
+                        setExpandedIds((p) => {
+                          const next = { ...p };
+                          delete next[item.id];
+                          return next;
+                        });
+                        onRemoveSymptomItem?.(item);
+                      }}
+                      hitSlop={8}
+                      style={st.symRemoveBtn}
+                    >
+                      <AppIcon name="x" size={14} color={C.muted} strokeWidth={2.5} />
+                    </Tap>
+                  </View>
+                </Tap>
+
+                {isOpen ? (
+                  <View style={st.symBody}>
+                    {/* Hình ảnh (chụp hoặc cập nhật) */}
+                    <Text style={st.symSubLabel}>Hình ảnh tình trạng (chụp hoặc cập nhật)</Text>
+                    {photoUri ? (
+                      <View style={st.symPhotoRow}>
+                        <View style={st.photo}>
+                          <Image source={{ uri: photoUri }} style={{ width: '100%', height: '100%' }} />
+                          <Tap
+                            style={st.photoX}
+                            disabled={isBusy}
+                            onPress={() => onRemoveSymptomPhoto?.(item)}
+                            hitSlop={6}
+                          >
+                            <AppIcon name="x" size={11} color="#fff" strokeWidth={3} />
+                          </Tap>
+                        </View>
+                        <View style={st.symPhotoActions}>
+                          <Tap
+                            style={[st.symActionBtn, isBusy && { opacity: 0.5 }]}
+                            disabled={isBusy}
+                            onPress={() => onPickSymptomPhoto?.(item, 'camera')}
+                            scaleTo={0.97}
+                          >
+                            <AppIcon name="camera" size={14} color={C.primary} strokeWidth={2.3} />
+                            <Text style={st.symActionBtnText}>Chụp mới</Text>
+                          </Tap>
+                          <Tap
+                            style={[st.symActionBtn, isBusy && { opacity: 0.5 }]}
+                            disabled={isBusy}
+                            onPress={() => onPickSymptomPhoto?.(item, 'library')}
+                            scaleTo={0.97}
+                          >
+                            <AppIcon name="refresh-cw" size={14} color={C.primary} strokeWidth={2.3} />
+                            <Text style={st.symActionBtnText}>Cập nhật ảnh</Text>
+                          </Tap>
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={st.symBtnRow}>
+                        <Tap
+                          style={[st.symActionBtn, { flex: 1 }, isBusy && { opacity: 0.5 }]}
+                          disabled={isBusy}
+                          onPress={() => onPickSymptomPhoto?.(item, 'camera')}
+                          scaleTo={0.97}
+                        >
+                          <AppIcon name="camera" size={15} color={C.primary} strokeWidth={2.3} />
+                          <Text style={st.symActionBtnText}>Chụp ảnh</Text>
+                        </Tap>
+                        <Tap
+                          style={[st.symActionBtn, { flex: 1 }, isBusy && { opacity: 0.5 }]}
+                          disabled={isBusy}
+                          onPress={() => onPickSymptomPhoto?.(item, 'library')}
+                          scaleTo={0.97}
+                        >
+                          <AppIcon name="image" size={15} color={C.primary} strokeWidth={2.3} />
+                          <Text style={st.symActionBtnText}>Cập nhật ảnh</Text>
+                        </Tap>
+                      </View>
+                    )}
+                    {isBusy ? (
+                      <Text style={{ fontSize: 11.5, color: C.primary, fontWeight: '600', marginTop: 6 }}>
+                        Đang xử lý ảnh…
+                      </Text>
+                    ) : null}
+
+                    {/* Hướng giải quyết (Thay thế hoặc Sửa chữa) */}
+                    <Text style={[st.symSubLabel, { marginTop: 12 }]}>Hướng giải quyết</Text>
+                    <View style={st.symBtnRow}>
+                      <Tap
+                        style={[
+                          st.symResolveBtn,
+                          item.action === 'replace' && st.symResolveReplaceOn,
+                        ]}
+                        onPress={() => setItemAction(item.id, 'replace')}
+                        scaleTo={0.97}
+                      >
+                        <AppIcon
+                          name="refresh-cw"
+                          size={14}
+                          color={item.action === 'replace' ? '#B45309' : C.ink2}
+                          strokeWidth={2.4}
+                        />
+                        <Text style={[st.symResolveText, item.action === 'replace' && { color: '#B45309', fontWeight: '800' }]}>
+                          Thay thế
+                        </Text>
+                      </Tap>
+                      <Tap
+                        style={[
+                          st.symResolveBtn,
+                          item.action === 'repair' && st.symResolveRepairOn,
+                        ]}
+                        onPress={() => setItemAction(item.id, 'repair')}
+                        scaleTo={0.97}
+                      >
+                        <AppIcon
+                          name="hammer"
+                          size={14}
+                          color={item.action === 'repair' ? C.primary : C.ink2}
+                          strokeWidth={2.4}
+                        />
+                        <Text style={[st.symResolveText, item.action === 'repair' && { color: C.primary, fontWeight: '800' }]}>
+                          Sửa chữa
+                        </Text>
+                      </Tap>
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
         </View>
       ) : null}
 
@@ -172,34 +375,9 @@ export function SymptomSection({ cats = [], draft, evidence = [], addingPhoto, o
       <View style={st.divider} />
 
       {/* 3. Đề xuất xử lý */}
-      <StepHead no={3} title="Đề xuất xử lý" hint="Phương án sẽ làm cho khách" done={recommendation.trim().length > 0} />
+      <StepHead no={3} title="Đề xuất xử lý" hint="Phương án sẽ làm cho khách" done={hasAnyReco} />
       <QuickPhrases items={actions} value={recommendation} onChange={setRecommendation} />
       <Field multiline value={recommendation} onChangeText={setRecommendation} placeholder="VD: Vệ sinh dàn lạnh + kiểm tra gas…" inputStyle={st.textArea} />
-
-      <View style={st.divider} />
-
-      {/* 4. Ảnh minh chứng */}
-      <StepHead
-        no={4}
-        title="Ảnh minh chứng"
-        hint="Chụp tình trạng trước khi sửa để khách yên tâm"
-        done={photos.length > 0}
-        right={photos.length ? <Text style={st.counter}>{photos.length} ảnh</Text> : null}
-      />
-      <View style={st.photoWrap}>
-        <Tap style={st.photoAdd} disabled={addingPhoto} onPress={onAddPhoto} scaleTo={0.97}>
-          <View style={st.photoAddIcon}><AppIcon name="camera" size={20} color={C.primary} strokeWidth={2.3} /></View>
-          <Text style={st.photoAddText}>{addingPhoto ? 'Đang tải…' : 'Chụp ảnh'}</Text>
-        </Tap>
-        {photos.map((e) => (
-          <View key={e.id} style={st.photo}>
-            {e.uri ? <Image source={{ uri: e.uri }} style={{ width: '100%', height: '100%' }} /> : <AppIcon name="image" size={24} color={C.muted} />}
-            <Tap style={st.photoX} onPress={() => onRemovePhoto(e.id)} hitSlop={6}>
-              <AppIcon name="x" size={11} color="#fff" strokeWidth={3} />
-            </Tap>
-          </View>
-        ))}
-      </View>
     </Card>
   );
 }
@@ -227,13 +405,33 @@ const st = StyleSheet.create({
   pill: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff' },
   pillDot: { width: 16, height: 16, borderRadius: 8, borderWidth: 1.5, borderColor: '#CBD5E1', alignItems: 'center', justifyContent: 'center' },
   pillText: { fontSize: 13.5, color: C.ink2, fontWeight: '600' },
-  pillAdd: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#93C5FD', backgroundColor: '#F8FBFF' },
-  pillAddText: { fontSize: 13.5, color: C.primary, fontWeight: '700' },
 
-  otherRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 4 },
-  otherInput: { flex: 1, height: 42, borderRadius: R.sm, borderWidth: 1.5, borderColor: C.primary, paddingHorizontal: 12, fontSize: 14, color: C.ink, backgroundColor: '#fff' },
-  otherBtn: { height: 42, paddingHorizontal: 16, borderRadius: R.sm, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center' },
-  otherBtnText: { color: '#fff', fontWeight: '800', fontSize: 13.5 },
+  otherRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2, marginBottom: 8 },
+  otherInput: { flex: 1, height: 42, borderRadius: R.sm, borderWidth: 1.5, borderColor: C.primary, paddingHorizontal: 12, fontSize: 13.5, color: C.ink, backgroundColor: '#fff' },
+  otherBtn: { height: 42, paddingHorizontal: 14, borderRadius: R.sm, backgroundColor: C.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
+  otherBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+
+  symList: { gap: 8, marginTop: 2, marginBottom: 4 },
+  symCard: { borderRadius: R.md, borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#F8FAFC', overflow: 'hidden' },
+  symHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 11, paddingHorizontal: 12, backgroundColor: '#fff' },
+  symChevron: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
+  symTitle: { flex: 1, fontSize: 14, fontWeight: '800', color: C.ink },
+  symHeadRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  symPhotoDot: { width: 22, height: 22, borderRadius: 11, backgroundColor: C.greenSoft, alignItems: 'center', justifyContent: 'center' },
+  symBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1 },
+  symBadgeText: { fontSize: 11, fontWeight: '800' },
+  symRemoveBtn: { padding: 4 },
+  symBody: { padding: 12, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' },
+  symSubLabel: { fontSize: 12, fontWeight: '800', color: C.ink2, marginBottom: 8 },
+  symPhotoRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  symPhotoActions: { flex: 1, gap: 8 },
+  symBtnRow: { flexDirection: 'row', gap: 8 },
+  symActionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, paddingHorizontal: 10, borderRadius: R.sm, borderWidth: 1.2, borderColor: '#93C5FD', backgroundColor: '#fff' },
+  symActionBtnText: { fontSize: 12.5, fontWeight: '700', color: C.primary },
+  symResolveBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 10, borderRadius: R.sm, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff' },
+  symResolveReplaceOn: { borderColor: '#F59E0B', backgroundColor: '#FFFBEB' },
+  symResolveRepairOn: { borderColor: C.primary, backgroundColor: C.primarySoft },
+  symResolveText: { fontSize: 13, fontWeight: '700', color: C.ink2 },
 
   quickWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
   quick: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 10, backgroundColor: '#F1F5F9' },
@@ -243,10 +441,6 @@ const st = StyleSheet.create({
 
   divider: { height: 1, backgroundColor: '#EEF2F7', marginTop: 14 },
 
-  photoWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  photoAdd: { width: 84, height: 84, borderRadius: R.md, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#93C5FD', backgroundColor: '#F8FBFF', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  photoAddIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
-  photoAddText: { fontSize: 12, fontWeight: '700', color: C.primary },
   photo: { width: 84, height: 84, borderRadius: R.md, overflow: 'hidden', backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
   photoX: { position: 'absolute', top: 5, right: 5, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(15,23,42,0.65)', alignItems: 'center', justifyContent: 'center' },
 });

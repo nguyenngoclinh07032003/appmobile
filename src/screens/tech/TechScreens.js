@@ -4,7 +4,7 @@
 //   Gửi lên hệ thống: chẩn đoán, tiến độ, vật tư sử dụng, ảnh minh chứng, biên bản hoàn thành
 // Dùng chung dữ liệu đơn hàng với app Khách hàng (src/store.js) nên hai bên cập nhật cho nhau.
 // ===========================================================================
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, Image, Linking, RefreshControl } from 'react-native';
 import { C, R, shadow, STATUS_META, toneOf } from '../../theme';
 import {
@@ -22,11 +22,16 @@ import {
 } from '../../components';
 import { pickImage, pickCamera } from '../../utils/media';
 import { computeQuoteRangeTotals, formatRangeVND } from '../../utils/externalPartsPricing';
-import { TrackingCard } from '../../components/order';
+import { TrackingCard, SymptomBreakdownView } from '../../components/order';
 import { tx } from './components/techStyles';
 import { useBusyRunner } from './components/useBusyRunner';
 import { useNextAction } from './components/nextAction';
-import { useQuoteDraft, isOnSiteQuote } from './components/useQuoteDraft';
+import {
+  useQuoteDraft,
+  isOnSiteQuote,
+  buildSymptomsSummary,
+  buildSymptomRecommendationFallback,
+} from './components/useQuoteDraft';
 import { QuoteEditor } from './components/QuoteEditor';
 import { CompleteSheet } from './components/CompleteSheet';
 import { ExternalPartsFinalizeSheet } from './components/ExternalPartsFinalizeSheet';
@@ -893,12 +898,24 @@ export function TechAccountScreen() {
 function ReceiptCard({ o, editable }) {
   const { a, ui: u } = useApp();
   const [busyId, setBusyId] = useState(null);
+  const reconciledSigRef = useRef('');
   const parts = o.externalParts || [];
+  const missingSig = parts.filter((p) => !p.receiptId).map((p) => p.itemId).join(',');
+  const evidenceCount = (o.evidence || []).length;
+
+  useEffect(() => {
+    if (!editable || !missingSig) return;
+    const key = `${o.code}:${missingSig}:${evidenceCount}`;
+    if (reconciledSigRef.current === key) return;
+    reconciledSigRef.current = key;
+    a.reconcilePartReceipts?.(o.code);
+  }, [editable, missingSig, evidenceCount, o.code]);
+
   if (!parts.length) return null;
-  const attach = async (part) => {
+  const attach = async (part, useCamera = true) => {
     if (busyId) return;
-    let uri = await pickCamera();
-    if (uri === null) uri = await pickImage();
+    let uri = useCamera ? await pickCamera() : await pickImage();
+    if (useCamera && uri === null) uri = await pickImage();
     if (uri == null) {
       if (uri === null) u.alert('Chưa hỗ trợ camera', 'Cho phép camera hoặc chọn ảnh từ thư viện.', '📷');
       return;
@@ -915,7 +932,7 @@ function ReceiptCard({ o, editable }) {
   return (
     <Card style={{ marginTop: 12 }}>
       <Text style={tx.h}>🧾 Biên lai linh kiện mua ngoài</Text>
-      <Text style={[ui.meta, { marginBottom: 8 }]}>Chụp hoá đơn mua cho từng linh kiện. Thiếu biên lai thì chưa nộp hoàn thành được.</Text>
+      <Text style={[ui.meta, { marginBottom: 8 }]}>Chụp hoặc tải ảnh hoá đơn mua cho từng linh kiện. Thiếu biên lai thì chưa nộp hoàn thành được.</Text>
       {parts.map((p) => {
         // Ảnh biên lai đã gắn (ảnh DOCUMENT của việc) — hiện ngay tại dòng linh kiện, không nằm trong ảnh minh chứng.
         const receipt = p.receiptId ? (o.evidence || []).find((e) => String(e.dbAttachmentId) === String(p.receiptId)) : null;
@@ -934,7 +951,10 @@ function ReceiptCard({ o, editable }) {
             {p.receiptId ? (
               <Badge text="Đã có biên lai" fg={C.green} bg={C.greenSoft} />
             ) : editable ? (
-              <Btn title={busyId === p.itemId ? 'Đang tải…' : 'Chụp biên lai'} small variant="soft" disabled={Boolean(busyId)} onPress={() => attach(p)} />
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                <Btn title={busyId === p.itemId ? 'Đang tải…' : 'Chụp ảnh'} small variant="soft" disabled={Boolean(busyId)} onPress={() => attach(p, true)} />
+                <Btn title="Tải ảnh" small variant="ghost" disabled={Boolean(busyId)} onPress={() => attach(p, false)} />
+              </View>
             ) : (
               <Badge text="Thiếu biên lai" fg={C.orange} bg={C.orangeSoft} />
             )}
@@ -1073,6 +1093,7 @@ export function TechJobScreen({ params }) {
   const [releaseNote, setReleaseNote] = useState('');
   const [showDone, setShowDone] = useState(false);
   const [showFinalizeExt, setShowFinalizeExt] = useState(false);
+  const [previewTechPhoto, setPreviewTechPhoto] = useState(null);
   const [summary, setSummary] = useState('');
   const [extraBillParts, setExtraBillParts] = useState([]);
 
@@ -1139,15 +1160,24 @@ export function TechJobScreen({ params }) {
     setMatMode(null);
   };
   const sendQuote = () => {
-    const symptoms = draft.tags.join(', ');
+    const missingActionItem = (draft.symptomItems || []).find((it) => !it.action);
+    if (missingActionItem) {
+      u.alert('Thiếu hướng giải quyết', `Vui lòng chọn hướng giải quyết (Thay thế hoặc Sửa chữa) cho triệu chứng "${missingActionItem.title}".`, '🛠️');
+      return;
+    }
+    const symptoms = buildSymptomsSummary(draft.tags, draft.symptomItems);
     const diag = draft.diagnosis.trim();
-    const reco = draft.recommendation.trim();
+    const manualReco = draft.recommendation.trim();
+    const autoReco = buildSymptomRecommendationFallback(draft.symptomItems);
+    const reco = manualReco
+      ? (autoReco && !manualReco.toLowerCase().includes(autoReco.toLowerCase()) ? `${autoReco}. ${manualReco}` : manualReco)
+      : autoReco;
     if (!symptoms && !diag) {
       u.alert('Thiếu chẩn đoán', 'Chọn triệu chứng hoặc nhập kết luận chẩn đoán trước khi gửi.', '🔍');
       return;
     }
     if (!reco) {
-      u.alert('Thiếu đề xuất', 'Ghi đề xuất xử lý trước khi gửi báo giá.', '🧾');
+      u.alert('Thiếu đề xuất', 'Ghi đề xuất xử lý hoặc chọn hướng giải quyết cho triệu chứng trước khi gửi báo giá.', '🧾');
       return;
     }
     const missingPriceLine = draft.lines.find((l) => !l.isOriginal && !l.isEstimatedRange && !(Number(l.price) > 0));
@@ -1371,12 +1401,20 @@ export function TechJobScreen({ params }) {
           ) : null}
           {o.note ? <Text style={[tx.info, { marginTop: 6 }]}>📝 “{o.note}”</Text> : null}
           {(o.attachments || []).length ? (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-              {o.attachments.map((att) => (
-                <View key={att.id} style={tx.thumb}>
-                  {att.uri ? <Image source={{ uri: att.uri }} style={{ width: '100%', height: '100%' }} /> : <AppIcon name="image" size={22} color={C.muted} />}
-                </View>
-              ))}
+            <View style={{ marginTop: 8 }}>
+              <Text style={[ui.meta, { fontWeight: '700', marginBottom: 6 }]}>📷 Hình ảnh triệu chứng ban đầu ({o.attachments.length})</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {o.attachments.map((att) => (
+                  <Tap
+                    key={att.id}
+                    style={tx.thumb}
+                    onPress={() => att.uri && setPreviewTechPhoto({ uri: att.uri, title: att.note || 'Hình ảnh triệu chứng ban đầu' })}
+                    scaleTo={0.97}
+                  >
+                    {att.uri ? <Image source={{ uri: att.uri }} style={{ width: '100%', height: '100%' }} /> : <AppIcon name="image" size={22} color={C.muted} />}
+                  </Tap>
+                ))}
+              </View>
             </View>
           ) : null}
           <Text style={[tx.info, { marginTop: 6 }]}>💳 {o.payment}</Text>
@@ -1534,7 +1572,15 @@ export function TechJobScreen({ params }) {
                       bg={o.quote.approved ? C.greenSoft : (waiting || isRevise) ? C.goldSoft : C.redSoft}
                     />
                   </View>
-                  <Text style={[tx.info, { marginBottom: 6 }]}>{o.quote.diagnosis}</Text>
+                  <View style={{ marginBottom: 8 }}>
+                    <SymptomBreakdownView
+                      symptoms={o.quote.symptoms}
+                      diagnosis={o.quote.diagnosis}
+                      recommendation={o.quote.recommendation}
+                      evidence={evidence}
+                      initialAttachments={o.attachments}
+                    />
+                  </View>
                   {(o.quote.lines || []).map((l, i) => (
                     <View key={`${l.name}-${i}`} style={tx.qRow}>
                       <AppIcon name={l.type === 'part' ? 'settings' : 'hammer'} size={13} color={C.ink2} style={{ marginTop: 2 }} />
@@ -1738,83 +1784,47 @@ export function TechJobScreen({ params }) {
         {o.procedure && (mine || o.procedure.progress_percent > 0) ? <ProcedureCard o={o} editable={mine && ['diagnosing', 'repairing'].includes(o.status)} /> : null}
         {mine ? <ReceiptCard o={o} editable={['diagnosing', 'repairing'].includes(o.status)} /> : null}
 
-        {/* ===== Ảnh minh chứng =====
-            Hiện ngay từ bước kiểm tra / "Xác nhận & bắt đầu" (không đợi tới lúc đang sửa): ảnh chụp lúc chẩn đoán ở trên
-            cũng hiện ở đây, và thợ chụp được ảnh trước / sau khi làm luôn. */}
-        {(() => {
-          const evidenceEditable = mine && ['diagnosing', 'repairing'].includes(o.status);
-          if (!evidenceEditable && !evidence.some((e) => e.stage !== 'receipt')) return null;
-          const groups = [
-            { id: 'diagnosis', label: 'Lúc kiểm tra / chẩn đoán' },
-            { id: 'before', label: 'Trước khi làm' },
-            { id: 'after', label: 'Sau khi làm' },
-          ];
+        {/* ===== Biên bản hoàn thành ===== */}
+        {o.report ? (() => {
+          const completionPhotos = evidence.filter((e) => e.stage === 'after' && e.uri);
           return (
-            <Card style={{ marginTop: 12 }}>
-              <Text style={tx.h}>📷 Ảnh minh chứng</Text>
-              {groups.map((g) => {
-                const items = evidence.filter((e) => e.stage === g.id);
-                // Nhóm chẩn đoán chỉ hiện khi đã có ảnh (thêm ảnh chẩn đoán ở khối "Triệu chứng & chẩn đoán").
-                if (!items.length && (g.id === 'diagnosis' || !evidenceEditable)) return null;
-                return (
-                  <View key={g.id} style={{ marginTop: 6 }}>
-                    <Text style={tx.fl}>{g.label}{items.length ? ` (${items.length})` : ''}</Text>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                      {items.map((e) => (
-                        <View key={e.id} style={tx.thumb}>
-                          {e.uri ? <Image source={{ uri: e.uri }} style={{ width: '100%', height: '100%' }} /> : <Text style={{ fontSize: 26 }}>🖼️</Text>}
-                          {evidenceEditable ? (
-                            <Tap style={tx.thumbX} onPress={() => a.removeEvidence(o.code, e.id)}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>✕</Text></Tap>
-                          ) : null}
-                        </View>
-                      ))}
-                      {evidenceEditable && g.id !== 'diagnosis' ? (
-                        <Tap
-                          style={[tx.thumb, tx.thumbAdd]}
-                          onPress={async () => {
-                            let uri = await pickCamera();
-                            if (uri === null) uri = await pickImage();
-                            if (uri == null) {
-                              if (uri === null) {
-                                u.alert('Chưa hỗ trợ camera', 'Trên web/mobile hãy cho phép camera hoặc chọn ảnh thư viện.', '📷');
-                              }
-                              return;
-                            }
-                            a.addEvidence(o.code, { uri, stage: g.id });
-                          }}
-                        >
-                          <Text style={{ fontSize: 22, color: C.primary }}>＋</Text>
-                          <Text style={{ fontSize: 10, color: C.primary, fontWeight: '700' }}>Thêm ảnh</Text>
-                        </Tap>
-                      ) : null}
-                    </View>
+            <Card style={{ marginTop: 12, backgroundColor: '#F3FBF7', borderColor: '#CDEFDD' }}>
+              <Text style={tx.h}>✅ Biên bản hoàn thành</Text>
+              <Text style={{ color: C.ink2, lineHeight: 21 }}>{o.report.summary}</Text>
+              {completionPhotos.length ? (
+                <View style={{ marginTop: 10 }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '800', color: '#065F46', marginBottom: 6 }}>
+                    📷 Hình ảnh hoàn thành công việc ({completionPhotos.length})
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {completionPhotos.map((ph, idx) => (
+                      <Tap
+                        key={ph.id || `tech_done_ph_${idx}`}
+                        style={{ width: 76, height: 76, borderRadius: R.md, overflow: 'hidden', borderWidth: 1.5, borderColor: '#A7F3D0', backgroundColor: '#fff' }}
+                        onPress={() => setPreviewTechPhoto({ uri: ph.uri, title: ph.note || 'Hình ảnh hoàn thành công việc' })}
+                        scaleTo={0.97}
+                      >
+                        <Image source={{ uri: ph.uri }} style={{ width: '100%', height: '100%' }} />
+                      </Tap>
+                    ))}
                   </View>
-                );
-              })}
-              {evidenceEditable ? <Text style={[ui.meta, { marginTop: 8 }]}>Chụp hoặc chọn ảnh thật từ thiết bị — dùng cho bảo hành và đối soát.</Text> : null}
+                </View>
+              ) : null}
+              <Text style={[ui.meta, { marginTop: 8 }]}>
+                {fmtDateTime(o.report.at)} · {o.report.paid
+                  ? (isQRPayment(o)
+                    ? `Khách đã chuyển khoản VietQR ${formatVND(orderTotal(o))} về hệ thống (Thợ không thu tiền mặt)`
+                    : `Đã thu tiền mặt ${formatVND(orderTotal(o))}${o.report.paidBy === 'customer' ? ' (khách xác nhận)' : ''}`)
+                  : (isQRPayment(o)
+                    ? `Chờ khách quét mã VietQR ${formatVND(orderTotal(o))} trên App Khách (Thợ không thu tiền mặt)`
+                    : 'Chưa thu tiền / chờ khách xác nhận')}
+              </Text>
+              {o.report.paid && o.report.paidAt ? (
+                <Text style={[ui.meta, { marginTop: 4, color: C.green }]}>Xác nhận lúc {fmtDateTime(o.report.paidAt)}</Text>
+              ) : null}
             </Card>
           );
-        })()}
-
-        {/* ===== Biên bản hoàn thành ===== */}
-        {o.report ? (
-          <Card style={{ marginTop: 12, backgroundColor: '#F3FBF7', borderColor: '#CDEFDD' }}>
-            <Text style={tx.h}>✅ Biên bản hoàn thành</Text>
-            <Text style={{ color: C.ink2, lineHeight: 21 }}>{o.report.summary}</Text>
-            <Text style={[ui.meta, { marginTop: 8 }]}>
-              {fmtDateTime(o.report.at)} · {o.report.paid
-                ? (isQRPayment(o)
-                  ? `Khách đã chuyển khoản VietQR ${formatVND(orderTotal(o))} về hệ thống (Thợ không thu tiền mặt)`
-                  : `Đã thu tiền mặt ${formatVND(orderTotal(o))}${o.report.paidBy === 'customer' ? ' (khách xác nhận)' : ''}`)
-                : (isQRPayment(o)
-                  ? `Chờ khách quét mã VietQR ${formatVND(orderTotal(o))} trên App Khách (Thợ không thu tiền mặt)`
-                  : 'Chưa thu tiền / chờ khách xác nhận')}
-            </Text>
-            {o.report.paid && o.report.paidAt ? (
-              <Text style={[ui.meta, { marginTop: 4, color: C.green }]}>Xác nhận lúc {fmtDateTime(o.report.paidAt)}</Text>
-            ) : null}
-          </Card>
-        ) : null}
+        })() : null}
         {o.rating ? (
           <Card style={{ marginTop: 12, backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -2077,6 +2087,15 @@ export function TechJobScreen({ params }) {
         initialSummary={summary}
         evidence={evidence}
       />
+      <Sheet
+        visible={Boolean(previewTechPhoto)}
+        onClose={() => setPreviewTechPhoto(null)}
+        title={previewTechPhoto?.title || 'Hình ảnh công việc'}
+      >
+        {previewTechPhoto?.uri ? (
+          <Image source={{ uri: previewTechPhoto.uri }} style={{ width: '100%', height: 280, borderRadius: R.md, backgroundColor: '#F1F5F9' }} resizeMode="contain" />
+        ) : null}
+      </Sheet>
     </View>
   );
 }

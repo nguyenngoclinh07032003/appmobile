@@ -3,8 +3,26 @@
 // khi thợ đang sửa dở (dirty). Gửi xong (hoặc bấm "Lấy lại bản trên hệ thống") thì hết dirty.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getService } from '../../../constants/data.js';
+import {
+  SYMPTOM_PHOTO_PREFIX,
+  formatSymptomPhotoNote,
+  parseSymptomPhotoMeta,
+  parseSymptomPhotoTitle,
+  parseSymptomsField,
+  buildSymptomsSummary,
+  buildSymptomRecommendationFallback,
+  stripSymptomsPrefixFromDiagnosis,
+} from '../../../utils/symptomItems.js';
 
-const splitTags = (s) => String(s || '').split(',').map((x) => x.trim()).filter(Boolean);
+export {
+  SYMPTOM_PHOTO_PREFIX,
+  formatSymptomPhotoNote,
+  parseSymptomPhotoMeta,
+  parseSymptomPhotoTitle,
+  parseSymptomsField,
+  buildSymptomsSummary,
+  buildSymptomRecommendationFallback,
+};
 
 // Chữ ký nhận biết "báo giá server đã đổi".
 export const quoteSignature = (q) => {
@@ -16,6 +34,8 @@ export const quoteSignature = (q) => {
     q.id ?? q.quoteId ?? q.quote_id ?? q.dbQuotationId ?? '',
     q.revision ?? q.version ?? '',
     q.updatedAt ?? q.updated_at ?? q.at ?? '',
+    q.symptoms ?? '',
+    q.diagnosis ?? '',
     q.total ?? '',
     q.approved ? 1 : 0,
     q.revisionRequested ? 1 : 0,
@@ -32,12 +52,9 @@ export const isOnSiteQuote = (o) => Boolean(o?.arrivedAt || o?.checkIn || ['diag
 export function draftFromOrder(o) {
   const q = o?.quote;
   const onSite = isOnSiteQuote(o);
-  const tags = splitTags(q?.symptoms);
-  let diagnosis = q?.diagnosis || '';
+  const { tags, symptomItems } = parseSymptomsField(q?.symptoms, o?.evidence || []);
   // Lúc gửi, chẩn đoán được ghép "triệu chứng. kết luận" -> tách lại để không nhân đôi phần triệu chứng.
-  const symptomsText = tags.join(', ');
-  if (symptomsText && diagnosis.startsWith(`${symptomsText}. `)) diagnosis = diagnosis.slice(symptomsText.length + 2);
-  else if (symptomsText && diagnosis === symptomsText) diagnosis = '';
+  const diagnosis = stripSymptomsPrefixFromDiagnosis(q?.diagnosis || '', q?.symptoms, tags, symptomItems);
   const items = o?.items || [];
   const bookedNameSet = new Set(items.map((it) => String(it.name || '').trim().toLowerCase()));
   const bookedIdSet = new Set(items.map((it) => it.id));
@@ -65,6 +82,7 @@ export function draftFromOrder(o) {
     ];
     return {
       tags,
+      symptomItems,
       diagnosis,
       recommendation: q?.recommendation || (q ? 'Thực hiện dịch vụ và hạng mục vật tư theo báo giá' : ''),
       lines,
@@ -100,6 +118,7 @@ export function draftFromOrder(o) {
     });
   return {
     tags,
+    symptomItems,
     diagnosis,
     recommendation: q?.recommendation || (q ? 'Thực hiện dịch vụ và hạng mục vật tư theo báo giá' : ''),
     lines,
@@ -172,8 +191,10 @@ export function useQuoteDraft(o) {
 
   return {
     ...draft,
+    symptomItems: draft.symptomItems || [],
     dirty,
     setTags: makeSetter('tags'),
+    setSymptomItems: makeSetter('symptomItems'),
     setDiagnosis: makeSetter('diagnosis'),
     setRecommendation: makeSetter('recommendation'),
     setLines: makeSetter('lines'),

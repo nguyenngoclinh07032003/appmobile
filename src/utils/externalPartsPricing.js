@@ -20,6 +20,15 @@ export const formatRangeVND = (minPrice, maxPrice, { prefix = '' } = {}) => {
 
 export const normalizeExternalPartName = (name) => String(name || '').normalize('NFC').replace(/\s+/g, ' ').trim().toLowerCase();
 
+// Báo giá đang chờ khách hàng duyệt (hỗ trợ cả các mã trạng thái tương đương nếu API trả SENT/PENDING).
+export function isQuotationPendingCustomer(q) {
+  if (!q || typeof q !== 'object') return false;
+  const st = String(q.quotation_status || '').trim().toUpperCase();
+  const dec = String(q.customer_decision || '').trim().toUpperCase();
+  if (['APPROVED', 'REJECTED', 'REVISE', 'REVISION_REQUESTED'].includes(dec)) return false;
+  return ['SENT', 'PENDING', 'PENDING_APPROVAL', 'WAITING_CUSTOMER', 'SUBMITTED'].includes(st);
+}
+
 // Sắp xếp báo giá tăng dần theo thời điểm gửi / tạo / id (KHÔNG đổi mảng gốc) để phần tử cuối là báo giá mới nhất,
 // không phụ thuộc thứ tự server trả về.
 const quoteTimeOf = (q) => {
@@ -250,7 +259,7 @@ export function extractExternalPartLifecycle(quotations = []) {
     (latestQuote.items || []).some((it) => parseExternalPartDesc(it?.description_snapshot)?.kind === 'finalized_external'),
   );
   const isAwaitingFinalizationApproval = Boolean(
-    latestHasFinalized && latestQuote?.quotation_status === 'SENT',
+    latestHasFinalized && isQuotationPendingCustomer(latestQuote),
   );
   const isFinalizationRevisionRequested = Boolean(
     latestHasFinalized &&

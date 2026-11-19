@@ -48,9 +48,10 @@ export function DetailScreen({ params }) {
   const curTier = tierOf(s.lifetimePoints || 0).cur;
   const catMaterials = MATERIALS.filter((m) => m.category === service.category || m.category === 'all');
   const discount = discountOf(service);
+  const detail = (s.serviceDetails || {})[service.dbId] || null;
   const reviewData = (s.serviceReviews || {})[service.dbId] || null;
-  const ratingAvg = reviewData?.summary?.rating_average ?? null;
-  const ratingCount = reviewData?.summary?.rating_count || 0;
+  const ratingAvg = reviewData?.summary?.rating_average ?? detail?.ratingAverage ?? null;
+  const ratingCount = reviewData?.summary?.rating_count ?? detail?.ratingCount ?? 0;
   const myId = authUserId(s.auth);
   const reviews = (reviewData?.items || []).map((r) => ({
     name: r.customer_display_name || 'Khách hàng',
@@ -64,7 +65,6 @@ export function DetailScreen({ params }) {
   const related = ALL_SERVICES.filter((x) => x.category === service.category && x.id !== service.id).slice(0, 6);
   const video = videoFor(service);
   // Mô tả + các bước chuẩn lấy từ backend; chưa tải được thì dùng mô tả chung theo loại dịch vụ.
-  const detail = (s.serviceDetails || {})[service.dbId] || null;
   const steps = detail?.steps?.length ? detail.steps.map((x) => ({ title: x.title, items: x.items || [] })) : stepsFor(service);
   const description = detail?.description || featureFor(service);
   const inCart = s.cart.find((c) => c.id === service.id)?.qty || 0;

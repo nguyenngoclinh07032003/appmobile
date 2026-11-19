@@ -2,7 +2,7 @@
 // Bố cục: thẻ chứng nhận (mã, hiệu lực, thanh ngày còn lại, QR) -> thông tin đơn -> hạng mục đã làm
 // -> checklist an toàn -> xác nhận của khách -> lưu ý bảo hành. Chỉ hiển thị, không đổi dữ liệu.
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, Image, StyleSheet } from 'react-native';
 import { C, R, grad } from '../../theme';
 import { catLabel, SAFETY_CHECKLIST_ITEMS, HOTLINE } from '../../constants/data';
 import { fmtDate, fmtDateTime } from '../../context';
@@ -43,6 +43,17 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
     : '';
   const techName = o.tech?.name || o.report?.tech || 'Thợ Minh Đức';
   const techCode = o.tech?.code || o.report?.techCode;
+  const evidence = Array.isArray(o.evidence) ? o.evidence : [];
+  const initialPhotos = [];
+  const seenInitial = new Set();
+  [...(o.attachments || []), ...evidence.filter((e) => e?.stage === 'diagnosis')].forEach((ph) => {
+    if (!ph?.uri) return;
+    const key = ph.dbAttachmentId != null ? `id:${ph.dbAttachmentId}` : `uri:${ph.uri}`;
+    if (seenInitial.has(key)) return;
+    seenInitial.add(key);
+    initialPhotos.push(ph);
+  });
+  const completionPhotos = evidence.filter((e) => e?.stage === 'after' && e?.uri);
 
   return (
     <View>
@@ -143,6 +154,36 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
         </View>
       ) : null}
 
+      {/* ===== Hình ảnh đối chứng Trước & Sau ===== */}
+      {initialPhotos.length > 0 || completionPhotos.length > 0 ? (
+        <Section icon="camera" title="Hình ảnh đối chứng (Trước & Sau)">
+          {initialPhotos.length > 0 ? (
+            <View style={{ marginBottom: completionPhotos.length > 0 ? 10 : 0 }}>
+              <Text style={st.photoGroupLabel}>Trước khi sửa (Triệu chứng ban đầu)</Text>
+              <View style={st.photoGrid}>
+                {initialPhotos.map((ph, idx) => (
+                  <View key={ph.id || `cert_init_${idx}`} style={st.photoThumb}>
+                    <Image source={{ uri: ph.uri }} style={{ width: '100%', height: '100%' }} />
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+          {completionPhotos.length > 0 ? (
+            <View>
+              <Text style={[st.photoGroupLabel, { color: C.green }]}>Sau khi hoàn thành bàn giao</Text>
+              <View style={st.photoGrid}>
+                {completionPhotos.map((ph, idx) => (
+                  <View key={ph.id || `cert_after_${idx}`} style={[st.photoThumb, { borderColor: '#A7F3D0' }]}>
+                    <Image source={{ uri: ph.uri }} style={{ width: '100%', height: '100%' }} />
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
+        </Section>
+      ) : null}
+
       {/* ===== Lưu ý ===== */}
       <View style={st.note}>
         <AppIcon name="info" size={15} color={C.muted} strokeWidth={2.2} />
@@ -204,4 +245,7 @@ const st = StyleSheet.create({
 
   note: { flexDirection: 'row', gap: 8, padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', marginBottom: 4 },
   noteText: { flex: 1, fontSize: 12, color: C.muted, lineHeight: 17 },
+  photoGroupLabel: { fontSize: 12, fontWeight: '700', color: C.ink2, marginBottom: 6 },
+  photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  photoThumb: { width: 72, height: 72, borderRadius: R.sm, overflow: 'hidden', borderWidth: 1, borderColor: C.line, backgroundColor: '#F1F5F9' },
 });

@@ -7,6 +7,7 @@ import {
   parseExternalPartDesc,
   computeQuoteRangeTotals,
   extractExternalPartLifecycle,
+  sortQuotationsAsc,
 } from '../src/utils/externalPartsPricing.js';
 import {
   MATERIALS,
@@ -395,4 +396,13 @@ test('stepIndexOf & techStepIndexOf: giữ nguyên bước repairing khi chốt 
   };
   assert.equal(stepIndexOf(initialQuoteOrder), ORDER_STEPS.findIndex((s) => s.key === 'quoted'));
   assert.equal(techStepIndexOf(initialQuoteOrder), TECH_ORDER_STEPS.findIndex((s) => s.key === 'diagnosing'));
+});
+
+test('sortQuotationsAsc: luôn đặt báo giá mới nhất ở cuối kể cả khi backend trả giảm dần', () => {
+  const descQuotes = [
+    { quotation_id: 22, sent_at: '2026-11-20T00:15:00Z', items: [{ quotation_item_id: 201, is_external_purchase: true }] },
+    { quotation_id: 18, sent_at: '2026-11-20T00:05:00Z', items: [] },
+  ];
+  const sorted = sortQuotationsAsc(descQuotes);
+  assert.equal(sorted[sorted.length - 1].quotation_id, 22);
 });

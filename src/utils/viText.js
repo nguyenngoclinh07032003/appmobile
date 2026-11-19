@@ -228,9 +228,10 @@ export const viServerMessage = (message, code, status) => {
       : status === 403 ? ERROR_CODE_VI.FORBIDDEN
         : status === 404 ? ERROR_CODE_VI.NOT_FOUND
           : status === 409 ? ERROR_CODE_VI.CONFLICT
-            : status === 429 ? ERROR_CODE_VI.TOO_MANY_REQUESTS
-              : status >= 500 ? ERROR_CODE_VI.INTERNAL_ERROR
-                : ERROR_CODE_VI.ERROR);
+            : status === 413 ? ERROR_CODE_VI.FILE_TOO_LARGE
+              : status === 429 ? ERROR_CODE_VI.TOO_MANY_REQUESTS
+                : status >= 500 ? ERROR_CODE_VI.INTERNAL_ERROR
+                  : ERROR_CODE_VI.ERROR);
   if (!message) return fallback;
   if (isVietnamese(message)) return String(message);
   if (byCode) return byCode; // có mã lỗi đã biết: dùng câu chuẩn thay vì dịch từng cụm
