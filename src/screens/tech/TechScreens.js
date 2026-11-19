@@ -945,7 +945,7 @@ function ProcedureCard({ o, editable }) {
   const [busy, setBusy] = useState(false);
   const proc = o.procedure;
   if (!proc) return null;
-  const steps = (proc.services || []).flatMap((sv) => sv.steps.map((st) => ({ ...st, service_name: sv.service_name })));
+  const steps = (proc.services || []).flatMap((sv) => (sv.steps || []).map((st) => ({ ...st, service_name: sv.service_name })));
   const open = (st) => {
     if (!editable || st.status !== 'PENDING') return;
     setOpenId(openId === st.step_id ? null : st.step_id);
@@ -1199,7 +1199,9 @@ export function TechJobScreen({ params }) {
             ) : null}
             {o.lateCompensation ? (
               <Text style={[ui.meta, { color: C.orange, fontWeight: '700', marginTop: 6 }]}>
-                Muộn {o.lateCompensation.minutesLate} phút · đã ghi nhận chính sách
+                {(o.lateCompensation.minutesLate || o.lateCompensation.minutes)
+                  ? `Muộn ${o.lateCompensation.minutesLate || o.lateCompensation.minutes} phút · đã ghi nhận chính sách`
+                  : 'Check-in muộn · đã ghi nhận chính sách'}
               </Text>
             ) : o.arrivedAt ? (
               <Text style={[ui.meta, { color: C.green, fontWeight: '700', marginTop: 6 }]}>Đúng chính sách giờ hẹn</Text>

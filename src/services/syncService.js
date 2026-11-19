@@ -412,7 +412,14 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     doneAt,
     travelStartedAt: dateMs(journey?.travel_started_at),
     arrivedAt: dateMs(journey?.arrived_at),
-    lateCompensation: bill?.lateDiscount ? { amount: bill.lateDiscount } : null,
+    lateCompensation: (bill?.lateDiscount || Number(req.late_minutes) > 0)
+      ? {
+          amount: bill?.lateDiscount || 0,
+          minutesLate: Number(req.late_minutes) || null,
+          minutes: Number(req.late_minutes) || null,
+          tier: req.late_tier || null,
+        }
+      : null,
     tech: status === 'pending' ? null : {
       name: techName,
       code: techInfo?.technician_id != null ? String(techInfo.technician_id) : '',
@@ -563,7 +570,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     travelStartedAt: dateMs(job.travel_started_at),
     arrivedAt: dateMs(job.arrived_at),
     checkIn: job.check_in ? { lat: job.check_in.latitude, lng: job.check_in.longitude, at: dateMs(job.arrived_at) } : null,
-    lateCompensation: req.late_minutes > 0 ? { minutes: req.late_minutes, tier: req.late_tier || null, amount: bill?.lateDiscount || 0 } : null,
+    lateCompensation: req.late_minutes > 0 ? { minutes: req.late_minutes, minutesLate: req.late_minutes, tier: req.late_tier || null, amount: bill?.lateDiscount || 0 } : null,
     preferredTimeAt: dateMs(req.preferred_time),
     preferredTimeEndAt: dateMs(req.preferred_time_end),
     offerExpiresAt: dateMs(job.offer_expires_at || job.expires_at || job.accept_deadline),

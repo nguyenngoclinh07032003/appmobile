@@ -230,6 +230,8 @@ export function OrderScreen({ params }) {
   const [cancelBusy, runCancel] = useBusy();
   const [editBusy, runEdit] = useBusy();
   const [payBusy, runPay] = useBusy();
+  // Hook phải khai báo TRƯỚC mọi lệnh return sớm (nếu không: "Rendered fewer hooks" → crash toàn app).
+  const [showWarrantyBooking, setShowWarrantyBooking] = useState(false);
   const o = (s.orders || []).find((x) => x.code === params?.code);
   if (!o) return <NotFoundView onBack={() => (nav.stack.length ? nav.back() : nav.activity())} />;
   const meta = customerStatusMeta(o);
@@ -360,8 +362,6 @@ export function OrderScreen({ params }) {
     'Xác nhận',
   );
 
-  const [showWarrantyBooking, setShowWarrantyBooking] = useState(false);
-
   const requestWarranty = () => setShowWarrantyBooking(true);
 
   return (
@@ -390,9 +390,11 @@ export function OrderScreen({ params }) {
           <Card style={{ marginTop: 12, backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }}>
             <Text style={mx.tlTitle}>⏰ Bồi thường đến muộn</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-              Thợ check-in trễ {o.lateCompensation.minutesLate} phút.
+              {o.lateCompensation.minutesLate
+                ? `Thợ check-in trễ ${o.lateCompensation.minutesLate} phút.`
+                : 'Thợ check-in trễ so với giờ hẹn.'}
               {lateDiscountAmount(o)
-                ? ` Đã trừ ${formatVND(lateDiscountAmount(o))} vào tổng thanh toán (${o.lateCompensation.percent}% phí nhân công).`
+                ? ` Đã trừ ${formatVND(lateDiscountAmount(o))} vào tổng thanh toán${o.lateCompensation.percent ? ` (${o.lateCompensation.percent}% phí nhân công)` : ''}.`
                 : ' Hệ thống đã ghi nhận (mức cảnh báo, chưa trừ tiền).'}
               {o.lateCompensation.voucherCode ? ` Mã thêm: ${o.lateCompensation.voucherCode} (Quyền lợi).` : ''}
             </Text>
@@ -597,7 +599,7 @@ export function OrderScreen({ params }) {
                 ) : (
                   <Bill l="Chi phí phát sinh" v="0 đ (Đúng giá gốc, không phát sinh)" green />
                 )}
-                {partDisc ? <Bill l={`Đặc quyền hạng ${o.customerTierLabel || ''} (−${o.tierPartDiscountPercent}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
+                {partDisc ? <Bill l={`Ưu đãi hạng thành viên (−${o.bill?.tierPartDiscountPercent || 0}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
                 {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
                 <View style={mx.totalRow}>
                   <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>Tổng thanh toán sau báo giá</Text>
@@ -666,9 +668,9 @@ export function OrderScreen({ params }) {
                 {o.tech.code}{o.tech.rating != null ? ` · ★ ${o.tech.rating}` : " · Chưa có đánh giá"}
                 {o.tech.rating != null && o.tech.ratingCount ? ` (${Number(o.tech.ratingCount).toLocaleString('vi-VN')} đánh giá)` : ''}
               </Text>
-              {o.lateCompensation?.tier && o.lateCompensation.tier !== 'ok' ? (
+              {o.lateCompensation && (o.lateCompensation.minutesLate || o.lateCompensation.amount) && o.lateCompensation.tier !== 'ok' ? (
                 <Text style={[ui.meta, { color: C.orange, fontWeight: '700', marginTop: 2 }]}>
-                  Check-in muộn {o.lateCompensation.minutesLate} phút
+                  {o.lateCompensation.minutesLate ? `Check-in muộn ${o.lateCompensation.minutesLate} phút` : 'Check-in muộn so với giờ hẹn'}
                 </Text>
               ) : o.arrivedAt ? (
                 <Text style={[ui.meta, { color: C.green, fontWeight: '700', marginTop: 2 }]}>Đã check-in đúng chính sách giờ hẹn</Text>

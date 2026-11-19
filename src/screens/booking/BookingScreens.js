@@ -1208,8 +1208,26 @@ export function AddressFormScreen({ params }) {
   }, []);
   useEffect(() => { loadWards(); }, [loadWards]);
   const area = ward?.name || '';
-  // Sửa địa chỉ cũ: chỉ lấy phần số nhà + đường (bỏ ", Phường X, Thành phố Hà Nội" backend đã ghép).
-  const initialStreet = initial ? String(initial.street || initial.full || '').split(',')[0].trim() : '';
+  // Sửa địa chỉ cũ: chỉ bỏ phần ", Phường X, Thành phố Hà Nội" backend đã ghép ở CUỐI chuỗi.
+  // Không cắt ở dấu phẩy đầu tiên (VD: "Số 12, ngõ 45 Trần Duy Hưng" phải giữ nguyên).
+  const initialStreet = (() => {
+    if (!initial) return '';
+    if (initial.street) return String(initial.street).trim();
+    let full = String(initial.full || '').trim();
+    const suffixes = [initial.wardName, initial.area, 'Thành phố Hà Nội', 'TP. Hà Nội', 'Hà Nội'].filter(Boolean);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const sfx of suffixes) {
+        const tail = `, ${String(sfx).trim()}`;
+        if (full.toLowerCase().endsWith(tail.toLowerCase())) {
+          full = full.slice(0, -tail.length).trim();
+          changed = true;
+        }
+      }
+    }
+    return full;
+  })();
   const [street, setStreet] = useState(initialStreet);
   const [isDefault, setIsDefault] = useState(initial ? !!initial.isDefault : s.addresses.length === 0);
   const [showArea, setShowArea] = useState(false);
@@ -1273,10 +1291,11 @@ export function AddressFormScreen({ params }) {
             label="Số điện thoại"
             value={phone}
             onChangeText={(t) => {
-              let p = t.replace(/[^0-9]/g, '').slice(0, 10);
-              if (p.length > 0 && !p.startsWith('0')) {
-                p = '0' + p.slice(0, 9);
-              }
+              // Chuẩn hoá số dán dạng +84 / 84: "+84 912 345 678" → "0912345678" (trước đây thành "0849123456" — sai số).
+              let p = t.replace(/[^0-9]/g, '');
+              if (p.startsWith('84') && p.length >= 11) p = `0${p.slice(2)}`;
+              else if (p.length === 9 && !p.startsWith('0')) p = `0${p}`;
+              p = p.slice(0, 10);
               setPhone(p);
               if (p.length === 10) {
                 const phoneErr = validateVietnamesePhone(p);

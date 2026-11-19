@@ -10,7 +10,7 @@ import {
   TextInput,
 } from 'react-native';
 import { C, R, shadow } from '../../theme';
-import { TIME_SLOTS, HOTLINE } from '../../constants/data';
+import { HOTLINE } from '../../constants/data';
 import { useApp } from '../../context/AppContext';
 import {
   AppIcon,
@@ -21,37 +21,52 @@ import {
   Tap,
 } from '../common';
 import { pickImage, pickCamera } from '../../utils/media';
-import { formatYmd, getAvailableSlotsForToday } from '../../utils/warrantyPolicy';
+import { formatYmd, getSlotsForDate } from '../../utils/warrantyPolicy';
 import { validateVietnamesePhone } from '../../utils/validators';
 
-/** Ưu tiên SĐT của đơn hàng, sau đó mới tới SĐT tài khoản. */
+/**
+ * Lấy số điện thoại của đơn hàng:
+ * Ưu tiên số điện thoại của chính đơn hàng đó, nếu bị che sao (*) thì thử tìm số thật từ tài khoản.
+ * Nếu không có số thật, vẫn lấy chính SĐT của đơn hàng để điền vào ô cho khách hàng thấy.
+ */
 function resolveContactPhone(order, s) {
   const addr = order?.address && typeof order.address === 'object' ? order.address : null;
-  const matchedSaved = Array.isArray(s?.addresses)
-    ? s.addresses.find((a) => (
-      a?.id && addr?.id && String(a.id) === String(addr.id)
-    ) || (
-      a?.full && addr?.full && String(a.full).trim() === String(addr.full).trim()
-    ))
-    : null;
 
-  const candidates = [
+  const orderPhones = [
     order?.customerPhone,
     addr?.phone,
     addr?.contact_phone,
     order?.contact_phone,
-    matchedSaved?.phone,
-    s?.user?.phone,
-    s?.auth?.phone,
-  ];
+    order?.phone,
+  ].filter(Boolean);
 
-  const real = candidates.find((p) => {
-    if (!p || String(p).includes('*')) return false;
-    const digits = String(p).replace(/\D/g, '');
-    return digits.length >= 10;
-  });
+  // 1. Tìm trong đơn hàng nếu có số thật không bị che sao (*)
+  const realOrderPhone = orderPhones.find(
+    (p) => !String(p).includes('*') && String(p).replace(/\D/g, '').length >= 10
+  );
+  if (realOrderPhone) return String(realOrderPhone).replace(/\D/g, '');
 
-  return real ? String(real).replace(/\D/g, '') : '';
+  // 2. Tìm trong danh sách địa chỉ đã lưu của khách hàng
+  const matchedSaved = Array.isArray(s?.addresses)
+    ? s.addresses.find((a) => (
+      (a?.id && addr?.id && String(a.id) === String(addr.id)) ||
+      (a?.full && addr?.full && String(a.full).trim() === String(addr.full).trim())
+    ))
+    : null;
+  if (matchedSaved?.phone && !String(matchedSaved.phone).includes('*')) {
+    return String(matchedSaved.phone).replace(/\D/g, '');
+  }
+
+  // 3. Tìm trong tài khoản đang đăng nhập (s.user, s.auth)
+  const accountPhones = [s?.user?.phone, s?.auth?.phone].filter(Boolean);
+  const realAccountPhone = accountPhones.find(
+    (p) => !String(p).includes('*') && String(p).replace(/\D/g, '').length >= 10
+  );
+  if (realAccountPhone) return String(realAccountPhone).replace(/\D/g, '');
+
+  // 4. Nếu tất cả đều bị mask (hoặc chưa có số thật), điền luôn SĐT của đơn hàng đó
+  const anyPhone = orderPhones[0] || accountPhones[0] || '';
+  return String(anyPhone).trim();
 }
 
 function resolveOrderAddress(order) {
@@ -74,23 +89,25 @@ export function WarrantyBookingSheet({
   const availableDates = winfo?.availableDates?.length ? winfo.availableDates : [formatYmd(new Date())];
 
   const [selectedDate, setSelectedDate] = useState(availableDates[0] || formatYmd(new Date()));
-  const isSelectedDateToday = selectedDate === formatYmd(new Date());
+  const endYmd = winfo?.endYmd || null;
 
-  // Lọc slot khả dụng theo ngày được chọn
-  const validSlots = useMemo(() => {
-    if (isSelectedDateToday) {
-      return getAvailableSlotsForToday(new Date());
-    }
-    return TIME_SLOTS;
-  }, [isSelectedDateToday]);
+  // Ca khả dụng theo ngày được chọn: bỏ ca đã qua (hôm nay) và ca từ 18h00 ở ngày cuối bảo hành.
+  const validSlots = useMemo(
+    () => getSlotsForDate(selectedDate, { now: new Date(), endYmd }),
+    [selectedDate, endYmd],
+  );
 
-  const [selectedSlot, setSelectedSlot] = useState(validSlots[0] || TIME_SLOTS[0]);
+  const [selectedSlot, setSelectedSlot] = useState(validSlots[0] || null);
 
-  // Danh sách công việc / dịch vụ / linh kiện đã làm của đơn hàng
+  // =========================================================================
+  // DANH SÁCH CÔNG VIỆC / DỊCH VỤ / VẬT TƯ ĐƠN HÀNG ĐÃ LÀM
+  // =========================================================================
   const completedItems = useMemo(() => {
     if (!order) return [];
     const list = [];
-    if (Array.isArray(order.items)) {
+
+    // 1. Dịch vụ gốc trong đơn (order.items)
+    if (Array.isArray(order.items) && order.items.length) {
       order.items.forEach((it, idx) => {
         list.push({
           id: String(it.id || it.service_id || `svc-${idx}`),
@@ -100,22 +117,52 @@ export function WarrantyBookingSheet({
         });
       });
     }
-    // Vật tư phát sinh trong báo giá (nếu có)
-    if (Array.isArray(order.quote?.materials)) {
-      order.quote.materials.forEach((m, idx) => {
-        list.push({
-          id: `mat-${m.id || idx}`,
-          name: `Vật tư: ${m.name} (${m.qty || 1} cái)`,
-          qty: m.qty || 1,
-          type: 'material',
-        });
+
+    // 2 + 3. Vật tư / linh kiện thay thế (order.materials, order.quote.materials).
+    // Cùng một vật tư có thể xuất hiện ở cả hai nguồn → lọc trùng theo tên.
+    const seenMaterial = new Set();
+    const pushMaterial = (m, id) => {
+      const nameKey = String(m?.name || '').trim().toLowerCase();
+      if (!nameKey || seenMaterial.has(nameKey)) return;
+      seenMaterial.add(nameKey);
+      const qty = Number(m.qty) || 1;
+      list.push({
+        id,
+        name: `Vật tư: ${m.name} (${qty} ${m.unit || 'cái'})`,
+        qty,
+        type: 'material',
+      });
+    };
+    (Array.isArray(order.materials) ? order.materials : []).forEach((m, idx) => pushMaterial(m, `mat-${m?.id || idx}`));
+    (Array.isArray(order.quote?.materials) ? order.quote.materials : []).forEach((m, idx) => pushMaterial(m, `quote-mat-${m?.id || idx}`));
+
+    // 4. Biên bản nghiệm thu của thợ (order.report?.summary)
+    if (order.report?.summary) {
+      list.push({
+        id: 'report-summary',
+        name: `Nội dung thợ làm: ${order.report.summary}`,
+        qty: 1,
+        type: 'report',
       });
     }
+
+    // Fallback nếu không có mục nào
+    if (!list.length) {
+      list.push({
+        id: `default-${order.code}`,
+        name: order.serviceName || order.title || `Toàn bộ dịch vụ đơn ${order.code}`,
+        qty: 1,
+        type: 'service',
+      });
+    }
+
     return list;
   }, [order]);
 
-  // Mặc định chọn tất cả hạng mục đã làm
-  const [selectedItemIds, setSelectedItemIds] = useState(() => new Set());
+  // Mặc định chọn tất cả các hạng mục của đơn hàng
+  const [selectedItemIds, setSelectedItemIds] = useState(() => (
+    new Set(completedItems.map((it) => it.id))
+  ));
 
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -123,21 +170,22 @@ export function WarrantyBookingSheet({
   const [images, setImages] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
-  // Mỗi lần mở sheet: điền sẵn SĐT + địa chỉ của đơn hàng
+  // Mỗi lần mở modal: điền sẵn SĐT của đơn hàng và danh sách công việc đã làm
   useEffect(() => {
     if (!visible || !order) return;
-    setPhone(resolveContactPhone(order, s));
+    const initialPhone = resolveContactPhone(order, s);
+    setPhone(initialPhone);
     setAddress(resolveOrderAddress(order));
     setSelectedItemIds(new Set(completedItems.map((it) => it.id)));
     setDescription('');
     setImages([]);
+
     const dates = winfo?.availableDates?.length ? winfo.availableDates : [formatYmd(new Date())];
     const nextDate = dates[0] || formatYmd(new Date());
     setSelectedDate(nextDate);
-    const today = formatYmd(new Date());
-    const slots = nextDate === today ? getAvailableSlotsForToday(new Date()) : TIME_SLOTS;
-    setSelectedSlot(slots[0] || TIME_SLOTS[0]);
-  }, [visible, order?.code]);
+    const slots = getSlotsForDate(nextDate, { now: new Date(), endYmd: winfo?.endYmd || null });
+    setSelectedSlot(slots[0] || null);
+  }, [visible, order?.code, completedItems.length]);
 
   if (!order) return null;
 
@@ -147,8 +195,11 @@ export function WarrantyBookingSheet({
     setSelectedItemIds((prev) => {
       const next = new Set(prev);
       if (next.has(itemId)) {
-        if (next.size > 1) next.delete(itemId); // giữ ít nhất 1 hạng mục
-        else u.toast('Vui lòng chọn ít nhất 1 hạng mục cần bảo hành.', '⚠️');
+        if (next.size > 1) {
+          next.delete(itemId);
+        } else {
+          u.toast('Vui lòng chọn ít nhất 1 hạng mục cần bảo hành.', '⚠️');
+        }
       } else {
         next.add(itemId);
       }
@@ -173,7 +224,18 @@ export function WarrantyBookingSheet({
 
   const handleSubmit = async () => {
     // 1. Kiểm tra SĐT
-    const cleanPhone = String(phone || '').replace(/\D/g, '');
+    const rawPhone = String(phone || '').trim();
+    if (!rawPhone) {
+      u.toast('Vui lòng nhập số điện thoại liên hệ.', '⚠️');
+      return;
+    }
+
+    if (rawPhone.includes('*')) {
+      u.toast('Số điện thoại đang bị che sao (*). Vui lòng điền số điện thoại thật để thợ liên hệ nhé!', '⚠️');
+      return;
+    }
+
+    const cleanPhone = rawPhone.replace(/\D/g, '');
     const phoneError = validateVietnamesePhone(cleanPhone);
     if (phoneError) {
       u.toast(phoneError, '⚠️');
@@ -182,7 +244,7 @@ export function WarrantyBookingSheet({
 
     // 2. Kiểm tra hạng mục bảo hành
     if (!selectedItemIds.size) {
-      u.toast('Vui lòng chọn hạng mục cần bảo hành.', '⚠️');
+      u.toast('Vui lòng chọn ít nhất 1 hạng mục cần bảo hành.', '⚠️');
       return;
     }
 
@@ -199,7 +261,7 @@ export function WarrantyBookingSheet({
 
     const chosenItems = completedItems.filter((it) => selectedItemIds.has(it.id));
     const itemsSummary = chosenItems.map((it) => it.name).join(', ');
-    const fullIssueDesc = `[Hạng mục: ${itemsSummary}]\n${description.trim()}`;
+    const fullIssueDesc = `[Hạng mục bảo hành: ${itemsSummary}]\n${description.trim()}`;
 
     setSubmitting(true);
     try {
@@ -212,7 +274,7 @@ export function WarrantyBookingSheet({
         contact_phone: cleanPhone,
         contact_address: address.trim() || displayAddress,
       });
-      // Chỉ đóng sheet khi gửi thành công (có mã đơn / true). Lỗi đã được alert ở action.
+      // Chỉ đóng sheet khi gửi thành công
       if (result) onClose();
     } catch (e) {
       u.toast('Chưa thể gửi yêu cầu bảo hành. Vui lòng thử lại.', '⚠️');
@@ -308,8 +370,11 @@ export function WarrantyBookingSheet({
           </View>
         )}
 
-        {/* 1. HẠNG MỤC ĐÃ LÀM TRONG ĐƠN HÀNG CẦN BẢO HÀNH */}
-        <Text style={styles.sectionLabel}>1. HẠNG MỤC ĐÃ LÀM CỦA ĐƠN CẦN BẢO HÀNH</Text>
+        {/* 1. HẠNG MỤC CẦN BẢO HÀNH (LẤY TỪ DỊCH VỤ VÀ VẬT TƯ ĐƠN HÀNG ĐÃ LÀM) */}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionLabel}>1. HẠNG MỤC ĐÃ LÀM CẦN BẢO HÀNH *</Text>
+          <Text style={styles.sectionSub}>Chọn mục gặp sự cố</Text>
+        </View>
         <View style={styles.itemsWrap}>
           {completedItems.map((it) => {
             const isChecked = selectedItemIds.has(it.id);
@@ -326,10 +391,12 @@ export function WarrantyBookingSheet({
                   <Text style={[styles.itemTitle, isChecked && styles.itemTitleActive]}>
                     {it.name}
                   </Text>
-                  <Text style={styles.itemMeta}>Số lượng: x{it.qty}</Text>
+                  <Text style={styles.itemMeta}>
+                    {it.type === 'material' ? 'Linh kiện thay thế' : it.type === 'report' ? 'Ghi nhận nghiệm thu' : `Dịch vụ gốc (x${it.qty})`}
+                  </Text>
                 </View>
                 <Text style={[styles.itemBadge, isChecked ? styles.itemBadgeActive : styles.itemBadgeInactive]}>
-                  {isChecked ? 'Được bảo hành' : 'Không chọn'}
+                  {isChecked ? 'Được bảo hành' : 'Bỏ chọn'}
                 </Text>
               </Tap>
             );
@@ -337,7 +404,7 @@ export function WarrantyBookingSheet({
         </View>
 
         {/* 2. CHỌN NGÀY HẸN THỢ */}
-        <Text style={[styles.sectionLabel, { marginTop: 16 }]}>2. CHỌN NGÀY HẸN THỢ</Text>
+        <Text style={[styles.sectionLabel, { marginTop: 18 }]}>2. CHỌN NGÀY HẸN THỢ</Text>
         {isFinalDay ? (
           <View style={styles.lockedDateCard}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -350,18 +417,16 @@ export function WarrantyBookingSheet({
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateRow}>
             {availableDates.map((dateStr, idx) => {
               const isSelected = selectedDate === dateStr;
-              const isToday = idx === 0;
+              const isToday = dateStr === formatYmd(new Date());
               return (
                 <Tap
                   key={dateStr}
                   style={[styles.dateChip, isSelected && styles.dateChipActive]}
                   onPress={() => {
                     setSelectedDate(dateStr);
-                    if (idx === 0) {
-                      const todayValid = getAvailableSlotsForToday(new Date());
-                      if (!todayValid.includes(selectedSlot) && todayValid.length) {
-                        setSelectedSlot(todayValid[0]);
-                      }
+                    const slotsOfDay = getSlotsForDate(dateStr, { now: new Date(), endYmd });
+                    if (!slotsOfDay.includes(selectedSlot)) {
+                      setSelectedSlot(slotsOfDay[0] || null);
                     }
                   }}
                 >
@@ -407,16 +472,24 @@ export function WarrantyBookingSheet({
         )}
 
         {/* 4. SỐ ĐIỆN THOẠI LIÊN HỆ */}
-        <Text style={[styles.sectionLabel, { marginTop: 18 }]}>4. SỐ ĐIỆN THOẠI LIÊN HỆ *</Text>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={[styles.sectionLabel, { marginTop: 18 }]}>4. SỐ ĐIỆN THOẠI LIÊN HỆ *</Text>
+          <Text style={[styles.sectionSub, { marginTop: 18 }]}>Đã điền từ đơn hàng</Text>
+        </View>
         <TextInput
           style={styles.textInput}
           keyboardType="phone-pad"
           maxLength={11}
-          placeholder="Nhập số điện thoại thật của bạn (ví dụ: 0988123456)..."
+          placeholder="Nhập số điện thoại để thợ liên hệ khi đến..."
           placeholderTextColor="#94A3B8"
           value={phone}
           onChangeText={setPhone}
         />
+        {phone && phone.includes('*') ? (
+          <Text style={styles.phoneHint}>
+            ℹ️ Số điện thoại trên đơn hàng đang được bảo mật ({phone}). Vui lòng nhập số điện thoại thật của bạn để thợ liên lạc nhé!
+          </Text>
+        ) : null}
 
         {/* 5. ĐỊA CHỈ PHỤC VỤ */}
         <Text style={[styles.sectionLabel, { marginTop: 16 }]}>5. ĐỊA CHỈ PHỤC VỤ TẬN NƠI</Text>
@@ -428,7 +501,7 @@ export function WarrantyBookingSheet({
           onChangeText={setAddress}
         />
 
-        {/* 6. MÔ TẢ HIỆN TƯỢNG SỰ CỐ */}
+        {/* 6. MÔ TẢ HIỆN TƯỢNG HƯ HỎNG / SỰ CỐ */}
         <Text style={[styles.sectionLabel, { marginTop: 16 }]}>6. MÔ TẢ HIỆN TƯỢNG HƯ HỎNG / SỰ CỐ *</Text>
         <TextInput
           style={[styles.textInput, styles.descInput]}
@@ -444,7 +517,7 @@ export function WarrantyBookingSheet({
         <Text style={[styles.sectionLabel, { marginTop: 16 }]}>7. HÌNH ẢNH MINH CHỨNG (TỐI ĐA 3 ẢNH)</Text>
         <View style={styles.imageGrid}>
           {images.map((imgUri, idx) => (
-            <View key={imgUri} style={styles.thumbWrap}>
+            <View key={`${idx}-${imgUri}`} style={styles.thumbWrap}>
               <Image source={{ uri: imgUri }} style={styles.thumbImg} />
               <TouchableOpacity
                 style={styles.thumbDelete}
@@ -550,12 +623,23 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: C.primary,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
   sectionLabel: {
     fontSize: 12,
     fontWeight: '800',
     color: C.ink2,
     letterSpacing: 0.5,
-    marginBottom: 8,
+    marginBottom: 6,
+  },
+  sectionSub: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: C.primary,
   },
   itemsWrap: {
     gap: 8,
@@ -721,6 +805,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 13.5,
     color: C.ink,
+  },
+  phoneHint: {
+    fontSize: 11.5,
+    lineHeight: 16,
+    color: '#D97706',
+    marginTop: 4,
+    paddingHorizontal: 4,
   },
   descInput: {
     minHeight: 70,

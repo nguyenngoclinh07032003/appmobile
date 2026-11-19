@@ -65,8 +65,9 @@ import { authErrorMessage } from "../utils/authErrorMessages";
 import { readTechnicianSpecialties } from "../utils/techProfile";
 import {
   analyzeWarrantyEligibility,
-  checkWarrantyAlertMilestone,
+  isWarrantySlotBookable,
 } from "../utils/warrantyPolicy";
+import { WARRANTY_ALERT_MILESTONES } from "../constants/appPolicy";
 
 // Ngày sinh: server lưu 'YYYY-MM-DD', app hiển thị 'DD/MM/YYYY'.
 const isoToDob = (iso) => {
@@ -341,7 +342,7 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
       openCode: open.code,
       text: `Đã có yêu cầu bảo hành ${open.code} đang xử lý.`,
     };
-  const covered = o.items.filter((it) =>
+  const covered = (o.items || []).filter((it) =>
     ["clean", "gas", "repair", "install"].includes(
       serviceKind(getService(it.id)),
     ),
@@ -361,9 +362,10 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
     };
 
   const schedule = analyzeWarrantyEligibility({
-    completedAt: o.doneAt,
+    completedAt: o.warrantyStartAt || o.doneAt,
     warrantyDays: totalDays,
     serverNow: Date.now(),
+    warrantyEndAt: o.warrantyEndAt || null,
   });
 
   if (!schedule.eligible) {
@@ -376,6 +378,7 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
       reason: schedule.reason,
       text: schedule.message || `Đơn đã hết thời hạn bảo hành ${totalDays} ngày.`,
       until: schedule.until,
+      endYmd: schedule.endYmd,
     };
   }
 
@@ -387,6 +390,7 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
     availableDates: schedule.availableDates,
     availableSlots: schedule.availableSlots,
     until: schedule.until,
+    endYmd: schedule.endYmd,
     text: schedule.notice || `Còn ${schedule.daysLeft}/${totalDays} ngày bảo hành (đến ${fmtDate(schedule.until)}).`,
   };
 };
@@ -870,11 +874,14 @@ export function AppProvider({ children }) {
   // Khách: Cảnh báo tự động trước khi hết hạn bảo hành (D-7, D-3, D-1)
   useEffect(() => {
     if (!isCustomerRole) return;
-    const nowTs = Date.now();
     const alertable = [];
     for (const o of s.orders) {
       if (o.status !== "done" || o.kind === "warranty" || !o.doneAt) continue;
-      const milestone = checkWarrantyAlertMilestone(o.doneAt, o.warrantyDays || 60, nowTs);
+      // Dùng chung warrantyInfo: đúng số ngày theo hạng, bỏ đơn không thuộc diện bảo hành
+      // hoặc đang có yêu cầu bảo hành mở, không báo khi đã quá giờ chốt ngày cuối.
+      const info = warrantyInfo(o, s.orders, s.lifetimePoints || 0);
+      if (!info.ok) continue;
+      const milestone = WARRANTY_ALERT_MILESTONES.includes(info.daysLeft) ? info.daysLeft : null;
       if (!milestone) continue;
       const notifiedKey = `warranty_alert_${milestone}`;
       if (!o[notifiedKey]) {
@@ -1163,6 +1170,11 @@ export function AppProvider({ children }) {
   const syncFromBackend = async (overrideAccount = null, force = false) => {
     const acc = overrideAccount || s.auth;
     if (!acc) return;
+    // Sync chạy qua nhiều await: nếu trong lúc đó người dùng đăng xuất / đổi tài khoản thì KHÔNG được
+    // ghi dữ liệu của tài khoản cũ (đơn, địa chỉ, SĐT, điểm) vào state hiện tại.
+    const isSameAccount = (p) =>
+      Boolean(p?.auth) &&
+      (!acc.id || !p.auth.id || String(p.auth.id) === String(acc.id));
 
     // Chống gọi dồn dập (throttling): tối thiểu 3 giây giữa 2 lần sync, trừ khi gọi trực tiếp với force = true
     const now = Date.now();
@@ -1401,6 +1413,7 @@ export function AppProvider({ children }) {
           const catalog = catalogRes.ok ? catalogRes.data : null;
 
           up((p) => {
+            if (!isSameAccount(p)) return {};
             const nextAddresses =
               remoteAddrs !== null ? remoteAddrs : p.addresses;
             const defaultAddr =
@@ -1625,6 +1638,7 @@ export function AppProvider({ children }) {
               );
           });
           up((p) => {
+            if (!isSameAccount(p)) return {};
             const base = p.techProfile || mergeTechProfile(null, acc);
             const techProf = {
               ...base,
@@ -2897,18 +2911,8 @@ export function AppProvider({ children }) {
         }));
       };
       const res = await hrmssApi.setPaymentMethod(o.dbRequestId, apiMethod);
-      const bypassCodes = [
-        "PAYMENT_IN_PROGRESS",
-        "VALIDATION_ERROR",
-        "BAD_REQUEST",
-        "CONFLICT",
-        "ERROR",
-      ];
-      if (!res.ok && bypassCodes.includes(String(res.code || ""))) {
-        applyLocal({ lock: true });
-        ui.toast(toastOk, iconOk);
-        return true;
-      }
+      // Chỉ đổi trên máy khi SERVER đồng ý. Trước đây lỗi VALIDATION_ERROR/CONFLICT/ERROR... vẫn đổi local
+      // + khoá qua sync → khách và thợ hiểu khác nhau về hình thức thanh toán (dẫn tới thu tiền mặt sai).
       if (res.ok) applyLocal({ lock: false });
       return serverDone(res, {
         title: "Không đổi được",
@@ -2916,6 +2920,9 @@ export function AppProvider({ children }) {
           ALREADY_PAID: "Đơn đã được thanh toán.",
           REQUEST_CLOSED: "Đơn đã huỷ.",
           INVALID_REQUEST_STATE: "Đơn chưa ở trạng thái cho phép đổi hình thức thanh toán.",
+          PAYMENT_IN_PROGRESS:
+            "Đang có một giao dịch thanh toán chờ xử lý. Vui lòng đợi giao dịch kết thúc rồi thử lại.",
+          CONFLICT: "Trạng thái thanh toán vừa thay đổi. Vui lòng tải lại đơn rồi thử lại.",
         },
         toast: toastOk,
         icon: iconOk,
@@ -2960,25 +2967,18 @@ export function AppProvider({ children }) {
         }));
       };
       const res = await hrmssApi.confirmCashPayment(o.dbRequestId);
-      const bypassCodes = [
-        "PAYMENT_IN_PROGRESS",
-        "VALIDATION_ERROR",
-        "BAD_REQUEST",
-        "CONFLICT",
-        "ERROR",
-        "BANK_TRANSFER_AUTO_CONFIRMED",
-      ];
-      if (!res.ok && bypassCodes.includes(String(res.code || ""))) {
-        applyCashClaimLocal();
-        ui.toast("Đã báo đã trả tiền mặt · chờ thợ xác nhận", "✅");
-        return true;
-      }
+      // Chỉ ghi nhận "đã báo trả tiền mặt" khi server đã nhận. Lỗi thì báo rõ, không giả thành công.
       if (res.ok) {
         applyCashClaimLocal();
       }
       return serverDone(res, {
         title: "Không xác nhận được",
         codes: {
+          PAYMENT_IN_PROGRESS:
+            "Đang có giao dịch VietQR chờ xử lý. Vui lòng hoàn tất chuyển khoản, hoặc đổi sang tiền mặt rồi thử lại.",
+          BANK_TRANSFER_AUTO_CONFIRMED:
+            "Đơn thanh toán bằng chuyển khoản — hệ thống tự xác nhận khi tiền về, không cần báo trả tiền mặt.",
+          CONFLICT: "Trạng thái thanh toán vừa thay đổi. Vui lòng tải lại đơn rồi thử lại.",
           NOT_PAYABLE_YET: "Đơn chưa đến bước thanh toán.",
           NOTHING_TO_PAY: "Đơn không còn khoản nào phải trả.",
           ALREADY_PAID: "Đơn đã được thanh toán.",
@@ -3366,27 +3366,19 @@ export function AppProvider({ children }) {
         }));
       };
       const res = await hrmssApi.confirmCashReceived(o.dbAssignmentId);
-      const bypassCodes = [
-        "CUSTOMER_PAYS_BY_QR",
-        "PAYMENT_IN_PROGRESS",
-        "VALIDATION_ERROR",
-        "CONFLICT",
-        "ERROR",
-      ];
-      if (!res.ok && bypassCodes.includes(String(res.code || ""))) {
-        markPaidLocal(res.data?.cash_collected);
-        ui.toast(
-          `Đã xác nhận nhận ${formatVND(amountRemaining(o) || orderTotal(o) || 0)} tiền mặt`,
-          "💵",
-        );
-        return true;
-      }
+      // Chỉ đánh dấu "đã thu tiền" khi server xác nhận. Lỗi (khách trả QR, đang có GD chờ, lỗi server...)
+      // phải hiện rõ để thợ KHÔNG thu tiền mặt sai / rời đi khi server chưa ghi nhận.
       if (res.ok) markPaidLocal(res.data?.cash_collected);
       return serverDone(res, {
         title: "Không xác nhận được",
         codes: {
           ALREADY_PAID: "Đơn đã được thanh toán đủ.",
           NOT_PAYABLE_YET: "Đơn chưa đến bước thanh toán.",
+          CUSTOMER_PAYS_BY_QR:
+            "Khách đã chọn thanh toán VietQR — KHÔNG thu tiền mặt. Hệ thống sẽ tự xác nhận khi tiền về.",
+          PAYMENT_IN_PROGRESS:
+            "Khách đang có giao dịch VietQR chờ xử lý. Đợi giao dịch kết thúc (hoặc khách đổi sang tiền mặt) rồi thử lại.",
+          CONFLICT: "Trạng thái thanh toán vừa thay đổi. Vui lòng tải lại việc rồi thử lại.",
         },
         toast: res.ok
           ? `Đã xác nhận nhận ${formatVND(res.data?.cash_collected || 0)} tiền mặt`
@@ -3724,7 +3716,7 @@ export function AppProvider({ children }) {
           : [],
       );
       setTab(account.role === "tech" ? "tech-jobs" : "home");
-      syncFromBackend(account);
+      syncFromBackend(account, true);
     },
     login: async (payload) => {
       let backendAccount = null;
@@ -3764,7 +3756,7 @@ export function AppProvider({ children }) {
       }));
       setStack([]);
       setTab(res.account.role === "tech" ? "tech-jobs" : "home");
-      await syncFromBackend(res.account);
+      await syncFromBackend(res.account, true);
       ui.toast(
         res.account.role === "tech"
           ? "Đăng nhập app Thợ thành công"
@@ -3885,7 +3877,7 @@ export function AppProvider({ children }) {
       }));
       setStack([]);
       setTab(res.account.role === "tech" ? "tech-jobs" : "home");
-      await syncFromBackend(res.account);
+      await syncFromBackend(res.account, true);
       ui.toast(
         res.account.role === "tech"
           ? "Tạo tài khoản Thợ thành công"
@@ -4022,7 +4014,7 @@ export function AppProvider({ children }) {
         ui.alert(
           "Không thể huỷ đơn",
           cancelCheck.reason ||
-            "Không thể huỷ đơn khi còn dưới 1 tiếng trước giờ hẹn với thợ. Vui lòng gọi Hotline 1900 6868.",
+            `Không thể huỷ đơn khi còn dưới 1 tiếng trước giờ hẹn với thợ. Vui lòng gọi Hotline ${HOTLINE}.`,
           "⚠️",
         );
         return false;
@@ -4126,7 +4118,7 @@ export function AppProvider({ children }) {
         if (info.isCutoff) {
           ui.alert(
             "Đã hết giờ tiếp nhận bảo hành",
-            "Hôm nay là ngày cuối cùng trong thời hạn bảo hành và đã quá giờ làm việc của kỹ thuật viên (sau 18h00). Vui lòng liên hệ Hotline 1900 886633 để được hỗ trợ.",
+            `Hôm nay là ngày cuối cùng trong thời hạn bảo hành và đã quá giờ làm việc của kỹ thuật viên (sau 18h00). Vui lòng liên hệ Hotline ${HOTLINE} để được hỗ trợ.`,
             "🛡️"
           );
           return null;
@@ -4141,6 +4133,23 @@ export function AppProvider({ children }) {
           "🛡️",
         );
         return null;
+      }
+      // Kiểm tra lại ca đã chọn ngay trước khi gửi (form có thể mở từ trước, giờ đã trôi qua ca / qua 18h ngày cuối).
+      if (payloadOrNote && typeof payloadOrNote === "object" && payloadOrNote.scheduled_date && payloadOrNote.time_slot) {
+        const stillOk = isWarrantySlotBookable({
+          ymd: payloadOrNote.scheduled_date,
+          slot: payloadOrNote.time_slot,
+          now: new Date(),
+          endYmd: info.endYmd || null,
+        });
+        if (!stillOk) {
+          ui.alert(
+            "Khung giờ không còn khả dụng",
+            "Ca bạn chọn đã qua hoặc vượt giờ làm việc của thợ. Vui lòng chọn lại ngày / khung giờ khác.",
+            "⏰",
+          );
+          return null;
+        }
       }
       // Upload ảnh local → URL https trước khi gửi bảo hành (API chỉ nhận https).
       let payload = payloadOrNote;
@@ -4176,17 +4185,20 @@ export function AppProvider({ children }) {
         }
         payload = { ...payload, attachment_urls: readyUrls, images: readyUrls };
       }
-      // Thử payload đặt lịch mới trước; nếu backend cũ/chưa hỗ trợ thì gửi lại dạng { note }.
+      // Thử payload đặt lịch mới trước. Chỉ gửi lại dạng { note } khi backend cũ từ chối body (lỗi 400/422):
+      // lỗi 4xx bảo đảm chưa có đơn nào được tạo. Tuyệt đối không gửi lại khi lỗi 5xx / mạng (có thể đã tạo đơn → trùng).
       let res = await hrmssApi.requestWarranty(o.dbRequestId, payload || null, "full");
+      const firstError = res;
       const canFallbackLegacy =
         !res.ok &&
         typeof payload === "object" &&
         payload &&
-        ["ERROR", "VALIDATION_ERROR", "BAD_REQUEST", "NOT_FOUND", "INTERNAL_ERROR", "INTERNAL_SERVER_ERROR"].includes(
-          String(res.code || ""),
-        );
+        [400, 422].includes(Number(res.status)) &&
+        ["VALIDATION_ERROR", "BAD_REQUEST"].includes(String(res.code || "")) &&
+        !/phone|sđt|điện thoại/i.test(String(res.message || ""));
       if (canFallbackLegacy) {
         res = await hrmssApi.requestWarranty(o.dbRequestId, payload, "legacy");
+        if (!res.ok) res = firstError;
       }
       if (!res.ok) {
         const msg = {
@@ -4207,11 +4219,16 @@ export function AppProvider({ children }) {
         );
         return null;
       }
-      const created = mapBackendCustomerRequestToOrder(
-        res.data?.request,
-        o.customerPhone,
-      );
-      if (created) {
+      const rawReq = res.data?.request || res.data || null;
+      let created = null;
+      try {
+        created = rawReq ? mapBackendCustomerRequestToOrder(rawReq, o.customerPhone) : null;
+      } catch {
+        created = null; // shape lạ: chờ lần đồng bộ ngay sau để lấy đơn đầy đủ
+      }
+      // Backend có thể trả shape rút gọn { id, code, ... } thay vì request_code → vẫn lấy được mã đơn mới.
+      const newCode = created?.code || rawReq?.request_code || rawReq?.code || null;
+      if (created?.code) {
         up((p) => ({
           orders: [
             {
@@ -4225,7 +4242,7 @@ export function AppProvider({ children }) {
       }
       ui.toast("Đã gửi yêu cầu bảo hành · Chờ Văn phòng thẩm định", "🛡️");
       syncFromBackend(null, true);
-      return created?.code || null;
+      return newCode;
     },
 
     // Điểm thưởng

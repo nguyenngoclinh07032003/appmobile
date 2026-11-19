@@ -23,19 +23,32 @@ export function formatYmd(d) {
  * Ví dụ: '08h00 - 10h00' -> 8; '18h00 - 20h00' -> 18.
  */
 export function parseSlotStartHour(slotStr) {
-  const m = String(slotStr || '').match(/^(\d{1,2})h/);
-  return m ? Number(m[1]) : 8;
+  const m = String(slotStr || '').match(/^(\d{1,2})h(\d{2})?/);
+  if (!m) return 8;
+  return Number(m[1]) + (m[2] ? Number(m[2]) / 60 : 0);
 }
 
 /**
- * Tính toán ngày kết thúc bảo hành (hết 23:59:59 của ngày thứ N).
+ * Ngày kết thúc bảo hành (23:59:59.999).
+ * Quy ước: ngày hoàn thành là NGÀY 0, ngày thứ N là ngày hoàn thành + N ngày
+ * (xong 19/09, bảo hành 60 ngày → hết hạn cuối ngày 18/11).
+ * Nếu server có warranty_end_date thì ưu tiên mốc của server (nguồn sự thật).
  */
-export function getWarrantyEndTimestamp(completedAt, warrantyDays = BASE_WARRANTY_DAYS) {
+export function getWarrantyEndTimestamp(completedAt, warrantyDays = BASE_WARRANTY_DAYS, serverEndAt = null) {
+  if (serverEndAt) {
+    const e = new Date(serverEndAt);
+    if (!Number.isNaN(e.getTime())) {
+      return new Date(e.getFullYear(), e.getMonth(), e.getDate()).getTime() + (DAY_MS - 1);
+    }
+  }
   const startDate = new Date(completedAt);
-  // Đưa về 00:00:00 của ngày hoàn thành để tính tròn ngày lịch
   const startDayZero = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()).getTime();
-  // Ngày thứ N kết thúc vào 23:59:59.999
   return startDayZero + (warrantyDays * DAY_MS) + (DAY_MS - 1);
+}
+
+/** Ca có nằm trong giờ làm việc của thợ ở ngày cuối bảo hành không (bắt đầu trước 18h00). */
+export function isSlotBeforeFinalCutoff(slot) {
+  return parseSlotStartHour(slot) < WARRANTY_FINAL_DAY_CUTOFF_HOUR;
 }
 
 /**
@@ -43,21 +56,39 @@ export function getWarrantyEndTimestamp(completedAt, warrantyDays = BASE_WARRANT
  */
 export function getAvailableSlotsForToday(curDate = new Date(), leadMinutes = WARRANTY_MIN_LEAD_MINUTES) {
   const curHour = curDate.getHours() + curDate.getMinutes() / 60;
-  return TIME_SLOTS.filter((slot) => {
-    const startH = parseSlotStartHour(slot);
-    return startH >= curHour + (leadMinutes / 60);
-  });
+  return TIME_SLOTS.filter((slot) => parseSlotStartHour(slot) >= curHour + (leadMinutes / 60));
+}
+
+/**
+ * Danh sách ca khả dụng cho một ngày cụ thể:
+ * - Hôm nay: bỏ các ca đã qua / quá sát giờ.
+ * - Ngày cuối bảo hành (dù là hôm nay hay đặt trước): chỉ các ca bắt đầu trước 18h00.
+ * - Sau ngày cuối: không có ca nào.
+ */
+export function getSlotsForDate(ymd, { now = new Date(), endYmd = null } = {}) {
+  const todayYmd = formatYmd(now);
+  if (!ymd || ymd < todayYmd) return [];
+  if (endYmd && ymd > endYmd) return [];
+  let slots = ymd === todayYmd ? getAvailableSlotsForToday(now) : [...TIME_SLOTS];
+  if (endYmd && ymd === endYmd) slots = slots.filter(isSlotBeforeFinalCutoff);
+  return slots;
+}
+
+/** Kiểm tra lại ngay trước khi gửi: ca đã chọn còn đặt được không. */
+export function isWarrantySlotBookable({ ymd, slot, now = new Date(), endYmd = null }) {
+  return getSlotsForDate(ymd, { now, endYmd }).includes(slot);
 }
 
 /**
  * Thuật toán phân tích khả dụng bảo hành toàn diện.
- * - Kiểm tra ngày thường / ngày cận hạn / ngày cuối cùng (ngày 60).
+ * - Kiểm tra ngày thường / ngày cận hạn / ngày cuối cùng.
  * - Xét giờ cắt ca thợ (18h00) trong ngày cuối cùng.
  */
 export function analyzeWarrantyEligibility({
   completedAt,
   warrantyDays = BASE_WARRANTY_DAYS,
   serverNow = Date.now(),
+  warrantyEndAt = null,
 }) {
   if (!completedAt) {
     return {
@@ -70,13 +101,12 @@ export function analyzeWarrantyEligibility({
   }
 
   const now = new Date(serverNow);
-  const endTimestamp = getWarrantyEndTimestamp(completedAt, warrantyDays);
+  const endTimestamp = getWarrantyEndTimestamp(completedAt, warrantyDays, warrantyEndAt);
   const endDate = new Date(endTimestamp);
 
   const todayYmd = formatYmd(now);
   const endYmd = formatYmd(endDate);
 
-  // Đã quá ngày cuối cùng
   if (todayYmd > endYmd || serverNow > endTimestamp) {
     return {
       eligible: false,
@@ -85,24 +115,26 @@ export function analyzeWarrantyEligibility({
       daysLeft: 0,
       isFinalDay: false,
       until: endTimestamp,
+      endYmd,
     };
   }
 
-  // Số ngày còn lại tính theo ngày lịch
+  // Số ngày còn lại tính theo ngày lịch (bao gồm hôm nay), không vượt quá tổng số ngày bảo hành
+  // (ngày hoàn thành là ngày 0 nên không hiển thị "61/60").
   const todayZero = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const endDayZero = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()).getTime();
-  const daysLeft = Math.round((endDayZero - todayZero) / DAY_MS) + 1; // Bao gồm cả hôm nay
+  const rawDaysLeft = Math.round((endDayZero - todayZero) / DAY_MS) + 1;
+  const daysLeft = Math.max(1, Math.min(warrantyDays, rawDaysLeft));
 
-  const isFinalDay = todayYmd === endYmd || daysLeft <= 1;
-  const curHour = now.getHours() + now.getMinutes() / 60;
-  const todaySlots = getAvailableSlotsForToday(now);
+  const isFinalDay = todayYmd === endYmd;
 
   // =========================================================================
-  // ĐẶC THÙ NGHIỆP VỤ BIÊN: NGÀY THỨ 60 (NGÀY CUỐI CÙNG)
+  // NGÀY CUỐI CÙNG: chỉ được đặt hôm nay, chỉ các ca bắt đầu trước 18h00
   // =========================================================================
   if (isFinalDay) {
-    // Nếu đã quá 18h00 hoặc không còn ca làm việc nào của thợ trong ngày:
-    if (curHour >= WARRANTY_FINAL_DAY_CUTOFF_HOUR || todaySlots.length === 0) {
+    const curHour = now.getHours() + now.getMinutes() / 60;
+    const finalSlots = getSlotsForDate(todayYmd, { now, endYmd });
+    if (curHour >= WARRANTY_FINAL_DAY_CUTOFF_HOUR || finalSlots.length === 0) {
       return {
         eligible: false,
         reason: 'WARRANTY_FINAL_DAY_CUTOFF',
@@ -111,34 +143,32 @@ export function analyzeWarrantyEligibility({
         daysLeft: 1,
         cutoffHour: WARRANTY_FINAL_DAY_CUTOFF_HOUR,
         until: endTimestamp,
+        endYmd,
         availableDates: [],
         availableSlots: [],
       };
     }
 
-    // Còn giờ trong ngày cuối: Khóa chặt danh sách ngày CHỈ CÒN DUY NHẤT HÔM NAY
     return {
       eligible: true,
       isFinalDay: true,
       daysLeft: 1,
       until: endTimestamp,
+      endYmd,
       availableDates: [todayYmd],
-      availableSlots: todaySlots,
-      notice: 'Hôm nay là ngày cuối cùng của thời hạn bảo hành. Bạn chỉ có thể đặt lịch kiểm tra trong ngày hôm nay.',
+      availableSlots: finalSlots,
+      notice: 'Hôm nay là ngày cuối cùng của thời hạn bảo hành. Bạn chỉ có thể đặt lịch kiểm tra trong ngày hôm nay, trước 18h00.',
     };
   }
 
   // =========================================================================
-  // NGÀY BÌNH THƯỜNG (> 1 NGÀY): Cho phép chọn tối đa 7 ngày tới
+  // NGÀY BÌNH THƯỜNG: tối đa 7 ngày tới, bỏ những ngày không còn ca nào
   // =========================================================================
   const availableDates = [];
-  const maxDaysAhead = Math.min(7, daysLeft);
-  for (let i = 0; i < maxDaysAhead; i++) {
-    const d = new Date(todayZero + i * DAY_MS);
-    const ymd = formatYmd(d);
-    if (ymd <= endYmd) {
-      availableDates.push(ymd);
-    }
+  for (let i = 0; i < Math.min(7, rawDaysLeft); i++) {
+    const ymd = formatYmd(new Date(todayZero + i * DAY_MS + 12 * 3600000));
+    if (ymd > endYmd) break;
+    if (getSlotsForDate(ymd, { now, endYmd }).length) availableDates.push(ymd);
   }
 
   return {
@@ -146,20 +176,18 @@ export function analyzeWarrantyEligibility({
     isFinalDay: false,
     daysLeft,
     until: endTimestamp,
+    endYmd,
     availableDates,
-    availableSlots: todaySlots,
+    availableSlots: getSlotsForDate(availableDates[0] || todayYmd, { now, endYmd }),
   };
 }
 
 /**
- * Kiểm tra xem một đơn hàng có rơi vào mốc cần gửi cảnh báo sắp hết hạn hay không.
- * Trả về mốc ngày [7, 3, 1] hoặc null.
+ * Kiểm tra đơn có rơi vào mốc cần gửi cảnh báo sắp hết hạn hay không.
+ * Trả về mốc ngày [7, 3, 1] hoặc null. Không báo khi đã hết hạn / đã quá giờ chốt ngày cuối.
  */
-export function checkWarrantyAlertMilestone(completedAt, warrantyDays = BASE_WARRANTY_DAYS, nowTs = Date.now()) {
-  const res = analyzeWarrantyEligibility({ completedAt, warrantyDays, serverNow: nowTs });
-  if (!res.eligible && res.reason === 'WARRANTY_EXPIRED') return null;
-  if (WARRANTY_ALERT_MILESTONES.includes(res.daysLeft)) {
-    return res.daysLeft;
-  }
-  return null;
+export function checkWarrantyAlertMilestone(completedAt, warrantyDays = BASE_WARRANTY_DAYS, nowTs = Date.now(), warrantyEndAt = null) {
+  const res = analyzeWarrantyEligibility({ completedAt, warrantyDays, serverNow: nowTs, warrantyEndAt });
+  if (!res.eligible) return null;
+  return WARRANTY_ALERT_MILESTONES.includes(res.daysLeft) ? res.daysLeft : null;
 }

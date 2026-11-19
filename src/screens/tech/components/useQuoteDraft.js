@@ -49,7 +49,10 @@ export function draftFromOrder(o) {
       unit: 'lần',
       isOriginal: true,
     }));
-    const revising = (q?.lines || []).filter((l) => !l.isOriginal);
+    // Báo giá trước đó ĐÃ ĐƯỢC KHÁCH DUYỆT (đã nằm trong hoá đơn) → "Thêm phát sinh" là một báo giá phụ MỚI:
+    // không nạp lại các dòng đã duyệt, nếu không gửi lên sẽ bị cộng thêm lần nữa (khách trả 2 lần).
+    // Chỉ nạp lại khi báo giá chưa duyệt (khách yêu cầu báo giá lại) để thợ chỉnh sửa.
+    const revising = q?.approved ? [] : (q?.lines || []).filter((l) => !l.isOriginal);
     const lines = [
       ...bookedLines,
       ...revising

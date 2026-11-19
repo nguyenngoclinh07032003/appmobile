@@ -7,9 +7,20 @@ import {
 } from '../../constants/data';
 import { useApp, warrantyInfo, fmtDate, isActiveOrder, orderTotal, customerStatusMeta } from '../../context';
 import {
-  Tap, Btn, IconBtn, IconBox, Card, PageHead, Pills, Segmented, ServiceGrid, EmptyState, Field, Badge,
-  StatusChip, Progress, Media, ListRow, Sheet, ui, HScroll, AppIcon, WarrantyBookingSheet,
+  Tap, Btn, IconBtn, IconBox, Card, PageHead, Pills, Chip, Segmented, ServiceGrid, EmptyState, Field, Badge,
+  StatusChip, Progress, Media, ListRow, Sheet, ui, HScroll, AppIcon, WarrantyBookingSheet, ActivityTimeFilterSheet,
 } from '../../components';
+import {
+  vnDateKey,
+  ACTIVITY_TIME_PRESETS,
+  DEFAULT_ACTIVITY_TIME_FILTER,
+  describeTimeFilter,
+  filterAndSortOrders,
+  formatDmyFromYmd,
+  formatShortDmFromYmd,
+  getTimePresetBounds,
+  isTimeFilterActive,
+} from '../../utils';
 
 // =========================================================== DỊCH VỤ
 export function ServicesScreen() {
@@ -94,7 +105,7 @@ function WarrantyView() {
   const { s, a, nav, ui: u, warrantyQuery, setWarrantyQuery, warrantyNonce } = useApp();
   const [result, setResult] = useState(null);
   // Đơn còn hạn bảo hành, kể cả đơn đã gửi yêu cầu (để hiện trạng thái "đang xử lý")
-  const eligible = s.orders.filter((o) => { const w = warrantyInfo(o, s.orders); return w.ok || w.openCode; });
+  const eligible = s.orders.filter((o) => { const w = warrantyInfo(o, s.orders, s.lifetimePoints); return w.ok || w.openCode; });
 
   const lookup = (q = warrantyQuery) => {
     const raw = q.replace(/\s/g, '');
@@ -115,7 +126,7 @@ function WarrantyView() {
 
   const OrderLine = ({ o }) => {
     const info = warrantyInfo(o, s.orders, s.lifetimePoints);
-    const svc0 = getService(o.items[0]?.id);
+    const svc0 = getService((o.items || [])[0]?.id);
     return (
       <Card style={{ marginTop: 10 }}>
         <Tap style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }} onPress={() => nav.push('order', { code: o.code })}>
@@ -209,39 +220,142 @@ function WarrantyView() {
 // =========================================================== HOẠT ĐỘNG
 export function ActivityScreen() {
   const { s, nav, actFilter, setActFilter } = useApp();
+  const [timeFilter, setTimeFilter] = useState(DEFAULT_ACTIVITY_TIME_FILTER);
+  const [showTimeSheet, setShowTimeSheet] = useState(false);
+
+  const nowYmd = vnDateKey();
+  const orders = s.orders || [];
+  const baseGroups = {
+    active: orders.filter(isActiveOrder),
+    done: orders.filter((o) => o.status === 'done'),
+    cancelled: orders.filter((o) => o.status === 'cancelled'),
+  };
   const groups = {
-    active: s.orders.filter(isActiveOrder),
-    done: s.orders.filter((o) => o.status === 'done'),
-    cancelled: s.orders.filter((o) => o.status === 'cancelled'),
+    active: filterAndSortOrders(baseGroups.active, timeFilter, nowYmd),
+    done: filterAndSortOrders(baseGroups.done, timeFilter, nowYmd),
+    cancelled: filterAndSortOrders(baseGroups.cancelled, timeFilter, nowYmd),
   };
   const list = groups[actFilter] || [];
-  const reorder = (o) => nav.push('checkout', { items: o.items.map(({ id, qty }) => ({ id, qty })) });
+  const filterActive = isTimeFilterActive(timeFilter);
+  const hasFilterOrSort = filterActive || timeFilter.sort !== 'newest';
+
+  const customRangeLabel = (() => {
+    if (timeFilter.preset !== 'custom') return 'Chọn ngày';
+    const { from, to } = getTimePresetBounds('custom', nowYmd, timeFilter.customFrom, timeFilter.customTo);
+    if (!from) return 'Chọn ngày';
+    if (!to || from === to) return formatDmyFromYmd(from);
+    return `${formatShortDmFromYmd(from)} – ${formatShortDmFromYmd(to)}`;
+  })();
+
+  const reorder = (o) => nav.push('checkout', { items: (o.items || []).map(({ id, qty }) => ({ id, qty })) });
 
   return (
     <View style={{ flex: 1 }}>
-      <PageHead title="Hoạt động" sub="Theo dõi đơn đặt thợ của bạn" right={<IconBtn icon="bell" onPress={() => nav.push('notifications')} label="Thông báo" />} />
-      <View style={{ backgroundColor: '#fff', paddingHorizontal: 16, paddingBottom: 12 }}>
-        <Segmented
-          value={actFilter}
-          onChange={setActFilter}
-          items={[
-            { id: 'active', label: 'Đang xử lý', count: groups.active.length },
-            { id: 'done', label: 'Hoàn thành', count: groups.done.length },
-            { id: 'cancelled', label: 'Đã huỷ', count: groups.cancelled.length },
-          ]}
-        />
+      <PageHead
+        title="Hoạt động"
+        sub="Theo dõi đơn đặt thợ của bạn"
+        right={(
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <IconBtn
+              icon="calendar"
+              onPress={() => setShowTimeSheet(true)}
+              label="Bộ lọc thời gian"
+              iconColor={hasFilterOrSort ? C.primary : C.ink}
+              style={hasFilterOrSort ? { backgroundColor: C.primarySoft } : undefined}
+            />
+            <IconBtn icon="bell" onPress={() => nav.push('notifications')} label="Thông báo" />
+          </View>
+        )}
+      />
+      <View style={{ backgroundColor: '#fff', paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: C.line }}>
+        <View style={{ paddingHorizontal: 16 }}>
+          <Segmented
+            value={actFilter}
+            onChange={setActFilter}
+            items={[
+              { id: 'active', label: 'Đang xử lý', count: groups.active.length },
+              { id: 'done', label: 'Hoàn thành', count: groups.done.length },
+              { id: 'cancelled', label: 'Đã huỷ', count: groups.cancelled.length },
+            ]}
+          />
+        </View>
+        <HScroll style={{ marginTop: 10 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
+          {ACTIVITY_TIME_PRESETS.map((p) => (
+            <Chip
+              key={p.id}
+              label={p.label}
+              on={timeFilter.preset === p.id}
+              onPress={() => {
+                if (p.id === 'all') {
+                  setTimeFilter((prev) => ({
+                    ...prev,
+                    preset: 'all',
+                    customFrom: null,
+                    customTo: null,
+                    slotPeriod: 'all',
+                  }));
+                } else {
+                  setTimeFilter((prev) => ({
+                    ...prev,
+                    preset: p.id,
+                    customFrom: null,
+                    customTo: null,
+                  }));
+                }
+              }}
+            />
+          ))}
+          <Chip
+            icon="calendar"
+            label={customRangeLabel}
+            on={timeFilter.preset === 'custom'}
+            onPress={() => setShowTimeSheet(true)}
+          />
+          <Chip
+            icon="clock"
+            label={timeFilter.sort === 'oldest' ? 'Cũ nhất ↑' : 'Mới nhất ↓'}
+            on={timeFilter.sort === 'oldest'}
+            onPress={() => setTimeFilter((prev) => ({
+              ...prev,
+              sort: prev.sort === 'newest' ? 'oldest' : 'newest',
+            }))}
+          />
+        </HScroll>
       </View>
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
+        {filterActive ? (
+          <View style={sx.filterSummary}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+              <AppIcon name="calendar" size={14} color={C.primary} strokeWidth={2.2} />
+              <Text style={sx.filterSummaryText} numberOfLines={1}>
+                {describeTimeFilter(timeFilter, nowYmd)} · {list.length} đơn
+              </Text>
+            </View>
+            <Tap onPress={() => setTimeFilter(DEFAULT_ACTIVITY_TIME_FILTER)} hitSlop={6}>
+              <Text style={sx.filterClearText}>Xoá lọc</Text>
+            </Tap>
+          </View>
+        ) : null}
         {list.length === 0 ? (
-          <EmptyState
-            icon={actFilter === 'active' ? 'calendar-clock' : actFilter === 'done' ? 'check-circle-2' : 'archive'}
-            title={actFilter === 'active' ? 'Không có đơn đang xử lý' : actFilter === 'done' ? 'Chưa có đơn hoàn thành' : 'Không có đơn bị huỷ'}
-            body="Đặt dịch vụ để thợ Minh Đức đến tận nhà. Đơn của bạn sẽ hiện tại đây."
-            action="Đặt dịch vụ ngay"
-            onAction={() => nav.services()}
-          />
+          filterActive ? (
+            <EmptyState
+              icon="calendar"
+              title="Không có đơn trong thời gian này"
+              body={`Không tìm thấy đơn nào khớp với "${describeTimeFilter(timeFilter, nowYmd)}". Thử chọn khoảng thời gian khác hoặc xoá bộ lọc.`}
+              action="Xoá bộ lọc thời gian"
+              onAction={() => setTimeFilter(DEFAULT_ACTIVITY_TIME_FILTER)}
+            />
+          ) : (
+            <EmptyState
+              icon={actFilter === 'active' ? 'calendar-clock' : actFilter === 'done' ? 'check-circle-2' : 'archive'}
+              title={actFilter === 'active' ? 'Không có đơn đang xử lý' : actFilter === 'done' ? 'Chưa có đơn hoàn thành' : 'Không có đơn bị huỷ'}
+              body="Đặt dịch vụ để thợ Minh Đức đến tận nhà. Đơn của bạn sẽ hiện tại đây."
+              action="Đặt dịch vụ ngay"
+              onAction={() => nav.services()}
+            />
+          )
         ) : list.map((o) => {
-          const svc0 = getService(o.items[0]?.id);
+          const svc0 = getService((o.items || [])[0]?.id);
           const meta = customerStatusMeta(o);
           return (
             <Card key={o.code} style={{ marginBottom: 12, padding: 0, overflow: 'hidden' }} onPress={() => nav.push('order', { code: o.code })}>
@@ -257,7 +371,7 @@ export function ActivityScreen() {
                   <Media item={svc0} height={56} width={56} radius={14} />
                   <View style={{ flex: 1 }}>
                     <Text style={sx.oName} numberOfLines={2}>{svc0?.name}</Text>
-                    {o.items.length > 1 ? <Text style={ui.meta}>+{o.items.length - 1} dịch vụ khác</Text> : null}
+                    {(o.items || []).length > 1 ? <Text style={ui.meta}>+{(o.items || []).length - 1} dịch vụ khác</Text> : null}
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
                       <AppIcon name="calendar" size={13} color={C.muted} strokeWidth={2.1} />
                       <Text style={[ui.meta, { marginTop: 0 }]}>{o.dateLabel} · {o.slot}</Text>
@@ -286,6 +400,14 @@ export function ActivityScreen() {
           );
         })}
       </ScrollView>
+      <ActivityTimeFilterSheet
+        visible={showTimeSheet}
+        onClose={() => setShowTimeSheet(false)}
+        value={timeFilter}
+        onApply={setTimeFilter}
+        orders={baseGroups[actFilter] || []}
+        nowYmd={nowYmd}
+      />
     </View>
   );
 }
@@ -393,6 +515,21 @@ const sx = StyleSheet.create({
   oStatus: { fontWeight: '800', fontSize: 12 },
   oName: { fontSize: 15, fontWeight: '800', color: C.ink, lineHeight: 20 },
   oFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F0F3F8' },
+  filterSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    backgroundColor: C.primarySoft,
+    borderWidth: 1,
+    borderColor: '#D6E4FF',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+  },
+  filterSummaryText: { fontSize: 12.5, fontWeight: '700', color: C.primary, flex: 1 },
+  filterClearText: { fontSize: 12.5, fontWeight: '800', color: C.primary },
   profile: { backgroundColor: C.navy, ...grad.navyHero, padding: 16, paddingTop: 20, paddingBottom: 48, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: 'hidden' },
   blob: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.06)' },
   avatar: { width: 64, height: 64, borderRadius: 22, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },

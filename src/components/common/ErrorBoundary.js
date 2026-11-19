@@ -41,7 +41,7 @@ export class ErrorBoundary extends React.Component {
         <View style={st.container}>
           <View style={st.card}>
             <View style={st.iconWrap}>
-              <AppIcon name="alert-triangle" size={32} color={C.danger} strokeWidth={2.4} />
+              <AppIcon name="alert-triangle" size={32} color={C.red} strokeWidth={2.4} />
             </View>
             <Text style={st.title}>Đã xảy ra sự cố</Text>
             <Text style={st.desc}>
@@ -55,10 +55,9 @@ export class ErrorBoundary extends React.Component {
               </View>
             ) : null}
             <Btn
-              label="Tải lại ứng dụng"
-              icon="rotate-cw"
+              title="Tải lại ứng dụng"
+              icon="rotate-ccw"
               variant="primary"
-              size="md"
               onPress={this.handleReset}
               style={{ width: '100%', marginTop: 16 }}
             />
@@ -91,7 +90,7 @@ const st = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: C.dangerSoft || '#FEE2E2',
+    backgroundColor: C.redSoft || '#FEE2E2',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -121,7 +120,7 @@ const st = StyleSheet.create({
   devText: {
     fontSize: 11,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    color: C.danger,
+    color: C.red,
   },
 });
 
