@@ -431,9 +431,12 @@ export function OrderScreen({ params }) {
     <View style={{ flex: 1 }}>
       <TopBar title={o.kind === 'warranty' ? 'Đơn bảo hành' : 'Chi tiết đơn hàng'} sub={o.code} />
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
-        <View style={[mx.statusHero, { backgroundColor: meta.bg }]}>
-          <Text style={[mx.statusLabel, { color: meta.fg }]}>{meta.label}</Text>
-          <Text style={[mx.statusDesc, { color: meta.fg }]}>
+        <View style={[mx.statusHero, { backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 4, borderLeftColor: meta.fg }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <Text style={[mx.statusLabel, { color: C.ink, flex: 1 }]}>{meta.label}</Text>
+            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: meta.fg }} />
+          </View>
+          <Text style={[mx.statusDesc, { color: C.ink2 }]}>
             {o.status === 'cancelled'
               ? (o.cancelReason || 'Đơn đã được huỷ')
               : (o.status === 'pending' && o.dispatchNote) || meta.desc || STATUS_DESC[o.status]}
@@ -443,26 +446,26 @@ export function OrderScreen({ params }) {
 
         {/* ===== Khối thanh toán nổi bật ngay đầu màn hình khi chờ thanh toán ===== */}
         {o.status === 'pending_payment' && !isPaid(o) && o.kind !== 'warranty' && o.kind !== 'followup' ? (
-          <Card style={{ marginTop: 12, borderColor: isQRPayment(o) ? '#BAE6FD' : '#FDE68A', backgroundColor: isQRPayment(o) ? '#F0F9FF' : '#FFFBEB' }}>
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: isQRPayment(o) ? C.primary : C.gold }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                <AppIcon name={isQRPayment(o) ? 'qr-code' : 'banknote'} size={18} color={isQRPayment(o) ? '#0369A1' : '#B45309'} strokeWidth={2.3} />
-                <Text style={{ fontWeight: '800', fontSize: 14.5, color: isQRPayment(o) ? '#0369A1' : '#92400E', flex: 1 }}>
-                  💳 Hoá đơn cần thanh toán: {formatVND(amountRemaining(o))}
+                <AppIcon name={isQRPayment(o) ? 'qr-code' : 'banknote'} size={18} color={isQRPayment(o) ? C.primary : C.gold} strokeWidth={2.3} />
+                <Text style={{ fontWeight: '800', fontSize: 14.5, color: isQRPayment(o) ? C.primary : C.goldInk, flex: 1 }}>
+                  Hoá đơn cần thanh toán: {formatVND(amountRemaining(o))}
                 </Text>
               </View>
-              <Badge text={isQRPayment(o) ? 'VietQR 24/7' : 'Tiền mặt'} fg={isQRPayment(o) ? '#0369A1' : '#B45309'} bg="#fff" />
+              <Badge text={isQRPayment(o) ? 'VietQR 24/7' : 'Tiền mặt'} fg={isQRPayment(o) ? C.primary : C.goldInk} bg={isQRPayment(o) ? C.primarySoft : C.goldSoft} />
             </View>
 
             {isQRPayment(o) ? (
               <View style={{ alignItems: 'center', marginTop: 4 }}>
-                <Text style={{ fontSize: 12.5, color: '#0C4A6E', marginBottom: 10, lineHeight: 18, textAlign: 'center' }}>
+                <Text style={{ fontSize: 12.5, color: C.ink2, marginBottom: 10, lineHeight: 18, textAlign: 'center' }}>
                   Quét mã VietQR dưới đây để chuyển khoản trực tiếp vào hệ thống Minh Đức (thợ KHÔNG thu tiền mặt). Khi nhận đủ tiền, đơn sẽ tự chuyển sang Hoàn thành & kích hoạt Bảo hành điện tử.
                 </Text>
                 <VietQRPay requestId={o.dbRequestId} onPaid={() => a.confirmPayment(o.code, 'webhook')} />
                 {!o.bill?.cashClaimPending ? (
-                  <View style={{ width: '100%', marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#BAE6FD', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <Text style={{ flex: 1, fontSize: 12, color: '#0C4A6E' }}>Không chuyển khoản được?</Text>
+                  <View style={{ width: '100%', marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <Text style={{ flex: 1, fontSize: 12, color: C.muted }}>Không chuyển khoản được?</Text>
                     <Btn
                       title="Đổi tiền mặt"
                       small
@@ -478,14 +481,14 @@ export function OrderScreen({ params }) {
               </View>
             ) : (
               <View>
-                <Text style={{ fontSize: 12.5, color: '#78350F', lineHeight: 18 }}>
+                <Text style={{ fontSize: 12.5, color: C.ink2, lineHeight: 18 }}>
                   {o.bill?.cashClaimPending
                     ? 'Bạn đã báo trả tiền mặt. Đang chờ kỹ thuật viên xác nhận đã nhận đủ tiền để hoàn tất đơn & kích hoạt Bảo hành điện tử.'
                     : `Vui lòng thanh toán trực tiếp ${formatVND(amountRemaining(o))} tiền mặt cho kỹ thuật viên tại nhà, hoặc bấm nút “Xác nhận đã trả tiền” ở thanh dưới cùng sau khi giao tiền.`}
                 </Text>
                 {!o.bill?.cashClaimPending ? (
-                  <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#FDE68A', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <Text style={{ flex: 1, fontSize: 12, color: '#78350F' }}>Muốn quét mã QR chuyển khoản?</Text>
+                  <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <Text style={{ flex: 1, fontSize: 12, color: C.muted }}>Muốn quét mã QR chuyển khoản?</Text>
                     <Btn
                       title="Đổi sang VietQR"
                       small
@@ -505,17 +508,17 @@ export function OrderScreen({ params }) {
 
         {/* ===== Thợ đang cập nhật lại mức giá vật tư theo yêu cầu khách ===== */}
         {o.status === 'diagnosing' && o.quote?.isExternalFinalization && o.quote?.revisionRequested ? (
-          <Card style={{ marginTop: 12, backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
-            <Text style={[mx.tlTitle, { color: C.goldInk }]}>🔄 Đang chờ thợ cập nhật lại mức giá vật tư</Text>
-            <Text style={{ color: '#78350F', marginTop: 4, fontSize: 13, lineHeight: 19 }}>
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.gold }}>
+            <Text style={[mx.tlTitle, { color: C.goldInk }]}>Đang chờ thợ cập nhật lại mức giá vật tư</Text>
+            <Text style={{ color: C.ink2, marginTop: 4, fontSize: 13, lineHeight: 19 }}>
               Bạn đã yêu cầu kiểm tra lại giá{o.quote.rejectReason ? `: “${o.quote.rejectReason}”` : '.'} Thợ sẽ gửi lại Bill chi phí cuối để bạn xác nhận trước khi bàn giao.
             </Text>
           </Card>
         ) : null}
 
         {o.checkIn ? (
-          <Card style={{ marginTop: 12, backgroundColor: C.primarySoft, borderColor: '#D6E4FF' }}>
-            <Text style={mx.tlTitle}>📍 Check-in tại nhà bạn</Text>
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary }}>
+            <Text style={mx.tlTitle}>Check-in tại nhà bạn</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
               {o.checkIn.label || 'Đã xác thực vị trí GPS'}
               {o.checkIn.at ? ` · ${fmtDateTime(o.checkIn.at)}` : ''}
@@ -524,8 +527,8 @@ export function OrderScreen({ params }) {
           </Card>
         ) : null}
         {o.lateCompensation ? (
-          <Card style={{ marginTop: 12, backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }}>
-            <Text style={mx.tlTitle}>⏰ Bồi thường đến muộn</Text>
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.gold }}>
+            <Text style={[mx.tlTitle, { color: C.goldInk }]}>Bồi thường đến muộn</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
               {o.lateCompensation.minutesLate
                 ? `Thợ check-in trễ ${o.lateCompensation.minutesLate} phút.`
@@ -538,8 +541,8 @@ export function OrderScreen({ params }) {
           </Card>
         ) : null}
         {acceptExpired ? (
-          <Card style={{ marginTop: 12, backgroundColor: '#FEF2F2', borderColor: '#FECACA' }}>
-            <Text style={[mx.tlTitle, { color: '#B91C1C' }]}>⏰ Đơn quá hạn tiếp nhận</Text>
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.red }}>
+            <Text style={[mx.tlTitle, { color: C.redInk }]}>Đơn quá hạn tiếp nhận</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
               Chưa có thợ nhận đơn trong khung giờ {o.slot} ngày {o.dateLabel}. Vui lòng đổi giờ hẹn để hệ thống điều phối lại, hoặc gọi hotline {HOTLINE} để được hỗ trợ.
             </Text>
@@ -550,8 +553,8 @@ export function OrderScreen({ params }) {
           </Card>
         ) : null}
         {(o.releaseLog || []).length > 0 && o.status === 'pending' && !acceptExpired ? (
-          <Card style={{ marginTop: 12, backgroundColor: C.primarySoft, borderColor: '#D6E4FF' }}>
-            <Text style={mx.tlTitle}>🔄 Đang điều phối lại thợ</Text>
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary }}>
+            <Text style={mx.tlTitle}>Đang điều phối lại thợ</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
               Thợ trước không thể tiếp tục (đã trả việc hoặc quá hạn xác nhận). Hệ thống đang điều phối thợ khác; kiểm tra thông báo để nhận voucher xin lỗi (nếu có).
             </Text>
@@ -560,9 +563,9 @@ export function OrderScreen({ params }) {
 
         {/* ===== Chờ Văn phòng thẩm định bảo hành ===== */}
         {o.status === 'warranty_pending' ? (
-          <Card style={{ marginTop: 12, backgroundColor: '#FDF4FF', borderColor: '#F5D0FE' }}>
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.gold }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={[mx.tlTitle, { color: '#A21CAF' }]}>🛡️ Văn phòng đang thẩm định bảo hành</Text>
+              <Text style={[mx.tlTitle, { color: C.goldInk }]}>Văn phòng đang thẩm định bảo hành</Text>
             </View>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
               Yêu cầu bảo hành đã được gửi. Văn phòng Minh Đức đang đối chiếu lỗi với nhật ký sửa chữa gốc và thời hạn bảo hành theo hạng thành viên (từ {BASE_WARRANTY_DAYS} ngày).
@@ -572,8 +575,8 @@ export function OrderScreen({ params }) {
 
         {/* ===== Yêu cầu hẹn tái khám ===== */}
         {o.followUpRequested ? (
-          <Card style={{ marginTop: 12, backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }}>
-            <Text style={[mx.tlTitle, { color: '#1D4ED8' }]}>📅 KTV đã hẹn lịch tái khám</Text>
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary }}>
+            <Text style={[mx.tlTitle, { color: C.primary }]}>KTV đã hẹn lịch tái khám</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
               Lý do: <Text style={{ fontWeight: '700' }}>{o.followUpReason || 'Chờ linh kiện phụ tùng'}</Text>. Quản lý kỹ thuật đang điều phối lịch hẹn quay lại sớm nhất.
             </Text>
@@ -629,9 +632,9 @@ export function OrderScreen({ params }) {
           const receiptFallback = (o.evidence || []).filter((e) => e.stage === 'receipt');
 
           return (
-            <Card style={{ marginTop: 12, borderColor: isExternalFinalization ? '#BAE6FD' : '#F5D77A', backgroundColor: isExternalFinalization ? '#F0F9FF' : '#FFFBEB' }}>
-              <View style={{ marginBottom: 10, padding: 10, borderRadius: R.sm, backgroundColor: isExternalFinalization ? '#E0F2FE' : C.greenSoft }}>
-                <Text style={{ fontSize: 12.5, fontWeight: '700', color: isExternalFinalization ? '#0369A1' : C.green, lineHeight: 18 }}>
+            <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: isExternalFinalization ? C.primary : C.gold }}>
+              <View style={{ marginBottom: 10, padding: 10, borderRadius: R.sm, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line }}>
+                <Text style={{ fontSize: 12.5, fontWeight: '600', color: C.ink2, lineHeight: 18 }}>
                   {isExternalFinalization
                     ? 'Thợ đã cập nhật mức giá cuối cùng của vật tư thực tế. Vui lòng đối chiếu và bấm xác nhận để chốt tổng hoá đơn trước khi bàn giao thiết bị.'
                     : isOnSite
@@ -643,7 +646,7 @@ export function OrderScreen({ params }) {
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                 <Text style={[mx.tlTitle, { flex: 1 }]}>
                   {isExternalFinalization
-                    ? '🧾 Nghiệm thu vật tư phát sinh & Chi phí cuối cùng'
+                    ? 'Nghiệm thu vật tư phát sinh & Chi phí cuối cùng'
                     : `Báo giá từ thợ ${o.tech?.name || 'kỹ thuật viên'}`}
                 </Text>
                 <Badge
@@ -652,8 +655,8 @@ export function OrderScreen({ params }) {
                       ? `${hasRange ? 'Dự kiến ' : ''}${formatRangeVND(extraMin, extraMax, { prefix: '+' })}`
                       : 'Không phát sinh (0đ)'
                   }
-                  fg={extraMax > 0 ? C.orange : C.green}
-                  bg={extraMax > 0 ? C.orangeSoft : C.greenSoft}
+                  fg={extraMax > 0 ? C.goldInk : C.greenInk}
+                  bg={extraMax > 0 ? C.goldSoft : C.greenSoft}
                 />
               </View>
 
@@ -669,7 +672,7 @@ export function OrderScreen({ params }) {
               {/* Danh sách dịch vụ ban đầu */}
               <View style={{ marginTop: 12 }}>
                 <Text style={{ fontSize: 13, fontWeight: '800', color: C.ink, marginBottom: 4 }}>
-                  🛠️ Dịch vụ kỹ thuật ban đầu ({laborItems.length})
+                  Dịch vụ kỹ thuật ban đầu ({laborItems.length})
                 </Text>
                 {laborItems.map((l, i) => (
                   <View key={`labor_${l.name}_${i}`} style={{ flexDirection: 'row', paddingVertical: 4, justifyContent: 'space-between', alignItems: 'center' }}>
@@ -700,9 +703,9 @@ export function OrderScreen({ params }) {
 
               {/* Danh sách vật tư / linh kiện kho (nếu có) */}
               {partItems.length ? (
-                <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#FEF3C7' }}>
+                <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line }}>
                   <Text style={{ fontSize: 13, fontWeight: '800', color: C.ink, marginBottom: 4 }}>
-                    🔩 Linh kiện / Vật tư kho ({partItems.length})
+                    Linh kiện / Vật tư kho ({partItems.length})
                   </Text>
                   {partItems.map((l, i) => (
                     <View key={`part_${l.name}_${i}`} style={{ flexDirection: 'row', paddingVertical: 4, justifyContent: 'space-between', alignItems: 'center' }}>
@@ -723,11 +726,11 @@ export function OrderScreen({ params }) {
 
               {/* Vật tư mua ngoài (giá dao động dự kiến hoặc giá mua thực tế nghiệm thu) */}
               {customItems.length ? (
-                <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: isExternalFinalization ? '#BAE6FD' : '#FEF3C7' }}>
-                  <Text style={{ fontSize: 13, fontWeight: '800', color: C.orange, marginBottom: 4 }}>
+                <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line }}>
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: C.ink, marginBottom: 4 }}>
                     {isExternalFinalization
-                      ? `🧾 Vật tư mua ngoài thực tế (${customItems.length})`
-                      : `📝 Vật tư mua ngoài (${customItems.length})`}
+                      ? `Vật tư mua ngoài thực tế (${customItems.length})`
+                      : `Vật tư mua ngoài (${customItems.length})`}
                   </Text>
                   {customItems.map((l, i) => {
                     const displayUnit = l.actualPrice != null ? l.actualPrice : l.price;
@@ -744,20 +747,20 @@ export function OrderScreen({ params }) {
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                               <Text style={{ color: C.ink, fontWeight: '700', fontSize: 13.5 }} numberOfLines={2}>{l.name}</Text>
                               {l.isEstimatedRange ? (
-                                <Badge text="Giá dao động" fg={C.orange} bg={C.orangeSoft} />
+                                <Badge text="Giá dao động" fg={C.goldInk} bg={C.goldSoft} />
                               ) : l.isFinalizedExternal ? (
                                 <Badge
                                   text={hasOrigRange ? (inOrigRange ? 'Đúng dự kiến' : 'Ngoài khoảng dự kiến') : 'Giá chốt cuối'}
-                                  fg={!hasOrigRange || inOrigRange ? C.green : C.orange}
-                                  bg={!hasOrigRange || inOrigRange ? C.greenSoft : C.orangeSoft}
+                                  fg={!hasOrigRange || inOrigRange ? C.greenInk : C.goldInk}
+                                  bg={!hasOrigRange || inOrigRange ? C.greenSoft : C.goldSoft}
                                 />
                               ) : (
-                                <Badge text={l.type === 'labor' ? 'Công thêm' : 'Vật tư ngoài'} fg={C.orange} bg={C.orangeSoft} />
+                                <Badge text={l.type === 'labor' ? 'Công thêm' : 'Vật tư ngoài'} fg={C.goldInk} bg={C.goldSoft} />
                               )}
                             </View>
                             {l.isEstimatedRange ? (
                               <>
-                                <Text style={[ui.meta, { fontSize: 12, color: C.orange }]}>
+                                <Text style={[ui.meta, { fontSize: 12, color: C.goldInk }]}>
                                   {formatRangeVND(l.minPrice, l.maxPrice)} x{l.qty}
                                 </Text>
                                 <Text style={[ui.meta, { fontSize: 11.5, marginTop: 2, lineHeight: 16 }]}>
@@ -777,7 +780,7 @@ export function OrderScreen({ params }) {
                               </>
                             )}
                           </View>
-                          <Text style={{ fontWeight: '800', color: l.isEstimatedRange ? C.orange : C.ink }}>
+                          <Text style={{ fontWeight: '800', color: l.isEstimatedRange ? C.goldInk : C.ink }}>
                             {l.isEstimatedRange
                               ? formatRangeVND(l.minPrice * l.qty, l.maxPrice * l.qty)
                               : `+${formatVND(displayUnit * l.qty)}`}
@@ -796,7 +799,7 @@ export function OrderScreen({ params }) {
               ) : null}
 
               {/* Tổng kết chi tiết minh bạch */}
-              <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: isExternalFinalization ? '#BAE6FD' : '#FDE68A' }}>
+              <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line }}>
                 {(prodDisc > 0 || comboDisc > 0) ? (
                   <Bill l="Tổng tiền dịch vụ" v={formatVND(goodsBase)} />
                 ) : null}
@@ -866,21 +869,21 @@ export function OrderScreen({ params }) {
         })() : null}
 
         {o.status === 'repairing' && o.externalPriceState === 'finalized' ? (
-          <Card style={{ marginTop: 12, backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }}>
-            <Text style={{ fontWeight: '800', color: C.green, fontSize: 14 }}>
-              ✅ Đã chốt tổng hoá đơn {formatVND(orderTotal(o))}
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.green }}>
+            <Text style={{ fontWeight: '800', color: C.greenInk, fontSize: 14 }}>
+              Đã chốt tổng hoá đơn {formatVND(orderTotal(o))}
             </Text>
-            <Text style={{ color: '#065F46', marginTop: 4, lineHeight: 20, fontSize: 13 }}>
+            <Text style={{ color: C.ink2, marginTop: 4, lineHeight: 20, fontSize: 13 }}>
               Kỹ thuật viên đang hoàn tất checklist an toàn & bàn giao thiết bị để mở cổng thanh toán.
             </Text>
           </Card>
         ) : null}
         {o.status === 'repairing' && (o.pendingExternalEstimates || []).length > 0 ? (
-          <Card style={{ marginTop: 12, backgroundColor: '#FFF7ED', borderColor: '#FED7AA' }}>
-            <Text style={{ fontWeight: '800', color: '#9A3412', fontSize: 13.5 }}>
-              🧾 Có {o.pendingExternalEstimates.length} vật tư báo giá dao động đang chờ chốt
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.gold }}>
+            <Text style={{ fontWeight: '800', color: C.goldInk, fontSize: 13.5 }}>
+              Có {o.pendingExternalEstimates.length} vật tư báo giá dao động đang chờ chốt
             </Text>
-            <Text style={{ color: '#9A3412', marginTop: 4, lineHeight: 19, fontSize: 12.5 }}>
+            <Text style={{ color: C.ink2, marginTop: 4, lineHeight: 19, fontSize: 12.5 }}>
               Khi lắp đặt xong, thợ sẽ cập nhật mức giá cuối cùng của vật tư để bạn xác nhận tổng hoá đơn trước khi bàn giao & thanh toán.
             </Text>
           </Card>
@@ -927,7 +930,7 @@ export function OrderScreen({ params }) {
 
         {o.tech ? (
           <Card style={{ marginTop: 12, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <View style={mx.techAvatar}><AppIcon name="hard-hat" size={24} color={C.goldInk} strokeWidth={2.2} /></View>
+            <View style={mx.techAvatar}><AppIcon name="hard-hat" size={24} color={C.primary} strokeWidth={2.2} /></View>
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                 <Text style={mx.tlTitle}>{o.tech.name}</Text>
@@ -938,7 +941,7 @@ export function OrderScreen({ params }) {
                 {o.tech.rating != null && o.tech.ratingCount ? ` (${Number(o.tech.ratingCount).toLocaleString('vi-VN')} đánh giá)` : ''}
               </Text>
               {o.lateCompensation && (o.lateCompensation.minutesLate || o.lateCompensation.amount) && o.lateCompensation.tier !== 'ok' ? (
-                <Text style={[ui.meta, { color: C.orange, fontWeight: '700', marginTop: 2 }]}>
+                <Text style={[ui.meta, { color: C.goldInk, fontWeight: '700', marginTop: 2 }]}>
                   {o.lateCompensation.minutesLate ? `Check-in muộn ${o.lateCompensation.minutesLate} phút` : 'Check-in muộn so với giờ hẹn'}
                 </Text>
               ) : o.arrivedAt ? (
@@ -960,18 +963,18 @@ export function OrderScreen({ params }) {
             />
           </Card>
         ) : active ? (
-          <Card style={{ marginTop: 12, backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' }}>
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <AppIcon name="settings" size={18} color="#0369A1" strokeWidth={2.2} />
-              <Text style={{ fontWeight: '800', color: '#0369A1', fontSize: 14 }}>Hệ thống đang điều phối Kỹ thuật viên</Text>
+              <AppIcon name="settings" size={18} color={C.primary} strokeWidth={2.2} />
+              <Text style={{ fontWeight: '800', color: C.primary, fontSize: 14 }}>Hệ thống đang điều phối Kỹ thuật viên</Text>
             </View>
-            <Text style={{ color: '#0C4A6E', marginTop: 6, fontSize: 12.5, lineHeight: 18 }}>
+            <Text style={{ color: C.ink2, marginTop: 6, fontSize: 12.5, lineHeight: 18 }}>
               Hệ thống Minh Đức đang tự động điều phối Kỹ thuật viên chuyên trách gần bạn nhất để đảm bảo có mặt đúng khung giờ {o.slot}.
             </Text>
             <View style={{ marginTop: 8, gap: 4 }}>
-              <Text style={{ color: '#0284C7', fontSize: 12, fontWeight: '600' }}>✓ Đúng chuyên môn kỹ thuật thiết bị</Text>
-              <Text style={{ color: '#0284C7', fontSize: 12, fontWeight: '600' }}>✓ Phân bổ thợ khu vực {o.address?.district || 'của bạn'}</Text>
-              <Text style={{ color: '#0284C7', fontSize: 12, fontWeight: '600' }}>✓ Cam kết bảo hành {tierWarrantyDays} ngày sau dịch vụ</Text>
+              <Text style={{ color: C.ink2, fontSize: 12, fontWeight: '600' }}>✓ Đúng chuyên môn kỹ thuật thiết bị</Text>
+              <Text style={{ color: C.ink2, fontSize: 12, fontWeight: '600' }}>✓ Phân bổ thợ khu vực {o.address?.district || 'của bạn'}</Text>
+              <Text style={{ color: C.ink2, fontSize: 12, fontWeight: '600' }}>✓ Cam kết bảo hành {tierWarrantyDays} ngày sau dịch vụ</Text>
             </View>
           </Card>
         ) : null}
@@ -979,14 +982,14 @@ export function OrderScreen({ params }) {
         <Card style={{ marginTop: 12 }}>
           <InfoLine icon="calendar-clock" label="Lịch hẹn" value={`${o.dateLabel} · ${o.slot}`} />
           {['pending', 'confirmed'].includes(o.status) && !cancelStatus.allowed ? (
-            <View style={{ marginVertical: 6, padding: 8, borderRadius: 8, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A' }}>
-              <Text style={{ fontSize: 11.5, color: '#92400E', lineHeight: 16 }}>
+            <View style={{ marginVertical: 6, padding: 8, borderRadius: 8, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line }}>
+              <Text style={{ fontSize: 11.5, color: C.goldInk, lineHeight: 16 }}>
                 Đã sát giờ hẹn (dưới {FREE_CANCEL_TEXT}): Quý khách không thể tự huỷ đơn để bảo đảm lịch trình của thợ. Vui lòng gọi {HOTLINE} nếu cần hỗ trợ.
               </Text>
             </View>
           ) : ['pending', 'confirmed'].includes(o.status) ? (
-            <View style={{ marginVertical: 6, padding: 8, borderRadius: 8, backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD' }}>
-              <Text style={{ fontSize: 11.5, color: '#0369A1', lineHeight: 16 }}>
+            <View style={{ marginVertical: 6, padding: 8, borderRadius: 8, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line }}>
+              <Text style={{ fontSize: 11.5, color: C.ink2, lineHeight: 16 }}>
                 Quý khách có thể huỷ đơn miễn phí trước giờ hẹn tối thiểu {FREE_CANCEL_TEXT}.
               </Text>
             </View>
@@ -1006,7 +1009,7 @@ export function OrderScreen({ params }) {
           {o.note ? <InfoLine icon="file-text" label="Ghi chú" value={o.note} /> : null}
           {(o.attachments || []).length ? (
             <View style={{ marginTop: 4, marginBottom: 4 }}>
-              <Text style={{ fontSize: 12, color: C.muted, fontWeight: '600', marginBottom: 6 }}>📷 Hình ảnh triệu chứng ban đầu</Text>
+              <Text style={{ fontSize: 12, color: C.muted, fontWeight: '600', marginBottom: 6 }}>Hình ảnh triệu chứng ban đầu</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                 {o.attachments.map((att) => (
                   <Tap key={att.id} style={mx.thumb} onPress={() => att.uri && setPreviewOrderPhoto({ uri: att.uri, title: att.note || 'Hình ảnh triệu chứng ban đầu' })} scaleTo={0.97}>
@@ -1054,8 +1057,8 @@ export function OrderScreen({ params }) {
                         ? `${hasExtraRange ? 'Dự kiến ' : ''}${formatRangeVND(extraRange.extraMin, extraRange.extraMax, { prefix: '+' })}`
                         : 'Không phát sinh (0đ)'
                     }
-                    fg={extraRange.extraMax > 0 ? C.orange : C.green}
-                    bg={extraRange.extraMax > 0 ? C.orangeSoft : C.greenSoft}
+                    fg={extraRange.extraMax > 0 ? C.goldInk : C.greenInk}
+                    bg={extraRange.extraMax > 0 ? C.goldSoft : C.greenSoft}
                   />
                 ) : (
                   <Badge text="Đã gửi cho thợ" fg={C.primary} bg={C.primarySoft} />
@@ -1074,10 +1077,10 @@ export function OrderScreen({ params }) {
               {laborItems.length ? (
                 <View style={{ marginTop: 8 }}>
                   <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.ink, marginBottom: 2 }}>
-                    🛠️ Dịch vụ kỹ thuật ({laborItems.length})
+                    Dịch vụ kỹ thuật ({laborItems.length})
                   </Text>
                   {laborItems.map((l, i) => (
-                    <View key={`d_labor_${l.name}_${i}`} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
+                    <View key={`labor_${l.name}_${i}`} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
                       <Text style={[ui.meta, { fontSize: 13, color: C.ink2, flex: 1, paddingRight: 6 }]} numberOfLines={2}>
                         {l.name} x{l.qty} {l.unit || 'lần'}
                       </Text>
@@ -1101,9 +1104,9 @@ export function OrderScreen({ params }) {
 
               {/* Danh sách vật tư (nếu có) */}
               {partItems.length ? (
-                <View style={{ marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+                <View style={{ marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: C.line }}>
                   <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.ink, marginBottom: 2 }}>
-                    🔩 Vật tư thay thế ({partItems.length})
+                    Vật tư thay thế ({partItems.length})
                   </Text>
                   {partItems.map((l, i) => (
                     <View key={`d_part_${l.name}_${i}`} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
@@ -1120,9 +1123,9 @@ export function OrderScreen({ params }) {
               {customItems.length ? (() => {
                 const receiptFallback = (o.evidence || []).filter((e) => e.stage === 'receipt');
                 return (
-                  <View style={{ marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
-                    <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.orange, marginBottom: 2 }}>
-                      📝 Vật tư mua ngoài / phát sinh ({customItems.length})
+                  <View style={{ marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: C.line }}>
+                    <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.ink, marginBottom: 2 }}>
+                      Vật tư mua ngoài / phát sinh ({customItems.length})
                     </Text>
                     {customItems.map((l, i) => {
                       const receiptEv = l.receiptId
@@ -1134,7 +1137,7 @@ export function OrderScreen({ params }) {
                             <Text style={[ui.meta, { fontSize: 13, color: C.ink2, flex: 1, paddingRight: 6 }]} numberOfLines={2}>
                               {l.name} x{l.qty}{l.isEstimatedRange ? ' (Giá dao động)' : l.isFinalizedExternal ? ' (Giá chốt cuối)' : ''}
                             </Text>
-                            <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.orange }]}>
+                            <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: l.isEstimatedRange ? C.goldInk : C.ink }]}>
                               {l.isEstimatedRange
                                 ? formatRangeVND(l.minPrice * l.qty, l.maxPrice * l.qty)
                                 : `+${formatVND((l.actualPrice ?? l.price) * l.qty)}`}
@@ -1219,7 +1222,7 @@ export function OrderScreen({ params }) {
         {o.report ? (() => {
           const completionPhotos = evidence.filter((e) => e.stage === 'after' && e.uri);
           return (
-            <Card style={{ marginTop: 12, backgroundColor: '#F3FBF7', borderColor: '#CDEFDD' }}>
+            <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.green }}>
               <Text style={mx.tlTitle}>Biên bản nghiệm thu kỹ thuật</Text>
               <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>{o.report.summary}</Text>
               {(o.report.safetyChecklist || []).length ? (
@@ -1231,14 +1234,14 @@ export function OrderScreen({ params }) {
               ) : null}
               {completionPhotos.length ? (
                 <View style={{ marginTop: 10 }}>
-                  <Text style={{ fontSize: 12.5, fontWeight: '800', color: '#065F46', marginBottom: 6 }}>
-                    📷 Hình ảnh hoàn thành công việc ({completionPhotos.length})
+                  <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.greenInk, marginBottom: 6 }}>
+                    Hình ảnh hoàn thành công việc ({completionPhotos.length})
                   </Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                     {completionPhotos.map((ph, idx) => (
                       <Tap
                         key={ph.id || `done_ph_${idx}`}
-                        style={{ width: 78, height: 78, borderRadius: R.md, overflow: 'hidden', borderWidth: 1.5, borderColor: '#A7F3D0', backgroundColor: '#fff' }}
+                        style={{ width: 78, height: 78, borderRadius: R.md, overflow: 'hidden', borderWidth: 1.5, borderColor: C.greenBorder, backgroundColor: C.card }}
                         onPress={() => setPreviewOrderPhoto({ uri: ph.uri, title: ph.note || 'Hình ảnh hoàn thành công việc' })}
                         scaleTo={0.97}
                       >
@@ -1249,8 +1252,8 @@ export function OrderScreen({ params }) {
                 </View>
               ) : null}
               {o.report.customerSignature ? (
-                <View style={{ marginTop: 8, padding: 8, borderRadius: R.sm, backgroundColor: '#fff', borderWidth: 1, borderColor: '#D1FAE5' }}>
-                  <Text style={{ fontSize: 12, color: C.green, fontWeight: '800' }}>Chữ ký xác nhận của khách hàng:</Text>
+                <View style={{ marginTop: 8, padding: 8, borderRadius: R.sm, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line }}>
+                  <Text style={{ fontSize: 12, color: C.greenInk, fontWeight: '800' }}>Chữ ký xác nhận của khách hàng:</Text>
                   <Text style={{ fontStyle: 'italic', fontSize: 16, fontWeight: '800', color: C.navy, marginTop: 2 }}>{o.report.customerSignature}</Text>
                 </View>
               ) : null}
@@ -1258,7 +1261,8 @@ export function OrderScreen({ params }) {
               <Text style={[ui.meta, { marginTop: 6 }]}>{fmtDateTime(o.report.at)} · Thợ {o.report.tech}</Text>
               {o.status === 'done' && (isPaid(o) || o.kind === 'warranty') ? (
                 <Btn
-                  title="📜 Xem Phiếu Nghiệm Thu & Bảo Hành Điện Tử"
+                  title="Xem Phiếu Nghiệm Thu & Bảo Hành Điện Tử"
+                  icon="file-text"
                   variant="soft"
                   small
                   style={{ marginTop: 12 }}
@@ -1355,11 +1359,11 @@ export function OrderScreen({ params }) {
             </View>
             {['confirmed', 'onway', 'diagnosing', 'quoted', 'repairing'].includes(o.status) && !isPaid(o) && !o.bill?.cashClaimPending && o.kind !== 'warranty' && o.kind !== 'followup' ? (
               isQRPayment(o) ? (
-                <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <IconBox icon="banknote" size={38} bg="#FEF3C7" color="#D97706" radius={12} />
+                <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <IconBox icon="banknote" size={38} bg={C.card} color={C.ink2} radius={12} />
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: '800', color: '#92400E', fontSize: 13 }}>Không chuyển khoản được?</Text>
-                    <Text style={{ fontSize: 12, color: '#78350F', marginTop: 2, lineHeight: 17 }}>
+                    <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13 }}>Không chuyển khoản được?</Text>
+                    <Text style={{ fontSize: 12, color: C.muted, marginTop: 2, lineHeight: 17 }}>
                       Đổi sang tiền mặt để trả trực tiếp cho thợ tại nhà.
                     </Text>
                   </View>
@@ -1375,11 +1379,11 @@ export function OrderScreen({ params }) {
                   />
                 </View>
               ) : (
-                <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#F0F9FF', borderWidth: 1, borderColor: '#BAE6FD', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <IconBox icon="qr-code" size={38} bg="#E0F2FE" color="#0284C7" radius={12} />
+                <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <IconBox icon="qr-code" size={38} bg={C.card} color={C.primary} radius={12} />
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: '800', color: '#0369A1', fontSize: 13 }}>Muốn chuyển khoản bằng mã QR?</Text>
-                    <Text style={{ fontSize: 12, color: '#0C4A6E', marginTop: 2, lineHeight: 17 }}>
+                    <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13 }}>Muốn chuyển khoản bằng mã QR?</Text>
+                    <Text style={{ fontSize: 12, color: C.muted, marginTop: 2, lineHeight: 17 }}>
                       Đổi sang VietQR để quét mã trên App — thợ sẽ không thu tiền mặt.
                     </Text>
                   </View>
@@ -1397,9 +1401,9 @@ export function OrderScreen({ params }) {
               )
             ) : null}
             {o.status === 'cancelled' && (o.inspectionFee || 0) > 0 && !isPaid(o) ? (
-              <View style={{ marginTop: 14, alignItems: 'center', padding: 12, borderRadius: 14, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#F5D77A' }}>
-                <Text style={{ fontWeight: '800', color: '#92400E', marginBottom: 4 }}>Mã QR thanh toán phí kiểm tra tại nhà</Text>
-                <Text style={[ui.meta, { marginBottom: 8, color: '#92400E', textAlign: 'center' }]}>
+              <View style={{ marginTop: 14, alignItems: 'center', padding: 12, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.gold }}>
+                <Text style={{ fontWeight: '800', color: C.goldInk, marginBottom: 4 }}>Mã QR thanh toán phí kiểm tra tại nhà</Text>
+                <Text style={[ui.meta, { marginBottom: 8, color: C.ink2, textAlign: 'center' }]}>
                   Thanh toán phí dịch vụ kiểm tra thiết bị tại nhà {formatVND(o.inspectionFee)} cho thợ.
                 </Text>
                 <VietQRPay requestId={o.dbRequestId} onPaid={() => a.confirmPayment(o.code, 'webhook')} size={180} />
@@ -1407,8 +1411,8 @@ export function OrderScreen({ params }) {
             ) : null}
             {/* Nút "Xác nhận đã trả tiền" chỉ đặt ở thanh dưới (dock) để tránh hai nút trùng chức năng. */}
             {isPaid(o) && o.status === 'done' ? (
-              <View style={{ marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: C.greenSoft }}>
-                <Text style={{ fontWeight: '800', color: C.green }}>🧾 Đã thanh toán</Text>
+              <View style={{ marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.green }}>
+                <Text style={{ fontWeight: '800', color: C.greenInk }}>Đã thanh toán</Text>
                 <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
                   Mã đơn {o.code} · {formatVND(o.bill?.paidAmount || orderTotal(o))} · {o.payment || 'Tại nhà'}
                 </Text>
@@ -1418,7 +1422,7 @@ export function OrderScreen({ params }) {
         ) : null}
 
         {o.kind !== 'warranty' && o.status !== 'cancelled' ? (
-          <Card style={{ marginTop: 12, backgroundColor: winfo.ok ? '#F3FBF7' : '#fff' }}>
+          <Card style={[{ marginTop: 12, backgroundColor: C.card, borderColor: C.line }, winfo.ok && { borderLeftWidth: 3.5, borderLeftColor: C.green }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <IconBox icon="shield-check" size={40} bg={winfo.ok ? C.greenSoft : C.primarySoft} radius={13} />
               <View style={{ flex: 1 }}>
@@ -1477,7 +1481,7 @@ export function OrderScreen({ params }) {
               onPress={confirmCash}
             />
           ) : null}
-          {o.status === 'done' && !o.rating && o.kind !== 'warranty' ? <Btn title="Đánh giá" icon="star" variant="gold" style={{ flex: 1, paddingHorizontal: 10 }} onPress={() => nav.push('rate', { code: o.code })} /> : null}
+          {o.status === 'done' && !o.rating && o.kind !== 'warranty' ? <Btn title="Đánh giá" icon="star" variant="soft" style={{ flex: 1, paddingHorizontal: 10 }} onPress={() => nav.push('rate', { code: o.code })} /> : null}
           {['done', 'cancelled'].includes(o.status) && o.kind !== 'warranty' ? <Btn title="Đặt lại" icon="rotate-ccw" style={{ flex: 1, paddingHorizontal: 10 }} onPress={reorder} /> : null}
           {o.kind === 'warranty' && !active ? <Btn title="Liên hệ hỗ trợ" icon="phone-call" variant="soft" style={{ flex: 1 }} onPress={u.call} /> : null}
         </View>
@@ -1489,7 +1493,7 @@ export function OrderScreen({ params }) {
         title={previewOrderPhoto?.title || 'Hình ảnh đơn hàng'}
       >
         {previewOrderPhoto?.uri ? (
-          <Image source={{ uri: previewOrderPhoto.uri }} style={{ width: '100%', height: 280, borderRadius: R.md, backgroundColor: '#F1F5F9' }} resizeMode="contain" />
+          <Image source={{ uri: previewOrderPhoto.uri }} style={{ width: '100%', height: 280, borderRadius: R.md, backgroundColor: C.surface }} resizeMode="contain" />
         ) : null}
       </Sheet>
       <Sheet
@@ -1774,7 +1778,7 @@ function HistoryFilterTabs({ list, value, onChange, style }) {
               paddingVertical: 5,
               paddingHorizontal: 10,
               borderRadius: R.pill,
-              backgroundColor: on ? C.primary : '#F1F5F9',
+              backgroundColor: on ? C.primary : C.surface,
             }}
           >
             <Text style={{ fontSize: 11.5, fontWeight: on ? '800' : '600', color: on ? '#fff' : C.ink2 }}>
@@ -1793,8 +1797,8 @@ function PointHistoryRow({ h, last, singleLine, onPress }) {
   const isReview = h.type === 'review' || /đánh giá/i.test(title);
   const isBonus = h.type === 'bonus' || /tân thủ|đăng ký/i.test(title);
   const iconName = isEarn ? (isReview ? 'star' : (isBonus ? 'sparkles' : 'receipt-text')) : 'gift';
-  const iconBg = isEarn ? (isReview ? '#FEF9C3' : (isBonus ? '#F3E8FF' : '#E0F2FE')) : '#FFEDD5';
-  const iconFg = isEarn ? (isReview ? '#CA8A04' : (isBonus ? '#9333EA' : '#0284C7')) : '#EA580C';
+  const iconBg = isEarn ? (isReview ? C.goldSoft : C.primarySoft) : C.surface;
+  const iconFg = isEarn ? (isReview ? C.goldInk : C.primary) : C.ink2;
   return (
     <Tap
       onPress={onPress}
@@ -1805,7 +1809,7 @@ function PointHistoryRow({ h, last, singleLine, onPress }) {
         paddingVertical: 12,
         paddingHorizontal: 14,
         borderBottomWidth: last ? 0 : 1,
-        borderBottomColor: '#F1F5F9',
+        borderBottomColor: C.line,
       }}
     >
       <IconBox icon={iconName} size={38} bg={iconBg} color={iconFg} radius={11} />
@@ -1816,13 +1820,13 @@ function PointHistoryRow({ h, last, singleLine, onPress }) {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
           <Text style={{ fontSize: 11, color: C.muted }}>{fmtDateTime(h.at)}</Text>
           {h.orderCode ? (
-            <View style={{ backgroundColor: '#F1F5F9', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+            <View style={{ backgroundColor: C.surface, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
               <Text style={{ fontSize: 10, fontWeight: '700', color: C.primary }}>#{h.orderCode}</Text>
             </View>
           ) : null}
         </View>
       </View>
-      <Text style={{ fontWeight: '900', fontSize: 14, color: isEarn ? '#16A34A' : '#EA580C' }}>
+      <Text style={{ fontWeight: '900', fontSize: 14, color: isEarn ? C.green : C.ink2 }}>
         {isEarn ? `+${h.delta}` : h.delta} điểm
       </Text>
     </Tap>
@@ -1891,7 +1895,7 @@ export function RewardsScreen({ params }) {
                 borderColor: 'rgba(255,255,255,0.3)',
               }}
             >
-              <AppIcon name="crown" size={14} color="#FDE047" strokeWidth={2.4} />
+              <AppIcon name="crown" size={14} color="#FFFFFF" strokeWidth={2.4} />
               <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }}>{cur.label}</Text>
             </Tap>
           </View>
@@ -1903,7 +1907,7 @@ export function RewardsScreen({ params }) {
               Điểm tích luỹ xét hạng: <Text style={{ color: '#fff', fontWeight: '800' }}>{lp} điểm</Text>
             </Text>
             <View style={{ backgroundColor: 'rgba(255,255,255,0.18)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 }}>
-              <Text style={{ color: '#BAE6FD', fontSize: 10.5, fontWeight: '800' }}>
+              <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 10.5, fontWeight: '800' }}>
                 Chu kỳ 12 tháng
               </Text>
             </View>
@@ -1911,7 +1915,7 @@ export function RewardsScreen({ params }) {
           <Progress value={progress} color="#FFFFFF" style={{ marginTop: 8, backgroundColor: 'rgba(255,255,255,0.25)', height: 6 }} />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 7 }}>
             <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 11.5, fontWeight: '600', flex: 1 }}>
-              {next ? `Cần thêm ${next.min - lp} điểm để lên hạng ${next.label}` : '👑 Bạn đã đạt thứ hạng cao nhất (Kim cương)!'}
+              {next ? `Cần thêm ${next.min - lp} điểm để lên hạng ${next.label}` : 'Bạn đã đạt thứ hạng cao nhất (Kim cương)!'}
             </Text>
             <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
               Đổi voucher không trừ điểm hạng
@@ -1959,13 +1963,13 @@ export function RewardsScreen({ params }) {
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-              <Badge text={`👑 Hạng ${previewTier.label}`} fg={previewTier.color} bg={previewTier.bg || C.primarySoft} />
+              <Badge text={`Hạng ${previewTier.label}`} fg={previewTier.color} bg={previewTier.bg || C.primarySoft} />
               {cur.id === previewTier.id ? (
-                <Badge text="Hạng của bạn" fg={C.green} bg={C.greenSoft} />
+                <Badge text="Hạng của bạn" fg={C.greenInk} bg={C.greenSoft} />
               ) : lp >= previewTier.min ? (
-                <Badge text="✓ Đã mở khoá" fg={C.green} bg={C.greenSoft} />
+                <Badge text="✓ Đã mở khoá" fg={C.greenInk} bg={C.greenSoft} />
               ) : (
-                <Badge text={`Cần thêm ${previewTier.min - lp} điểm`} fg={C.orange} bg={C.orangeSoft} />
+                <Badge text={`Cần thêm ${previewTier.min - lp} điểm`} fg={C.goldInk} bg={C.goldSoft} />
               )}
             </View>
             <Text style={{ fontSize: 12, fontWeight: '800', color: C.primary }}>Chi tiết ›</Text>
@@ -1988,15 +1992,15 @@ export function RewardsScreen({ params }) {
           const enough = s.points >= r.cost;
           return (
             <Card key={r.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-              <IconBox icon="gift" size={46} bg={C.goldSoft} radius={14} />
+              <IconBox icon="gift" size={46} bg={C.primarySoft} radius={14} />
               <View style={{ flex: 1 }}>
                 <Text style={mx.tlTitle}>{r.title}</Text>
-                <Text style={[ui.meta, { color: C.goldInk, fontWeight: '700' }]}>{r.cost} điểm</Text>
+                <Text style={[ui.meta, { color: C.primary, fontWeight: '700' }]}>{r.cost} điểm</Text>
               </View>
               <Btn
                 title="Đổi"
                 small
-                variant={enough ? 'gold' : 'ghost'}
+                variant={enough ? 'primary' : 'ghost'}
                 disabled={!enough}
                 onPress={() => u.confirm('Đổi voucher?', `Dùng ${r.cost} điểm để đổi ${String(r.title || '').toLowerCase()}.`, () => {
                   callAction(a.redeem, r.id).catch((e) => u.alert('Chưa đổi được', errorText(e, 'Không đổi được voucher. Vui lòng thử lại.'), '⚠️'));
@@ -2045,18 +2049,20 @@ export function RewardsScreen({ params }) {
                 flexDirection: 'row',
                 alignItems: 'center',
                 gap: 8,
-                backgroundColor: '#F0FDF4',
+                backgroundColor: C.card,
                 borderWidth: 1,
-                borderColor: '#DCFCE7',
+                borderColor: C.line,
+                borderLeftWidth: 3.5,
+                borderLeftColor: C.green,
                 paddingVertical: 9,
                 paddingHorizontal: 12,
                 borderRadius: 12,
               }}
             >
-              <IconBox icon="trending-up" size={30} bg="#DCFCE7" color="#16A34A" radius={8} />
+              <IconBox icon="trending-up" size={30} bg={C.greenSoft} color={C.green} radius={8} />
               <View>
-                <Text style={{ fontSize: 10.5, color: '#15803D', fontWeight: '600' }}>Tổng tích luỹ</Text>
-                <Text style={{ fontSize: 14, fontWeight: '900', color: '#16A34A' }}>+{totalEarned} điểm</Text>
+                <Text style={{ fontSize: 10.5, color: C.muted, fontWeight: '600' }}>Tổng tích luỹ</Text>
+                <Text style={{ fontSize: 14, fontWeight: '900', color: C.green }}>+{totalEarned} điểm</Text>
               </View>
             </View>
 
@@ -2066,18 +2072,20 @@ export function RewardsScreen({ params }) {
                 flexDirection: 'row',
                 alignItems: 'center',
                 gap: 8,
-                backgroundColor: '#FFF7ED',
+                backgroundColor: C.card,
                 borderWidth: 1,
-                borderColor: '#FFEDD5',
+                borderColor: C.line,
+                borderLeftWidth: 3.5,
+                borderLeftColor: C.primary,
                 paddingVertical: 9,
                 paddingHorizontal: 12,
                 borderRadius: 12,
               }}
             >
-              <IconBox icon="gift" size={30} bg="#FFEDD5" color="#EA580C" radius={8} />
+              <IconBox icon="gift" size={30} bg={C.primarySoft} color={C.primary} radius={8} />
               <View>
-                <Text style={{ fontSize: 10.5, color: '#C2410C', fontWeight: '600' }}>Đã đổi voucher</Text>
-                <Text style={{ fontSize: 14, fontWeight: '900', color: '#EA580C' }}>-{totalSpent} điểm</Text>
+                <Text style={{ fontSize: 10.5, color: C.muted, fontWeight: '600' }}>Đã đổi voucher</Text>
+                <Text style={{ fontSize: 14, fontWeight: '900', color: C.ink }}>-{totalSpent} điểm</Text>
               </View>
             </View>
           </View>
@@ -2087,7 +2095,7 @@ export function RewardsScreen({ params }) {
 
           {/* Danh sách rút gọn tối đa HISTORY_INITIAL_COUNT dòng */}
           {filteredHistory.length === 0 ? (
-            <Card style={{ backgroundColor: '#F8FAFC', padding: 16, alignItems: 'center' }}>
+            <Card style={{ backgroundColor: C.bg, padding: 16, alignItems: 'center' }}>
               <Text style={ui.meta}>Không có giao dịch nào trong mục này.</Text>
             </Card>
           ) : (
@@ -2112,9 +2120,9 @@ export function RewardsScreen({ params }) {
                     justifyContent: 'center',
                     flexDirection: 'row',
                     gap: 6,
-                    backgroundColor: '#F8FAFC',
+                    backgroundColor: C.bg,
                     borderTopWidth: 1,
-                    borderTopColor: '#F1F5F9',
+                    borderTopColor: C.line,
                   }}
                 >
                   <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.primary }}>
@@ -2181,7 +2189,7 @@ export function RewardsScreen({ params }) {
                       alignItems: 'center',
                       borderWidth: 1.5,
                       borderColor: on ? t.color : C.line,
-                      backgroundColor: on ? (t.bg || C.primarySoft) : '#F8FAFD',
+                      backgroundColor: on ? (t.bg || C.primarySoft) : C.card,
                     }}
                   >
                     <Text style={{ fontSize: 11, fontWeight: '800', color: on ? t.color : C.muted }}>{t.label}</Text>
@@ -2192,38 +2200,38 @@ export function RewardsScreen({ params }) {
             </View>
 
             {/* Banner trạng thái của khách với hạng này */}
-            <View style={{ padding: 14, borderRadius: R.lg, backgroundColor: activeTier.bg || C.primarySoft, borderWidth: 1, borderColor: activeTier.color }}>
+            <View style={{ padding: 14, borderRadius: R.lg, backgroundColor: C.card, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: activeTier.color }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 16, fontWeight: '900', color: activeTier.color }}>👑 Hạng {activeTier.label}</Text>
+                <Text style={{ fontSize: 16, fontWeight: '900', color: activeTier.color }}>Hạng {activeTier.label}</Text>
                 <Badge
                   text={
                     cur.id === activeTier.id
-                      ? '🎯 Hạng hiện tại của bạn'
+                      ? 'Hạng hiện tại của bạn'
                       : lp >= activeTier.min
                         ? '✓ Đã đạt hạng này'
-                        : `🔒 Còn thiếu ${activeTier.min - lp} điểm`
+                        : `Còn thiếu ${activeTier.min - lp} điểm`
                   }
-                  fg={lp >= activeTier.min ? C.green : C.orange}
-                  bg="#fff"
+                  fg={lp >= activeTier.min ? C.greenInk : C.goldInk}
+                  bg={lp >= activeTier.min ? C.greenSoft : C.goldSoft}
                 />
               </View>
               <Text style={{ color: C.ink, fontWeight: '700', marginTop: 6, lineHeight: 19 }}>{activeTier.summary}</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                <Badge text={`🛡️ Bảo hành ${activeTier.warrantyDays || BASE_WARRANTY_DAYS} ngày`} fg={C.navy} bg="#fff" />
-                <Badge text={`📊 Tích luỹ của bạn: ${lp}/${activeTier.min || 0} điểm`} fg={C.ink2} bg="#fff" />
+                <Badge text={`Bảo hành ${activeTier.warrantyDays || BASE_WARRANTY_DAYS} ngày`} fg={C.primary} bg={C.primarySoft} />
+                <Badge text={`Tích luỹ của bạn: ${lp}/${activeTier.min || 0} điểm`} fg={C.ink2} bg={C.surface} />
               </View>
               {activeTier.min > 0 ? (
                 <Progress
                   value={Math.min(1, lp / activeTier.min)}
                   color={activeTier.color}
-                  style={{ marginTop: 10, backgroundColor: 'rgba(255,255,255,0.65)' }}
+                  style={{ marginTop: 10, backgroundColor: C.surface }}
                 />
               ) : null}
             </View>
 
             {/* 1. Điều kiện xét hạng */}
-            <Text style={{ fontWeight: '800', color: C.ink, marginTop: 16, marginBottom: 6 }}>📋 Điều kiện đạt & duy trì hạng</Text>
-            <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFD', borderWidth: 1, borderColor: C.line }}>
+            <Text style={{ fontWeight: '800', color: C.ink, marginTop: 16, marginBottom: 6 }}>Điều kiện đạt & duy trì hạng</Text>
+            <View style={{ padding: 12, borderRadius: R.md, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line }}>
               <Text style={{ color: C.ink, fontWeight: '600', lineHeight: 20 }}>{activeTier.condition}</Text>
               {activeTier.pointRule ? (
                 <Text style={[ui.meta, { color: C.primary, fontWeight: '700', marginTop: 6 }]}>• {activeTier.pointRule}</Text>
@@ -2231,7 +2239,7 @@ export function RewardsScreen({ params }) {
             </View>
 
             {/* 2. Đặc quyền & Quyền lợi dành cho khách hàng */}
-            <Text style={{ fontWeight: '800', color: C.ink, marginTop: 16, marginBottom: 8 }}>🎁 Đặc quyền & Quyền lợi khách hàng</Text>
+            <Text style={{ fontWeight: '800', color: C.ink, marginTop: 16, marginBottom: 8 }}>Đặc quyền & Quyền lợi khách hàng</Text>
             {(activeTier.benefits || []).map((b, idx) => (
               <View key={idx} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 6 }}>
                 <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: C.greenSoft, alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>
@@ -2242,11 +2250,11 @@ export function RewardsScreen({ params }) {
             ))}
 
             {/* 3. Điều khoản bảo vệ có lợi cho khách hàng */}
-            <Text style={{ fontWeight: '800', color: C.ink, marginTop: 14, marginBottom: 8 }}>🛡️ Điều khoản bảo vệ & Cam kết có lợi cho khách hàng</Text>
-            <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#F5D77A', gap: 8 }}>
+            <Text style={{ fontWeight: '800', color: C.ink, marginTop: 14, marginBottom: 8 }}>Điều khoản bảo vệ & Cam kết</Text>
+            <View style={{ padding: 12, borderRadius: R.md, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, gap: 8 }}>
               {(activeTier.terms || []).map((term, idx) => (
                 <View key={idx} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
-                  <Text style={{ color: C.goldInk, fontWeight: '900', marginTop: 1 }}>★</Text>
+                  <Text style={{ color: C.primary, fontWeight: '900', marginTop: 1 }}>•</Text>
                   <Text style={{ flex: 1, color: C.ink2, lineHeight: 19, fontSize: 13 }}>{term}</Text>
                 </View>
               ))}
@@ -2433,7 +2441,7 @@ export function ProfileScreen() {
             ) : (
               <>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '800', color: '#B45309', fontSize: 13 }}>⚠️ Email chưa xác thực</Text>
+                  <Text style={{ fontWeight: '800', color: C.goldInk, fontSize: 13 }}>Email chưa xác thực</Text>
                   <Text style={ui.meta}>Bắt buộc xác thực OTP để đặt dịch vụ</Text>
                 </View>
                 <Tap
@@ -2442,7 +2450,7 @@ export function ProfileScreen() {
                     if (!otpSent && !otpSending) sendOtp();
                   }}
                 >
-                  <Badge text="📧 Xác thực ngay" fg="#fff" bg="#D97706" />
+                  <Badge text="Xác thực ngay" fg={C.goldInk} bg={C.goldSoft} />
                 </Tap>
               </>
             )}
@@ -2462,19 +2470,19 @@ export function ProfileScreen() {
           style={{
             padding: 12,
             borderRadius: R.md,
-            backgroundColor: '#EFF6FF',
+            backgroundColor: C.primarySoft,
             borderWidth: 1,
-            borderColor: '#BFDBFE',
+            borderColor: C.primaryBorder,
             marginBottom: 12,
             flexDirection: 'row',
             alignItems: 'center',
             gap: 10,
           }}
         >
-          <AppIcon name="mail-open" size={20} color="#1E40AF" strokeWidth={2.2} />
+          <AppIcon name="mail-open" size={20} color={C.navy} strokeWidth={2.2} />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 12.5, color: '#1E40AF', fontWeight: '700' }}>Kiểm tra hộp thư Email</Text>
-            <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
+            <Text style={{ fontSize: 12.5, color: C.navy, fontWeight: '700' }}>Kiểm tra hộp thư Email</Text>
+            <Text style={{ fontSize: 12, color: C.primary, marginTop: 2 }}>
               Mã OTP 6 chữ số đã được gửi tới {email || s.auth?.email} (hiệu lực {OTP_TTL_MINUTES} phút).
             </Text>
           </View>
@@ -2490,7 +2498,7 @@ export function ProfileScreen() {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
           <Text style={ui.meta}>Hiệu lực trong {OTP_TTL_MINUTES} phút</Text>
           <Tap onPress={sendOtp} disabled={otpSending}>
-            <Text style={ui.link}>{otpSending ? 'Đang gửi...' : '🔄 Gửi lại mã OTP'}</Text>
+            <Text style={ui.link}>{otpSending ? 'Đang gửi...' : 'Gửi lại mã OTP'}</Text>
           </Tap>
         </View>
       </Sheet>
@@ -2567,35 +2575,35 @@ const webNoOutline = Platform.select({ web: { outlineStyle: 'none' }, default: {
 
 const mx = StyleSheet.create({
   searchBar: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: C.line },
-  searchBox: { flex: 1, height: 44, borderRadius: 12, backgroundColor: '#F1F4F9', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 },
+  searchBox: { flex: 1, height: 44, borderRadius: 12, backgroundColor: C.surface, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 },
   searchInput: { flex: 1, fontSize: 15, color: C.ink, height: 44, ...webNoOutline },
   h: { fontSize: 15, fontWeight: '800', color: C.ink, marginBottom: 10 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   addSq: { width: 34, height: 34, borderRadius: 11, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center' },
-  notif: { flexDirection: 'row', gap: 12, padding: 14, backgroundColor: '#fff', borderRadius: R.lg, marginBottom: 10, borderWidth: 1, borderColor: '#EEF2F7' },
-  notifUnread: { backgroundColor: '#F5F9FF', borderColor: '#D6E4FF' },
+  notif: { flexDirection: 'row', gap: 12, padding: 14, backgroundColor: '#fff', borderRadius: R.lg, marginBottom: 10, borderWidth: 1, borderColor: C.line },
+  notifUnread: { backgroundColor: C.card, borderColor: C.primaryBorder },
   notifTitle: { fontSize: 14, fontWeight: '800', color: C.ink2, lineHeight: 19 },
   notifBody: { fontSize: 13, color: C.muted, lineHeight: 18, marginTop: 2 },
   dot: { width: 9, height: 9, borderRadius: 5, backgroundColor: C.primary, marginTop: 6 },
-  statusHero: { borderRadius: R.lg, padding: 18 },
+  statusHero: { borderRadius: R.lg, padding: 18, borderWidth: 1, borderColor: C.line, ...shadow.sm },
   statusLabel: { fontSize: 20, fontWeight: '900' },
-  statusDesc: { fontSize: 13, marginTop: 4, fontWeight: '600', opacity: 0.85 },
-  tlDot: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#D5DCE6', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  tlLine: { width: 2, flex: 1, backgroundColor: '#E3E8EF', marginVertical: 2 },
+  statusDesc: { fontSize: 13, marginTop: 4, fontWeight: '500', lineHeight: 19 },
+  tlDot: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: C.line, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  tlLine: { width: 2, flex: 1, backgroundColor: C.line, marginVertical: 2 },
   tlTitle: { fontSize: 15, fontWeight: '800', color: C.ink },
-  techAvatar: { width: 52, height: 52, borderRadius: 18, backgroundColor: C.goldSoft, alignItems: 'center', justifyContent: 'center' },
+  techAvatar: { width: 52, height: 52, borderRadius: 18, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
   sec: { fontSize: 15, fontWeight: '800', color: C.ink, marginTop: 20, marginBottom: 10 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: C.line, paddingTop: 12, marginTop: 12 },
   dock: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
-  option: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F3F8' },
-  bonus: { backgroundColor: C.goldSoft, borderRadius: R.md, padding: 14, marginTop: 16 },
+  option: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.line },
+  bonus: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: R.md, padding: 14, marginTop: 16 },
   pointsHero: { backgroundColor: C.navy, ...grad.navyHero, borderRadius: 22, padding: 20, overflow: 'hidden', ...shadow.md },
   blob: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.07)' },
   tiers: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  tierItem: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#F8FAFD' },
-  ticket: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: R.md, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: '#EEF2F7', ...shadow.sm },
+  tierItem: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, backgroundColor: C.card },
+  ticket: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: R.md, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: C.line, ...shadow.sm },
   ticketLeft: { width: 64, alignSelf: 'stretch', backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
-  thumb: { width: 76, height: 76, borderRadius: 14, backgroundColor: '#EEF2F7', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' },
+  thumb: { width: 76, height: 76, borderRadius: 14, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' },
   thumbX: { position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(15,23,42,0.7)', alignItems: 'center', justifyContent: 'center' },
   thumbAdd: { width: 76, height: 76, borderRadius: 14, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.primary, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
   day: { width: 76, height: 64, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },

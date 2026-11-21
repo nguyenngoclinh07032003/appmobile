@@ -113,7 +113,7 @@ export function SymptomBreakdownView({
 
       {initialSymptomPhotos.length > 0 ? (
         <View style={st.initialWrap}>
-          <Text style={st.secLabel}>📷 Hình ảnh triệu chứng ban đầu ({initialSymptomPhotos.length})</Text>
+          <Text style={st.secLabel}>Hình ảnh triệu chứng ban đầu ({initialSymptomPhotos.length})</Text>
           <View style={st.photoRow}>
             {initialSymptomPhotos.map((ph, idx) => {
               const caption = ph.note || (ph.isCustomerInitial ? 'Khách đính kèm' : 'Kiểm tra ban đầu');
@@ -141,14 +141,14 @@ export function SymptomBreakdownView({
 
       {symptomItems.length > 0 ? (
         <View style={st.listWrap}>
-          <Text style={st.secLabel}>🔍 Chi tiết triệu chứng ({symptomItems.length})</Text>
+          <Text style={st.secLabel}>Chi tiết triệu chứng ({symptomItems.length})</Text>
           {symptomItems.map((item) => {
             const isOpen = Boolean(expandedIds[item.id]);
             const actionLabel = item.action === 'replace' ? 'Thay thế' : item.action === 'repair' ? 'Sửa chữa' : '';
             const badgeStyle =
               item.action === 'replace'
-                ? { bg: '#FFFBEB', fg: '#B45309', bd: '#FCD34D' }
-                : { bg: C.primarySoft, fg: C.primary, bd: '#93C5FD' };
+                ? { bg: C.goldSoft, fg: C.goldInk, bd: C.goldBorder }
+                : { bg: C.primarySoft, fg: C.primary, bd: C.primaryBorder };
 
             return (
               <View key={item.id} style={st.card}>
@@ -200,8 +200,8 @@ export function SymptomBreakdownView({
                     <Text style={[st.subLabel, { marginTop: 10 }]}>Hướng giải quyết</Text>
                     {item.action === 'replace' ? (
                       <View style={[st.actionBox, st.actionReplace]}>
-                        <AppIcon name="refresh-cw" size={14} color="#B45309" strokeWidth={2.4} />
-                        <Text style={[st.actionText, { color: '#B45309' }]}>Thay thế</Text>
+                        <AppIcon name="refresh-cw" size={14} color={C.goldInk} strokeWidth={2.4} />
+                        <Text style={[st.actionText, { color: C.goldInk }]}>Thay thế</Text>
                       </View>
                     ) : item.action === 'repair' ? (
                       <View style={[st.actionBox, st.actionRepair]}>
@@ -253,9 +253,9 @@ const st = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: C.surface,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: C.line,
   },
   tagText: { fontSize: 12, fontWeight: '700', color: C.ink2 },
   listWrap: { gap: 6 },
@@ -263,8 +263,8 @@ const st = StyleSheet.create({
   card: {
     borderRadius: R.md,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#FFFFFF',
+    borderColor: C.line,
+    backgroundColor: C.card,
     overflow: 'hidden',
   },
   head: {
@@ -273,7 +273,7 @@ const st = StyleSheet.create({
     gap: 8,
     paddingVertical: 10,
     paddingHorizontal: 11,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: C.card,
   },
   chevron: { width: 18, height: 18, alignItems: 'center', justifyContent: 'center' },
   title: { flex: 1, fontSize: 13.5, fontWeight: '800', color: C.ink },
@@ -283,8 +283,8 @@ const st = StyleSheet.create({
     height: 30,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#E2E8F0',
+    borderColor: C.line,
+    backgroundColor: C.surface,
   },
   initialWrap: { gap: 4, marginBottom: 2 },
   initialCard: { width: 78, gap: 3 },
@@ -302,8 +302,8 @@ const st = StyleSheet.create({
   body: {
     padding: 11,
     borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
+    borderTopColor: C.line,
+    backgroundColor: C.bg,
   },
   subLabel: { fontSize: 11.5, fontWeight: '800', color: C.ink2, marginBottom: 6 },
   photoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -312,7 +312,7 @@ const st = StyleSheet.create({
     height: 78,
     borderRadius: R.md,
     overflow: 'hidden',
-    backgroundColor: '#E2E8F0',
+    backgroundColor: C.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -327,8 +327,8 @@ const st = StyleSheet.create({
     borderRadius: R.sm,
     borderWidth: 1,
   },
-  actionReplace: { borderColor: '#FCD34D', backgroundColor: '#FFFBEB' },
-  actionRepair: { borderColor: '#93C5FD', backgroundColor: C.primarySoft },
+  actionReplace: { borderColor: C.goldBorder, backgroundColor: C.goldSoft },
+  actionRepair: { borderColor: C.primaryBorder, backgroundColor: C.primarySoft },
   actionText: { fontSize: 12.5, fontWeight: '800' },
   metaLine: { fontSize: 13, color: C.ink2, lineHeight: 19 },
   metaBold: { fontWeight: '700', color: C.ink },
@@ -336,6 +336,6 @@ const st = StyleSheet.create({
     width: '100%',
     height: 280,
     borderRadius: R.md,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: C.surface,
   },
 });

@@ -170,9 +170,9 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
   return (
     <>
       {o.kind === 'warranty' ? (
-        <Card style={{ marginTop: 12, backgroundColor: '#FEF2F2', borderColor: '#FECACA' }}>
-          <Text style={[tx.h, { color: '#B91C1C', marginBottom: 4 }]}>🛡️ Thẩm định bảo hành tại chỗ</Text>
-          <Text style={{ color: '#7F1D1D', fontSize: 13, lineHeight: 19 }}>
+        <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.red }}>
+          <Text style={[tx.h, { color: C.redInk, marginBottom: 4 }]}>Thẩm định bảo hành tại chỗ</Text>
+          <Text style={{ color: C.ink2, fontSize: 13, lineHeight: 19 }}>
             Nếu thiết bị bị rơi vỡ, chập cháy nguồn điện ngoài hoặc tác động của bên thứ 3, KTV bấm từ chối bảo hành để chuyển sang Báo giá sửa có phí.
           </Text>
           <View style={{ marginTop: 10 }}>
@@ -199,12 +199,12 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
         </Card>
       ) : null}
       {o.quote?.revisionRequested ? (
-        <Card style={{ marginTop: 12, backgroundColor: '#FFFBEB', borderColor: '#F5D77A' }}>
-          <Text style={[tx.h, { color: C.goldInk, marginBottom: 4 }]}>🔄 Khách yêu cầu điều chỉnh báo giá</Text>
-          <Text style={{ color: C.goldInk, lineHeight: 20 }}>
+        <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.gold }}>
+          <Text style={[tx.h, { color: C.goldInk, marginBottom: 4 }]}>Khách yêu cầu điều chỉnh báo giá</Text>
+          <Text style={{ color: C.ink, lineHeight: 20 }}>
             Lý do: <Text style={{ fontWeight: '800' }}>{o.quote.rejectReason || 'Cần trao đổi lại phương án / chi phí'}</Text>
           </Text>
-          <Text style={[ui.meta, { color: C.goldInk, marginTop: 4 }]}>
+          <Text style={[ui.meta, { color: C.muted, marginTop: 4 }]}>
             Hãy điều chỉnh lại vật tư / phương án bên dưới và gửi lại báo giá mới cho khách.
           </Text>
         </Card>
@@ -229,21 +229,21 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
       />
       <Card style={{ marginTop: 12 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Text style={tx.h}>🧾 Báo giá chi tiết</Text>
+          <Text style={tx.h}>Báo giá chi tiết</Text>
           <Badge
             text={
               diffMax > 0
                 ? `${hasRange ? 'Dự kiến ' : ''}${formatRangeVND(diffMin, diffMax, { prefix: '+' })}`
                 : 'Đúng giá gốc (0đ)'
             }
-            fg={diffMax > 0 ? C.orange : C.green}
-            bg={diffMax > 0 ? C.orangeSoft : C.greenSoft}
+            fg={diffMax > 0 ? C.goldInk : C.greenInk}
+            bg={diffMax > 0 ? C.goldSoft : C.greenSoft}
           />
         </View>
 
         {/* 1. Dịch vụ gốc đã đặt */}
         <Text style={[ui.meta, { fontWeight: '700', color: C.ink, marginTop: 8, marginBottom: 4 }]}>
-          🛠️ Dịch vụ ban đầu ({originalLines.length})
+          Dịch vụ ban đầu ({originalLines.length})
         </Text>
         {originalLines.map((l) => (
           <View key={l.key} style={tx.lineRow}>
@@ -255,7 +255,7 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
               {!onSite ? (
                 <Stepper value={l.qty} onChange={(q) => setLines((p) => p.map((x) => (x.key === l.key ? { ...x, qty: q } : x)))} />
               ) : (
-                <Badge text={`x${l.qty} ${l.unit || 'lần'}`} fg={C.ink2} bg="#F1F5F9" />
+                <Badge text={`x${l.qty} ${l.unit || 'lần'}`} fg={C.ink2} bg={C.surface} />
               )}
             </View>
           </View>
@@ -277,7 +277,7 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
         {partLines.length ? (
           <>
             <Text style={[ui.meta, { fontWeight: '700', color: C.ink, marginTop: 12, marginBottom: 4 }]}>
-              🔩 Vật tư / Linh kiện kho ({partLines.length})
+              Vật tư / Linh kiện kho ({partLines.length})
             </Text>
             {partLines.map((l) => {
               const showPriceInput = Boolean(l.needsPriceInput || !(Number(l.price) > 0));
@@ -325,8 +325,8 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
         {/* 3. Vật tư mua ngoài (nếu có) */}
         {customLines.length ? (
           <>
-            <Text style={[ui.meta, { fontWeight: '700', color: C.orange, marginTop: 12, marginBottom: 4 }]}>
-              📝 Vật tư mua ngoài ({customLines.length})
+            <Text style={[ui.meta, { fontWeight: '700', color: C.ink, marginTop: 12, marginBottom: 4 }]}>
+              Vật tư mua ngoài ({customLines.length})
             </Text>
             {customLines.map((l) => (
               <View key={l.key} style={tx.lineRow}>
@@ -335,13 +335,13 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
                     <Text style={{ color: C.ink, fontWeight: '700' }} numberOfLines={2}>{l.name}</Text>
                     <Badge
                       text={l.isEstimatedRange ? 'Giá dao động' : 'Vật tư ngoài'}
-                      fg={C.orange}
-                      bg={C.orangeSoft}
+                      fg={C.goldInk}
+                      bg={C.goldSoft}
                     />
                   </View>
                   {l.isEstimatedRange ? (
                     <Text style={ui.meta}>
-                      {formatRangeVND(l.minPrice, l.maxPrice)} x{l.qty} = <Text style={{ fontWeight: '700', color: C.orange }}>{formatRangeVND(l.minPrice * l.qty, l.maxPrice * l.qty)}</Text>
+                      {formatRangeVND(l.minPrice, l.maxPrice)} x{l.qty} = <Text style={{ fontWeight: '700', color: C.goldInk }}>{formatRangeVND(l.minPrice * l.qty, l.maxPrice * l.qty)}</Text>
                     </Text>
                   ) : (
                     <Text style={ui.meta}>{formatVND(l.price)} x{l.qty} = <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(l.price * l.qty)}</Text></Text>
@@ -366,20 +366,20 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
           <Tap
             style={[
               tx.addLine,
-              { flex: 1, marginTop: 0, flexDirection: 'row', gap: 5, borderColor: '#F59E0B', backgroundColor: showCustomFee ? '#FEF3C7' : '#FFFBEB' },
+              { flex: 1, marginTop: 0, flexDirection: 'row', gap: 5, borderColor: showCustomFee ? C.primary : C.line, backgroundColor: showCustomFee ? C.primarySoft : C.surface },
             ]}
             onPress={() => setShowCustomFee((v) => !v)}
           >
-            <AppIcon name="plus" size={14} color="#D97706" strokeWidth={2.5} />
-            <Text style={{ color: '#D97706', fontWeight: '700', fontSize: 13 }}>Vật tư mua ngoài</Text>
+            <AppIcon name="plus" size={14} color={showCustomFee ? C.primary : C.ink2} strokeWidth={2.5} />
+            <Text style={{ color: showCustomFee ? C.primary : C.ink2, fontWeight: '700', fontSize: 13 }}>Vật tư mua ngoài</Text>
           </Tap>
         </View>
 
         {showCustomFee ? (
-          <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1' }}>
+          <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>
-                🔩 Nhập vật tư mua ngoài (Giá dao động)
+                Nhập vật tư mua ngoài (Giá dao động)
               </Text>
               <Tap onPress={() => setShowCustomFee(false)} hitSlop={8}><Text style={{ color: C.muted, fontWeight: '700' }}>Đóng</Text></Tap>
             </View>

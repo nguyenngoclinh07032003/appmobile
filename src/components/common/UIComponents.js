@@ -66,18 +66,18 @@ export function Btn({ title, onPress, variant = 'primary', small, style, disable
   );
 }
 const BTN = {
-  primary: { box: { backgroundColor: C.primary, ...grad.primaryBtn, ...shadow.primary }, text: { color: '#fff' } },
-  dark: { box: { backgroundColor: C.navy, ...grad.navyCard, ...shadow.md }, text: { color: '#fff' } },
-  gold: { box: { backgroundColor: C.orange, ...grad.warningBtn, ...shadow.gold }, text: { color: '#fff' } },
-  warning: { box: { backgroundColor: C.orange, ...grad.warningBtn, ...shadow.gold }, text: { color: '#fff' } },
-  warningSoft: { box: { backgroundColor: C.goldSoft, borderWidth: 1, borderColor: '#FDE68A' }, text: { color: C.goldInk } },
-  success: { box: { backgroundColor: C.green, ...grad.successBtn, ...shadow.success }, text: { color: '#fff' } },
-  successSoft: { box: { backgroundColor: C.greenSoft, borderWidth: 1, borderColor: '#A7F3D0' }, text: { color: C.green } },
-  soft: { box: { backgroundColor: C.primarySoft, borderWidth: 1, borderColor: '#D6E4FF' }, text: { color: C.primary } },
-  ghost: { box: { backgroundColor: '#F1F5F9' }, text: { color: C.ink2 } },
-  outline: { box: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: C.line }, text: { color: C.ink } },
-  danger: { box: { backgroundColor: C.red, ...grad.dangerBtn, ...shadow.danger }, text: { color: '#fff' } },
-  dangerSoft: { box: { backgroundColor: C.redSoft, borderWidth: 1, borderColor: '#FECACA' }, text: { color: C.red } },
+  primary: { box: { backgroundColor: C.primary, ...grad.primaryBtn, ...shadow.primary }, text: { color: C.card } },
+  dark: { box: { backgroundColor: C.navy, ...grad.navyCard, ...shadow.md }, text: { color: C.card } },
+  gold: { box: { backgroundColor: C.gold, ...grad.warningBtn, ...shadow.gold }, text: { color: C.card } },
+  warning: { box: { backgroundColor: C.gold, ...grad.warningBtn, ...shadow.gold }, text: { color: C.card } },
+  warningSoft: { box: { backgroundColor: C.goldSoft, borderWidth: 1, borderColor: C.goldBorder }, text: { color: C.goldInk } },
+  success: { box: { backgroundColor: C.green, ...grad.successBtn, ...shadow.success }, text: { color: C.card } },
+  successSoft: { box: { backgroundColor: C.greenSoft, borderWidth: 1, borderColor: C.greenBorder }, text: { color: C.greenInk } },
+  soft: { box: { backgroundColor: C.primarySoft, borderWidth: 1, borderColor: C.primaryBorder }, text: { color: C.primary } },
+  ghost: { box: { backgroundColor: C.surface }, text: { color: C.ink2 } },
+  outline: { box: { backgroundColor: C.card, borderWidth: 1.5, borderColor: C.line }, text: { color: C.ink } },
+  danger: { box: { backgroundColor: C.red, ...grad.dangerBtn, ...shadow.danger }, text: { color: C.card } },
+  dangerSoft: { box: { backgroundColor: C.redSoft, borderWidth: 1, borderColor: C.redBorder }, text: { color: C.redInk } },
 };
 
 // Hệ thống phân loại 3 màu ngữ nghĩa:
@@ -99,11 +99,11 @@ export function resolveSemanticTone({ tone, title = '', message = '', text = '',
     return {
       key: 'danger',
       label: 'Nguy hiểm / Lỗi',
-      fg: C.red,
+      fg: C.redInk,
       accent: C.red,
       bg: C.redSoft,
-      unreadBg: '#FFF5F5',
-      border: '#FECACA',
+      unreadBg: C.card,
+      border: C.redBorder,
       icon: icon || 'alert-triangle',
       btnVariant: 'danger',
     };
@@ -118,11 +118,11 @@ export function resolveSemanticTone({ tone, title = '', message = '', text = '',
     return {
       key: 'success',
       label: 'Hoàn thành',
-      fg: C.green,
+      fg: C.greenInk,
       accent: C.green,
       bg: C.greenSoft,
-      unreadBg: '#F2FDF9',
-      border: '#A7F3D0',
+      unreadBg: C.card,
+      border: C.greenBorder,
       icon: icon || 'check-circle-2',
       btnVariant: 'success',
     };
@@ -140,10 +140,10 @@ export function resolveSemanticTone({ tone, title = '', message = '', text = '',
       key: 'warning',
       label: 'Cảnh báo',
       fg: C.goldInk,
-      accent: C.orange,
+      accent: C.gold,
       bg: C.goldSoft,
-      unreadBg: '#FFFBEB',
-      border: '#FDE68A',
+      unreadBg: C.card,
+      border: C.goldBorder,
       icon: icon || 'alert-triangle',
       btnVariant: 'warning',
     };
@@ -155,8 +155,8 @@ export function resolveSemanticTone({ tone, title = '', message = '', text = '',
     fg: C.primary,
     accent: C.primary,
     bg: C.primarySoft,
-    unreadBg: '#F5F9FF',
-    border: '#D6E4FF',
+    unreadBg: C.card,
+    border: C.primaryBorder,
     icon: icon || 'bell',
     btnVariant: 'primary',
   };
@@ -175,7 +175,7 @@ export function IconBtn({ icon, onPress, badge, dark, style, size = 40, label, i
           borderRadius: size / 2,
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: dark ? 'rgba(255,255,255,0.14)' : '#F1F5F9',
+          backgroundColor: dark ? 'rgba(255,255,255,0.14)' : C.surface,
           borderWidth: dark ? 1 : 0,
           borderColor: dark ? 'rgba(255,255,255,0.16)' : 'transparent',
         },
@@ -209,7 +209,7 @@ export function TopBar({ title, sub, onBack, right }) {
   const { nav } = useApp();
   return (
     <View style={ui.topBar}>
-      <IconBtn icon="‹" onPress={onBack || nav.back} size={38} label="Quay lại" style={{ backgroundColor: '#F1F5F9' }} />
+      <IconBtn icon="‹" onPress={onBack || nav.back} size={38} label="Quay lại" style={{ backgroundColor: C.surface }} />
       <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: 8 }}>
         <Text style={ui.topBarTitle} numberOfLines={1}>{title}</Text>
         {sub ? <Text style={ui.topBarSub} numberOfLines={1}>{sub}</Text> : null}
@@ -363,8 +363,8 @@ export function Stars({ value = 5, size = 12, onChange }) {
           <AppIcon
             name="star"
             size={size + 2}
-            color={active ? '#F5A623' : '#CBD5E1'}
-            fill={active ? '#F5A623' : 'none'}
+            color={active ? C.gold : C.line}
+            fill={active ? C.gold : 'none'}
             strokeWidth={2}
           />
         );
@@ -381,7 +381,7 @@ export function Stars({ value = 5, size = 12, onChange }) {
 export function Progress({ value, color = C.primary, style }) {
   const pct = `${Math.round(Math.min(1, Math.max(0, value)) * 100)}%`;
   return (
-    <View style={[{ height: 7, borderRadius: 4, backgroundColor: '#E8EEF6', overflow: 'hidden' }, style]}>
+    <View style={[{ height: 7, borderRadius: 4, backgroundColor: C.line, overflow: 'hidden' }, style]}>
       <View
         style={[
           { width: pct, height: '100%', backgroundColor: color, borderRadius: 4 },
@@ -419,7 +419,7 @@ export function Field({ label, error, style, inputStyle, ...rest }) {
   return (
     <View style={style}>
       {label ? <Text style={ui.fieldLabel}>{label}</Text> : null}
-      <TextInput placeholderTextColor={C.faint} style={[ui.input, rest.multiline && ui.inputMulti, error && { borderColor: '#F7A39C' }, inputStyle]} {...rest} />
+      <TextInput placeholderTextColor={C.faint} style={[ui.input, rest.multiline && ui.inputMulti, error && { borderColor: C.red }, inputStyle]} {...rest} />
       {error ? <Text style={ui.fieldErr}>{error}</Text> : null}
     </View>
   );
@@ -443,7 +443,7 @@ export function ListRow({ icon, iconBg, label, sub, value, onPress, danger, last
     <Tap onPress={onPress} scaleTo={0.99} style={[ui.listRow, !last && ui.listDivider]}>
       {icon ? (
         <View style={{ width: 28, alignItems: 'center', justifyContent: 'center' }}>
-          <AppIcon icon={icon} size={22} color={danger ? C.red : '#1E3A8A'} strokeWidth={1.75} />
+          <AppIcon icon={icon} size={22} color={danger ? C.red : C.ink2} strokeWidth={1.75} />
         </View>
       ) : null}
       <View style={{ flex: 1, minWidth: 0 }}>
@@ -451,7 +451,7 @@ export function ListRow({ icon, iconBg, label, sub, value, onPress, danger, last
         {sub ? <Text style={ui.meta} numberOfLines={1}>{sub}</Text> : null}
       </View>
       {right || (value ? <Text style={[ui.listValue, { maxWidth: '42%' }]} numberOfLines={1}>{value}</Text> : null)}
-      {right ? null : <AppIcon name="chevron-right" size={18} color={C.primary} strokeWidth={2} style={{ marginLeft: 4 }} />}
+      {right ? null : <AppIcon name="chevron-right" size={18} color={C.faint} strokeWidth={2} style={{ marginLeft: 4 }} />}
     </Tap>
   );
 }
@@ -479,7 +479,6 @@ export function Price({ value, old, size = 15, row }) {
 // ------------------------------------------------------------------ Service visuals
 export function Media({ item, height, width, radius = 0, iconSize }) {
   const tone = toneOf(item?.category);
-  const fs = iconSize || (height >= 180 ? 74 : height >= 100 ? 44 : 26);
   const emblemSize = height >= 180 ? 116 : height >= 100 ? 68 : 42;
   return (
     <View
@@ -496,16 +495,14 @@ export function Media({ item, height, width, radius = 0, iconSize }) {
         Platform.OS === 'web' && tone.grad ? { backgroundImage: tone.grad } : null,
       ]}
     >
-      <View style={{ position: 'absolute', width: height * 1.15, height: height * 1.15, borderRadius: height, backgroundColor: 'rgba(255,255,255,0.52)', top: -height * 0.45, right: -height * 0.32 }} />
-      <View style={{ position: 'absolute', width: height * 0.65, height: height * 0.65, borderRadius: height, backgroundColor: 'rgba(255,255,255,0.38)', bottom: -height * 0.25, left: -height * 0.15 }} />
       <View
         style={{
           width: emblemSize,
           height: emblemSize,
           borderRadius: emblemSize * 0.36,
-          backgroundColor: 'rgba(255,255,255,0.68)',
+          backgroundColor: C.card,
           borderWidth: 1,
-          borderColor: 'rgba(255,255,255,0.9)',
+          borderColor: C.line,
           alignItems: 'center',
           justifyContent: 'center',
           ...shadow.sm,
@@ -526,7 +523,7 @@ export function ServiceCard({ item, style }) {
         <Media item={item} height={110} />
         {discount > 0 ? <View style={ui.offTag}><Text style={ui.offTagText}>-{discount}%</Text></View> : null}
         <View style={[ui.warrantyTag, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-          <AppIcon name="shield-check" size={11} color={C.green} strokeWidth={2.4} />
+          <AppIcon name="shield-check" size={11} color={C.primary} strokeWidth={2.4} />
           <Text style={ui.warrantyTagText}>BH 60 ngày</Text>
         </View>
       </View>
@@ -657,14 +654,14 @@ export function DialogHost() {
           <Animated.View style={[ui.dialog, { opacity: fade, transform: [{ scale }] }]}>
             <View style={ui.dialogTopRow}>
               {displayIcon ? (
-                <View style={[ui.dialogIconOuter, { backgroundColor: sem.unreadBg || '#FFFBEB' }]}>
-                  <View style={[ui.dialogIconInner, { backgroundColor: sem.bg }]}>
+                <View style={[ui.dialogIconOuter, { backgroundColor: sem.bg }]}>
+                  <View style={[ui.dialogIconInner, { backgroundColor: C.card }]}>
                     <AppIcon icon={displayIcon} size={22} color={sem.accent} strokeWidth={2.2} />
                   </View>
                 </View>
               ) : <View />}
               <Tap onPress={u.closeDialog} hitSlop={10} style={ui.dialogCloseBtn} accessibilityLabel="Đóng">
-                <AppIcon name="x" size={20} color="#475569" strokeWidth={2.2} />
+                <AppIcon name="x" size={20} color={C.ink2} strokeWidth={2.2} />
               </Tap>
             </View>
             <Text style={ui.dialogTitle}>{cfg.title}</Text>
@@ -685,9 +682,9 @@ export function DialogHost() {
                     variant={resolvedVariant}
                     style={[
                       stacked ? { width: '100%', minHeight: 48, borderRadius: 12 } : { flex: 1, minHeight: 46 },
-                      isCancelLike && stacked ? { borderWidth: 1, borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' } : null,
+                      isCancelLike && stacked ? { borderWidth: 1, borderColor: C.line, backgroundColor: C.card } : null,
                     ]}
-                    textStyle={isCancelLike && stacked ? { color: '#475569', fontWeight: '700' } : null}
+                    textStyle={isCancelLike && stacked ? { color: C.ink2, fontWeight: '700' } : null}
                     onPress={() => { u.closeDialog(); ac.onPress?.(); }}
                   />
                 );
@@ -821,27 +818,27 @@ export const ui = StyleSheet.create({
   section: { fontSize: 18, fontWeight: '800', color: C.ink, letterSpacing: -0.3 },
   link: { color: C.primary, fontWeight: '700', fontSize: 13 },
   meta: { color: C.muted, fontSize: 12, marginTop: 3, fontWeight: '500' },
-  price: { color: C.red, fontWeight: '800', fontSize: 15, fontVariant: ['tabular-nums'] },
+  price: { color: C.ink, fontWeight: '800', fontSize: 15, fontVariant: ['tabular-nums'] },
   oldPrice: { color: C.faint, fontSize: 11, textDecorationLine: 'line-through', marginTop: 1 },
-  cleanLine: { color: C.green, fontSize: 11, fontWeight: '700', marginTop: 4 },
-  estimate: { color: C.orange, fontSize: 11, fontWeight: '700', marginTop: 4 },
+  cleanLine: { color: C.muted, fontSize: 11, fontWeight: '600', marginTop: 4 },
+  estimate: { color: C.muted, fontSize: 11, fontWeight: '600', marginTop: 4 },
   chip: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 14, height: 36 },
   chipOn: { backgroundColor: C.navy, borderColor: C.navy, ...shadow.sm },
   chipText: { color: C.ink2, fontSize: 13, lineHeight: 18, fontWeight: '600' },
   chipTextOn: { color: '#fff', fontWeight: '700' },
-  segment: { flexDirection: 'row', backgroundColor: '#E3E9F2', borderRadius: 14, padding: 4 },
+  segment: { flexDirection: 'row', backgroundColor: C.surface, borderRadius: 14, padding: 4 },
   segmentItem: { flex: 1, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   segmentOn: { backgroundColor: '#fff', ...shadow.sm },
   segmentText: { color: C.muted, fontWeight: '600', fontSize: 13 },
   segmentTextOn: { color: C.ink, fontWeight: '800' },
   pill: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4 },
   pillText: { fontSize: 11, fontWeight: '800' },
-  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: '#CBD3DF', alignItems: 'center', justifyContent: 'center' },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: C.faint, alignItems: 'center', justifyContent: 'center' },
   radioOn: { borderColor: C.primary },
   radioDot: { width: 11, height: 11, borderRadius: 6, backgroundColor: C.primary },
-  checkbox: { width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: '#CBD3DF', alignItems: 'center', justifyContent: 'center' },
+  checkbox: { width: 22, height: 22, borderRadius: 7, borderWidth: 2, borderColor: C.faint, alignItems: 'center', justifyContent: 'center' },
   checkboxOn: { backgroundColor: C.primary, borderColor: C.primary },
-  stepper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F5F9', borderRadius: 999, padding: 3 },
+  stepper: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface, borderRadius: 999, padding: 3 },
   stepBtn: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', ...shadow.sm },
   stepMark: { fontSize: 17, color: C.ink, fontWeight: '700', lineHeight: 20 },
   stepVal: { minWidth: 28, textAlign: 'center', fontWeight: '800', color: C.ink, fontSize: 14 },
@@ -852,30 +849,30 @@ export const ui = StyleSheet.create({
   selectRow: { minHeight: 52, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center' },
   chevron: { color: C.faint, fontSize: 22, lineHeight: 24, marginLeft: 6 },
   listRow: { minHeight: 56, paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 14 },
-  listDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#F1F5F9' },
+  listDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line },
   listLabel: { fontSize: 15.5, color: C.ink, fontWeight: '500' },
   listValue: { color: C.muted, fontSize: 13, fontWeight: '500' },
   empty: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, paddingVertical: 44 },
-  emptyIcon: { width: 88, height: 88, borderRadius: 28, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', ...shadow.md, borderWidth: 1, borderColor: '#EEF2F7' },
+  emptyIcon: { width: 88, height: 88, borderRadius: 28, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', ...shadow.md, borderWidth: 1, borderColor: C.line },
   emptyTitle: { fontSize: 18, fontWeight: '800', color: C.ink, marginTop: 18, textAlign: 'center', letterSpacing: -0.2 },
   emptyBody: { color: C.muted, textAlign: 'center', marginTop: 8, lineHeight: 21, fontSize: 14 },
-  sCard: { backgroundColor: '#fff', borderRadius: R.lg, overflow: 'hidden', ...shadow.sm, borderWidth: 1, borderColor: 'rgba(226,232,240,0.95)' },
+  sCard: { backgroundColor: '#fff', borderRadius: R.lg, overflow: 'hidden', ...shadow.sm, borderWidth: 1, borderColor: C.line },
   sCardName: { fontSize: 13, fontWeight: '700', color: C.ink, lineHeight: 18, minHeight: 36 },
-  offTag: { position: 'absolute', left: 8, top: 8, backgroundColor: C.red, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, ...shadow.sm },
-  offTagText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  offTag: { position: 'absolute', left: 8, top: 8, backgroundColor: C.card, borderWidth: 1, borderColor: C.primaryBorder, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, ...shadow.sm },
+  offTagText: { color: C.primary, fontSize: 11, fontWeight: '800' },
   favBtn: { position: 'absolute', right: 8, top: 8, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.95)', alignItems: 'center', justifyContent: 'center', ...shadow.sm },
   warrantyTag: { position: 'absolute', left: 8, bottom: 8, backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, ...shadow.sm },
-  warrantyTagText: { color: C.green, fontSize: 10, fontWeight: '800' },
+  warrantyTagText: { color: C.ink2, fontSize: 10, fontWeight: '800' },
   addBtn: { width: 32, height: 32, borderRadius: 11, backgroundColor: C.primary, ...grad.primaryBtn, alignItems: 'center', justifyContent: 'center', ...shadow.primary },
   addBtnText: { color: '#fff', fontSize: 20, fontWeight: '700', lineHeight: 22 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12 },
   gridItem: { width: '48.4%' },
-  sRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: R.lg, padding: 10, marginBottom: 10, ...shadow.sm, borderWidth: 1, borderColor: 'rgba(226,232,240,0.95)' },
+  sRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: R.lg, padding: 10, marginBottom: 10, ...shadow.sm, borderWidth: 1, borderColor: C.line },
   sRowName: { fontSize: 14, fontWeight: '700', color: C.ink, lineHeight: 19, marginBottom: 4 },
   modalWrap: { flex: 1, justifyContent: 'flex-end', alignItems: 'center' },
   backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(7,26,58,0.55)' },
   sheet: { width: '100%', maxWidth: 430, backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 20, paddingTop: 10, maxHeight: '88%', ...shadow.lg },
-  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: '#D8DEE8', alignSelf: 'center', marginBottom: 12 },
+  handle: { width: 40, height: 5, borderRadius: 3, backgroundColor: C.line, alignSelf: 'center', marginBottom: 12 },
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
   sheetTitle: { fontSize: 18, fontWeight: '800', color: C.ink, flex: 1, letterSpacing: -0.2 },
   dialogWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
@@ -888,7 +885,7 @@ export const ui = StyleSheet.create({
   dialogDot: { width: 7, height: 7, borderRadius: 4 },
   dialogPillText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.2, textTransform: 'uppercase' },
   dialogTitle: { fontSize: 18, fontWeight: '800', color: C.ink, textAlign: 'left' },
-  dialogBody: { fontSize: 14.5, color: '#475569', textAlign: 'left', marginTop: 6, lineHeight: 21 },
+  dialogBody: { fontSize: 14.5, color: C.ink2, textAlign: 'left', marginTop: 6, lineHeight: 21 },
   toast: { position: 'absolute', alignSelf: 'center', bottom: 94, backgroundColor: 'rgba(7,26,58,0.96)', paddingLeft: 10, paddingRight: 18, paddingVertical: 9, borderRadius: 999, flexDirection: 'row', alignItems: 'center', zIndex: 100, ...shadow.lg, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.12)' },
   toastIconWrap: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   toastText: { color: '#fff', fontWeight: '700', fontSize: 13.5 },
@@ -1072,11 +1069,11 @@ export function TimeRangeSlider({
 
 const trsStyles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: C.card,
     borderRadius: R.lg,
     padding: 16,
     borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    borderColor: C.line,
     marginTop: 12,
     marginBottom: 6,
     ...shadow.sm,
@@ -1087,7 +1084,7 @@ const trsStyles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#F0F3F8',
+    borderBottomColor: C.line,
   },
   eyebrow: {
     fontSize: 11,
@@ -1116,12 +1113,12 @@ const trsStyles = StyleSheet.create({
   },
   slotBadge: {
     alignItems: 'flex-end',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: C.bg,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: C.line,
   },
   slotBadgeLabel: {
     fontSize: 10,
@@ -1136,16 +1133,18 @@ const trsStyles = StyleSheet.create({
   },
   closedBox: {
     padding: 14,
-    backgroundColor: '#FFFBEB',
+    backgroundColor: C.card,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#FCD34D',
+    borderColor: C.line,
+    borderLeftWidth: 3.5,
+    borderLeftColor: C.gold,
     marginTop: 10,
     alignItems: 'center',
   },
   closedText: {
     fontSize: 13,
-    color: '#92400E',
+    color: C.ink2,
     lineHeight: 18,
     textAlign: 'center',
   },
@@ -1157,7 +1156,7 @@ const trsStyles = StyleSheet.create({
     borderRadius: 8,
   },
   tomorrowBtnText: {
-    color: '#FFFFFF',
+    color: C.card,
     fontWeight: '700',
     fontSize: 13,
   },
@@ -1192,14 +1191,14 @@ const trsStyles = StyleSheet.create({
     height: 38,
     borderRadius: 10,
     borderWidth: 1.2,
-    borderColor: '#D0DCF2',
-    backgroundColor: '#F6F9FF',
+    borderColor: C.primaryBorder,
+    backgroundColor: C.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
   nudgeBtnDisabled: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
+    backgroundColor: C.bg,
+    borderColor: C.line,
     opacity: 0.5,
   },
   nudgeBtnText: {
@@ -1223,16 +1222,16 @@ const trsStyles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#FFFFFF',
+    borderColor: C.line,
+    backgroundColor: C.card,
   },
   presetPillActive: {
     backgroundColor: C.primary,
     borderColor: C.primary,
   },
   presetPillDisabled: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#F0F3F8',
+    backgroundColor: C.bg,
+    borderColor: C.line,
     opacity: 0.4,
   },
   presetPillText: {
@@ -1241,7 +1240,7 @@ const trsStyles = StyleSheet.create({
     fontWeight: '600',
   },
   presetPillTextActive: {
-    color: '#FFFFFF',
+    color: C.card,
     fontWeight: '800',
   },
 });

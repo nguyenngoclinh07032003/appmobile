@@ -10,9 +10,9 @@ import {
 } from '../../components';
 
 const HANDOVER_STATUS_META = {
-  SUBMITTED: { label: 'Chờ văn phòng duyệt', fg: '#92400E', bg: '#FEF3C7' },
-  CONFIRMED: { label: 'Đã xác nhận nhận tiền', fg: '#065F46', bg: '#D1FAE5' },
-  REJECTED: { label: 'Bị từ chối', fg: '#991B1B', bg: '#FEE2E2' },
+  SUBMITTED: { label: 'Chờ văn phòng duyệt', fg: C.goldInk, bg: C.goldSoft },
+  CONFIRMED: { label: 'Đã xác nhận nhận tiền', fg: C.greenInk, bg: C.greenSoft },
+  REJECTED: { label: 'Bị từ chối', fg: C.redInk, bg: C.redSoft },
 };
 
 const HISTORY_FILTERS = [
@@ -201,23 +201,23 @@ export function TechHandoversScreen({ params }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadAll(true)} tintColor={C.primary} colors={[C.primary]} />}
       >
         {apiUnavailable ? (
-          <Card style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
-            <Text style={{ fontWeight: '800', color: '#92400E' }}>Máy chủ chưa cập nhật API bàn giao tiền</Text>
-            <Text style={{ color: '#78350F', marginTop: 4, lineHeight: 20 }}>
+          <Card style={{ backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.gold }}>
+            <Text style={{ fontWeight: '800', color: C.goldInk }}>Máy chủ chưa cập nhật API bàn giao tiền</Text>
+            <Text style={{ color: C.ink2, marginTop: 4, lineHeight: 20 }}>
               Tính năng bàn giao tiền mặt cần backend bản mới trên VPS. Kéo làm mới lại sau khi backend deploy xong.
             </Text>
           </Card>
         ) : loadError ? (
-          <Card style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA', marginBottom: 12 }}>
-            <Text style={{ fontWeight: '800', color: '#991B1B' }}>Không tải được dữ liệu bàn giao</Text>
-            <Text style={{ color: '#7F1D1D', marginTop: 4, lineHeight: 20 }}>{loadError}</Text>
+          <Card style={{ backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.red, marginBottom: 12 }}>
+            <Text style={{ fontWeight: '800', color: C.redInk }}>Không tải được dữ liệu bàn giao</Text>
+            <Text style={{ color: C.ink2, marginTop: 4, lineHeight: 20 }}>{loadError}</Text>
             <Btn title="Thử lại" small variant="soft" style={{ marginTop: 10, alignSelf: 'flex-start' }} onPress={() => loadAll(false)} />
           </Card>
         ) : null}
 
         {tab === 'pending' ? (
           <>
-            <Card style={{ backgroundColor: '#EFF6FF', borderColor: '#BFDBFE', ...shadow.sm }}>
+            <Card style={{ backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary, ...shadow.sm }}>
               <Text style={{ color: C.ink2, fontSize: 12.5, fontWeight: '600' }}>Tổng tiền mặt đang giữ chưa nộp</Text>
               <Text style={{ fontSize: 26, fontWeight: '900', color: C.primary, marginTop: 4 }}>{formatVND(pendingTotal)}</Text>
               <Text style={[ui.meta, { marginTop: 4 }]}>{pendingItems.length} khoản tiền mặt đã xác nhận từ khách</Text>
@@ -308,7 +308,7 @@ export function TechHandoversScreen({ params }) {
               />
             ) : (
               historyItems.map((h) => {
-                const meta = HANDOVER_STATUS_META[h.handover_status] || { label: h.handover_status, fg: C.ink2, bg: '#F1F5F9' };
+                const meta = HANDOVER_STATUS_META[h.handover_status] || { label: h.handover_status, fg: C.ink2, bg: C.surface };
                 const items = Array.isArray(h.items) ? h.items : [];
                 return (
                   <Card key={h.handover_id} style={{ marginBottom: 12 }}>
@@ -334,8 +334,8 @@ export function TechHandoversScreen({ params }) {
                     ) : null}
 
                     {h.notes ? (
-                      <View style={[hs.noteBox, h.handover_status === 'REJECTED' && { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
-                        <Text style={{ color: h.handover_status === 'REJECTED' ? '#991B1B' : C.ink2, fontSize: 13, lineHeight: 19 }}>
+                      <View style={[hs.noteBox, h.handover_status === 'REJECTED' && { backgroundColor: C.redSoft, borderColor: C.redBorder }]}>
+                        <Text style={{ color: h.handover_status === 'REJECTED' ? C.redInk : C.ink2, fontSize: 13, lineHeight: 19 }}>
                           {h.notes}
                         </Text>
                       </View>
@@ -367,21 +367,21 @@ const hs = StyleSheet.create({
   secTitle: { fontSize: 15, fontWeight: '800', color: C.ink },
   payRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: '#F1F5F9',
+    borderBottomWidth: 1, borderBottomColor: C.surface,
   },
   checkbox: {
-    width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#94A3B8',
-    alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff',
+    width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: C.faint,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: C.card,
   },
   checkboxOn: { backgroundColor: C.primary, borderColor: C.primary },
-  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E2E8F0' },
+  chip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, backgroundColor: C.card, borderWidth: 1, borderColor: C.line },
   chipActive: { backgroundColor: C.primary, borderColor: C.primary },
   chipText: { fontSize: 13, fontWeight: '700', color: C.ink2 },
-  chipTextActive: { color: '#fff' },
-  itemsBox: { marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
-  noteBox: { marginTop: 8, padding: 10, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' },
+  chipTextActive: { color: C.card },
+  itemsBox: { marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.surface },
+  noteBox: { marginTop: 8, padding: 10, borderRadius: R.md, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line },
   footer: {
     position: 'absolute', left: 0, right: 0, bottom: 0, padding: 14,
-    backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#E2E8F0',
+    backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.line,
   },
 });

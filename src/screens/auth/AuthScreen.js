@@ -26,7 +26,7 @@ function ModernField({
       >
         {icon ? (
           <View style={st.inputIcon}>
-            <AppIcon icon={icon} size={18} color={focused ? C.primary : '#64748B'} strokeWidth={2.1} />
+            <AppIcon icon={icon} size={18} color={focused ? C.primary : C.muted} strokeWidth={2.1} />
           </View>
         ) : null}
         <TextInput
@@ -34,7 +34,7 @@ function ModernField({
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder}
-          placeholderTextColor="#94A3B8"
+          placeholderTextColor={C.faint}
           secureTextEntry={secure}
           keyboardType={keyboardType || 'default'}
           autoCapitalize={autoCapitalize || 'none'}
@@ -131,7 +131,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
           <View style={[st.heroBlob, st.heroBlob2]} />
           {onBackHome ? (
             <Tap onPress={onBackHome} style={st.homeLink}>
-              <AppIcon name="arrow-left" size={16} color="#DBEAFE" />
+              <AppIcon name="arrow-left" size={16} color="rgba(255,255,255,0.9)" />
               <Text style={st.homeLinkText}>Trang chủ</Text>
             </Tap>
           ) : null}
@@ -265,7 +265,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
               secure={!showPw}
               right={(
                 <Tap onPress={() => setShowPw(!showPw)} style={st.eyeToggle} hitSlop={10}>
-                  <AppIcon name={showPw ? 'eye' : 'eye-off'} size={18} color="#64748B" strokeWidth={2} />
+                  <AppIcon name={showPw ? 'eye' : 'eye-off'} size={18} color={C.muted} strokeWidth={2} />
                 </Tap>
               )}
             />
@@ -344,7 +344,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
 }
 
 const st = StyleSheet.create({
-  fill: { flex: 1, backgroundColor: '#F8FAFC' },
+  fill: { flex: 1, backgroundColor: C.bg },
   scroll: { flexGrow: 1, paddingBottom: 32 },
 
   // Hero Section
@@ -373,16 +373,16 @@ const st = StyleSheet.create({
     top: 50,
     left: -60,
     right: undefined,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
   },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   homeLink: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, marginBottom: 16 },
-  homeLinkText: { color: '#DBEAFE', fontSize: 13, fontWeight: '700' },
+  homeLinkText: { color: 'rgba(255, 255, 255, 0.9)', fontSize: 13, fontWeight: '700' },
   brandMark: {
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: C.card,
     alignItems: 'center',
     justifyContent: 'center',
     ...shadow.sm,
@@ -393,12 +393,12 @@ const st = StyleSheet.create({
   
   welcomeBox: { marginTop: 20 },
   heroTitle: { fontSize: 24, fontWeight: '900', color: '#FFFFFF', letterSpacing: -0.4 },
-  heroSub: { marginTop: 6, fontSize: 13.5, color: '#CBD5E1', lineHeight: 20, maxWidth: 330 },
+  heroSub: { marginTop: 6, fontSize: 13.5, color: 'rgba(255, 255, 255, 0.82)', lineHeight: 20, maxWidth: 330 },
 
   // Card Content Sheet
   sheet: {
     marginTop: -22,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: C.card,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 20,
@@ -411,7 +411,7 @@ const st = StyleSheet.create({
   // Tabs
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: C.surface,
     borderRadius: 14,
     padding: 4,
     marginBottom: 20,
@@ -424,52 +424,52 @@ const st = StyleSheet.create({
     justifyContent: 'center',
   },
   tabItemOn: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: C.card,
     ...shadow.sm,
   },
   tabText: {
     fontSize: 14.5,
     fontWeight: '700',
-    color: '#64748B',
+    color: C.muted,
   },
   tabTextOn: {
     color: C.navy,
   },
 
-  // Forgot Password / Tech Partner Header
+  // Forgot Password Header
   forgotHeader: { marginBottom: 16 },
   backLink: { alignSelf: 'flex-start', paddingVertical: 4 },
   backLinkText: { fontSize: 13.5, fontWeight: '700', color: C.primary },
-  forgotNote: { fontSize: 13, color: '#64748B', marginTop: 4 },
+  forgotNote: { fontSize: 13, color: C.muted, marginTop: 4 },
 
   // Fields
   formBody: {},
   field: { marginBottom: 14 },
-  label: { fontSize: 13, fontWeight: '700', color: '#334155', marginBottom: 6 },
+  label: { fontSize: 13, fontWeight: '700', color: C.ink2, marginBottom: 6 },
   inputWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     height: 52,
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#FFFFFF',
+    borderColor: C.line,
+    backgroundColor: C.card,
     paddingHorizontal: 14,
   },
   inputWrapFocused: {
     borderColor: C.primary,
-    backgroundColor: '#FAF5FF',
+    backgroundColor: C.card,
     ...shadow.sm,
   },
   inputWrapError: {
-    borderColor: '#EF4444',
-    backgroundColor: '#FEF2F2',
+    borderColor: C.red,
+    backgroundColor: C.redSoft,
   },
   inputIcon: { fontSize: 16, marginRight: 10 },
   input: {
     flex: 1,
     fontSize: 14.5,
-    color: '#0F172A',
+    color: C.ink,
     fontWeight: '500',
   },
   eyeToggle: { padding: 6 },
@@ -480,15 +480,15 @@ const st = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: C.redSoft,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: C.redBorder,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 12,
   },
-  errorText: { fontSize: 12.5, color: '#DC2626', fontWeight: '600', flex: 1, lineHeight: 18 },
+  errorText: { fontSize: 12.5, color: C.redInk, fontWeight: '600', flex: 1, lineHeight: 18 },
 
   // Action links & Submit
   forgotRow: {
@@ -514,7 +514,7 @@ const st = StyleSheet.create({
   },
   guideText: {
     fontSize: 13.5,
-    color: '#64748B',
+    color: C.muted,
     fontWeight: '500',
   },
   guideLink: {
@@ -530,10 +530,10 @@ const st = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: C.bg,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: C.line,
   },
   securityIcon: { fontSize: 12 },
-  securityText: { fontSize: 11, color: '#94A3B8', fontWeight: '600' },
+  securityText: { fontSize: 11, color: C.faint, fontWeight: '600' },
 });

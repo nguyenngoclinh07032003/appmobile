@@ -20,7 +20,7 @@ function RetryButton({ onPress, busy }) {
       onPress={onPress}
       disabled={busy}
       activeOpacity={0.8}
-      style={{ marginTop: 8, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, backgroundColor: C.primarySoft, borderWidth: 1, borderColor: '#D6E4FF', opacity: busy ? 0.5 : 1 }}
+      style={{ marginTop: 8, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, backgroundColor: C.primarySoft, borderWidth: 1, borderColor: C.primaryBorder, opacity: busy ? 0.5 : 1 }}
     >
       <Text style={{ color: C.primary, fontWeight: '700' }}>{busy ? 'Đang thử lại…' : 'Thử lại'}</Text>
     </TouchableOpacity>
@@ -193,7 +193,7 @@ export function VietQRPay({ requestId, onPaid, size = 220 }) {
         </Text>
       ) : null}
       {qr.qr_image_url ? <QrImage uri={qr.qr_image_url} size={size} /> : <Text style={{ color: C.muted }}>Chưa hiện được ảnh QR, chuyển khoản theo thông tin bên dưới.</Text>}
-      <Text style={{ fontWeight: '800', color: C.red, fontSize: 16 }}>{formatVND(qr.amount)}</Text>
+      <Text style={{ fontWeight: '800', color: C.ink, fontSize: 16 }}>{formatVND(qr.amount)}</Text>
       <Text style={{ color: C.muted }}>Nội dung: <Text style={{ fontWeight: '800', color: C.ink }}>{qr.transfer_content}</Text> (giữ nguyên, không sửa)</Text>
       <Text style={{ color: C.muted }}>{qr.account_name || ''} · {qr.account_no}</Text>
       {error ? (

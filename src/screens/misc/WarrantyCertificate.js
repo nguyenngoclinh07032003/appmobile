@@ -67,8 +67,8 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
               <Text style={st.heroBrandSub}>Chứng nhận bảo hành điện tử</Text>
             </View>
           </View>
-          <View style={[st.statusPill, { backgroundColor: winfo.ok ? 'rgba(16,185,129,0.22)' : 'rgba(251,146,60,0.25)' }]}>
-            <View style={[st.statusDot, { backgroundColor: winfo.ok ? '#34D399' : '#FDBA74' }]} />
+          <View style={[st.statusPill, { backgroundColor: winfo.ok ? 'rgba(16,185,129,0.22)' : 'rgba(255,255,255,0.16)' }]}>
+            <View style={[st.statusDot, { backgroundColor: winfo.ok ? '#34D399' : '#FCD34D' }]} />
             <Text style={st.statusText}>{winfo.ok ? 'Còn hiệu lực' : 'Hết hiệu lực'}</Text>
           </View>
         </View>
@@ -83,7 +83,7 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
               <Text style={st.heroDays}>{daysLeft}</Text>
               <Text style={st.heroDaysOf}>/ {totalDays} ngày</Text>
             </View>
-            <View style={st.bar}><View style={[st.barFill, { width: `${ratio * 100}%`, backgroundColor: winfo.ok ? '#34D399' : '#FDBA74' }]} /></View>
+            <View style={st.bar}><View style={[st.barFill, { width: `${ratio * 100}%`, backgroundColor: winfo.ok ? '#34D399' : '#FCD34D' }]} /></View>
             <Text style={st.heroUntil}>{winfo.ok ? `Hiệu lực đến ${fmtDate(winfo.until)}` : winfo.text}</Text>
           </View>
           <View style={st.qrWrap}>
@@ -146,7 +146,7 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
       {o.report?.customerSignature ? (
         <View style={st.sign}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <AppIcon name="pen-tool" size={16} color="#166534" strokeWidth={2.3} />
+            <AppIcon name="pen-tool" size={16} color={C.greenInk} strokeWidth={2.3} />
             <Text style={st.signTitle}>Khách hàng xác nhận bàn giao</Text>
           </View>
           <Text style={st.signName}>{typeof o.report.customerSignature === 'string' ? o.report.customerSignature : o.report.customerSignature?.name}</Text>
@@ -174,7 +174,7 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
               <Text style={[st.photoGroupLabel, { color: C.green }]}>Sau khi hoàn thành bàn giao</Text>
               <View style={st.photoGrid}>
                 {completionPhotos.map((ph, idx) => (
-                  <View key={ph.id || `cert_after_${idx}`} style={[st.photoThumb, { borderColor: '#A7F3D0' }]}>
+                  <View key={ph.id || `cert_after_${idx}`} style={[st.photoThumb, { borderColor: C.greenBorder }]}>
                     <Image source={{ uri: ph.uri }} style={{ width: '100%', height: '100%' }} />
                   </View>
                 ))}
@@ -221,7 +221,7 @@ const st = StyleSheet.create({
   sectionTitle: { flex: 1, fontSize: 14.5, fontWeight: '800', color: C.ink },
 
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 9, gap: 10 },
-  infoDivider: { borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  infoDivider: { borderBottomWidth: 1, borderBottomColor: C.surface },
   infoIcon: { width: 26, height: 26, borderRadius: 8, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
   infoLabel: { width: 92, fontSize: 12.5, color: C.muted, paddingTop: 4 },
   infoValue: { flex: 1, fontSize: 13.5, color: C.ink, fontWeight: '700', paddingTop: 3, lineHeight: 19 },
@@ -230,22 +230,22 @@ const st = StyleSheet.create({
   itemDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.primary },
   itemName: { flex: 1, fontSize: 13.5, color: C.ink, fontWeight: '700' },
   itemQty: { fontSize: 13, color: C.muted, fontWeight: '700' },
-  summary: { marginTop: 8, padding: 10, borderRadius: R.sm, backgroundColor: '#F8FAFC' },
+  summary: { marginTop: 8, padding: 10, borderRadius: R.sm, backgroundColor: C.bg },
   summaryText: { fontSize: 13, color: C.ink2, lineHeight: 19 },
 
-  checkCount: { fontSize: 12, fontWeight: '800', color: C.green, backgroundColor: C.greenSoft, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden' },
+  checkCount: { fontSize: 12, fontWeight: '800', color: C.greenInk, backgroundColor: C.greenSoft, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden' },
   checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, paddingVertical: 5 },
   checkIcon: { width: 18, height: 18, borderRadius: 9, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
   checkText: { flex: 1, fontSize: 13, color: C.ink2, lineHeight: 19 },
 
-  sign: { padding: 14, borderRadius: R.md, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', marginBottom: 10 },
-  signTitle: { fontWeight: '800', color: '#166534', fontSize: 13.5 },
+  sign: { padding: 14, borderRadius: R.md, backgroundColor: C.card, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.green, marginBottom: 10 },
+  signTitle: { fontWeight: '800', color: C.greenInk, fontSize: 13.5 },
   signName: { fontStyle: 'italic', fontSize: 20, fontWeight: '900', color: C.navy, marginTop: 6 },
-  signNote: { fontSize: 11.5, color: '#166534', marginTop: 4 },
+  signNote: { fontSize: 11.5, color: C.ink2, marginTop: 4 },
 
-  note: { flexDirection: 'row', gap: 8, padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', marginBottom: 4 },
+  note: { flexDirection: 'row', gap: 8, padding: 12, borderRadius: R.md, backgroundColor: C.bg, marginBottom: 4 },
   noteText: { flex: 1, fontSize: 12, color: C.muted, lineHeight: 17 },
   photoGroupLabel: { fontSize: 12, fontWeight: '700', color: C.ink2, marginBottom: 6 },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  photoThumb: { width: 72, height: 72, borderRadius: R.sm, overflow: 'hidden', borderWidth: 1, borderColor: C.line, backgroundColor: '#F1F5F9' },
+  photoThumb: { width: 72, height: 72, borderRadius: R.sm, overflow: 'hidden', borderWidth: 1, borderColor: C.line, backgroundColor: C.surface },
 });

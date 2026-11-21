@@ -620,21 +620,21 @@ export function UsedAndExtraMaterialsCard({
             <Tap
               style={[
                 tx.addLine,
-                { flex: 1.15, marginTop: 0, flexDirection: 'row', gap: 4, borderColor: '#F59E0B', backgroundColor: showAddExtra ? '#FEF3C7' : '#FFFBEB' },
+                { flex: 1.15, marginTop: 0, flexDirection: 'row', gap: 4, borderColor: showAddExtra ? C.primary : C.line, backgroundColor: showAddExtra ? C.primarySoft : C.surface },
               ]}
               onPress={() => setShowAddExtra((v) => !v)}
             >
-              <AppIcon name="plus" size={14} color="#D97706" strokeWidth={2.5} />
-              <Text style={{ color: '#D97706', fontWeight: '700', fontSize: 12.5 }}>Thêm VT phát sinh</Text>
+              <AppIcon name="plus" size={14} color={showAddExtra ? C.primary : C.ink2} strokeWidth={2.5} />
+              <Text style={{ color: showAddExtra ? C.primary : C.ink2, fontWeight: '700', fontSize: 12.5 }}>Thêm VT phát sinh</Text>
             </Tap>
           ) : null}
         </View>
       ) : null}
 
       {awaitingApproval ? (
-        <View style={[tx.note, { backgroundColor: '#F0F9FF', marginTop: 10 }]}>
-          <Text style={{ color: '#0369A1', fontSize: 12, fontWeight: '700', lineHeight: 17 }}>
-            ⏳ Đã gửi Bill vật tư phát sinh. Đang chờ khách hàng xác nhận nghiệm thu trên App Khách.
+        <View style={[tx.note, { backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary, marginTop: 10 }]}>
+          <Text style={{ color: C.ink2, fontSize: 12, fontWeight: '700', lineHeight: 17 }}>
+            Đã gửi Bill vật tư phát sinh. Đang chờ khách hàng xác nhận nghiệm thu trên App Khách.
           </Text>
         </View>
       ) : null}
@@ -652,7 +652,7 @@ const st = StyleSheet.create({
   matRow: {
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#E8EEF5',
+    borderBottomColor: C.line,
   },
   matTop: {
     flexDirection: 'row',
@@ -663,27 +663,29 @@ const st = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: R.pill,
-    backgroundColor: '#FFFBEB',
+    backgroundColor: C.goldSoft,
     borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderColor: C.goldBorder,
   },
   moveToBillText: {
     fontSize: 11.5,
     fontWeight: '800',
-    color: '#B45309',
+    color: C.goldInk,
   },
   sectionBox: {
     marginTop: 12,
     padding: 10,
     borderRadius: R.md,
-    backgroundColor: '#ECFDF5',
+    backgroundColor: C.surface,
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: C.line,
+    borderLeftWidth: 3.5,
+    borderLeftColor: C.green,
   },
   sectionTitleGreen: {
     fontSize: 12.5,
     fontWeight: '800',
-    color: C.green,
+    color: C.greenInk,
     marginBottom: 4,
   },
   finRow: {
@@ -697,20 +699,20 @@ const st = StyleSheet.create({
     marginTop: 12,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#FDE68A',
+    borderTopColor: C.line,
   },
   sectionTitleOrange: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#B45309',
+    color: C.goldInk,
     marginBottom: 8,
   },
   extraCard: {
     padding: 10,
     borderRadius: R.md,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: C.bg,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: C.line,
     marginBottom: 10,
   },
   extraCardHead: {
@@ -740,7 +742,7 @@ const st = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: R.sm,
-    backgroundColor: '#fff',
+    backgroundColor: C.card,
     borderWidth: 1,
     borderColor: C.line,
   },
@@ -752,9 +754,11 @@ const st = StyleSheet.create({
   billBox: {
     padding: 12,
     borderRadius: R.md,
-    backgroundColor: '#FFFBEB',
+    backgroundColor: C.surface,
     borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderColor: C.line,
+    borderLeftWidth: 3.5,
+    borderLeftColor: C.gold,
   },
   billRow: {
     flexDirection: 'row',
@@ -777,15 +781,15 @@ const st = StyleSheet.create({
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#FDE68A',
+    borderTopColor: C.line,
   },
   addForm: {
     marginTop: 12,
     padding: 12,
     borderRadius: R.md,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: C.bg,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: C.line,
   },
   addFormHead: {
     flexDirection: 'row',
@@ -797,9 +801,9 @@ const st = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: R.pill,
-    backgroundColor: '#fff',
+    backgroundColor: C.card,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: C.line,
   },
   quickChipText: {
     fontSize: 11.5,

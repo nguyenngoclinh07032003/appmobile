@@ -164,9 +164,9 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
         <Btn title={busy ? 'Đang gửi biên bản…' : 'Gửi biên bản & hoàn thành'} disabled={busy} onPress={submit} />
       )}
     >
-      <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F0F6FF', borderWidth: 1, borderColor: '#BFDBFE', marginTop: -8, marginBottom: 14 }}>
-        <Text style={{ fontWeight: '800', color: C.navy, fontSize: 13.5, marginBottom: 6 }}>
-          🧾 Tổng kết hoá đơn bàn giao
+      <View style={{ padding: 12, borderRadius: R.md, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary, marginTop: -8, marginBottom: 14 }}>
+        <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5, marginBottom: 6 }}>
+          Tổng kết hoá đơn bàn giao
         </Text>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
           <Text style={{ fontSize: 12.5, color: C.ink2 }}>Dịch vụ ban đầu</Text>
@@ -175,7 +175,7 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
         {extraAmount > 0 ? (
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
             <Text style={{ fontSize: 12.5, color: C.ink2 }}>Vật tư & phát sinh đã chốt</Text>
-            <Text style={{ fontSize: 13, fontWeight: '700', color: C.orange }}>+{formatVND(extraAmount)}</Text>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: C.goldInk }}>+{formatVND(extraAmount)}</Text>
           </View>
         ) : null}
         {deductAmount > 0 ? (
@@ -184,22 +184,22 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
             <Text style={{ fontSize: 13, fontWeight: '700', color: C.green }}>-{formatVND(deductAmount)}</Text>
           </View>
         ) : null}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: '#BFDBFE' }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: C.line }}>
           <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>Tổng thanh toán chốt với khách</Text>
           <Text style={[ui.price, { fontSize: 18 }]}>{formatVND(finalTotal)}</Text>
         </View>
       </View>
       <Field label="Nội dung công việc đã làm" multiline value={summary} onChangeText={setSummary} />
 
-      <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: totalAfterCount > 0 ? '#A7F3D0' : '#FCD34D', marginBottom: 4 }}>
+      <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: C.bg, borderWidth: 1, borderColor: totalAfterCount > 0 ? C.greenBorder : C.line, marginBottom: 4 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5, flex: 1 }}>
-            📷 Hình ảnh hoàn thành công việc
+            Hình ảnh hoàn thành công việc
           </Text>
           <Badge
             text={totalAfterCount > 0 ? `Đã có ${totalAfterCount} ảnh` : 'Bắt buộc ≥ 1 ảnh'}
-            fg={totalAfterCount > 0 ? C.green : C.orange}
-            bg={totalAfterCount > 0 ? C.greenSoft : '#FFFBEB'}
+            fg={totalAfterCount > 0 ? C.greenInk : C.goldInk}
+            bg={totalAfterCount > 0 ? C.greenSoft : C.goldSoft}
           />
         </View>
         <Text style={{ fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 17 }}>
@@ -257,9 +257,9 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
       </View>
 
       <Text style={[ui.fieldLabel, { marginTop: 10, marginBottom: 6 }]}>
-        ⚡ Checklist an toàn kỹ thuật & nghiệm thu ({safetyDone}/{safetyTotal})
+        Checklist an toàn kỹ thuật & nghiệm thu ({safetyDone}/{safetyTotal})
       </Text>
-      <View style={{ padding: 10, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: C.line, marginBottom: 10, gap: 6 }}>
+      <View style={{ padding: 10, borderRadius: R.md, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line, marginBottom: 10, gap: 6 }}>
         {SAFETY_ITEMS.map((item) => {
           const checked = safetyChecks.includes(item);
           return (
@@ -273,8 +273,8 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
         })}
       </View>
 
-      <Text style={[ui.fieldLabel, { marginTop: 6, marginBottom: 6 }]}>✍️ Xác nhận nghiệm thu của khách hàng</Text>
-      <View style={{ padding: 12, borderRadius: R.md, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: accepted ? '#A7F3D0' : '#CBD5E1', marginBottom: 10 }}>
+      <Text style={[ui.fieldLabel, { marginTop: 6, marginBottom: 6 }]}>Xác nhận nghiệm thu của khách hàng</Text>
+      <View style={{ padding: 12, borderRadius: R.md, backgroundColor: C.bg, borderWidth: 1, borderColor: accepted ? C.greenBorder : C.line, marginBottom: 10 }}>
         <Field
           label="Họ tên người nghiệm thu tại chỗ"
           value={acceptName}
@@ -295,21 +295,23 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
           style={{
             padding: 12,
             borderRadius: R.md,
-            backgroundColor: orderPaid ? C.greenSoft : '#FFFBEB',
-            borderWidth: 1.5,
-            borderColor: orderPaid ? '#A7F3D0' : '#FDE68A',
+            backgroundColor: C.surface,
+            borderWidth: 1,
+            borderColor: C.line,
+            borderLeftWidth: 3.5,
+            borderLeftColor: orderPaid ? C.green : C.gold,
             marginTop: 4,
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <AppIcon name={orderPaid ? 'check-circle-2' : 'qr-code'} size={18} color={orderPaid ? C.green : C.orange} strokeWidth={2.3} />
-            <Text style={{ fontWeight: '800', color: orderPaid ? C.green : C.goldInk, fontSize: 13.5, flex: 1 }}>
+            <AppIcon name={orderPaid ? 'check-circle-2' : 'qr-code'} size={18} color={orderPaid ? C.green : C.gold} strokeWidth={2.3} />
+            <Text style={{ fontWeight: '800', color: orderPaid ? C.greenInk : C.goldInk, fontSize: 13.5, flex: 1 }}>
               {orderPaid
                 ? `Khách đã chuyển khoản VietQR (${formatVND(orderTotal(o))})`
                 : `Khách chuyển khoản QR (${formatVND(orderTotal(o))}) — KHÔNG THU TIỀN`}
             </Text>
           </View>
-          <Text style={{ fontSize: 12, color: orderPaid ? '#065F46' : C.goldInk, marginTop: 4, lineHeight: 18 }}>
+          <Text style={{ fontSize: 12, color: C.ink2, marginTop: 4, lineHeight: 18 }}>
             {orderPaid
               ? 'Hệ thống đã xác nhận thanh toán QR từ khách hàng. Bạn chỉ cần gửi biên bản hoàn thành.'
               : 'Đơn này khách chọn Chuyển khoản VietQR trên App Khách hàng. Kỹ thuật viên không được thu tiền mặt — sau khi gửi biên bản, mã QR sẽ hiển thị trên máy khách để quét.'}
@@ -317,8 +319,8 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
         </View>
       ) : null}
       {needsCash ? (
-        <View style={[tx.note, { backgroundColor: C.redSoft, marginTop: 4 }]}>
-          <Text style={{ color: C.red, fontWeight: '700', lineHeight: 19 }}>
+        <View style={[tx.note, { backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary, marginTop: 4 }]}>
+          <Text style={{ color: C.ink, fontWeight: '800', lineHeight: 19 }}>
             Tiền mặt cần thu: {formatVND(cashDue)} ({o.payment})
           </Text>
           <Checkbox

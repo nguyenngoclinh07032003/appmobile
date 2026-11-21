@@ -291,7 +291,7 @@ export function ExternalPartsFinalizeSheet({
         showAddExtra ? (
           <View style={st.addExtraBox}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13 }}>➕ Thêm vật tư phát sinh mới</Text>
+              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13 }}>Thêm vật tư phát sinh mới</Text>
               <Tap onPress={() => setShowAddExtra(false)} hitSlop={8}>
                 <Text style={{ color: C.muted, fontWeight: '700' }}>Đóng</Text>
               </Tap>
@@ -361,8 +361,8 @@ export function ExternalPartsFinalizeSheet({
           </View>
         ) : (
           <Tap style={st.addExtraBtn} onPress={() => setShowAddExtra(true)}>
-            <AppIcon name="plus" size={14} color="#D97706" strokeWidth={2.5} />
-            <Text style={{ color: '#D97706', fontWeight: '800', fontSize: 13 }}>Thêm vật tư phát sinh khác</Text>
+            <AppIcon name="plus" size={14} color={C.primary} strokeWidth={2.5} />
+            <Text style={{ color: C.primary, fontWeight: '800', fontSize: 13 }}>Thêm vật tư phát sinh khác</Text>
           </Tap>
         )
       ) : null}
@@ -397,24 +397,28 @@ const st = StyleSheet.create({
     alignItems: 'flex-start',
     padding: 12,
     borderRadius: R.md,
-    backgroundColor: C.primarySoft,
+    backgroundColor: C.surface,
     borderWidth: 1,
-    borderColor: '#D6E4FF',
+    borderColor: C.line,
+    borderLeftWidth: 3.5,
+    borderLeftColor: C.primary,
     marginBottom: 12,
   },
   noticeText: {
     flex: 1,
     fontSize: 12.5,
-    color: C.primaryDark,
+    color: C.ink2,
     lineHeight: 18,
     fontWeight: '600',
   },
   reviseBox: {
     padding: 12,
     borderRadius: R.md,
-    backgroundColor: C.goldSoft,
+    backgroundColor: C.card,
     borderWidth: 1,
-    borderColor: '#F5D77A',
+    borderColor: C.line,
+    borderLeftWidth: 3.5,
+    borderLeftColor: C.gold,
     marginBottom: 12,
   },
   reviseTitle: {
@@ -424,14 +428,14 @@ const st = StyleSheet.create({
   },
   reviseReason: {
     fontSize: 12.5,
-    color: C.goldInk,
+    color: C.ink2,
     marginTop: 4,
     lineHeight: 18,
   },
   partCard: {
     padding: 12,
     borderRadius: R.md,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: C.bg,
     borderWidth: 1,
     borderColor: C.line,
     marginBottom: 12,
@@ -449,7 +453,7 @@ const st = StyleSheet.create({
   },
   rangeSub: {
     fontSize: 12,
-    color: C.orange,
+    color: C.goldInk,
     fontWeight: '700',
     marginTop: 2,
   },
@@ -462,7 +466,7 @@ const st = StyleSheet.create({
     borderColor: C.line,
   },
   thumbEmpty: {
-    backgroundColor: '#fff',
+    backgroundColor: C.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -470,7 +474,7 @@ const st = StyleSheet.create({
     marginTop: 14,
     padding: 12,
     borderRadius: R.md,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: C.bg,
     borderWidth: 1,
     borderColor: C.line,
   },
@@ -498,16 +502,16 @@ const st = StyleSheet.create({
     borderRadius: R.md,
     borderWidth: 1.5,
     borderStyle: 'dashed',
-    borderColor: '#F59E0B',
-    backgroundColor: '#FFFBEB',
+    borderColor: C.primaryBorder,
+    backgroundColor: C.primarySoft,
     marginBottom: 12,
   },
   addExtraBox: {
     padding: 12,
     borderRadius: R.md,
-    backgroundColor: '#FFFBEB',
+    backgroundColor: C.surface,
     borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderColor: C.line,
     marginBottom: 12,
   },
 });

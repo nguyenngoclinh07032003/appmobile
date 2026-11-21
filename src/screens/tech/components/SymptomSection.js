@@ -214,10 +214,10 @@ export function SymptomSection({
             const actionLabel = item.action === 'replace' ? 'Thay thế' : item.action === 'repair' ? 'Sửa chữa' : 'Chọn xử lý';
             const actionStyle =
               item.action === 'replace'
-                ? { bg: '#FFFBEB', fg: '#B45309', bd: '#FCD34D' }
+                ? { bg: C.goldSoft, fg: C.goldInk, bd: C.goldBorder }
                 : item.action === 'repair'
-                  ? { bg: C.primarySoft, fg: C.primary, bd: '#93C5FD' }
-                  : { bg: '#F1F5F9', fg: C.muted, bd: '#E2E8F0' };
+                  ? { bg: C.primarySoft, fg: C.primary, bd: C.primaryBorder }
+                  : { bg: C.surface, fg: C.muted, bd: C.line };
 
             return (
               <View key={item.id} style={st.symCard}>
@@ -332,10 +332,10 @@ export function SymptomSection({
                         <AppIcon
                           name="refresh-cw"
                           size={14}
-                          color={item.action === 'replace' ? '#B45309' : C.ink2}
+                          color={item.action === 'replace' ? C.goldInk : C.ink2}
                           strokeWidth={2.4}
                         />
-                        <Text style={[st.symResolveText, item.action === 'replace' && { color: '#B45309', fontWeight: '800' }]}>
+                        <Text style={[st.symResolveText, item.action === 'replace' && { color: C.goldInk, fontWeight: '800' }]}>
                           Thay thế
                         </Text>
                       </Tap>
@@ -388,13 +388,13 @@ const st = StyleSheet.create({
   headIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
   headTitle: { fontSize: 16, fontWeight: '800', color: C.ink, letterSpacing: -0.2 },
   headSub: { fontSize: 12.5, color: C.muted, marginTop: 2 },
-  progress: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: '#F1F5F9' },
+  progress: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: C.surface },
   progressText: { fontSize: 12.5, fontWeight: '800', color: C.ink2 },
-  progressBar: { height: 4, borderRadius: 4, backgroundColor: '#EEF2F7', marginTop: 12, marginBottom: 6, overflow: 'hidden' },
+  progressBar: { height: 4, borderRadius: 4, backgroundColor: C.line, marginTop: 12, marginBottom: 6, overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 4, backgroundColor: C.green },
 
   stepHead: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12, marginBottom: 8 },
-  stepNo: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: '#CBD5E1', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' },
+  stepNo: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: C.line, alignItems: 'center', justifyContent: 'center', backgroundColor: C.card },
   stepNoDone: { backgroundColor: C.green, borderColor: C.green },
   stepNoText: { fontSize: 12, fontWeight: '800', color: C.ink2 },
   stepTitle: { fontSize: 14.5, fontWeight: '800', color: C.ink },
@@ -403,18 +403,18 @@ const st = StyleSheet.create({
 
   groupLabel: { fontSize: 11.5, fontWeight: '800', color: C.faint, textTransform: 'uppercase', letterSpacing: 0.4, marginTop: 4, marginBottom: 6 },
   pillWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 6 },
-  pill: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff' },
-  pillDot: { width: 16, height: 16, borderRadius: 8, borderWidth: 1.5, borderColor: '#CBD5E1', alignItems: 'center', justifyContent: 'center' },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1.5, borderColor: C.line, backgroundColor: C.card },
+  pillDot: { width: 16, height: 16, borderRadius: 8, borderWidth: 1.5, borderColor: C.faint, alignItems: 'center', justifyContent: 'center' },
   pillText: { fontSize: 13.5, color: C.ink2, fontWeight: '600' },
 
   otherRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2, marginBottom: 8 },
-  otherInput: { flex: 1, height: 42, borderRadius: R.sm, borderWidth: 1.5, borderColor: C.primary, paddingHorizontal: 12, fontSize: 13.5, color: C.ink, backgroundColor: '#fff' },
+  otherInput: { flex: 1, height: 42, borderRadius: R.sm, borderWidth: 1.5, borderColor: C.primary, paddingHorizontal: 12, fontSize: 13.5, color: C.ink, backgroundColor: C.card },
   otherBtn: { height: 42, paddingHorizontal: 14, borderRadius: R.sm, backgroundColor: C.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
   otherBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
 
   symList: { gap: 8, marginTop: 2, marginBottom: 4 },
-  symCard: { borderRadius: R.md, borderWidth: 1, borderColor: '#CBD5E1', backgroundColor: '#F8FAFC', overflow: 'hidden' },
-  symHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 11, paddingHorizontal: 12, backgroundColor: '#fff' },
+  symCard: { borderRadius: R.md, borderWidth: 1, borderColor: C.line, backgroundColor: C.bg, overflow: 'hidden' },
+  symHead: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 11, paddingHorizontal: 12, backgroundColor: C.card },
   symChevron: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
   symTitle: { flex: 1, fontSize: 14, fontWeight: '800', color: C.ink },
   symHeadRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -422,26 +422,26 @@ const st = StyleSheet.create({
   symBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1 },
   symBadgeText: { fontSize: 11, fontWeight: '800' },
   symRemoveBtn: { padding: 4 },
-  symBody: { padding: 12, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' },
+  symBody: { padding: 12, borderTopWidth: 1, borderTopColor: C.line, backgroundColor: C.bg },
   symSubLabel: { fontSize: 12, fontWeight: '800', color: C.ink2, marginBottom: 8 },
   symPhotoRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   symPhotoActions: { flex: 1, gap: 8 },
   symBtnRow: { flexDirection: 'row', gap: 8 },
-  symActionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, paddingHorizontal: 10, borderRadius: R.sm, borderWidth: 1.2, borderColor: '#93C5FD', backgroundColor: '#fff' },
+  symActionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, paddingHorizontal: 10, borderRadius: R.sm, borderWidth: 1.2, borderColor: C.primaryBorder, backgroundColor: C.card },
   symActionBtnText: { fontSize: 12.5, fontWeight: '700', color: C.primary },
-  symResolveBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 10, borderRadius: R.sm, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff' },
-  symResolveReplaceOn: { borderColor: '#F59E0B', backgroundColor: '#FFFBEB' },
+  symResolveBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 10, borderRadius: R.sm, borderWidth: 1.5, borderColor: C.line, backgroundColor: C.card },
+  symResolveReplaceOn: { borderColor: C.gold, backgroundColor: C.goldSoft },
   symResolveRepairOn: { borderColor: C.primary, backgroundColor: C.primarySoft },
   symResolveText: { fontSize: 13, fontWeight: '700', color: C.ink2 },
 
   quickWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
-  quick: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 10, backgroundColor: '#F1F5F9' },
+  quick: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 10, backgroundColor: C.surface },
   quickOn: { backgroundColor: C.greenSoft },
   quickText: { fontSize: 12.5, color: C.ink2, fontWeight: '600' },
   textArea: { minHeight: 76 },
 
-  divider: { height: 1, backgroundColor: '#EEF2F7', marginTop: 14 },
+  divider: { height: 1, backgroundColor: C.line, marginTop: 14 },
 
-  photo: { width: 84, height: 84, borderRadius: R.md, overflow: 'hidden', backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
+  photo: { width: 84, height: 84, borderRadius: R.md, overflow: 'hidden', backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' },
   photoX: { position: 'absolute', top: 5, right: 5, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(15,23,42,0.65)', alignItems: 'center', justifyContent: 'center' },
 });

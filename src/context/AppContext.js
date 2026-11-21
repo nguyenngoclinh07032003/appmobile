@@ -28,7 +28,7 @@ import {
   STATUS_DESC,
   TECH_STATUS_DESC,
 } from "../constants/data";
-import { STATUS_META } from "../theme/colors";
+import { C, STATUS_META } from "../theme/colors";
 export { matchJobForTech, comboDiscountFor } from "../constants/data";
 import {
   getSession,
@@ -696,8 +696,8 @@ export const latestNotifPerOrder = (list = []) => {
 // Nhãn trạng thái hiển thị cho khách: đơn chờ thợ đã quá giờ hẹn mà chưa có thợ nhận -> "Quá hạn tiếp nhận".
 export const EXPIRED_META = {
   label: "Quá hạn tiếp nhận",
-  fg: "#B91C1C",
-  bg: "#FEF2F2",
+  fg: C.redInk,
+  bg: C.redSoft,
 };
 export const customerStatusMeta = (o, now = Date.now()) => {
   if (isOfferExpired(o, now)) {
@@ -709,8 +709,8 @@ export const customerStatusMeta = (o, now = Date.now()) => {
   if (o?.status === "quoted" && o?.quote?.isExternalFinalization) {
     return {
       label: "Chờ xác nhận chi phí cuối",
-      fg: "#0369A1",
-      bg: "#E0F2FE",
+      fg: C.goldInk,
+      bg: C.goldSoft,
       desc: "Thợ đã cập nhật chi phí vật tư thực tế — mở đơn để kiểm tra và xác nhận tổng hoá đơn.",
     };
   }
@@ -721,16 +721,16 @@ export const customerStatusMeta = (o, now = Date.now()) => {
   ) {
     return {
       label: "Đang chỉnh lại chi phí cuối",
-      fg: "#B45309",
-      bg: "#FFFBEB",
+      fg: C.goldInk,
+      bg: C.goldSoft,
       desc: "Kỹ thuật viên đang kiểm tra và cập nhật lại mức giá vật tư theo yêu cầu của bạn.",
     };
   }
   if (o?.status === "repairing" && o?.externalPriceState === "finalized") {
     return {
       label: "Chờ bàn giao thiết bị",
-      fg: "#059669",
-      bg: "#ECFDF5",
+      fg: C.greenInk,
+      bg: C.greenSoft,
       desc: "Bạn đã xác nhận tổng chi phí cuối cùng. Thợ đang hoàn tất biên bản bàn giao để mở thanh toán.",
     };
   }
@@ -742,8 +742,8 @@ export const techStatusMeta = (o) => {
   if (o?.status === "quoted" && o?.quote?.isExternalFinalization) {
     return {
       label: "Chờ khách xác nhận Bill",
-      fg: "#0369A1",
-      bg: "#E0F2FE",
+      fg: C.goldInk,
+      bg: C.goldSoft,
       desc: "Đã gửi chi phí vật tư cuối cùng. Khi khách xác nhận, hãy ký bàn giao để mở thanh toán.",
     };
   }
@@ -754,16 +754,16 @@ export const techStatusMeta = (o) => {
   ) {
     return {
       label: "Cần chỉnh lại giá vật tư",
-      fg: "#B45309",
-      bg: "#FEF3C7",
+      fg: C.goldInk,
+      bg: C.goldSoft,
       desc: "Khách yêu cầu kiểm tra lại mức giá vật tư cuối cùng. Hãy cập nhật và gửi lại Bill.",
     };
   }
   if (o?.status === "repairing" && o?.externalPriceState === "finalized") {
     return {
       label: "Chờ ký bàn giao & Mở TT",
-      fg: "#059669",
-      bg: "#ECFDF5",
+      fg: C.greenInk,
+      bg: C.greenSoft,
       desc: "Khách đã xác nhận tổng Bill. Hãy bấm Ký bàn giao & Mở thanh toán để hoàn tất.",
     };
   }
@@ -773,8 +773,8 @@ export const techStatusMeta = (o) => {
   ) {
     return {
       label: "Đang thực hiện · Chờ chốt VT",
-      fg: "#0062E0",
-      bg: "#DBEAFE",
+      fg: C.primary,
+      bg: C.primarySoft,
       desc: "Khi lắp đặt xong, hãy nhập mức giá cuối của vật tư phát sinh bên dưới để gửi Bill cho khách.",
     };
   }

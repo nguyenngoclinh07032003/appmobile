@@ -308,7 +308,7 @@ export function WarrantyBookingSheet({
       <Sheet visible={visible} onClose={onClose} title="Hết giờ tiếp nhận bảo hành">
         <View style={styles.cutoffWrap}>
           <View style={styles.cutoffIconBox}>
-            <AppIcon name="alert-triangle" size={36} color="#DC2626" />
+            <AppIcon name="alert-triangle" size={36} color={C.red} />
           </View>
           <Text style={styles.cutoffTitle}>Đã quá ca làm việc của kỹ thuật viên</Text>
           <Text style={styles.cutoffDesc}>
@@ -324,8 +324,8 @@ export function WarrantyBookingSheet({
             </Text>
             <Btn
               title={`Gọi Hotline ${HOTLINE}`}
-              variant="primary"
-              style={{ marginTop: 12, backgroundColor: '#DC2626' }}
+              variant="danger"
+              style={{ marginTop: 12 }}
               onPress={() => Linking.openURL(`tel:${HOTLINE.replace(/\s+/g, '')}`)}
             />
           </View>
@@ -362,7 +362,7 @@ export function WarrantyBookingSheet({
         {/* BANNER CẢNH BÁO NẾU LÀ NGÀY CUỐI CÙNG */}
         {isFinalDay ? (
           <View style={styles.finalDayBanner}>
-            <AppIcon name="alert-triangle" size={18} color="#991B1B" />
+            <AppIcon name="alert-triangle" size={18} color={C.red} />
             <View style={{ flex: 1 }}>
               <Text style={styles.finalDayTitle}>HÔM NAY LÀ HẠN CHÓT BẢO HÀNH (NGÀY THỨ {totalDays})</Text>
               <Text style={styles.finalDayDesc}>
@@ -417,7 +417,7 @@ export function WarrantyBookingSheet({
         {isFinalDay ? (
           <View style={styles.lockedDateCard}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <AppIcon name="calendar" size={18} color="#991B1B" />
+              <AppIcon name="calendar" size={18} color={C.red} />
               <Text style={styles.lockedDateText}>Hôm nay ({formatDisplayDate(selectedDate)})</Text>
             </View>
             <Text style={styles.lockedDateBadge}>Hạn chót</Text>
@@ -455,7 +455,7 @@ export function WarrantyBookingSheet({
         <Text style={[styles.sectionLabel, { marginTop: 16 }]}>3. CHỌN KHUNG GIỜ PHỤC VỤ</Text>
         {validSlots.length === 0 ? (
           <View style={styles.emptySlotCard}>
-            <AppIcon name="clock" size={20} color="#DC2626" />
+            <AppIcon name="clock" size={20} color={C.red} />
             <Text style={styles.emptySlotText}>
               Đã hết ca làm việc khả dụng trong ngày hôm nay. Vui lòng chọn ngày tiếp theo.
             </Text>
@@ -490,13 +490,13 @@ export function WarrantyBookingSheet({
           keyboardType="phone-pad"
           maxLength={11}
           placeholder="Nhập số điện thoại để thợ liên hệ khi đến..."
-          placeholderTextColor="#94A3B8"
+          placeholderTextColor={C.faint}
           value={phone}
           onChangeText={setPhone}
         />
         {phone && phone.includes('*') ? (
           <Text style={styles.phoneHint}>
-            ℹ️ Số điện thoại trên đơn hàng đang được bảo mật ({phone}). Vui lòng nhập số điện thoại thật của bạn để thợ liên lạc nhé!
+            Số điện thoại trên đơn hàng đang được bảo mật ({phone}). Vui lòng nhập số điện thoại thật của bạn để thợ liên lạc nhé!
           </Text>
         ) : null}
 
@@ -505,7 +505,7 @@ export function WarrantyBookingSheet({
         <TextInput
           style={styles.textInput}
           placeholder="Địa chỉ phục vụ..."
-          placeholderTextColor="#94A3B8"
+          placeholderTextColor={C.faint}
           value={address}
           onChangeText={setAddress}
         />
@@ -517,7 +517,7 @@ export function WarrantyBookingSheet({
           multiline
           numberOfLines={3}
           placeholder="Ghi rõ hiện tượng (ví dụ: máy lạnh chảy nước mặt lạnh sau 3 ngày sửa, không mát, cánh vẫy kêu to...)"
-          placeholderTextColor="#94A3B8"
+          placeholderTextColor={C.faint}
           value={description}
           onChangeText={setDescription}
         />
@@ -557,7 +557,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: C.redSoft,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
@@ -565,7 +565,7 @@ const styles = StyleSheet.create({
   cutoffTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#991B1B',
+    color: C.redInk,
     textAlign: 'center',
     marginBottom: 8,
   },
@@ -577,45 +577,49 @@ const styles = StyleSheet.create({
   },
   cutoffCallCard: {
     width: '100%',
-    backgroundColor: '#FFF5F5',
+    backgroundColor: C.card,
     borderRadius: 16,
     padding: 16,
     marginTop: 18,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: C.line,
+    borderLeftWidth: 3.5,
+    borderLeftColor: C.red,
   },
   cutoffCallTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#991B1B',
+    color: C.redInk,
   },
   cutoffCallSub: {
     fontSize: 12.5,
     lineHeight: 18,
-    color: '#7F1D1D',
+    color: C.ink2,
     marginTop: 4,
   },
   finalDayBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: C.card,
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#FCA5A5',
+    borderColor: C.line,
+    borderLeftWidth: 3.5,
+    borderLeftColor: C.red,
     marginBottom: 14,
   },
   finalDayTitle: {
     fontSize: 12,
     fontWeight: '800',
-    color: '#991B1B',
+    color: C.redInk,
     letterSpacing: 0.2,
   },
   finalDayDesc: {
     fontSize: 12,
     lineHeight: 16,
-    color: '#7F1D1D',
+    color: C.ink2,
     marginTop: 3,
   },
   normalDayBanner: {
@@ -659,12 +663,12 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 12,
     borderRadius: 12,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: C.bg,
     borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    borderColor: C.line,
   },
   itemCardActive: {
-    backgroundColor: '#EFF6FF',
+    backgroundColor: C.primarySoft,
     borderColor: C.primary,
   },
   checkbox: {
@@ -672,10 +676,10 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 6,
     borderWidth: 1.5,
-    borderColor: '#CBD5E1',
+    borderColor: C.faint,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: C.card,
   },
   checkboxActive: {
     backgroundColor: C.primary,
@@ -702,12 +706,12 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   itemBadgeActive: {
-    backgroundColor: '#DBEAFE',
-    color: '#1E40AF',
+    backgroundColor: C.primarySoft,
+    color: C.primary,
   },
   itemBadgeInactive: {
-    backgroundColor: '#F1F5F9',
-    color: '#94A3B8',
+    backgroundColor: C.surface,
+    color: C.faint,
   },
   dateRow: {
     flexDirection: 'row',
@@ -717,7 +721,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 12,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: C.surface,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: 'transparent',
@@ -738,28 +742,30 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   dateChipTextActive: {
-    color: '#fff',
+    color: C.card,
   },
   lockedDateCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FEF2F2',
+    backgroundColor: C.card,
     padding: 12,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#F87171',
+    borderColor: C.line,
+    borderLeftWidth: 3.5,
+    borderLeftColor: C.red,
   },
   lockedDateText: {
     fontSize: 14,
     fontWeight: '800',
-    color: '#991B1B',
+    color: C.redInk,
   },
   lockedDateBadge: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#fff',
-    backgroundColor: '#DC2626',
+    color: C.redInk,
+    backgroundColor: C.redSoft,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -776,9 +782,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderRadius: 10,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: C.bg,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: C.line,
   },
   slotItemActive: {
     backgroundColor: C.primary,
@@ -790,26 +796,30 @@ const styles = StyleSheet.create({
     color: C.ink,
   },
   slotItemTextActive: {
-    color: '#fff',
+    color: C.card,
   },
   emptySlotCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     padding: 12,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: C.card,
     borderRadius: 10,
+    borderWidth: 1,
+    borderColor: C.line,
+    borderLeftWidth: 3.5,
+    borderLeftColor: C.red,
   },
   emptySlotText: {
     fontSize: 12.5,
-    color: '#991B1B',
+    color: C.ink2,
     flex: 1,
   },
   textInput: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: C.bg,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: C.line,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 13.5,
@@ -818,7 +828,7 @@ const styles = StyleSheet.create({
   phoneHint: {
     fontSize: 11.5,
     lineHeight: 16,
-    color: '#D97706',
+    color: C.goldInk,
     marginTop: 4,
     paddingHorizontal: 4,
   },
@@ -837,7 +847,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: C.line,
   },
   thumbImg: {
     width: '100%',

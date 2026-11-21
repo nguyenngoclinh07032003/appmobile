@@ -147,9 +147,9 @@ function WarrantyView() {
           </View>
           <StatusChip status={o.status} />
         </Tap>
-        <View style={[sx.wInfo, { backgroundColor: info.ok ? C.greenSoft : info.pending ? C.orangeSoft : '#F1F4F9', flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
-          <AppIcon name={info.ok ? 'shield-check' : 'info'} size={16} color={info.ok ? C.green : info.pending ? C.orange : C.muted} strokeWidth={2.2} />
-          <Text style={{ color: info.ok ? C.green : info.pending ? C.orange : C.muted, fontWeight: '700', fontSize: 13, flex: 1 }}>
+        <View style={[sx.wInfo, { backgroundColor: C.surface, borderLeftWidth: 3, borderLeftColor: info.ok ? C.green : info.pending ? C.gold : C.muted, flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+          <AppIcon name={info.ok ? 'shield-check' : 'info'} size={16} color={info.ok ? C.green : info.pending ? C.gold : C.muted} strokeWidth={2.2} />
+          <Text style={{ color: info.ok ? C.greenInk : info.pending ? C.goldInk : C.ink2, fontWeight: '700', fontSize: 13, flex: 1 }}>
             {info.text}
           </Text>
         </View>
@@ -164,7 +164,7 @@ function WarrantyView() {
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }} keyboardShouldPersistTaps="handled">
       <View style={sx.wHero}>
         <View style={{ flex: 1 }}>
-          <Text style={{ color: C.gold, fontWeight: '800', fontSize: 12 }}>BẢO HÀNH {curTier.warrantyDays || 60} NGÀY · HẠNG {curTier.label.toUpperCase()}</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.85)', fontWeight: '800', fontSize: 12 }}>BẢO HÀNH {curTier.warrantyDays || 60} NGÀY · HẠNG {curTier.label.toUpperCase()}</Text>
           <Text style={{ color: '#fff', fontWeight: '800', fontSize: 19, marginTop: 4 }}>Tra cứu & yêu cầu bảo hành điện tử</Text>
           <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, marginTop: 6, lineHeight: 18 }}>
             Áp dụng cho dịch vụ vệ sinh, nạp gas & sửa chữa đặt trên app, tính từ ngày nghiệm thu hoàn thành.
@@ -369,12 +369,13 @@ export function ActivityScreen() {
           const meta = customerStatusMeta(o);
           return (
             <Card key={o.code} style={{ marginBottom: 12, padding: 0, overflow: 'hidden' }} onPress={() => nav.push('order', { code: o.code })}>
-              <View style={[sx.oHead, { backgroundColor: meta.bg }]}>
+              <View style={[sx.oHead, { backgroundColor: C.card, borderBottomWidth: 1, borderBottomColor: C.line }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  {o.kind === 'warranty' ? <AppIcon name="shield-check" size={14} color={meta.fg} strokeWidth={2.2} /> : null}
-                  <Text style={[sx.oCode, { color: meta.fg }]}>{o.code}</Text>
+                  <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: meta.fg }} />
+                  {o.kind === 'warranty' ? <AppIcon name="shield-check" size={14} color={C.primary} strokeWidth={2.2} /> : null}
+                  <Text style={[sx.oCode, { color: C.ink }]}>{o.code}</Text>
                 </View>
-                <Text style={[sx.oStatus, { color: meta.fg }]}>● {meta.label}</Text>
+                <Badge text={meta.label} fg={meta.fg} bg={meta.bg} />
               </View>
               <View style={{ padding: 14 }}>
                 <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
@@ -393,7 +394,7 @@ export function ActivityScreen() {
                     <Text style={[ui.meta, { marginTop: 0 }]}>Tổng thanh toán</Text>
                     <Text style={[ui.price, { fontSize: 16, marginTop: 2 }]}>{o.kind === 'warranty' ? 'Miễn phí' : (o.status === 'cancelled' ? formatVND(orderTotal(o)) : formatOrderTotal(o))}</Text>
                     {o.status === 'done' && isPaid(o) ? <Text style={[ui.meta, { color: C.green, fontWeight: '700' }]}>Đã thanh toán</Text> : null}
-                    {o.status === 'done' && !isPaid(o) && o.kind !== 'warranty' && o.kind !== 'followup' ? <Text style={[ui.meta, { color: C.orange, fontWeight: '700' }]}>Chờ xác nhận TT</Text> : null}
+                    {o.status === 'done' && !isPaid(o) && o.kind !== 'warranty' && o.kind !== 'followup' ? <Text style={[ui.meta, { color: C.goldInk, fontWeight: '700' }]}>Chờ xác nhận TT</Text> : null}
                   </View>
                   <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', flex: 1 }}>
                     {o.status === 'quoted' ? (
@@ -401,15 +402,15 @@ export function ActivityScreen() {
                         title={o.quote?.isExternalFinalization ? 'Xác nhận Bill' : 'Duyệt báo giá'}
                         icon="receipt-text"
                         small
-                        variant="gold"
+                        variant="primary"
                         onPress={() => nav.push('order', { code: o.code })}
                       />
                     ) : null}
                     {o.status === 'pending_payment' && o.kind !== 'warranty' && o.kind !== 'followup' ? (
                       <Btn title="Thanh toán" icon="credit-card" small variant="primary" onPress={() => nav.push('order', { code: o.code })} />
                     ) : null}
-                    {o.status === 'done' && !o.rating && o.kind !== 'warranty' ? <Btn title="Đánh giá" icon="star" small variant="gold" onPress={() => nav.push('rate', { code: o.code })} /> : null}
-                    {['done', 'cancelled'].includes(o.status) && o.kind !== 'warranty' ? <Btn title="Đặt lại" icon="rotate-ccw" small variant="soft" onPress={() => reorder(o)} /> : null}
+                    {o.status === 'done' && !o.rating && o.kind !== 'warranty' ? <Btn title="Đánh giá" icon="star" small variant="primary" onPress={() => nav.push('rate', { code: o.code })} /> : null}
+                    {['done', 'cancelled'].includes(o.status) && o.kind !== 'warranty' ? <Btn title="Đặt lại" icon="rotate-ccw" small variant={o.status === 'done' && !o.rating ? 'outline' : 'soft'} onPress={() => reorder(o)} /> : null}
                     {isActiveOrder(o) && !['quoted', 'pending_payment'].includes(o.status) ? <Btn title="Theo dõi" icon="eye" small variant="soft" onPress={() => nav.push('order', { code: o.code })} /> : null}
                   </View>
                 </View>
@@ -517,8 +518,8 @@ const sx = StyleSheet.create({
   catTile: { width: 100, height: 88, borderRadius: R.lg, backgroundColor: '#fff', borderWidth: 1.5, borderColor: C.line, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 14, paddingHorizontal: 5, gap: 6 },
   catTileText: { width: '100%', height: 30, fontSize: 11.5, lineHeight: 15, fontWeight: '700', color: C.ink2, textAlign: 'center' },
   ownedDot: { position: 'absolute', top: 8, right: 8, width: 7, height: 7, borderRadius: 4 },
-  notice: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginTop: 14, backgroundColor: C.orangeSoft, borderRadius: R.md, padding: 12 },
-  noticeText: { flex: 1, color: '#92400E', fontSize: 13, lineHeight: 18, fontWeight: '500' },
+  notice: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginTop: 14, backgroundColor: C.card, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.gold, borderRadius: R.md, padding: 12 },
+  noticeText: { flex: 1, color: C.ink2, fontSize: 13, lineHeight: 18, fontWeight: '500' },
   toolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: 16, marginBottom: 12 },
   count: { fontSize: 13, color: C.muted, fontWeight: '600', flex: 1 },
   sort: { paddingHorizontal: 10, height: 30, borderRadius: 9, justifyContent: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: C.line },
@@ -532,7 +533,7 @@ const sx = StyleSheet.create({
   oCode: { fontWeight: '800', fontSize: 13 },
   oStatus: { fontWeight: '800', fontSize: 12 },
   oName: { fontSize: 15, fontWeight: '800', color: C.ink, lineHeight: 20 },
-  oFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F0F3F8' },
+  oFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.line },
   filterSummary: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -540,7 +541,7 @@ const sx = StyleSheet.create({
     gap: 10,
     backgroundColor: C.primarySoft,
     borderWidth: 1,
-    borderColor: '#D6E4FF',
+    borderColor: C.primaryBorder,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -559,5 +560,5 @@ const sx = StyleSheet.create({
   tierBox: { marginTop: 18, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 14, padding: 12 },
   pStats: { flexDirection: 'row', backgroundColor: '#fff', marginHorizontal: 16, marginTop: -30, borderRadius: R.lg, paddingVertical: 14, ...shadow.md },
   groupLabel: { fontSize: 18, fontWeight: '700', color: C.ink, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 },
-  menuCard: { backgroundColor: '#F8FAFC', borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: '#EEF2F7' },
+  menuCard: { backgroundColor: C.card, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: C.line },
 });

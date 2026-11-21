@@ -15,33 +15,33 @@ const COMMIT_ICON = ['clock', 'award', 'handshake', 'smile'];
 
 const PARTNER_ROWS = [
   [
-    { name: 'NANOMAX', sub: 'Pro Audio', color: '#15803D', weight: '900' },
-    { name: 'Panasonic', color: '#0062E0', weight: '900' },
-    { name: 'SONY', color: '#0F172A', weight: '900', letterSpacing: 1.5 },
-    { name: 'Teka', color: '#DC2626', weight: '900', italic: true },
-    { name: 'beko', color: '#0284C7', weight: '900', underline: true },
-    { name: 'FUJI SMART', badge: 'F', badgeBg: '#EF4444', color: '#334155', weight: '700' },
-    { name: 'CHUNGHO', badge: '💧', badgeBg: '#0284C7', color: '#0369A1', weight: '800' },
-    { name: 'Makano', sub: 'CAO CẤP', color: '#DC2626', weight: '800' },
+    { name: 'NANOMAX', sub: 'Pro Audio', weight: '900' },
+    { name: 'Panasonic', weight: '900' },
+    { name: 'SONY', weight: '900', letterSpacing: 1.5 },
+    { name: 'Teka', weight: '900', italic: true },
+    { name: 'beko', weight: '900', underline: true },
+    { name: 'FUJI SMART', badge: 'F', weight: '700' },
+    { name: 'CHUNGHO', badge: 'C', weight: '800' },
+    { name: 'Makano', sub: 'CAO CẤP', weight: '800' },
   ],
   [
-    { name: 'JBL', badge: 'JBL', badgeBg: '#EA580C', color: '#EA580C', weight: '900' },
-    { name: 'BOSS', badge: 'B', badgeBg: '#0284C7', color: '#0369A1', weight: '800' },
-    { name: 'HAWOO', badge: '❖', badgeBg: '#F97316', color: '#334155', weight: '800' },
-    { name: 'coway', color: '#00A3E0', weight: '900', size: 17 },
-    { name: 'SKYWORTH', color: '#0052CC', weight: '900', letterSpacing: 0.6 },
-    { name: 'Boston', sub: 'ACOUSTICS', badge: 'b', badgeBg: '#E11D48', color: '#1E293B', weight: '700' },
-    { name: 'LG', badge: 'LG', badgeBg: '#BE123C', color: '#BE123C', weight: '900' },
-    { name: 'Samsung', color: '#1D4ED8', weight: '900' },
+    { name: 'JBL', badge: 'JBL', weight: '900' },
+    { name: 'BOSS', badge: 'B', weight: '800' },
+    { name: 'HAWOO', badge: 'H', weight: '800' },
+    { name: 'coway', weight: '900', size: 17 },
+    { name: 'SKYWORTH', weight: '900', letterSpacing: 0.6 },
+    { name: 'Boston', sub: 'ACOUSTICS', badge: 'b', weight: '700' },
+    { name: 'LG', badge: 'LG', weight: '900' },
+    { name: 'Samsung', weight: '900' },
   ],
   [
-    { name: 'Comfee', color: '#0369A1', weight: '900', italic: true, size: 17 },
-    { name: 'Nagakawa', color: '#DC2626', weight: '900', size: 16 },
-    { name: 'SUMICO', badge: 'S', badgeBg: '#DC2626', color: '#0F172A', weight: '900', letterSpacing: 0.8 },
-    { name: 'Electrolux', badge: '◧', badgeBg: '#1E3A8A', color: '#1E3A8A', weight: '800', size: 15 },
-    { name: 'Daikin', color: '#0284C7', weight: '900', italic: true, size: 16 },
-    { name: 'Toshiba', color: '#DC2626', weight: '900', size: 15 },
-    { name: 'Casper', color: '#0F172A', weight: '800', letterSpacing: 1 },
+    { name: 'Comfee', weight: '900', italic: true, size: 17 },
+    { name: 'Nagakawa', weight: '900', size: 16 },
+    { name: 'SUMICO', badge: 'S', weight: '900', letterSpacing: 0.8 },
+    { name: 'Electrolux', badge: 'E', weight: '800', size: 15 },
+    { name: 'Daikin', weight: '900', italic: true, size: 16 },
+    { name: 'Toshiba', weight: '900', size: 15 },
+    { name: 'Casper', weight: '800', letterSpacing: 1 },
   ],
 ];
 
@@ -49,7 +49,7 @@ function PartnerBrandItem({ item }) {
   return (
     <View style={st.partnerItem}>
       {item.badge ? (
-        <View style={[st.partnerBadge, { backgroundColor: item.badgeBg || C.primary }]}>
+        <View style={[st.partnerBadge, { backgroundColor: C.surface }]}>
           <Text style={st.partnerBadgeText}>{item.badge}</Text>
         </View>
       ) : null}
@@ -58,7 +58,7 @@ function PartnerBrandItem({ item }) {
           style={[
             st.partnerLogoText,
             {
-              color: item.color || C.ink,
+              color: C.ink2,
               fontWeight: item.weight || '800',
               fontSize: item.size || 15,
               fontStyle: item.italic ? 'italic' : 'normal',
@@ -139,7 +139,7 @@ export default function HomeScreen() {
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
                 <View style={st.officialTag}>
-                  <AppIcon name="shield-check" size={10} color="#BAE6FD" strokeWidth={2.6} />
+                  <AppIcon name="shield-check" size={10} color="#FFFFFF" strokeWidth={2.6} />
                   <Text style={st.officialText}>CHÍNH HÃNG</Text>
                 </View>
               </View>
@@ -183,7 +183,7 @@ export default function HomeScreen() {
         {active ? (() => {
           const activeMeta = customerStatusMeta(active);
           return (
-            <Card style={st.activeCard} onPress={() => nav.push('order', { code: active.code })}>
+            <Card style={[st.activeCard, { borderLeftWidth: 3.5, borderLeftColor: activeMeta.fg }]} onPress={() => nav.push('order', { code: active.code })}>
               <Media item={activeSvc} height={52} width={52} radius={14} />
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -203,7 +203,7 @@ export default function HomeScreen() {
                 <Btn
                   title={active.quote?.isExternalFinalization ? 'Xác nhận' : 'Duyệt'}
                   small
-                  variant="gold"
+                  variant="primary"
                   onPress={() => nav.push('order', { code: active.code })}
                 />
               ) : active.status === 'pending_payment' ? (
@@ -244,7 +244,7 @@ export default function HomeScreen() {
             );
           })}
           <Tap style={st.cat} onPress={() => nav.push('search')}>
-            <View style={[st.catIcon, { backgroundColor: '#EEF2F7' }]}><AppIcon name="search" size={22} color={C.ink2} strokeWidth={2} /></View>
+            <View style={[st.catIcon, { backgroundColor: C.surface }]}><AppIcon name="search" size={22} color={C.ink2} strokeWidth={2} /></View>
             <Text style={st.catLabel}>Tìm thêm</Text>
           </Tap>
         </View>
@@ -318,7 +318,7 @@ export default function HomeScreen() {
 
         {/* ---------------- Hotline ---------------- */}
         <Tap style={st.hotline} onPress={u.call}>
-          <IconBox icon="🎧" size={46} bg="rgba(255,255,255,0.15)" radius={14} />
+          <IconBox icon="headphones" color="#fff" size={46} bg="rgba(255,255,255,0.15)" radius={14} />
           <View style={{ flex: 1, marginLeft: 12 }}>
             <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12 }}>Cần hỗ trợ? Gọi miễn phí</Text>
             <Text style={{ color: '#fff', fontSize: 20, fontWeight: '800', marginTop: 2 }}>{HOTLINE}</Text>
@@ -378,12 +378,12 @@ export const st = StyleSheet.create({
   statBorder: { borderLeftWidth: 1, borderLeftColor: C.line },
   statValue: { fontSize: 17, fontWeight: '800', color: C.ink },
   statLabel: { fontSize: 11, color: C.muted, marginTop: 3, fontWeight: '600' },
-  activeCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14, borderColor: '#D6E4FF', backgroundColor: '#F7FAFF' },
+  activeCard: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14, borderColor: C.line, backgroundColor: C.card },
   activeCode: { fontSize: 12, fontWeight: '800', color: C.ink2 },
   activeName: { fontSize: 14, fontWeight: '700', color: C.ink, marginTop: 4 },
   types: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 18 },
   type: { alignItems: 'center', width: '19%' },
-  typeIcon: { width: 54, height: 54, borderRadius: 18, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', ...shadow.sm, borderWidth: 1, borderColor: '#EEF2F7' },
+  typeIcon: { width: 54, height: 54, borderRadius: 18, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center', ...shadow.sm, borderWidth: 1, borderColor: C.line },
   typeLabel: { fontSize: 12, fontWeight: '700', color: C.ink2, marginTop: 7 },
   cats: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 14 },
   cat: { width: '25%', alignItems: 'center' },
@@ -391,7 +391,7 @@ export const st = StyleSheet.create({
   catLabel: { fontSize: 12, color: C.ink2, marginTop: 6, fontWeight: '600' },
   cardTitle: { fontSize: 15, fontWeight: '800', color: C.ink },
   body: { fontSize: 13, color: C.ink2, lineHeight: 19 },
-  dueRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: '#F0F3F8' },
+  dueRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.line },
   dueName: { fontSize: 14, fontWeight: '700', color: C.ink },
   promo: { width: 250, height: 138, borderRadius: 20, padding: 16, overflow: 'hidden', justifyContent: 'flex-end' },
   promoIcon: { position: 'absolute', right: 14, top: 12, fontSize: 40 },
@@ -399,26 +399,26 @@ export const st = StyleSheet.create({
   promoTitle: { fontSize: 18, fontWeight: '900', letterSpacing: -0.3 },
   promoBody: { fontSize: 12, marginTop: 4, opacity: 0.85, fontWeight: '500' },
   commitGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 },
-  commit: { width: '48.5%', backgroundColor: '#fff', borderRadius: R.lg, padding: 14, ...shadow.sm, borderWidth: 1, borderColor: '#EEF2F7' },
+  commit: { width: '48.5%', backgroundColor: C.card, borderRadius: R.lg, padding: 14, ...shadow.sm, borderWidth: 1, borderColor: C.line },
   commitTitle: { fontSize: 15, fontWeight: '800', color: C.ink, marginTop: 8 },
   commitSub: { fontSize: 12, color: C.muted, marginTop: 4, lineHeight: 17 },
-  tip: { width: 220, backgroundColor: '#fff', borderRadius: R.lg, overflow: 'hidden', ...shadow.sm, borderWidth: 1, borderColor: '#EEF2F7' },
+  tip: { width: 220, backgroundColor: C.card, borderRadius: R.lg, overflow: 'hidden', ...shadow.sm, borderWidth: 1, borderColor: C.line },
   tipMedia: { height: 92, alignItems: 'center', justifyContent: 'center' },
   tipTitle: { fontSize: 14, fontWeight: '700', color: C.ink, lineHeight: 19 },
   partners: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  partner: { backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: C.line },
+  partner: { backgroundColor: C.card, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: C.line },
   partnerText: { fontSize: 12, fontWeight: '800', color: C.ink2 },
   partnerHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 24, marginBottom: 12 },
-  partnerAccentBar: { width: 4, height: 20, borderRadius: 2, backgroundColor: '#F59E0B' },
-  partnerHeadTitle: { fontSize: 19, fontWeight: '800', color: C.primary, letterSpacing: -0.3 },
+  partnerAccentBar: { width: 4, height: 20, borderRadius: 2, backgroundColor: C.primary },
+  partnerHeadTitle: { fontSize: 18, fontWeight: '800', color: C.ink, letterSpacing: -0.3 },
   partnerBoard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: C.card,
     borderRadius: 18,
     paddingVertical: 14,
     gap: 14,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#EEF2F7',
+    borderColor: C.line,
     ...shadow.sm,
   },
   marqueeRowClip: {
@@ -446,9 +446,11 @@ export const st = StyleSheet.create({
     paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: C.line,
   },
   partnerBadgeText: {
-    color: '#FFFFFF',
+    color: C.ink2,
     fontSize: 10,
     fontWeight: '900',
   },
@@ -458,7 +460,7 @@ export const st = StyleSheet.create({
   partnerSubText: {
     fontSize: 7.5,
     fontWeight: '700',
-    color: '#64748B',
+    color: C.muted,
     letterSpacing: 0.4,
     marginTop: -1,
   },

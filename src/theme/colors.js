@@ -1,42 +1,47 @@
-import { Platform } from 'react-native';
-
-// Bảng màu chuẩn Thiết kế Doanh nghiệp Tối giản: 2 màu chủ đạo XANH DƯƠNG & TRẮNG (Blue & White)
+// Bảng màu chuẩn Thiết kế Doanh nghiệp Tối giản (60–30–10): Nền trung tính · Xanh dương chủ đạo · 3 màu ngữ nghĩa
 export const C = {
   primary: '#0062E0',        // Xanh dương chủ đạo (Royal Corporate Blue)
   primaryDark: '#004CB8',    // Xanh đậm
-  primarySoft: '#EBF3FF',    // Xanh nhạt tinh khiết
-  navy: '#0052CC',           // Xanh đậm thanh lịch
-  navy2: '#0844A4',          // Xanh đậm phụ
-  gold: '#F59E0B',           // Vàng chuẩn cho Cảnh báo (Alert / Warning)
-  goldSoft: '#FEF3C7',       // Nền vàng cảnh báo nhạt
-  goldInk: '#B45309',        // Chữ vàng nâu đậm dễ đọc
-  ink: '#0F172A',            // Chữ đen xám đậm dễ đọc
+  primarySoft: '#EFF6FF',    // Xanh nhạt tinh khiết
+  primaryBorder: '#BFDBFE',  // Viền xanh nhạt
+  navy: '#0A3D8F',           // Xanh đậm thanh lịch (Hero / Header)
+  navy2: '#072E6E',          // Xanh đậm phụ
+  gold: '#D97706',           // Vàng hổ phách: Cảnh báo / Chờ xử lý
+  goldSoft: '#FEF3C7',       // Nền vàng nhạt cho badge / nhấn nhỏ
+  goldBorder: '#FDE68A',     // Viền vàng nhạt
+  goldInk: '#92400E',        // Chữ vàng nâu đậm dễ đọc
+  ink: '#0F172A',            // Chữ đen xám đậm & giá tiền
   ink2: '#334155',           // Chữ phụ
   muted: '#64748B',          // Chữ mờ
-  faint: '#94A3B8',          // Viền mờ
+  faint: '#94A3B8',          // Chữ / icon gợi ý
   line: '#E2E8F0',           // Đường kẻ viền xám sáng
+  surface: '#F1F5F9',        // Nền khối phụ / ô nhập / thẻ nhạt trung tính
   bg: '#F8FAFC',             // Nền trang xám trắng mát mắt
   card: '#FFFFFF',           // Nền thẻ trắng tinh
-  red: '#DC2626',            // Đỏ: thông báo nguy hiểm / lỗi / huỷ
-  redSoft: '#FEF2F2',        // Nền đỏ nhạt
-  green: '#059669',          // Xanh lá: hoàn thành / thành công (Success)
-  greenSoft: '#ECFDF5',      // Nền xanh lá nhạt
-  orange: '#D97706',         // Vàng cam: cảnh báo (Alert / Warning)
-  orangeSoft: '#FFFBEB',     // Nền vàng kem cảnh báo
-  purple: '#0062E0',         // Chuyển tím thành Xanh chủ đạo
-  purpleSoft: '#EBF3FF',     // Nền xanh nhạt
-  cyan: '#0284C7',           // Xanh Cyan
-  cyanSoft: '#F0F9FF',       // Nền cyan nhạt
+  red: '#DC2626',            // Đỏ: nguy hiểm / lỗi / huỷ
+  redSoft: '#FEF2F2',        // Nền đỏ nhạt cho badge
+  redBorder: '#FECACA',      // Viền đỏ nhạt
+  redInk: '#991B1B',         // Chữ đỏ đậm dễ đọc
+  green: '#059669',          // Xanh lá: hoàn thành / thành công
+  greenSoft: '#ECFDF5',      // Nền xanh lá nhạt cho badge
+  greenBorder: '#A7F3D0',    // Viền xanh lá nhạt
+  greenInk: '#065F46',       // Chữ xanh lá đậm dễ đọc
+  orange: '#D97706',         // Alias hợp nhất về Vàng hổ phách cảnh báo
+  orangeSoft: '#FFFBEB',     // Nền vàng kem nhạt
+  purple: '#0062E0',         // Hợp nhất về Xanh chủ đạo
+  purpleSoft: '#EFF6FF',     // Hợp nhất về Xanh nhạt
+  cyan: '#0062E0',           // Hợp nhất về Xanh chủ đạo
+  cyanSoft: '#EFF6FF',       // Hợp nhất về Xanh nhạt
 };
 
 export const CAT_TONE = {
-  'may-lanh': { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
-  'may-giat': { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
-  'tu-lanh': { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
-  'nuoc-nong': { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
-  'hut-mui': { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
-  quat: { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
-  'loc-khong-khi': { bg: '#EBF3FF', fg: '#0062E0', grad: 'linear-gradient(135deg, #F0F6FF 0%, #DDEBFF 100%)' },
+  'may-lanh': { bg: '#EFF6FF', fg: '#0062E0', grad: null },
+  'may-giat': { bg: '#EFF6FF', fg: '#0062E0', grad: null },
+  'tu-lanh': { bg: '#EFF6FF', fg: '#0062E0', grad: null },
+  'nuoc-nong': { bg: '#EFF6FF', fg: '#0062E0', grad: null },
+  'hut-mui': { bg: '#EFF6FF', fg: '#0062E0', grad: null },
+  quat: { bg: '#EFF6FF', fg: '#0062E0', grad: null },
+  'loc-khong-khi': { bg: '#EFF6FF', fg: '#0062E0', grad: null },
 };
 
 export const toneOf = (cat) => {
@@ -46,20 +51,25 @@ export const toneOf = (cat) => {
   return tones[n % tones.length];
 };
 
+// Chuẩn hoá 4 nhóm màu trạng thái + xám trung tính:
+// - Amber: chờ xử lý / báo giá / thanh toán / thẩm định BH
+// - Brand Blue: đang thực hiện (đã nhận / đang đến / đang sửa)
+// - Green: hoàn thành
+// - Red: đã huỷ
+// - Neutral Slate: ngoài bảo hành
 export const STATUS_META = {
-  pending: { label: 'Chờ nhận việc', fg: '#B45309', bg: '#FEF3C7' },
-  confirmed: { label: 'Thợ đã nhận', fg: '#0062E0', bg: '#DBEAFE' },
-  onway: { label: 'Thợ đang đến', fg: '#0284C7', bg: '#E0F2FE' },
-  diagnosing: { label: 'Đang kiểm tra', fg: '#B45309', bg: '#FFFBEB' },
-  quoted: { label: 'Chờ duyệt báo giá', fg: '#B45309', bg: '#FEF3C7' },
-  repairing: { label: 'Đang thực hiện', fg: '#0062E0', bg: '#DBEAFE' },
-  pending_payment: { label: 'Chờ thanh toán', fg: '#B45309', bg: '#FEF3C7' },
-  // Giữ để đơn cũ trong bộ nhớ local không lỗi hiển thị; luồng mới không dùng 2 trạng thái này.
-  partially_paid: { label: 'Chờ thanh toán', fg: '#B45309', bg: '#FEF3C7' },
-  pending_review: { label: 'Hoàn thành', fg: '#047857', bg: '#ECFDF5' },
-  warranty_pending: { label: 'Chờ VP duyệt BH', fg: '#C026D3', bg: '#FDF4FF' },
-  out_of_warranty: { label: 'Ngoài bảo hành', fg: '#EA580C', bg: '#FFF7ED' },
-  done: { label: 'Hoàn thành', fg: '#059669', bg: '#ECFDF5' },
-  cancelled: { label: 'Đã huỷ', fg: '#DC2626', bg: '#FEF2F2' },
+  pending: { label: 'Chờ nhận việc', fg: '#92400E', bg: '#FEF3C7' },
+  confirmed: { label: 'Thợ đã nhận', fg: '#0062E0', bg: '#EFF6FF' },
+  onway: { label: 'Thợ đang đến', fg: '#0062E0', bg: '#EFF6FF' },
+  diagnosing: { label: 'Đang kiểm tra', fg: '#92400E', bg: '#FEF3C7' },
+  quoted: { label: 'Chờ duyệt báo giá', fg: '#92400E', bg: '#FEF3C7' },
+  repairing: { label: 'Đang thực hiện', fg: '#0062E0', bg: '#EFF6FF' },
+  pending_payment: { label: 'Chờ thanh toán', fg: '#92400E', bg: '#FEF3C7' },
+  // Giữ để đơn cũ trong bộ nhớ local không lỗi hiển thị; luồng mới không dùng trạng thái này.
+  partially_paid: { label: 'Chờ thanh toán', fg: '#92400E', bg: '#FEF3C7' },
+  pending_review: { label: 'Hoàn thành', fg: '#065F46', bg: '#ECFDF5' },
+  warranty_pending: { label: 'Chờ VP duyệt BH', fg: '#92400E', bg: '#FEF3C7' },
+  out_of_warranty: { label: 'Ngoài bảo hành', fg: '#475569', bg: '#F1F5F9' },
+  done: { label: 'Hoàn thành', fg: '#065F46', bg: '#ECFDF5' },
+  cancelled: { label: 'Đã huỷ', fg: '#991B1B', bg: '#FEF2F2' },
 };
-

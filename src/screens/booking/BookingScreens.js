@@ -86,7 +86,7 @@ export function DetailScreen({ params }) {
               <AppIcon icon={catIcon(service.category)} size={13} color={C.primary} strokeWidth={2.2} />
               <Text style={{ fontSize: 11, fontWeight: '800', color: C.primary }}>{catLabel(service.category)}</Text>
             </View>
-            {isEstimate(service) ? <Badge text="Giá tham khảo" fg={C.orange} bg={C.orangeSoft} /> : null}
+            {isEstimate(service) ? <Badge text="Giá tham khảo" fg={C.goldInk} bg={C.goldSoft} /> : null}
           </View>
           <Text style={bx.name}>{service.name}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
@@ -114,13 +114,13 @@ export function DetailScreen({ params }) {
             ))}
           </View>
           {/* Ưu đãi Combo nhiều thiết bị */}
-          <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#F5D77A', flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <AppIcon name="flame" size={22} color="#D97706" strokeWidth={2.2} />
+          <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: C.card, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <AppIcon name="flame" size={20} color={C.primary} strokeWidth={2.2} />
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: '800', color: C.goldInk, fontSize: 13 }}>Ưu đãi Combo nhiều máy chuẩn Minh Đức</Text>
+              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13 }}>Ưu đãi Combo nhiều máy chuẩn Minh Đức</Text>
               <Text style={{ color: C.ink2, fontSize: 12, marginTop: 2 }}>Đặt 2 máy giảm thêm 5% (tối đa 50K) · Đặt từ 3 máy giảm thêm 10% (tối đa 120K)</Text>
             </View>
-            <Btn title="Đặt 2 máy" small variant="gold" style={{ flexShrink: 0 }} onPress={() => nav.push('checkout', { items: [{ id: service.id, qty: 2 }] })} />
+            <Btn title="Đặt 2 máy" small variant="soft" style={{ flexShrink: 0 }} onPress={() => nav.push('checkout', { items: [{ id: service.id, qty: 2 }] })} />
           </View>
         </View>
 
@@ -606,9 +606,10 @@ export function CheckoutScreen({ params }) {
           <Card
             style={{
               marginBottom: 14,
-              borderColor: '#F59E0B',
-              borderWidth: 1.5,
-              backgroundColor: '#FFFBEB',
+              borderColor: C.line,
+              borderLeftWidth: 3.5,
+              borderLeftColor: C.gold,
+              backgroundColor: C.card,
               flexDirection: 'row',
               alignItems: 'center',
               gap: 12,
@@ -618,16 +619,16 @@ export function CheckoutScreen({ params }) {
               if (!otpSent) handleSendEmailOtp();
             }}
           >
-            <IconBox icon="mail" size={42} bg="#FEF3C7" radius={13} />
+            <IconBox icon="mail" size={42} bg={C.goldSoft} color={C.goldInk} radius={13} />
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: '800', color: '#92400E', fontSize: 14 }}>
+              <Text style={{ fontWeight: '800', color: C.goldInk, fontSize: 14 }}>
                 Bắt buộc xác thực Email trước khi đặt lịch
               </Text>
-              <Text style={{ color: '#B45309', fontSize: 12.5, marginTop: 2, lineHeight: 18 }}>
-                Email <Text style={{ fontWeight: '800' }}>{s.user?.email || s.auth?.email}</Text> chưa xác thực OTP 6 chữ số.
+              <Text style={{ color: C.ink2, fontSize: 12.5, marginTop: 2, lineHeight: 18 }}>
+                Email <Text style={{ fontWeight: '800', color: C.ink }}>{s.user?.email || s.auth?.email}</Text> chưa xác thực OTP 6 chữ số.
               </Text>
             </View>
-            <Badge text="Xác thực ›" fg="#fff" bg="#D97706" />
+            <Badge text="Xác thực ›" fg={C.goldInk} bg={C.goldSoft} />
           </Card>
         ) : (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10, paddingHorizontal: 4 }}>
@@ -759,10 +760,10 @@ export function CheckoutScreen({ params }) {
         />
         {voucher && !vDiscount ? <Text style={ui.fieldErr}>Mã {voucher.code} chưa đủ điều kiện với đơn hiện tại.</Text> : null}
         {voucher ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#BBF7D0', borderRadius: R.md, paddingHorizontal: 12, paddingVertical: 8, marginTop: 4, marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.card, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.green, borderRadius: R.md, paddingHorizontal: 12, paddingVertical: 8, marginTop: 4, marginBottom: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Badge text="MÃ ÁP DỤNG" fg="#166534" bg="#DCFCE7" />
-              <Text style={{ fontSize: 13, color: '#166534', fontWeight: '700' }}>
+              <Badge text="MÃ ÁP DỤNG" fg={C.greenInk} bg={C.greenSoft} />
+              <Text style={{ fontSize: 13, color: C.ink, fontWeight: '700' }}>
                 {voucher.code} (-{formatVND(vDiscount)})
               </Text>
             </View>
@@ -774,9 +775,9 @@ export function CheckoutScreen({ params }) {
                 u.toast(`Đã huỷ mã ${oldCode}`);
               }}
               hitSlop={8}
-              style={{ backgroundColor: '#FEE2E2', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}
+              style={{ backgroundColor: C.redSoft, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}
             >
-              <Text style={{ color: C.red, fontWeight: '700', fontSize: 12 }}>✕ Huỷ mã</Text>
+              <Text style={{ color: C.redInk, fontWeight: '700', fontSize: 12 }}>✕ Huỷ mã</Text>
             </Tap>
           </View>
         ) : null}
@@ -785,9 +786,9 @@ export function CheckoutScreen({ params }) {
           value={payment}
           onPress={() => setShowPay(true)}
         />
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F0FDF4', padding: 10, borderRadius: R.md, borderWidth: 1, borderColor: '#DCFCE7', marginTop: -4, marginBottom: 8 }}>
-          <Badge text="0đ TRẢ TRƯỚC" fg="#166534" bg="#DCFCE7" />
-          <Text style={{ fontSize: 11.5, color: '#166534', fontWeight: '600', flex: 1, lineHeight: 16 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.surface, padding: 10, borderRadius: R.md, borderWidth: 1, borderColor: C.line, marginTop: -4, marginBottom: 8 }}>
+          <Badge text="0đ TRẢ TRƯỚC" fg={C.greenInk} bg={C.greenSoft} />
+          <Text style={{ fontSize: 11.5, color: C.ink2, fontWeight: '600', flex: 1, lineHeight: 16 }}>
             Chỉ thanh toán sau khi thợ hoàn tất và kiểm tra máy chạy êm ái.
           </Text>
         </View>
@@ -803,9 +804,9 @@ export function CheckoutScreen({ params }) {
             <Text style={{ fontWeight: '800', color: C.ink, fontSize: 15 }}>Tổng thanh toán</Text>
             <Text style={[bx.price, { fontSize: 20 }]}>{formatVND(total)}</Text>
           </View>
-          <View style={{ marginTop: 10, padding: 10, borderRadius: R.md, backgroundColor: curTier.bg || C.primarySoft, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Badge text={curTier.label} fg={curTier.color} bg="#FFFFFF" />
-            <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: curTier.color, lineHeight: 17 }}>
+          <View style={{ marginTop: 10, padding: 10, borderRadius: R.md, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Badge text={curTier.label} fg={curTier.color} bg={curTier.bg || C.primarySoft} />
+            <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: C.ink2, lineHeight: 17 }}>
               Bảo hành tiêu chuẩn {curTier.warrantyDays || BASE_WARRANTY_DAYS} ngày
               {curTier.partDiscountPercent ? ` · Giảm ${curTier.partDiscountPercent}% vật tư phát sinh` : ''}
             </Text>
@@ -846,14 +847,14 @@ export function CheckoutScreen({ params }) {
           style={{
             padding: 12,
             borderRadius: R.md,
-            backgroundColor: '#EFF6FF',
+            backgroundColor: C.primarySoft,
             borderWidth: 1,
-            borderColor: '#BFDBFE',
+            borderColor: C.primaryBorder,
             marginBottom: 12,
           }}
         >
-          <Text style={{ fontSize: 12.5, color: '#1E40AF', fontWeight: '700' }}>Kiểm tra hộp thư Email</Text>
-          <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
+          <Text style={{ fontSize: 12.5, color: C.navy, fontWeight: '700' }}>Kiểm tra hộp thư Email</Text>
+          <Text style={{ fontSize: 12, color: C.primary, marginTop: 2 }}>
             Mã xác thực 6 chữ số {otpSent ? 'đã được gửi' : 'sẽ được gửi'} tới {s.user?.email || s.auth?.email} (hiệu lực {OTP_TTL_MINUTES} phút).
           </Text>
         </View>
@@ -894,10 +895,10 @@ export function CheckoutScreen({ params }) {
                 style={{
                   flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12,
                   borderRadius: R.md, borderWidth: 1.5, borderColor: on ? C.primary : C.line,
-                  backgroundColor: on ? '#F6FAFF' : '#fff',
+                  backgroundColor: on ? C.primarySoft : C.card,
                 }}
               >
-                <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: on ? C.primarySoft : '#F1F5F9', alignItems: 'center', justifyContent: 'center' }}>
+                <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: on ? C.card : C.surface, alignItems: 'center', justifyContent: 'center' }}>
                   <AppIcon icon={pm.icon} size={22} color={on ? C.primary : C.ink2} strokeWidth={2.1} />
                 </View>
 
@@ -924,9 +925,9 @@ export function CheckoutScreen({ params }) {
           })}
         </View>
 
-        <View style={{ marginTop: 14, padding: 10, borderRadius: R.md, backgroundColor: '#F0FDF4', borderWidth: 1, borderColor: '#DCFCE7', flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Text style={{ fontSize: 16 }}>🛡️</Text>
-          <Text style={{ flex: 1, fontSize: 11.5, color: '#166534', lineHeight: 16, fontWeight: '600' }}>
+        <View style={{ marginTop: 14, padding: 10, borderRadius: R.md, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <AppIcon name="shield-check" size={18} color={C.green} strokeWidth={2.2} />
+          <Text style={{ flex: 1, fontSize: 11.5, color: C.ink2, lineHeight: 16, fontWeight: '600' }}>
             Cam kết an tâm: 0đ trả trước. Khách hàng chỉ thanh toán khi đã nghiệm thu hài lòng và thợ ký biên bản hoàn tất.
           </Text>
         </View>
@@ -948,17 +949,17 @@ export function CheckoutScreen({ params }) {
             }}
             style={{
               flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-              padding: 12, borderRadius: R.md, borderWidth: 1.5, borderColor: '#FCA5A5',
-              backgroundColor: '#FEF2F2', marginBottom: 10,
+              padding: 12, borderRadius: R.md, borderWidth: 1, borderColor: C.redBorder,
+              backgroundColor: C.redSoft, marginBottom: 10,
             }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ fontSize: 16 }}>🚫</Text>
-              <Text style={{ fontWeight: '700', color: C.red, fontSize: 13 }}>
+              <AppIcon name="ban" size={16} color={C.redInk} strokeWidth={2.2} />
+              <Text style={{ fontWeight: '700', color: C.redInk, fontSize: 13 }}>
                 Không sử dụng mã giảm giá (Huỷ mã {voucher.code})
               </Text>
             </View>
-            <Text style={{ color: C.red, fontWeight: '800', fontSize: 12.5 }}>✕ Bỏ chọn</Text>
+            <Text style={{ color: C.redInk, fontWeight: '800', fontSize: 12.5 }}>✕ Bỏ chọn</Text>
           </Tap>
         ) : null}
         {allVouchers.map((v) => {
@@ -983,7 +984,7 @@ export function CheckoutScreen({ params }) {
                 }
               }}
             >
-              <View style={[bx.vLeft, v.wallet && { backgroundColor: C.gold }]}>
+              <View style={[bx.vLeft, v.wallet && { backgroundColor: C.navy }]}>
                 <AppIcon icon={v.wallet ? 'gift' : 'ticket'} size={22} color={v.wallet ? '#fff' : C.primary} strokeWidth={2.1} />
               </View>
               <View style={{ flex: 1, padding: 12 }}>
@@ -992,7 +993,7 @@ export function CheckoutScreen({ params }) {
                   {isSelected ? <Badge text="Đang chọn" fg="#fff" bg={C.primary} style={{ paddingHorizontal: 5, paddingVertical: 1 }} /> : null}
                 </View>
                 <Text style={ui.meta}>{v.label}</Text>
-                {v.wallet ? <Text style={[ui.meta, { color: C.goldInk, fontWeight: '700' }]}>Ví của bạn</Text> : null}
+                {v.wallet ? <Text style={[ui.meta, { color: C.primary, fontWeight: '700' }]}>Ví của bạn</Text> : null}
                 {!ok ? <Text style={[ui.meta, { color: C.red }]}>Cần thêm {formatVND(v.min - subtotal)}</Text> : null}
               </View>
               <View style={{ paddingRight: 12 }}><Radio on={isSelected} /></View>
@@ -1386,11 +1387,11 @@ export const bx = StyleSheet.create({
   sheet: { backgroundColor: '#fff', marginTop: -24, borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 18, paddingBottom: 18 },
   name: { fontSize: 21, fontWeight: '800', color: C.ink, lineHeight: 28, marginTop: 10, letterSpacing: -0.3 },
   priceRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
-  price: { color: C.red, fontWeight: '900', fontSize: 26, fontVariant: ['tabular-nums'] },
+  price: { color: C.ink, fontWeight: '900', fontSize: 26, fontVariant: ['tabular-nums'] },
   old: { color: C.faint, fontSize: 15, textDecorationLine: 'line-through' },
-  off: { backgroundColor: C.red, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
-  offText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  trust: { flexDirection: 'row', marginTop: 16, backgroundColor: '#F6F8FC', borderRadius: R.md, paddingVertical: 12 },
+  off: { backgroundColor: C.primarySoft, borderWidth: 1, borderColor: C.primaryBorder, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
+  offText: { color: C.primary, fontSize: 12, fontWeight: '800' },
+  trust: { flexDirection: 'row', marginTop: 16, backgroundColor: C.surface, borderRadius: R.md, paddingVertical: 12 },
   trustItem: { flex: 1, alignItems: 'center' },
   trustT: { fontSize: 11, color: C.muted, marginTop: 4 },
   trustV: { fontSize: 13, color: C.ink, fontWeight: '800', marginTop: 1 },
@@ -1403,10 +1404,10 @@ export const bx = StyleSheet.create({
   play: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   dot: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center' },
   dotText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  rail: { width: 2, flex: 1, backgroundColor: '#DCE5F5', marginVertical: 3 },
+  rail: { width: 2, flex: 1, backgroundColor: C.line, marginVertical: 3 },
   stepT: { fontSize: 14, fontWeight: '800', color: C.ink, marginTop: 3 },
   stepI: { fontSize: 13, color: C.ink2, lineHeight: 19, marginTop: 2 },
-  review: { flexDirection: 'row', gap: 10, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#F0F3F8' },
+  review: { flexDirection: 'row', gap: 10, paddingVertical: 12, borderTopWidth: 1, borderTopColor: C.line },
   rAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
   rName: { fontSize: 14, fontWeight: '800', color: C.ink },
   dock: { flexDirection: 'row', gap: 10, alignItems: 'center', backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
@@ -1414,7 +1415,7 @@ export const bx = StyleSheet.create({
   dockCartText: { color: C.ink, fontWeight: '700', fontSize: 13 },
   dockCol: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
   lineName: { flex: 1, fontSize: 14, fontWeight: '700', color: C.ink, lineHeight: 19 },
-  addMore: { height: 48, borderRadius: R.md, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#B9CEF8', alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  addMore: { height: 48, borderRadius: R.md, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.primaryBorder, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
   addAddr: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: R.lg, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.primary, backgroundColor: C.primarySoft },
   addrName: { fontSize: 15, fontWeight: '800', color: C.ink },
   sec: { fontSize: 15, fontWeight: '800', color: C.ink, marginTop: 22, marginBottom: 10 },
@@ -1428,13 +1429,13 @@ export const bx = StyleSheet.create({
   slotText: { fontSize: 12, color: C.ink, fontWeight: '700' },
   billRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: C.line, borderStyle: 'dashed', paddingTop: 12, marginTop: 12 },
-  option: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F0F3F8' },
+  option: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.line },
   optionText: { fontSize: 15, color: C.ink, fontWeight: '500', flex: 1 },
   voucher: { flexDirection: 'row', alignItems: 'center', borderRadius: R.md, borderWidth: 1, borderColor: C.line, marginBottom: 10, overflow: 'hidden', backgroundColor: '#fff' },
   vLeft: { width: 64, alignSelf: 'stretch', backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
-  successIcon: { width: 96, height: 96, borderRadius: 48, backgroundColor: C.green, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', boxShadow: '0px 10px 30px rgba(14,159,110,0.35)' },
+  successIcon: { width: 96, height: 96, borderRadius: 48, backgroundColor: C.green, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', ...shadow.md },
   successTitle: { fontSize: 24, fontWeight: '900', color: C.ink, textAlign: 'center', marginTop: 20 },
-  thumb: { width: 76, height: 76, borderRadius: 14, backgroundColor: '#EEF2F7', overflow: 'hidden', position: 'relative' },
+  thumb: { width: 76, height: 76, borderRadius: 14, backgroundColor: C.surface, overflow: 'hidden', position: 'relative' },
   thumbX: { position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(15,23,42,0.7)', alignItems: 'center', justifyContent: 'center' },
   thumbAdd: { width: 76, height: 76, borderRadius: 14, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.primary, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center', gap: 2 },
 });

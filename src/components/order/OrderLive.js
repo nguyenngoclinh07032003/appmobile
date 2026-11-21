@@ -65,7 +65,7 @@ export function TrackingCard({ order, compact }) {
   if (!active && (!tr || !hasArrived)) return null;
   if (!active && tr) {
     return (
-      <Card style={{ marginTop: 12, backgroundColor: C.greenSoft, borderColor: '#CDEFDD' }}>
+      <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.green }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <AppIcon name="map-pin" size={16} color={C.green} strokeWidth={2.3} />
           <Text style={st.h}>Thợ đã đến nơi</Text>
@@ -82,7 +82,7 @@ export function TrackingCard({ order, compact }) {
   const eta = tr?.etaMin ?? null;
 
   return (
-    <Card style={{ marginTop: 12, backgroundColor: '#F0F7FF', borderColor: '#D6E4FF' }}>
+    <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <AppIcon name="navigation" size={16} color={C.primary} strokeWidth={2.3} />
@@ -127,9 +127,9 @@ export const ChatCard = () => null;
 const st = StyleSheet.create({
   h: { fontWeight: '800', color: C.ink, fontSize: 15 },
   body: { color: C.ink2, marginTop: 6, lineHeight: 20 },
-  trackMap: { marginTop: 12, padding: 12, borderRadius: 14, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E4EAF3' },
+  trackMap: { marginTop: 12, padding: 12, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line },
   route: { height: 28, justifyContent: 'center', marginTop: 4 },
-  dash: { height: 3, backgroundColor: '#D6E4FF', borderRadius: 2, marginHorizontal: 10 },
+  dash: { height: 3, backgroundColor: C.primaryBorder, borderRadius: 2, marginHorizontal: 10 },
   dot: {
     position: 'absolute', width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
     top: 3, left: 0, borderWidth: 2, borderColor: '#fff',
