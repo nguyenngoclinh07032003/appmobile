@@ -2132,7 +2132,7 @@ export function AppProvider({ children }) {
   };
 
   // Dựng tài khoản app từ phản hồi đăng nhập / làm mới phiên của backend ({ account }) + hồ sơ (/auth/me).
-  const buildBackendAccount = async (data) => {
+  const buildBackendAccount = async (data, { fast = false } = {}) => {
     const roleCode = String(
       data.role || data.account?.role?.role_code || "CUSTOMER",
     ).toUpperCase();
@@ -2140,10 +2140,63 @@ export function AppProvider({ children }) {
     const account = {
       id: `be-${data.user_id || data.account?.user_id}`,
       role: isTech ? "tech" : "customer",
-      name: data.account?.username || "",
-      phone: "",
+      name:
+        data.profile?.full_name ||
+        data.account?.full_name ||
+        data.account?.username ||
+        "",
+      phone: data.profile?.phone || "",
       email: data.account?.email || "",
+      ...(data.account?.email_verified != null || data.email_verified != null
+        ? { emailVerified: Boolean(data.account?.email_verified ?? data.email_verified) }
+        : {}),
     };
+    account.username = data.account?.username || "";
+    if (isTech) account.techCode = account.username || account.id;
+
+    if (fast) {
+      const initial = upsertBackendAccount(account);
+      // Tải hồ sơ chi tiết (họ tên, SĐT, ngày sinh, trạng thái email) chạy nền để nút Đăng nhập chuyển màn ngay lập tức.
+      Promise.all([
+        hrmssApi.getMe().catch(() => null),
+        hrmssApi.getEmailVerificationStatus().catch(() => null),
+        hrmssApi.getUserProfile().catch(() => null),
+      ]).then(([meRes, verRes, infoRes]) => {
+        if (!authTokens.get()) return;
+        const patch = {};
+        if (meRes?.ok && meRes.data) {
+          patch.name =
+            meRes.data.profile?.full_name ||
+            meRes.data.account?.username ||
+            initial.name;
+          patch.phone = meRes.data.profile?.phone || initial.phone || "";
+          patch.email = meRes.data.account?.email || initial.email;
+        }
+        const info = infoRes?.ok ? infoRes.data?.user || infoRes.data : null;
+        const dob = isoToDob(info?.profile?.dateOfBirth);
+        if (dob) patch.dob = dob;
+        if (verRes?.ok && verRes.data) {
+          patch.emailVerified = Boolean(verRes.data.email_verified);
+        }
+        if (Object.keys(patch).length > 0) {
+          up((p) => {
+            if (!p?.auth || String(p.auth.id) !== String(initial.id)) return {};
+            const nextAuth = upsertBackendAccount({ ...p.auth, ...patch });
+            return {
+              auth: nextAuth,
+              user: {
+                ...(p.user || {}),
+                ...(patch.name ? { name: patch.name } : {}),
+                ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
+                ...(patch.email ? { email: patch.email } : {}),
+              },
+            };
+          });
+        }
+      });
+      return initial;
+    }
+
     try {
       const [meRes, verRes, infoRes] = await Promise.all([
         hrmssApi.getMe(),
@@ -2166,8 +2219,6 @@ export function AppProvider({ children }) {
     } catch (meErr) {
       /* hồ sơ lỗi: vẫn đăng nhập với thông tin tối thiểu */
     }
-    account.username = data.account?.username || "";
-    if (isTech) account.techCode = account.username || account.id;
     return upsertBackendAccount(account);
   };
 
@@ -4708,7 +4759,7 @@ export function AppProvider({ children }) {
           password: payload.password,
         });
         if (beRes.ok && beRes.data) {
-          backendAccount = await buildBackendAccount(beRes.data);
+          backendAccount = await buildBackendAccount(beRes.data, { fast: true });
         } else {
           return {
             ok: false,
@@ -4739,7 +4790,7 @@ export function AppProvider({ children }) {
       }));
       setStack([]);
       setTab(res.account.role === "tech" ? "tech-jobs" : "home");
-      await syncFromBackend(res.account, true);
+      syncFromBackend(res.account, true);
       ui.toast(
         res.account.role === "tech"
           ? "Đăng nhập app Thợ thành công"
@@ -4861,7 +4912,7 @@ export function AppProvider({ children }) {
       }));
       setStack([]);
       setTab(res.account.role === "tech" ? "tech-jobs" : "home");
-      await syncFromBackend(res.account, true);
+      syncFromBackend(res.account, true);
       ui.toast(
         res.account.role === "tech"
           ? "Tạo tài khoản Thợ thành công"
