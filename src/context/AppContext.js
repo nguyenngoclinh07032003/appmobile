@@ -1840,19 +1840,164 @@ export function AppProvider({ children }) {
             jobsRes.ok && Array.isArray(jobsRes.data?.items)
               ? jobsRes.data.items
               : [];
+
+          const commitTechSync = (billMap, evidenceMap) => {
+            up((p) => {
+              if (!isSameAccount(p)) return {};
+              const base = p.techProfile || mergeTechProfile(null, acc);
+              const techProf = {
+                ...base,
+                ...(profRes.ok
+                  ? { area: profRes.data?.work_area || "Hà Nội" }
+                  : { area: base.area || "Hà Nội" }),
+                specialtiesAvailable: Boolean(specialtyInfo?.available),
+                specialties: specialtyInfo?.specialties || [],
+                specialtyCategoryIds: specialtyInfo?.categoryIds || [],
+                acceptsAllCategories:
+                  specialtyInfo?.acceptsAllCategories || false,
+                ...(summary
+                  ? {
+                      rating: summary.rating_average,
+                      ratingCount: summary.rating_count,
+                      satisfactionPercent: summary.satisfaction_percent,
+                    }
+                  : {}),
+                reviews: reviewRes.ok
+                  ? reviewRes.data?.items || []
+                  : base.reviews || [],
+              };
+              const reviewItems =
+                reviewRes.ok && Array.isArray(reviewRes.data?.items)
+                  ? reviewRes.data.items
+                  : [];
+              const reviewOf = (j) =>
+                reviewItems.find(
+                  (r) =>
+                    (r.request_code &&
+                      r.request_code === j.request?.request_code) ||
+                    (r.request_id != null &&
+                      String(r.request_id) === String(j.request?.request_id)) ||
+                    (r.assignment_id != null &&
+                      String(r.assignment_id) === String(j.assignment_id)),
+                );
+              const assignedOrders =
+                jobsRes.ok && Array.isArray(jobsRes.data?.items)
+                  ? jobsRes.data.items
+                      .map((j) => {
+                        const b = billMap.get(String(j.assignment_id));
+                        let o = mapBackendTechJobToOrder(
+                          b ? { ...j, bill: b } : j,
+                          techProf,
+                        );
+                        const ev = evidenceMap.get(String(j.assignment_id));
+                        if (o && ev) {
+                          const mergedAtts = extractInitialAttachments(ev, o.attachments);
+                          o = {
+                            ...o,
+                            evidence: ev,
+                            ...(mergedAtts.length ? { attachments: mergedAtts } : {}),
+                          };
+                        }
+                        const rv = o && !o.rating ? reviewOf(j) : null;
+                        if (rv)
+                          o = {
+                            ...o,
+                            rating: {
+                              stars: Number(rv.rating) || 5,
+                              text: rv.review_text || "",
+                              at: rv.created_at
+                                ? new Date(rv.created_at).getTime()
+                                : null,
+                            },
+                          };
+                        return o;
+                      })
+                      .filter(Boolean)
+                  : (p.orders || []).filter(
+                      (o) => o.assignmentActive || o.status !== "pending",
+                    );
+              const assignedCodes = new Set(assignedOrders.map((o) => o.code));
+              const syncNow = Date.now();
+              const openOrders =
+                openRes.ok && Array.isArray(openRes.data?.items)
+                  ? openRes.data.items
+                      .map(mapBackendOpenRequestToOrder)
+                      .filter(
+                        (o) =>
+                          o &&
+                          !assignedCodes.has(o.code) &&
+                          !isOfferExpired(o, syncNow),
+                      )
+                  : (p.orders || []).filter((o) => o.status === "pending");
+              const remoteOrders = [
+                ...assignedOrders.filter((o) => !isOfferExpired(o, syncNow)),
+                ...openOrders,
+              ];
+              const nextOrders = mergeBackendOrdersWithLocal(
+                p.orders,
+                remoteOrders,
+              );
+              const completedJobsCount = assignedOrders.filter(
+                (o) => o.status === "done",
+              ).length;
+              const notifItems = okItems(notifRes);
+              return {
+                orders: nextOrders,
+                techProfile: { ...techProf, jobs: completedJobsCount },
+                ...(notifItems
+                  ? {
+                      techNotifs: notifItems
+                        .map((n) =>
+                          mapBackendNotification(n, nextOrders, "tech-job"),
+                        )
+                        .filter(
+                          (n) =>
+                            n &&
+                            (!p.techNotifClearedAt ||
+                              n.at > p.techNotifClearedAt),
+                        ),
+                    }
+                  : {}),
+              };
+            });
+          };
+
+          const billByJob = new Map();
+          const evidenceByJob = new Map();
+          const isTechJobDone = (j) =>
+            j.assignment_status !== "ACTIVE" &&
+            ["COMPLETED", "READY_FOR_ACCEPTANCE", "CANCELLED_BY_CUSTOMER", "CANCELLED_BY_STAFF"].includes(
+              j.request?.request_status,
+            );
+          const getTechCache = (j) => {
+            if (!isTechJobDone(j)) return null;
+            const c = finishedOrderCache.current.get(`tech:${j.assignment_id}`);
+            const upAt = j.request?.updated_at || j.ended_at || null;
+            return c && c.status === j.request?.request_status && c.updatedAt === upAt ? c : null;
+          };
+
+          allJobsRaw.forEach((j) => {
+            const c = getTechCache(j);
+            if (c) {
+              const id = String(j.assignment_id);
+              if (c.bill) billByJob.set(id, c.bill);
+              if (c.evidence) evidenceByJob.set(id, c.evidence);
+            }
+          });
+
+          // Render ngay lập tức số lượng việc (Đang làm / Xong hôm nay / Việc mới) trước khi tải ảnh & bill phụ.
+          commitTechSync(billByJob, evidenceByJob);
+
           const activeJobsList = [
             ...allJobsRaw.filter((j) => j.assignment_status === "ACTIVE" && j.assignment_id),
-            ...allJobsRaw.filter((j) => j.assignment_status !== "ACTIVE" && j.assignment_id),
-          ].slice(0, 15);
+            ...allJobsRaw.filter((j) => j.assignment_status !== "ACTIVE" && j.assignment_id && !getTechCache(j)).slice(0, 4),
+          ].slice(0, 8);
           const activeJobIds = activeJobsList.map((j) => String(j.assignment_id));
           // Hoá đơn: việc đang làm + việc đã nộp biên bản còn chờ khách trả tiền (thợ cần biết số tiền mặt / xác nhận đã nhận).
           const billJobIds = [
             ...new Set([
               ...activeJobIds,
-              ...(jobsRes.ok && Array.isArray(jobsRes.data?.items)
-                ? jobsRes.data.items
-                : []
-              )
+              ...allJobsRaw
                 .filter(
                   (j) =>
                     j.assignment_id &&
@@ -1865,181 +2010,70 @@ export function AppProvider({ children }) {
                 )
                 .map((j) => String(j.assignment_id)),
             ]),
-          ].slice(0, 15);
-          const [photoLists, reqPhotoLists, jobBills] = await Promise.all([
-            Promise.all(
-              activeJobsList.map((j) =>
-                hrmssApi.listJobPhotos(String(j.assignment_id)).catch(() => null),
+          ].slice(0, 8);
+          if (activeJobsList.length > 0 || billJobIds.length > 0) {
+            const [photoLists, reqPhotoLists, jobBills] = await Promise.all([
+              Promise.all(
+                activeJobsList.map((j) =>
+                  hrmssApi.listJobPhotos(String(j.assignment_id)).catch(() => null),
+                ),
               ),
-            ),
-            Promise.all(
-              activeJobsList.map((j) =>
-                j.request?.request_id
-                  ? hrmssApi.listRequestPhotos(j.request.request_id).catch(() => null)
-                  : Promise.resolve(null),
+              Promise.all(
+                activeJobsList.map((j) =>
+                  j.request?.request_id
+                    ? hrmssApi.listRequestPhotos(j.request.request_id).catch(() => null)
+                    : Promise.resolve(null),
+                ),
               ),
-            ),
-            // Hoá đơn của việc (tiền mặt cần thu, giảm giá): GET /technician/jobs/:id/bill.
-            Promise.all(
-              billJobIds.map((id) =>
-                hrmssApi.getTechnicianJobBill(id).catch(() => null),
+              Promise.all(
+                billJobIds.map((id) =>
+                  hrmssApi.getTechnicianJobBill(id).catch(() => null),
+                ),
               ),
-            ),
-          ]);
-          const billByJob = new Map();
-          billJobIds.forEach((id, i) => {
-            if (jobBills[i]?.ok && jobBills[i].data?.bill)
-              billByJob.set(id, jobBills[i].data);
-          });
-          const evidenceByJob = new Map();
-          activeJobsList.forEach((j, i) => {
-            const id = String(j.assignment_id);
-            const extractRows = (res) =>
-              res?.ok
-                ? res.data?.items ||
-                  res.data?.attachments ||
-                  (Array.isArray(res.data) ? res.data : [])
-                : [];
-            const jobRows = extractRows(photoLists[i]);
-            const reqRows = extractRows(reqPhotoLists[i]);
-            if (photoLists[i]?.ok || reqPhotoLists[i]?.ok) {
-              const seen = new Set();
-              const mergedRows = [];
-              [...jobRows, ...reqRows]
-                .filter(
-                  (r) =>
-                    r &&
-                    (!r.procedure_step_id || String(r.evidence_type || "").toUpperCase() === "AFTER_REPAIR"),
-                )
-                .forEach((r) => {
-                  const key = r.attachment_id != null ? `id:${r.attachment_id}` : `uri:${r.image_url || r.file_url || r.url || ''}`;
-                  if (!key || key === 'uri:' || seen.has(key)) return;
-                  seen.add(key);
-                  mergedRows.push(r);
+            ]);
+            if (!authTokens.get()) return;
+            billJobIds.forEach((id, i) => {
+              if (jobBills[i]?.ok && jobBills[i].data?.bill)
+                billByJob.set(id, jobBills[i].data);
+            });
+            activeJobsList.forEach((j, i) => {
+              const id = String(j.assignment_id);
+              const extractRows = (res) =>
+                res?.ok
+                  ? res.data?.items ||
+                    res.data?.attachments ||
+                    (Array.isArray(res.data) ? res.data : [])
+                  : [];
+              const jobRows = extractRows(photoLists[i]);
+              const reqRows = extractRows(reqPhotoLists[i]);
+              if (photoLists[i]?.ok || reqPhotoLists[i]?.ok) {
+                const seen = new Set();
+                const mergedRows = [];
+                [...jobRows, ...reqRows]
+                  .filter(
+                    (r) =>
+                      r &&
+                      (!r.procedure_step_id || String(r.evidence_type || "").toUpperCase() === "AFTER_REPAIR"),
+                  )
+                  .forEach((r) => {
+                    const key = r.attachment_id != null ? `id:${r.attachment_id}` : `uri:${r.image_url || r.file_url || r.url || ''}`;
+                    if (!key || key === 'uri:' || seen.has(key)) return;
+                    seen.add(key);
+                    mergedRows.push(r);
+                  });
+                evidenceByJob.set(id, mergedRows.map(mapBackendPhotoToEvidence));
+              }
+              if (isTechJobDone(j)) {
+                finishedOrderCache.current.set(`tech:${id}`, {
+                  status: j.request?.request_status,
+                  updatedAt: j.request?.updated_at || j.ended_at || null,
+                  bill: billByJob.get(id) || null,
+                  evidence: evidenceByJob.get(id) || null,
                 });
-              evidenceByJob.set(id, mergedRows.map(mapBackendPhotoToEvidence));
-            }
-          });
-          up((p) => {
-            if (!isSameAccount(p)) return {};
-            const base = p.techProfile || mergeTechProfile(null, acc);
-            const techProf = {
-              ...base,
-              ...(profRes.ok
-                ? { area: profRes.data?.work_area || "Hà Nội" }
-                : { area: base.area || "Hà Nội" }),
-              specialtiesAvailable: Boolean(specialtyInfo?.available),
-              specialties: specialtyInfo?.specialties || [],
-              specialtyCategoryIds: specialtyInfo?.categoryIds || [],
-              acceptsAllCategories:
-                specialtyInfo?.acceptsAllCategories || false,
-              ...(summary
-                ? {
-                    rating: summary.rating_average,
-                    ratingCount: summary.rating_count,
-                    satisfactionPercent: summary.satisfaction_percent,
-                  }
-                : {}),
-              reviews: reviewRes.ok
-                ? reviewRes.data?.items || []
-                : base.reviews || [],
-            };
-            // Đánh giá của khách (GET /technician/jobs/reviews) -> gắn vào đúng việc để màn chi tiết hiện "Khách đánh giá".
-            const reviewItems =
-              reviewRes.ok && Array.isArray(reviewRes.data?.items)
-                ? reviewRes.data.items
-                : [];
-            const reviewOf = (j) =>
-              reviewItems.find(
-                (r) =>
-                  (r.request_code &&
-                    r.request_code === j.request?.request_code) ||
-                  (r.request_id != null &&
-                    String(r.request_id) === String(j.request?.request_id)) ||
-                  (r.assignment_id != null &&
-                    String(r.assignment_id) === String(j.assignment_id)),
-              );
-            const assignedOrders =
-              jobsRes.ok && Array.isArray(jobsRes.data?.items)
-                ? jobsRes.data.items
-                    .map((j) => {
-                      const b = billByJob.get(String(j.assignment_id));
-                      let o = mapBackendTechJobToOrder(
-                        b ? { ...j, bill: b } : j,
-                        techProf,
-                      );
-                      const ev = evidenceByJob.get(String(j.assignment_id));
-                      if (o && ev) {
-                        const mergedAtts = extractInitialAttachments(ev, o.attachments);
-                        o = {
-                          ...o,
-                          evidence: ev,
-                          ...(mergedAtts.length ? { attachments: mergedAtts } : {}),
-                        };
-                      }
-                      const rv = o && !o.rating ? reviewOf(j) : null;
-                      if (rv)
-                        o = {
-                          ...o,
-                          rating: {
-                            stars: Number(rv.rating) || 5,
-                            text: rv.review_text || "",
-                            at: rv.created_at
-                              ? new Date(rv.created_at).getTime()
-                              : null,
-                          },
-                        };
-                      return o;
-                    })
-                    .filter(Boolean)
-                : (p.orders || []).filter(
-                    (o) => o.assignmentActive || o.status !== "pending",
-                  );
-            const assignedCodes = new Set(assignedOrders.map((o) => o.code));
-            // Đơn bắn cho thợ đã quá hạn tiếp nhận: bỏ hẳn khỏi danh sách (không lưu, không hiển thị).
-            const syncNow = Date.now();
-            const openOrders =
-              openRes.ok && Array.isArray(openRes.data?.items)
-                ? openRes.data.items
-                    .map(mapBackendOpenRequestToOrder)
-                    .filter(
-                      (o) =>
-                        o &&
-                        !assignedCodes.has(o.code) &&
-                        !isOfferExpired(o, syncNow),
-                    )
-                : (p.orders || []).filter((o) => o.status === "pending");
-            const remoteOrders = [
-              ...assignedOrders.filter((o) => !isOfferExpired(o, syncNow)),
-              ...openOrders,
-            ];
-            const nextOrders = mergeBackendOrdersWithLocal(
-              p.orders,
-              remoteOrders,
-            );
-            const completedJobsCount = assignedOrders.filter(
-              (o) => o.status === "done",
-            ).length;
-            const notifItems = okItems(notifRes);
-            return {
-              orders: nextOrders,
-              techProfile: { ...techProf, jobs: completedJobsCount },
-              ...(notifItems
-                ? {
-                    techNotifs: notifItems
-                      .map((n) =>
-                        mapBackendNotification(n, nextOrders, "tech-job"),
-                      )
-                      .filter(
-                        (n) =>
-                          n &&
-                          (!p.techNotifClearedAt ||
-                            n.at > p.techNotifClearedAt),
-                      ),
-                  }
-                : {}),
-            };
-          });
+              }
+            });
+            commitTechSync(billByJob, evidenceByJob);
+          }
         } catch (e) {
           // eslint-disable-next-line no-console
           console.error("[HRMSS Sync Error][Tech]", e);
