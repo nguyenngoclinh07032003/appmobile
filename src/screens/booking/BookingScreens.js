@@ -1168,19 +1168,49 @@ export function AddressesScreen({ params }) {
         ) : s.addresses.map((ad) => {
           const on = d.address?.id === ad.id;
           return (
-            <Card key={ad.id} style={[{ marginBottom: 12, flexDirection: 'row', gap: 12 }, on && { borderColor: C.primary, borderWidth: 1.5 }]} onPress={() => { a.selectAddress(ad.id); if (selectMode) nav.back(); }}>
-              <View style={{ paddingTop: 2 }}><Radio on={on} /></View>
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <Text style={bx.addrName}>{ad.gender === 'Nữ' ? 'Chị' : 'Anh'} {ad.name}</Text>
-                  {ad.isDefault ? <Badge text="Mặc định" fg={C.green} bg={C.greenSoft} /> : null}
-                </View>
-                <Text style={[bx.p, { marginTop: 2 }]}>{ad.phone}</Text>
-                <Text style={bx.p}>{ad.full}</Text>
-                <View style={{ flexDirection: 'row', gap: 18, marginTop: 10 }}>
-                  <Tap onPress={() => nav.push('address-form', { id: ad.id })}><Text style={ui.link}>Sửa</Text></Tap>
-                  <Tap onPress={() => u.confirm('Xoá địa chỉ?', ad.full, () => a.deleteAddress(ad.id), 'Xoá', true)}><Text style={[ui.link, { color: C.red }]}>Xoá</Text></Tap>
-                </View>
+            <Card key={ad.id} style={[{ marginBottom: 12, padding: 0, overflow: 'hidden' }, on && { borderColor: C.primary, borderWidth: 1.5 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', padding: 16, gap: 12 }}>
+                <Tap onPress={() => { a.selectAddress(ad.id); if (selectMode) nav.back(); }} hitSlop={8} style={{ paddingTop: 2 }} accessibilityLabel="Chọn địa chỉ">
+                  <Radio on={on} />
+                </Tap>
+                <Tap
+                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+                  scaleTo={0.99}
+                  onPress={() => {
+                    if (selectMode) {
+                      a.selectAddress(ad.id);
+                      nav.back();
+                    } else {
+                      nav.push('address-form', { id: ad.id });
+                    }
+                  }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <Text style={bx.addrName}>{ad.gender === 'Nữ' ? 'Chị' : 'Anh'} {ad.name}</Text>
+                      {ad.isDefault ? <Badge text="Mặc định" fg={C.greenInk} bg={C.greenSoft} /> : null}
+                    </View>
+                    <Text style={[bx.p, { marginTop: 2 }]}>{ad.phone}</Text>
+                    <Text style={bx.p}>{ad.full}</Text>
+                  </View>
+                  {!selectMode ? <AppIcon icon="chevron-right" size={18} color={C.faint} strokeWidth={2.2} /> : null}
+                </Tap>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: C.line }}>
+                {selectMode ? (
+                  <Tap onPress={() => nav.push('address-form', { id: ad.id })} hitSlop={6}>
+                    <Text style={ui.link}>Sửa</Text>
+                  </Tap>
+                ) : !on ? (
+                  <Tap onPress={() => a.selectAddress(ad.id)} hitSlop={6}>
+                    <Text style={ui.link}>Chọn địa chỉ này</Text>
+                  </Tap>
+                ) : (
+                  <Text style={[ui.meta, { marginTop: 0, color: C.primary, fontWeight: '600' }]}>Đang sử dụng</Text>
+                )}
+                <Tap onPress={() => u.confirm('Xoá địa chỉ?', ad.full, () => a.deleteAddress(ad.id), 'Xoá', true)} hitSlop={6}>
+                  <Text style={[ui.link, { color: C.red }]}>Xoá</Text>
+                </Tap>
               </View>
             </Card>
           );
