@@ -8,14 +8,15 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, Image, Linking, RefreshControl } from 'react-native';
 import { C, R, shadow, STATUS_META, toneOf } from '../../theme';
 import {
-  getService, formatVND, catIcon, catLabel, TECH_ME, MATERIALS, TIME_SLOTS, TECH_STATUS_DESC, TECH_ORDER_STEPS, techStepIndexOf, HOTLINE,
+  getService, formatVND, catIcon, catLabel, categorySlugOf, TECH_ME, MATERIALS, TIME_SLOTS, TECH_STATUS_DESC, TECH_ORDER_STEPS, techStepIndexOf, HOTLINE,
 } from '../../constants/data';
 import { PASSWORD_MIN_LENGTH, BASE_WARRANTY_DAYS } from '../../constants';
 import {
   useApp, orderTotal, formatOrderTotal, cashToCollect, bookedValue, isActiveOrder, dateKeyOf, todayKey, fmtDateTime, timeAgo,
-  assessCancelAfterAccept, slotStartTs, matchJobForTech, isQRPayment, latestNotifPerOrder, techStatusMeta,
+  assessCancelAfterAccept, slotStartTs, matchJobForTech, isQRPayment, isPaid, latestNotifPerOrder, techStatusMeta,
 } from '../../context';
-import { validateVietnamesePhone, validateContactName } from '../../utils';
+import { validateVietnamesePhone, validateContactName, sanitizeVnPhoneInput } from '../../utils';
+import { dobError } from '../../utils/dateTime';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, PageHead, Segmented, Chip, Badge, Stars, Field, Sheet, Radio, Checkbox,
   EmptyState, Progress, Media, ListRow, Stepper, HScroll, ui, AppIcon, resolveSemanticTone,
@@ -120,7 +121,7 @@ function JobCard({ o, compact, onDecline }) {
           {(() => {
             const isWarranty = o.kind === 'warranty';
             const qrPay = !isWarranty && isQRPayment(o);
-            const isPaid = Boolean(o.report?.paid);
+            const orderPaid = isPaid(o);
             if (isWarranty) {
               return (
                 <View style={[tx.payBox, { backgroundColor: C.greenSoft, borderWidth: 1, borderColor: '#A7F3D0' }]}>
@@ -147,26 +148,26 @@ function JobCard({ o, compact, onDecline }) {
             }
             if (qrPay) {
               return (
-                <View style={[tx.payBox, { backgroundColor: isPaid ? C.greenSoft : '#FFFBEB', borderWidth: 1, borderColor: isPaid ? '#A7F3D0' : '#FDE68A' }]}>
+                <View style={[tx.payBox, { backgroundColor: orderPaid ? C.greenSoft : '#FFFBEB', borderWidth: 1, borderColor: orderPaid ? '#A7F3D0' : '#FDE68A' }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <AppIcon name={isPaid ? 'check-circle-2' : 'qr-code'} size={11} color={isPaid ? C.green : C.goldInk} strokeWidth={2.4} />
-                    <Text style={[tx.payLabel, { color: isPaid ? C.green : C.goldInk, fontWeight: '800' }]}>
-                      {isPaid ? 'Đã CK QR' : 'CK QR · Không thu'}
+                    <AppIcon name={orderPaid ? 'check-circle-2' : 'qr-code'} size={11} color={orderPaid ? C.green : C.goldInk} strokeWidth={2.4} />
+                    <Text style={[tx.payLabel, { color: orderPaid ? C.green : C.goldInk, fontWeight: '800' }]}>
+                      {orderPaid ? 'Đã CK QR' : 'CK QR · Không thu'}
                     </Text>
                   </View>
-                  <Text style={[ui.price, { fontSize: 14.5, marginTop: 2, color: isPaid ? C.green : C.goldInk }]}>
-                    {isPaid ? formatVND(orderTotal(o)) : formatOrderTotal(o)}
+                  <Text style={[ui.price, { fontSize: 14.5, marginTop: 2, color: orderPaid ? C.green : C.goldInk }]}>
+                    {orderPaid ? formatVND(orderTotal(o)) : formatOrderTotal(o)}
                   </Text>
                 </View>
               );
             }
             return (
-              <View style={[tx.payBox, isPaid && { backgroundColor: C.greenSoft, borderWidth: 1, borderColor: '#A7F3D0' }]}>
-                <Text style={[tx.payLabel, { color: isPaid ? C.green : C.red, fontWeight: '800' }]}>
-                  {isPaid ? 'Đã thu TM' : 'Thu tiền mặt'}
+              <View style={[tx.payBox, orderPaid && { backgroundColor: C.greenSoft, borderWidth: 1, borderColor: '#A7F3D0' }]}>
+                <Text style={[tx.payLabel, { color: orderPaid ? C.green : C.red, fontWeight: '800' }]}>
+                  {orderPaid ? 'Đã thu TM' : 'Thu tiền mặt'}
                 </Text>
-                <Text style={[ui.price, { fontSize: 15, marginTop: 2, color: isPaid ? C.green : C.red }]}>
-                  {isPaid
+                <Text style={[ui.price, { fontSize: 15, marginTop: 2, color: orderPaid ? C.green : C.red }]}>
+                  {orderPaid
                     ? formatVND(orderTotal(o))
                     : (o.quote?.hasEstimatedRange && !o.bill?.quotationTotal ? formatOrderTotal(o) : formatVND(cashToCollect(o)))}
                 </Text>
@@ -595,6 +596,7 @@ export function TechNotifsScreen() {
 export function TechAccountScreen() {
   const { s, a, d, nav, ui: u } = useApp();
   const me = s.techProfile || TECH_ME;
+  const { run: runAccount, isBusy: isAccountBusy } = useBusyRunner();
   const [showProfile, setShowProfile] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showPw, setShowPw] = useState(false);
@@ -785,27 +787,15 @@ export function TechAccountScreen() {
         title="Hồ sơ kỹ thuật viên"
         footer={(
           <Btn
-            title="Lưu hồ sơ"
-            onPress={async () => {
+            title={isAccountBusy('save-profile') ? 'Đang lưu…' : 'Lưu hồ sơ'}
+            disabled={isAccountBusy('save-profile')}
+            onPress={() => runAccount('save-profile', async () => {
               const nameErr = validateContactName(name);
               if (nameErr) { u.alert('Họ tên không hợp lệ', nameErr, '✏️'); return; }
               const phoneErr = validateVietnamesePhone(phone);
               if (phoneErr) { u.alert('SĐT không hợp lệ', phoneErr, '📞'); return; }
-              if (dob && dob.trim()) {
-                const match = dob.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-                if (!match) {
-                  u.alert('Ngày sinh không hợp lệ', 'Vui lòng nhập theo định dạng Ngày/tháng/năm (VD: 15/08/1995).', '🎂');
-                  return;
-                }
-                const dNum = parseInt(match[1], 10);
-                const mNum = parseInt(match[2], 10);
-                const yNum = parseInt(match[3], 10);
-                const nowYear = new Date().getFullYear();
-                if (mNum < 1 || mNum > 12 || dNum < 1 || dNum > 31 || yNum < 1920 || yNum > nowYear - 5) {
-                  u.alert('Ngày sinh không hợp lệ', `Vui lòng kiểm tra lại ngày tháng năm sinh (1920 - ${nowYear - 5}).`, '🎂');
-                  return;
-                }
-              }
+              const dErr = dobError(dob);
+              if (dErr) { u.alert('Ngày sinh không hợp lệ', dErr, '🎂'); return; }
               const saved = await a.updateTechProfile({
                 name: name.trim(),
                 phone: String(phone).replace(/\D/g, ''),
@@ -813,7 +803,7 @@ export function TechAccountScreen() {
                 area: area.trim() || TECH_ME.area,
               });
               if (saved) setShowProfile(false);
-            }}
+            })}
           />
         )}
       >
@@ -821,13 +811,7 @@ export function TechAccountScreen() {
         <Field
           label="Số điện thoại"
           value={phone}
-          onChangeText={(t) => {
-            let p = t.replace(/[^0-9]/g, '').slice(0, 10);
-            if (p.length > 0 && !p.startsWith('0')) {
-              p = '0' + p.slice(0, 9);
-            }
-            setPhone(p);
-          }}
+          onChangeText={(t) => setPhone(sanitizeVnPhoneInput(t))}
           placeholder="10 chữ số (bắt đầu bằng số 0)"
           keyboardType="phone-pad"
         />
@@ -869,8 +853,9 @@ export function TechAccountScreen() {
         title="Đổi mật khẩu"
         footer={(
           <Btn
-            title="Cập nhật mật khẩu"
-            onPress={async () => {
+            title={isAccountBusy('change-pw') ? 'Đang cập nhật…' : 'Cập nhật mật khẩu'}
+            disabled={isAccountBusy('change-pw')}
+            onPress={() => runAccount('change-pw', async () => {
               if (newPw !== newPw2) { u.alert('Không khớp', 'Mật khẩu mới nhập lại chưa khớp.', '🔐'); return; }
               if (String(newPw).length < PASSWORD_MIN_LENGTH) { u.alert('Mật khẩu quá ngắn', `Mật khẩu mới cần ít nhất ${PASSWORD_MIN_LENGTH} ký tự.`, '🔐'); return; }
               let res = null;
@@ -881,7 +866,7 @@ export function TechAccountScreen() {
               }
               if (!res?.ok) { u.alert('Không đổi được', res?.error || 'Vui lòng thử lại.', '🔐'); return; }
               setShowPw(false);
-            }}
+            })}
           />
         )}
       >
@@ -1075,7 +1060,7 @@ function ProcedureCard({ o, editable }) {
 export function TechJobScreen({ params }) {
   const { s, a, d, nav, ui: u } = useApp();
   const o = s.orders.find((x) => x.code === params.code);
-  const cats = useMemo(() => [...new Set((o?.items || []).map((it) => getService(it.id)?.category).filter(Boolean))], [o]);
+  const cats = useMemo(() => [...new Set((o?.items || []).map((it) => getService(it.id)?.category || categorySlugOf('', it.name)).filter(Boolean))], [o]);
   const draft = useQuoteDraft(o);
   const next = useNextAction({ inDetail: true })(o);
   const { run, isBusy } = useBusyRunner();
@@ -1096,12 +1081,24 @@ export function TechJobScreen({ params }) {
   const [previewTechPhoto, setPreviewTechPhoto] = useState(null);
   const [summary, setSummary] = useState('');
   const [extraBillParts, setExtraBillParts] = useState([]);
+  const aRef = useRef(a);
+  aRef.current = a;
+  const jobReqId = o?.dbRequestId || null;
 
   useEffect(() => {
     setExtraBillParts([]);
   }, [o?.code]);
 
+  useEffect(() => {
+    if (!jobReqId) return undefined;
+    aRef.current?.joinOrderRoom?.(jobReqId);
+    return () => {
+      aRef.current?.leaveOrderRoom?.(jobReqId);
+    };
+  }, [jobReqId]);
+
   if (!o) return <View style={{ flex: 1 }}><TopBar title="Không tìm thấy công việc" /></View>;
+  const orderPaid = isPaid(o);
   const meta = techStatusMeta(o);
   const step = techStepIndexOf(o);
   // Việc của mình: phân công đang ACTIVE (server xác nhận). So mã thợ chỉ để dự phòng: mã trong hồ sơ có thể
@@ -1289,7 +1286,7 @@ export function TechJobScreen({ params }) {
               Bạn đã bấm hoàn thành. Khi khách thanh toán đủ, đơn sẽ chuyển sang Hoàn thành.
             </Text>
             {/* Tiền mặt: khách bấm "đã trả" chỉ là báo; thợ xác nhận đã nhận thì đơn mới tính là đã trả. */}
-            {mine && !isQRPayment(o) && !o.report?.paid ? (
+            {mine && !isQRPayment(o) && !orderPaid ? (
               <>
                 {o.bill?.cashClaimPending ? (
                   <Text style={{ color: '#92400E', fontSize: 12.5, marginTop: 6, fontWeight: '700' }}>Khách báo đã trả tiền mặt — xác nhận nếu bạn đã nhận đủ.</Text>
@@ -1425,27 +1422,27 @@ export function TechJobScreen({ params }) {
                   marginTop: 10,
                   padding: 12,
                   borderRadius: R.md,
-                  backgroundColor: o.report?.paid ? C.greenSoft : '#FFFBEB',
+                  backgroundColor: orderPaid ? C.greenSoft : '#FFFBEB',
                   borderWidth: 1.5,
-                  borderColor: o.report?.paid ? '#A7F3D0' : '#FDE68A',
+                  borderColor: orderPaid ? '#A7F3D0' : '#FDE68A',
                   gap: 4,
                 }}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                    <AppIcon name={o.report?.paid ? 'check-circle-2' : 'alert-triangle'} size={16} color={o.report?.paid ? C.green : C.orange} strokeWidth={2.3} />
-                    <Text style={{ fontWeight: '800', color: o.report?.paid ? C.green : C.goldInk, fontSize: 13, flex: 1 }}>
-                      {o.report?.paid ? 'Khách đã chuyển khoản VietQR thành công' : 'Khách chuyển khoản QR · KHÔNG THU TIỀN MẶT'}
+                    <AppIcon name={orderPaid ? 'check-circle-2' : 'alert-triangle'} size={16} color={orderPaid ? C.green : C.orange} strokeWidth={2.3} />
+                    <Text style={{ fontWeight: '800', color: orderPaid ? C.green : C.goldInk, fontSize: 13, flex: 1 }}>
+                      {orderPaid ? 'Khách đã chuyển khoản VietQR thành công' : 'Khách chuyển khoản QR · KHÔNG THU TIỀN MẶT'}
                     </Text>
                   </View>
                   <Badge
-                    text={o.report?.paid ? 'ĐÃ THANH TOÁN QR' : 'KHÔNG THU TIỀN'}
+                    text={orderPaid ? 'ĐÃ THANH TOÁN QR' : 'KHÔNG THU TIỀN'}
                     fg="#fff"
-                    bg={o.report?.paid ? C.green : C.orange}
+                    bg={orderPaid ? C.green : C.orange}
                   />
                 </View>
-                <Text style={{ fontSize: 12.5, color: o.report?.paid ? '#065F46' : C.goldInk, lineHeight: 18 }}>
-                  {o.report?.paid
+                <Text style={{ fontSize: 12.5, color: orderPaid ? '#065F46' : C.goldInk, lineHeight: 18 }}>
+                  {orderPaid
                     ? `Khách đã chuyển khoản đủ ${formatVND(orderTotal(o))} qua VietQR.`
                     : `Khách thanh toán ${formatOrderTotal(o)} qua mã VietQR trên ứng dụng Khách hàng. Kỹ thuật viên tuyệt đối KHÔNG thu tiền mặt.`}
                 </Text>
@@ -1456,9 +1453,9 @@ export function TechJobScreen({ params }) {
                   marginTop: 10,
                   padding: 10,
                   borderRadius: R.md,
-                  backgroundColor: o.report?.paid ? C.greenSoft : C.redSoft,
+                  backgroundColor: orderPaid ? C.greenSoft : C.redSoft,
                   borderWidth: 1,
-                  borderColor: o.report?.paid ? '#A7F3D0' : '#FECACA',
+                  borderColor: orderPaid ? '#A7F3D0' : '#FECACA',
                   flexDirection: 'row',
                   alignItems: 'center',
                   justifyContent: 'space-between',
@@ -1466,16 +1463,16 @@ export function TechJobScreen({ params }) {
                 }}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '800', color: o.report?.paid ? C.green : C.red, fontSize: 13 }}>
-                    {o.report?.paid
+                  <Text style={{ fontWeight: '800', color: orderPaid ? C.green : C.red, fontSize: 13 }}>
+                    {orderPaid
                       ? '✓ Đã thu tiền mặt tại nhà'
                       : `💵 Đơn thu tiền mặt tại nhà: ${o.quote?.hasEstimatedRange && !o.bill?.quotationTotal ? formatOrderTotal(o) : formatVND(cashToCollect(o))}`}
                   </Text>
                   <Text style={{ fontSize: 12, color: C.ink2, marginTop: 2 }}>
-                    {o.report?.paid ? 'Đã đối soát thanh toán hoàn tất.' : 'Kỹ thuật viên trực tiếp thu tiền mặt từ khách sau khi nghiệm thu.'}
+                    {orderPaid ? 'Đã đối soát thanh toán hoàn tất.' : 'Kỹ thuật viên trực tiếp thu tiền mặt từ khách sau khi nghiệm thu.'}
                   </Text>
                 </View>
-                <Badge text={o.report?.paid ? 'Hoàn thành' : 'Thu trực tiếp'} fg={o.report?.paid ? C.green : C.red} bg="#fff" />
+                <Badge text={orderPaid ? 'Hoàn thành' : 'Thu trực tiếp'} fg={orderPaid ? C.green : C.red} bg="#fff" />
               </View>
             )
           ) : null}
@@ -1653,7 +1650,15 @@ export function TechJobScreen({ params }) {
                       onPress={() => (o.quote.isExternalFinalization ? setShowFinalizeExt(true) : a.reopenQuote(o.code))}
                     />
                   ) : null}
-                  <Btn title={o.quote.isExternalFinalization ? 'Nhắc khách xác nhận Bill' : 'Nhắc khách duyệt'} icon="send" variant="soft" small style={{ flex: 1 }} onPress={() => a.remindQuote(o.code)} />
+                  <Btn
+                    title={isBusy(`remind:${o.code}`) ? 'Đang gửi…' : (o.quote.isExternalFinalization ? 'Nhắc khách xác nhận Bill' : 'Nhắc khách duyệt')}
+                    icon="send"
+                    variant="soft"
+                    small
+                    style={{ flex: 1 }}
+                    disabled={isBusy(`remind:${o.code}`)}
+                    onPress={() => run(`remind:${o.code}`, () => a.remindQuote(o.code))}
+                  />
                 </View>
               </View>
             ) : null}
@@ -1701,8 +1706,9 @@ export function TechJobScreen({ params }) {
                     <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
                       <Btn title="Huỷ" variant="ghost" small onPress={() => setEditingNoteId(null)} />
                       <Btn
-                        title="Lưu"
+                        title={busyNote ? 'Đang lưu…' : 'Lưu'}
                         small
+                        disabled={busyNote}
                         onPress={() => {
                           run(K.note, () => a.updateRepairNote(o.code, n.id, editingNoteText)).then((ok) => {
                             if (ok) setEditingNoteId(null);
@@ -1811,7 +1817,7 @@ export function TechJobScreen({ params }) {
                 </View>
               ) : null}
               <Text style={[ui.meta, { marginTop: 8 }]}>
-                {fmtDateTime(o.report.at)} · {o.report.paid
+                {fmtDateTime(o.report.at)} · {orderPaid
                   ? (isQRPayment(o)
                     ? `Khách đã chuyển khoản VietQR ${formatVND(orderTotal(o))} về hệ thống (Thợ không thu tiền mặt)`
                     : `Đã thu tiền mặt ${formatVND(orderTotal(o))}${o.report.paidBy === 'customer' ? ' (khách xác nhận)' : ''}`)
@@ -1819,7 +1825,7 @@ export function TechJobScreen({ params }) {
                     ? `Chờ khách quét mã VietQR ${formatVND(orderTotal(o))} trên App Khách (Thợ không thu tiền mặt)`
                     : 'Chưa thu tiền / chờ khách xác nhận')}
               </Text>
-              {o.report.paid && o.report.paidAt ? (
+              {orderPaid && o.report.paidAt ? (
                 <Text style={[ui.meta, { marginTop: 4, color: C.green }]}>Xác nhận lúc {fmtDateTime(o.report.paidAt)}</Text>
               ) : null}
             </Card>
@@ -1936,12 +1942,16 @@ export function TechJobScreen({ params }) {
           </View>
         )
       ) : null}
-      {mine && o.status === 'repairing' ? (
+      {mine && o.status === 'repairing' ? (() => {
+        const busyFollowUp = isBusy(`followup:${o.code}`);
+        const followUpDisabled = busyFollowUp || Boolean(o.followUpRequested);
+        return (
         <View style={tx.dock}>
           <Btn
-            title="Hẹn tái khám"
+            title={o.followUpRequested ? 'Đã hẹn tái khám' : (busyFollowUp ? 'Đang gửi…' : 'Hẹn tái khám')}
             variant="soft"
             style={{ flex: 1 }}
+            disabled={followUpDisabled}
             onPress={() => {
               u.dialog({
                 icon: 'calendar',
@@ -1974,7 +1984,8 @@ export function TechJobScreen({ params }) {
             onPress={openComplete}
           />
         </View>
-      ) : null}
+        );
+      })() : null}
       {!editable && o.status !== 'done' && o.status !== 'cancelled' ? (
         <View style={tx.dock}><Text style={[ui.meta, { flex: 1, textAlign: 'center' }]}>Việc này do thợ khác phụ trách.</Text></View>
       ) : null}

@@ -17,7 +17,7 @@ import {
 } from '../../components';
 import {
   pickImage, validateVietnamesePhone, validateContactName, computeQuoteRangeTotals, formatRangeVND,
-  parseSymptomPhotoTitle,
+  parseSymptomPhotoTitle, sanitizeVnPhoneInput,
 } from '../../utils';
 import {
   nextDays, minSelectableMinute, isDayOutOfSlots, clampToDay, parseSlotToMinutes, dayIndexOfKey, dobError,
@@ -343,7 +343,16 @@ export function OrderScreen({ params }) {
   const addEditAtt = async () => {
     if (editAtts.length >= 5) { u.alert('Giới hạn ảnh', 'Tối đa 5 ảnh đính kèm.', '📷'); return; }
     const uri = await pickImage();
-    if (uri === null) { u.alert('Chưa hỗ trợ', 'Chọn ảnh đang khả dụng trên bản web.', '📷'); return; }
+    if (uri === null) {
+      u.alert(
+        Platform.OS === 'web' ? 'Không thể chọn ảnh' : 'Cần quyền truy cập ảnh',
+        Platform.OS === 'web'
+          ? 'Trình duyệt không hỗ trợ chọn ảnh.'
+          : 'Vui lòng cấp quyền truy cập thư viện ảnh trong Cài đặt thiết bị để đính kèm ảnh.',
+        '📷',
+      );
+      return;
+    }
     if (!uri) return;
     setEditAtts((p) => [...p, { id: newAttId(), uri, at: Date.now() }]);
   };
@@ -936,7 +945,19 @@ export function OrderScreen({ params }) {
                 <Text style={[ui.meta, { color: C.green, fontWeight: '700', marginTop: 2 }]}>Đã check-in đúng chính sách giờ hẹn</Text>
               ) : null}
             </View>
-            <IconBtn icon="phone-call" onPress={() => Linking.openURL(`tel:${String(o.tech.phone || '').replace(/[^\d+]/g, '')}`).catch(() => {})} style={{ backgroundColor: C.greenSoft }} label="Gọi thợ" />
+            <IconBtn
+              icon="phone-call"
+              onPress={() => {
+                const techPhone = String(o.tech.phone || '').replace(/[^\d+]/g, '');
+                if (!techPhone) {
+                  u.alert('Chưa có số điện thoại', 'Số điện thoại kỹ thuật viên chưa sẵn sàng.', '📞');
+                  return;
+                }
+                Linking.openURL(`tel:${techPhone}`).catch(() => {});
+              }}
+              style={{ backgroundColor: C.greenSoft }}
+              label="Gọi thợ"
+            />
           </Card>
         ) : active ? (
           <Card style={{ marginTop: 12, backgroundColor: '#F0F9FF', borderColor: '#BAE6FD' }}>
@@ -1120,10 +1141,14 @@ export function OrderScreen({ params }) {
                             </Text>
                           </View>
                           {receiptEv?.uri ? (
-                            <View style={{ marginTop: 5 }}>
+                            <Tap
+                              style={{ marginTop: 5, alignSelf: 'flex-start' }}
+                              scaleTo={0.97}
+                              onPress={() => setPreviewOrderPhoto({ uri: receiptEv.uri, title: `Hoá đơn mua ngoài · ${l.name}` })}
+                            >
                               <Image source={{ uri: receiptEv.uri }} style={{ width: 64, height: 64, borderRadius: 8, borderWidth: 1, borderColor: C.line }} />
                               <Text style={[ui.meta, { fontSize: 11, marginTop: 2 }]}>Hoá đơn mua ngoài đính kèm</Text>
-                            </View>
+                            </Tap>
                           ) : null}
                         </View>
                       );
@@ -2361,10 +2386,7 @@ export function ProfileScreen() {
             label="Số điện thoại"
             value={phone}
             onChangeText={(t) => {
-              let p = t.replace(/[^0-9]/g, '').slice(0, 10);
-              if (p.length > 0 && !p.startsWith('0')) {
-                p = '0' + p.slice(0, 9);
-              }
+              const p = sanitizeVnPhoneInput(t);
               setPhone(p);
               if (p.length === 10) {
                 const phoneErr = validateVietnamesePhone(p);
@@ -2430,8 +2452,8 @@ export function ProfileScreen() {
           <ListRow icon="lock" iconBg={C.primarySoft} label="Đổi mật khẩu" onPress={() => setShowPw(true)} last />
         </Card>
       </ScrollView>
-      <View style={mx.dock}><Btn title="Lưu thay đổi" style={{ flex: 1 }} onPress={save} /></View>
-      <Sheet visible={showOtp} onClose={() => setShowOtp(false)} title="Xác thực Email (OTP 6 số)" footer={<Btn title="Xác nhận mã OTP" onPress={verifyOtp} />}>
+      <View style={mx.dock}><Btn title={saving ? 'Đang lưu…' : 'Lưu thay đổi'} disabled={saving} style={{ flex: 1 }} onPress={save} /></View>
+      <Sheet visible={showOtp} onClose={() => setShowOtp(false)} title="Xác thực Email (OTP 6 số)" footer={<Btn title={otpVerifying ? 'Đang kiểm tra…' : 'Xác nhận mã OTP'} disabled={otpVerifying} onPress={verifyOtp} />}>
         <Text style={{ color: C.ink2, lineHeight: 20, marginBottom: 12 }}>
           Nhập mã xác thực 6 chữ số được gửi tới địa chỉ Email:{' '}
           <Text style={{ fontWeight: '800', color: C.ink }}>{email || s.auth?.email}</Text>
@@ -2453,7 +2475,7 @@ export function ProfileScreen() {
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 12.5, color: '#1E40AF', fontWeight: '700' }}>Kiểm tra hộp thư Email</Text>
             <Text style={{ fontSize: 12, color: '#3B82F6', marginTop: 2 }}>
-              Mã OTP 6 chữ số đã được gửi tới {email || s.auth?.email} (hiệu lực 5 phút).
+              Mã OTP 6 chữ số đã được gửi tới {email || s.auth?.email} (hiệu lực {OTP_TTL_MINUTES} phút).
             </Text>
           </View>
         </View>
@@ -2466,16 +2488,17 @@ export function ProfileScreen() {
           error={otpErr}
         />
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-          <Text style={ui.meta}>Hiệu lực trong 5 phút</Text>
+          <Text style={ui.meta}>Hiệu lực trong {OTP_TTL_MINUTES} phút</Text>
           <Tap onPress={sendOtp} disabled={otpSending}>
             <Text style={ui.link}>{otpSending ? 'Đang gửi...' : '🔄 Gửi lại mã OTP'}</Text>
           </Tap>
         </View>
       </Sheet>
-      <Sheet visible={showPw} onClose={() => setShowPw(false)} title="Đổi mật khẩu" footer={<Btn title="Cập nhật mật khẩu" onPress={savePw} />}>
-        <Field label="Mật khẩu hiện tại" value={curPw} onChangeText={setCurPw} secureTextEntry placeholder="••••••" style={{ marginTop: -8 }} />
-        <Field label="Mật khẩu mới" value={newPw} onChangeText={setNewPw} secureTextEntry placeholder="Ít nhất 6 ký tự" />
-        <Field label="Nhập lại mật khẩu mới" value={newPw2} onChangeText={setNewPw2} secureTextEntry placeholder="Nhập lại" />
+      <Sheet visible={showPw} onClose={closePw} title="Đổi mật khẩu" footer={<Btn title={pwSaving ? 'Đang cập nhật…' : 'Cập nhật mật khẩu'} disabled={pwSaving} onPress={savePw} />}>
+        <Field label="Mật khẩu hiện tại" value={curPw} onChangeText={(t) => { setCurPw(t); if (pwErr) setPwErr(''); }} secureTextEntry placeholder="••••••" style={{ marginTop: -8 }} />
+        <Field label="Mật khẩu mới" value={newPw} onChangeText={(t) => { setNewPw(t); if (pwErr) setPwErr(''); }} secureTextEntry placeholder={`Ít nhất ${PASSWORD_MIN_LENGTH} ký tự`} />
+        <Field label="Nhập lại mật khẩu mới" value={newPw2} onChangeText={(t) => { setNewPw2(t); if (pwErr) setPwErr(''); }} secureTextEntry placeholder="Nhập lại" />
+        {pwErr ? <Text style={[ui.fieldErr, { marginTop: 10 }]}>{pwErr}</Text> : null}
       </Sheet>
     </View>
   );

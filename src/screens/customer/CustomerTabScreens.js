@@ -2,9 +2,10 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet } from 'react-native';
 import { C, R, shadow, toneOf, STATUS_META, grad } from '../../theme';
 import {
-  CATEGORIES, SERVICES, INSTALL_SERVICES, REPAIR_SERVICES, LIFETIME_SERVICES, SERVICE_TYPES, CAT_SHORT,
+  CATEGORIES, SERVICES, REPAIR_SERVICES, LIFETIME_SERVICES, SERVICE_TYPES, CAT_SHORT,
   formatVND, getService, catLabel, catIcon, tierOf, HOTLINE,
 } from '../../constants/data';
+import { APP_VERSION } from '../../constants';
 import { useApp, warrantyInfo, fmtDate, isActiveOrder, orderTotal, formatOrderTotal, customerStatusMeta, isPaid } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, PageHead, Pills, Chip, Segmented, ServiceGrid, EmptyState, Field, Badge,
@@ -20,6 +21,7 @@ import {
   formatShortDmFromYmd,
   getTimePresetBounds,
   isTimeFilterActive,
+  normalizeVnPhone,
 } from '../../utils';
 
 // =========================================================== DỊCH VỤ
@@ -33,7 +35,7 @@ export function ServicesScreen() {
     if (svc.sort === 'asc') l = [...l].sort((x, y) => x.price - y.price);
     if (svc.sort === 'desc') l = [...l].sort((x, y) => y.price - x.price);
     return l;
-  }, [svc, kindAll]);
+  }, [svc, kindAll, s.catalogVersion]);
   const type = SERVICE_TYPES.find((t) => t.id === svc.tab);
 
   return (
@@ -111,9 +113,17 @@ function WarrantyView() {
     const raw = q.replace(/\s/g, '');
     const t = raw.toUpperCase();
     if (!t) { setResult({ error: 'Nhập số điện thoại hoặc mã đơn hàng.' }); return; }
+    const normQueryPhone = normalizeVnPhone(raw);
+    const isPhoneQuery = /^\+?\d+$/.test(raw) && normQueryPhone.length >= 9;
     // Số điện thoại của chính tài khoản (hồ sơ hoặc sổ địa chỉ) → hiện mọi đơn của tài khoản này
-    const isMine = /^\d+$/.test(raw) && (raw === s.user.phone || s.addresses.some((ad) => ad.phone === raw));
-    const found = s.orders.filter((o) => o.kind !== 'warranty' && (isMine || o.code === t || o.address?.phone === raw));
+    const isMine = isPhoneQuery && (
+      (s.user.phone && normalizeVnPhone(s.user.phone) === normQueryPhone) ||
+      s.addresses.some((ad) => ad.phone && normalizeVnPhone(ad.phone) === normQueryPhone)
+    );
+    const found = s.orders.filter((o) => (
+      o.kind !== 'warranty' &&
+      (isMine || o.code === t || (isPhoneQuery && o.address?.phone && normalizeVnPhone(o.address.phone) === normQueryPhone))
+    ));
     if (!found.length) { setResult({ error: 'Không tìm thấy đơn khớp. Kiểm tra lại số điện thoại hoặc mã đơn ở tab Hoạt động.' }); return; }
     setResult({ orders: found });
   };
@@ -169,7 +179,7 @@ function WarrantyView() {
           label="Số điện thoại hoặc mã đơn"
           value={warrantyQuery}
           onChangeText={setWarrantyQuery}
-          placeholder="VD: 0901234567 hoặc MD123456"
+          placeholder="VD: 0901234567 hoặc REQ-123456"
           autoCapitalize="characters"
           onSubmitEditing={() => lookup()}
           style={{ marginTop: -8 }}
@@ -219,7 +229,7 @@ function WarrantyView() {
 
 // =========================================================== HOẠT ĐỘNG
 export function ActivityScreen() {
-  const { s, nav, actFilter, setActFilter } = useApp();
+  const { s, d, nav, actFilter, setActFilter } = useApp();
   const [timeFilter, setTimeFilter] = useState(DEFAULT_ACTIVITY_TIME_FILTER);
   const [showTimeSheet, setShowTimeSheet] = useState(false);
 
@@ -263,7 +273,7 @@ export function ActivityScreen() {
               iconColor={hasFilterOrSort ? C.primary : C.ink}
               style={hasFilterOrSort ? { backgroundColor: C.primarySoft } : undefined}
             />
-            <IconBtn icon="bell" onPress={() => nav.push('notifications')} label="Thông báo" />
+            <IconBtn icon="bell" badge={d.unread} onPress={() => nav.push('notifications')} label="Thông báo" />
           </View>
         )}
       />
@@ -382,8 +392,8 @@ export function ActivityScreen() {
                   <View style={{ flexShrink: 0 }}>
                     <Text style={[ui.meta, { marginTop: 0 }]}>Tổng thanh toán</Text>
                     <Text style={[ui.price, { fontSize: 16, marginTop: 2 }]}>{o.kind === 'warranty' ? 'Miễn phí' : (o.status === 'cancelled' ? formatVND(orderTotal(o)) : formatOrderTotal(o))}</Text>
-                    {o.status === 'done' && o.report?.paid ? <Text style={[ui.meta, { color: C.green, fontWeight: '700' }]}>Đã thanh toán</Text> : null}
-                    {o.status === 'done' && !o.report?.paid && o.kind !== 'warranty' ? <Text style={[ui.meta, { color: C.orange, fontWeight: '700' }]}>Chờ xác nhận TT</Text> : null}
+                    {o.status === 'done' && isPaid(o) ? <Text style={[ui.meta, { color: C.green, fontWeight: '700' }]}>Đã thanh toán</Text> : null}
+                    {o.status === 'done' && !isPaid(o) && o.kind !== 'warranty' && o.kind !== 'followup' ? <Text style={[ui.meta, { color: C.orange, fontWeight: '700' }]}>Chờ xác nhận TT</Text> : null}
                   </View>
                   <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', flex: 1 }}>
                     {o.status === 'quoted' ? (
@@ -486,7 +496,7 @@ export function PersonalScreen() {
         </Group>
         <Group title="Khác">
           <ListRow icon="scale" label="Điều khoản ứng dụng" onPress={() => nav.push('terms')} />
-          <ListRow icon="refresh-cw" label="Cập nhật ứng dụng" value="3.0.8" onPress={() => u.alert('Bạn đang dùng bản mới nhất', 'Phiên bản 3.0.8 (v7).', '✅')} last />
+          <ListRow icon="refresh-cw" label="Cập nhật ứng dụng" value={APP_VERSION} onPress={() => u.alert('Bạn đang dùng bản mới nhất', `Phiên bản ${APP_VERSION}.`, '✅')} last />
         </Group>
         <Btn
           title="Đăng xuất"

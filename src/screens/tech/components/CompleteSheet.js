@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Image } from 'react-native';
 import { C, R } from '../../../theme';
 import { formatVND, SAFETY_CHECKLIST_ITEMS } from '../../../constants/data';
-import { useApp, orderTotal, cashToCollect, fmtDateTime, isQRPayment, bookedValue, tierPartDiscountAmount, lateDiscountAmount } from '../../../context';
+import { useApp, orderTotal, cashToCollect, fmtDateTime, isQRPayment, bookedValue, tierPartDiscountAmount, lateDiscountAmount, isPaid } from '../../../context';
 import { Btn, Field, Sheet, Checkbox, Tap, Badge, ui, AppIcon } from '../../../components';
 import { pickCamera, pickImage } from '../../../utils/media';
 import { useBusyRunner } from './useBusyRunner';
@@ -51,6 +51,7 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
   const busyKey = `complete:${o.code}`;
   const busy = isBusy(busyKey);
   const qr = isQRPayment(o);
+  const orderPaid = isPaid(o);
   const cashDue = qr ? 0 : cashToCollect(o);
   const needsCash = !qr && cashDue > 0;
   const safetyTotal = SAFETY_ITEMS.length;
@@ -144,7 +145,7 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
     }
     const ok = await Promise.resolve(a.completeJob(o.code, {
       summary: summary.trim(),
-      paid: qr ? Boolean(o.report?.paid) : (needsCash ? paid : true),
+      paid: qr ? orderPaid : (needsCash ? paid : true),
       safetyChecklist: SAFETY_ITEMS.filter((it) => safetyChecks.includes(it)),
       customerSignature: name, // giữ kiểu cũ: chuỗi họ tên
       customerAcceptance: { name, confirmedAt: acceptedAt },
@@ -294,22 +295,22 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
           style={{
             padding: 12,
             borderRadius: R.md,
-            backgroundColor: o.report?.paid ? C.greenSoft : '#FFFBEB',
+            backgroundColor: orderPaid ? C.greenSoft : '#FFFBEB',
             borderWidth: 1.5,
-            borderColor: o.report?.paid ? '#A7F3D0' : '#FDE68A',
+            borderColor: orderPaid ? '#A7F3D0' : '#FDE68A',
             marginTop: 4,
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <AppIcon name={o.report?.paid ? 'check-circle-2' : 'qr-code'} size={18} color={o.report?.paid ? C.green : C.orange} strokeWidth={2.3} />
-            <Text style={{ fontWeight: '800', color: o.report?.paid ? C.green : C.goldInk, fontSize: 13.5, flex: 1 }}>
-              {o.report?.paid
+            <AppIcon name={orderPaid ? 'check-circle-2' : 'qr-code'} size={18} color={orderPaid ? C.green : C.orange} strokeWidth={2.3} />
+            <Text style={{ fontWeight: '800', color: orderPaid ? C.green : C.goldInk, fontSize: 13.5, flex: 1 }}>
+              {orderPaid
                 ? `Khách đã chuyển khoản VietQR (${formatVND(orderTotal(o))})`
                 : `Khách chuyển khoản QR (${formatVND(orderTotal(o))}) — KHÔNG THU TIỀN`}
             </Text>
           </View>
-          <Text style={{ fontSize: 12, color: o.report?.paid ? '#065F46' : C.goldInk, marginTop: 4, lineHeight: 18 }}>
-            {o.report?.paid
+          <Text style={{ fontSize: 12, color: orderPaid ? '#065F46' : C.goldInk, marginTop: 4, lineHeight: 18 }}>
+            {orderPaid
               ? 'Hệ thống đã xác nhận thanh toán QR từ khách hàng. Bạn chỉ cần gửi biên bản hoàn thành.'
               : 'Đơn này khách chọn Chuyển khoản VietQR trên App Khách hàng. Kỹ thuật viên không được thu tiền mặt — sau khi gửi biên bản, mã QR sẽ hiển thị trên máy khách để quét.'}
           </Text>

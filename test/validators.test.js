@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   validateVietnamesePhone,
+  sanitizeVnPhoneInput,
+  normalizeVnPhone,
   validateStreetAddress,
   validateContactName,
   parseDobToIso,
@@ -61,4 +63,23 @@ test('isValidDob & parseDobToIso: kiểm tra ngày sinh và chặn ngày ảo 31
   // Ngày tương lai
   assert.equal(parseDobToIso('01/01/2099'), null);
   assert.equal(isValidDob('01/01/2099'), false);
+});
+
+test('sanitizeVnPhoneInput & normalizeVnPhone: giữ nguyên đầu 84 khi đang gõ và chuẩn hoá +84 / 0084', () => {
+  // Dán +84 / 84 / 0084 -> 0xxxxxxxxx
+  assert.equal(sanitizeVnPhoneInput('+84 912 345 678'), '0912345678');
+  assert.equal(sanitizeVnPhoneInput('84912345678'), '0912345678');
+  assert.equal(sanitizeVnPhoneInput('0084912345678'), '0912345678');
+  // Gõ từng phím 84... chưa đủ 11 số: không biến thành 084...
+  assert.equal(sanitizeVnPhoneInput('849123456'), '849123456');
+  assert.equal(sanitizeVnPhoneInput('8491234567'), '8491234567');
+  // 9 số không bắt đầu bằng 0 hoặc 84 -> thêm 0 ở đầu
+  assert.equal(sanitizeVnPhoneInput('912345678'), '0912345678');
+  assert.equal(sanitizeVnPhoneInput('0849123456'), '0849123456');
+
+  assert.equal(normalizeVnPhone('+84 912 345 678'), '0912345678');
+  assert.equal(normalizeVnPhone('84912345678'), '0912345678');
+  assert.equal(normalizeVnPhone('0084912345678'), '0912345678');
+  assert.equal(normalizeVnPhone('912345678'), '0912345678');
+  assert.equal(normalizeVnPhone('0912345678'), '0912345678');
 });

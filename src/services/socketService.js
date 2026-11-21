@@ -3,8 +3,8 @@ import { SOCKET_BASE_URL, SOCKET_PATH } from '../constants/config';
 
 let socket = null;
 const eventListeners = new Map();
-// Phòng đơn đang mở: server không nhớ phòng của socket cũ nên mỗi lần kết nối lại phải xin vào lại.
-const joinedRequests = new Set();
+// Phòng đơn đang mở (đếm tham chiếu): server không nhớ phòng của socket cũ nên mỗi lần kết nối lại phải xin vào lại.
+const joinedRequestCounts = new Map();
 
 // Sự kiện server phát (backend/README.md, mục Realtime). Chỉ phát sau khi dữ liệu đã lưu DB.
 //  - notification:new   -> phòng riêng của tài khoản { type, title, body, icon, request_id }
@@ -44,7 +44,9 @@ export function initSocket(getToken) {
     });
 
     socket.on('connect', () => {
-      joinedRequests.forEach(subscribeRoom);
+      joinedRequestCounts.forEach((count, reqId) => {
+        if (count > 0) subscribeRoom(reqId);
+      });
       notifyListeners('connection_change', { connected: true, id: socket.id });
     });
 
@@ -99,8 +101,10 @@ export function getSocket() {
  */
 export function joinOrderRoom(requestId) {
   if (!requestId) return;
-  joinedRequests.add(String(requestId));
-  if (socket?.connected) subscribeRoom(requestId);
+  const key = String(requestId);
+  const prev = joinedRequestCounts.get(key) || 0;
+  joinedRequestCounts.set(key, prev + 1);
+  if (prev === 0 && socket?.connected) subscribeRoom(key);
 }
 
 /**
@@ -109,8 +113,14 @@ export function joinOrderRoom(requestId) {
  */
 export function leaveOrderRoom(requestId) {
   if (!requestId) return;
-  joinedRequests.delete(String(requestId));
-  if (socket?.connected) socket.emit('request:unsubscribe', { request_id: String(requestId) });
+  const key = String(requestId);
+  const prev = joinedRequestCounts.get(key) || 0;
+  if (prev <= 1) {
+    joinedRequestCounts.delete(key);
+    if (prev === 1 && socket?.connected) socket.emit('request:unsubscribe', { request_id: key });
+  } else {
+    joinedRequestCounts.set(key, prev - 1);
+  }
 }
 
 /**
@@ -161,7 +171,7 @@ function notifyListeners(event, data) {
  * Ngắt kết nối socket (khi đăng xuất)
  */
 export function disconnectSocket() {
-  joinedRequests.clear();
+  joinedRequestCounts.clear();
   if (socket) {
     try {
       socket.disconnect();

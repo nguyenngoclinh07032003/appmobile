@@ -22,7 +22,17 @@ const {
   mergeCustomerRequestDetail,
   mapBackendPhotoToEvidence,
   extractInitialAttachments,
+  mergeBackendOrdersWithLocal,
 } = await import('../src/services/syncService.js');
+const {
+  syncCatalogFromBackend,
+  categorySlugOf,
+  DIAG_TAGS,
+  stepsFor,
+  featureFor,
+  durationText,
+  getService,
+} = await import('../src/constants/data.js');
 
 test('symptomDraft: mã hoá và tách tiêu đề ảnh triệu chứng', () => {
   const note = formatSymptomPhotoNote('Chảy nước dàn lạnh');
@@ -339,4 +349,50 @@ test('syncService: phân loại ảnh AFTER_REPAIR khi hoàn thành công việc
   assert.equal(mappedPhotos[0].isCustomerInitial, true);
   assert.equal(mappedPhotos[1].stage, 'after');
   assert.equal(mappedPhotos[1].uri, 'https://example.com/step-after-kept.jpg');
+});
+
+test('data: categorySlugOf ánh xạ đúng danh mục backend c1/c2/... sang DIAG_TAGS, stepsFor, featureFor và durationText', () => {
+  syncCatalogFromBackend({
+    categories: [
+      { category_id: 1, category_name: 'Máy lạnh', icon: 'snowflake' },
+      { category_id: 2, category_name: 'Máy giặt', icon: 'washing-machine' },
+      { category_id: 3, category_name: 'Tủ lạnh', icon: 'refrigerator' },
+    ],
+    services: [
+      { service_id: 101, category_id: 1, service_name: 'Vệ sinh máy lạnh treo tường', base_price: 180000 },
+      { service_id: 102, category_id: 2, service_name: 'Vệ sinh máy giặt cửa trước lồng ngang', base_price: 350000 },
+      { service_id: 103, category_id: 3, service_name: 'Vệ sinh tủ lạnh', base_price: 250000 },
+    ],
+  });
+
+  const ac = getService('s101');
+  const washer = getService('s102');
+  const fridge = getService('s103');
+
+  assert.equal(categorySlugOf(ac.category, ac.name), 'may-lanh');
+  assert.equal(categorySlugOf(washer.category, washer.name), 'may-giat');
+  assert.equal(categorySlugOf(fridge.category, fridge.name), 'tu-lanh');
+
+  assert.deepEqual(DIAG_TAGS[categorySlugOf(ac.category)], DIAG_TAGS['may-lanh']);
+  assert.match(stepsFor(washer)[1].title, /lồng giặt/);
+  assert.match(stepsFor(fridge)[1].title, /ngăn mát/);
+  assert.match(featureFor(ac), /dàn lạnh, lưới lọc và dàn nóng/);
+  assert.equal(durationText(washer), '90 phút');
+  assert.equal(durationText(ac), '60 phút');
+});
+
+test('syncService: mergeBackendOrdersWithLocal ưu tiên tracking mới hơn từ backend và giữ tracking local khi backend chưa có', () => {
+  const mergedNewer = mergeBackendOrdersWithLocal(
+    [{ code: 'REQ-1', dbRequestId: 1, status: 'onway', tracking: { lat: 21.0, lng: 105.8, updatedAt: 1000 } }],
+    [{ code: 'REQ-1', dbRequestId: 1, status: 'onway', tracking: { lat: 21.1, lng: 105.9, updatedAt: 2000 } }],
+  );
+  assert.equal(mergedNewer[0].tracking.lat, 21.1);
+  assert.equal(mergedNewer[0].tracking.updatedAt, 2000);
+
+  const mergedFallback = mergeBackendOrdersWithLocal(
+    [{ code: 'REQ-2', dbRequestId: 2, status: 'onway', tracking: { lat: 21.02, lng: 105.81, updatedAt: 3000 } }],
+    [{ code: 'REQ-2', dbRequestId: 2, status: 'onway', tracking: null }],
+  );
+  assert.equal(mergedFallback[0].tracking.lat, 21.02);
+  assert.equal(mergedFallback[0].tracking.updatedAt, 3000);
 });

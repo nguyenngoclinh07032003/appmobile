@@ -109,20 +109,21 @@ const KIND_STEPS = {
 
 export const stepsFor = (item) => {
   const kind = serviceKind(item);
-  if (kind === 'clean') return CLEAN_STEPS[item?.category] || KIND_STEPS.clean;
+  if (kind === 'clean') return CLEAN_STEPS[categorySlugOf(item?.category, item?.name)] || KIND_STEPS.clean;
   return KIND_STEPS[kind] || KIND_STEPS.clean;
 };
 
 export const featureFor = (item) => {
   const kind = serviceKind(item);
   const name = item?.name || 'Dịch vụ';
+  const slug = categorySlugOf(item?.category, item?.name);
   if (kind === 'install') return `${name}.\n\nThợ khảo sát tại nhà trước khi lắp. Giá trên app là giá tham khảo cho nhân công cơ bản, chưa gồm vật tư phát sinh như ống đồng, giá đỡ hay khoan tường. Thợ báo giá cuối và chỉ làm khi bạn đồng ý.`;
   if (kind === 'repair') return `${name}.\n\nPhí hiển thị là phí kiểm tra. Linh kiện hỏng được báo riêng trước khi thay. Thợ không sửa nếu bạn chưa xác nhận giá.`;
   if (kind === 'lifetime') return `${name}.\n\nGiá gói là mức tham khảo cho một chu kỳ bảo dưỡng định kỳ. Lịch các lần sau được hẹn sau lần đầu. Vật tư thay thế tính riêng.`;
   if (kind === 'gas') return `${name}.\n\nGiá gồm công nạp gas đúng chủng loại máy. Nếu hệ thống thủng hoặc hết gas do rò rỉ, thợ báo phát sinh trước khi xử lý. Sau khi nạp, thợ đo nhiệt độ gió và dòng điện.`;
-  if (item?.category === 'may-giat') return `${name}.\n\nVệ sinh lồng giặt, gioăng cửa, khay bột và lưới lọc. Giá gồm nhân công, chưa gồm hóa chất đặc biệt nếu máy bám cặn nặng. Thợ chạy thử không tải trước khi bàn giao.`;
-  if (item?.category === 'tu-lanh') return `${name}.\n\nVệ sinh ngăn mát, ngăn đá, gioăng và dàn nóng. Giá gồm nhân công. Nếu máy không lạnh do hết gas hoặc hỏng block, đó là việc sửa chữa và được báo giá riêng.`;
-  if (item?.category === 'may-lanh') return `${name}.\n\nGiúp máy lạnh sạch sâu, mát nhanh và vận hành ổn định hơn. Phù hợp với gia đình, căn hộ, văn phòng và cửa hàng.\n\nVệ sinh đúng kỹ thuật: dàn lạnh, lưới lọc và dàn nóng theo điều kiện thực tế. Kiểm tra máy trước và sau khi làm, rồi bàn giao.\n\nGiá gồm nhân công vệ sinh, chưa gồm vật tư hoặc gas phát sinh. Thợ kiểm tra thực tế tại nhà.`;
+  if (slug === 'may-giat') return `${name}.\n\nVệ sinh lồng giặt, gioăng cửa, khay bột và lưới lọc. Giá gồm nhân công, chưa gồm hóa chất đặc biệt nếu máy bám cặn nặng. Thợ chạy thử không tải trước khi bàn giao.`;
+  if (slug === 'tu-lanh') return `${name}.\n\nVệ sinh ngăn mát, ngăn đá, gioăng và dàn nóng. Giá gồm nhân công. Nếu máy không lạnh do hết gas hoặc hỏng block, đó là việc sửa chữa và được báo giá riêng.`;
+  if (slug === 'may-lanh') return `${name}.\n\nGiúp máy lạnh sạch sâu, mát nhanh và vận hành ổn định hơn. Phù hợp với gia đình, căn hộ, văn phòng và cửa hàng.\n\nVệ sinh đúng kỹ thuật: dàn lạnh, lưới lọc và dàn nóng theo điều kiện thực tế. Kiểm tra máy trước và sau khi làm, rồi bàn giao.\n\nGiá gồm nhân công vệ sinh, chưa gồm vật tư hoặc gas phát sinh. Thợ kiểm tra thực tế tại nhà.`;
   return `${name}.\n\nGiá gồm nhân công thực hiện tại nhà. Vật tư hoặc lỗi phát sinh được báo trước khi làm thêm. Thợ dọn khu vực và nghiệm thu trước khi kết thúc.`;
 };
 
@@ -430,7 +431,31 @@ export const normalize = (s) => (s || '')
 
 export const discountOf = (item) => (item?.oldPrice ? Math.round((1 - item.price / item.oldPrice) * 100) : 0);
 export const isClean = (item) => /vệ sinh/i.test(item?.name || '');
-export const durationText = (id) => (id === 'vs-mg-truoc' ? '90 phút' : '60 phút');
+
+const KNOWN_CATEGORY_SLUGS = ['may-lanh', 'may-giat', 'tu-lanh', 'nuoc-nong', 'loc-khong-khi', 'hut-mui', 'quat'];
+export const categorySlugOf = (categoryOrLabel, serviceName = '') => {
+  const raw = String(categoryOrLabel || '').trim();
+  if (KNOWN_CATEGORY_SLUGS.includes(raw)) return raw;
+  const label = CATEGORIES.find((c) => c.id === raw)?.label || CAT_SHORT[raw] || '';
+  const n = normalize(`${raw} ${label} ${serviceName}`);
+  if (/may lanh|dieu hoa|may-lanh/.test(n)) return 'may-lanh';
+  if (/may giat|may-giat/.test(n)) return 'may-giat';
+  if (/tu lanh|tu dong|tu mat|tu-lanh/.test(n)) return 'tu-lanh';
+  if (/nuoc nong|binh nong lanh|may tam|nuoc-nong/.test(n)) return 'nuoc-nong';
+  if (/loc khong khi|loc-khong-khi/.test(n)) return 'loc-khong-khi';
+  if (/hut mui|hut-mui/.test(n)) return 'hut-mui';
+  if (/quat/.test(n)) return 'quat';
+  return raw;
+};
+
+export const durationText = (idOrItem) => {
+  const svc = idOrItem && typeof idOrItem === 'object' ? idOrItem : getService(idOrItem);
+  const id = typeof idOrItem === 'object' ? idOrItem?.id : idOrItem;
+  if (id === 'vs-mg-truoc' || /may giat.*(cua truoc|long ngang)/.test(normalize(svc?.name || ''))) {
+    return '90 phút';
+  }
+  return '60 phút';
+};
 
 export const voucherDiscount = (voucher, subtotal) => {
   if (!voucher) return 0;

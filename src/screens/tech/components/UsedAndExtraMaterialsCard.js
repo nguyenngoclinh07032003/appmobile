@@ -47,10 +47,9 @@ export function UsedAndExtraMaterialsCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderCode]);
 
-  // Tự động đồng bộ các vật tư mua ngoài đang báo giá dao động (hoặc cần nhập lại giá) vào danh sách chốt Bill
-  useEffect(() => {
-    if (!o) return;
-    const estSource = isRevision
+  const estSource = !o
+    ? []
+    : isRevision
       ? (o.quote?.lines || [])
           // Bỏ các dòng khách đã duyệt ở đợt trước (isPriorApproved) để không gửi lại / tính tiền 2 lần.
           .filter((l) => l.isFinalizedExternal && !l.isPriorApproved)
@@ -74,7 +73,11 @@ export function UsedAndExtraMaterialsCard({
           defaultPrice: est.alreadyBilledUnitPrice > 0 ? est.alreadyBilledUnitPrice : '',
           receiptId: null,
         }));
+  const estSourceSig = JSON.stringify(estSource);
 
+  // Tự động đồng bộ các vật tư mua ngoài đang báo giá dao động (hoặc cần nhập lại giá) vào danh sách chốt Bill
+  useEffect(() => {
+    if (!o) return;
     setExtraParts((prev) => {
       const prevBySync = new Map(prev.filter((p) => p.syncKey).map((p) => [p.syncKey, p]));
       const syncedItems = estSource.map((src) => {
@@ -108,7 +111,8 @@ export function UsedAndExtraMaterialsCard({
       const inlineAdded = prev.filter((p) => p.isAddedInline);
       return [...syncedItems, ...inlineAdded];
     });
-  }, [o, isRevision]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderCode, isRevision, estSourceSig]);
 
   // Bỏ số lượng lạc quan khi số lượng trên server đã đổi (server đã xác nhận / đồng bộ lại).
   const matQtySig = (o?.materials || []).map((m) => `${m.id}:${m.qty}`).join('|');

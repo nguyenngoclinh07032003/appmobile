@@ -1,6 +1,32 @@
 // Bộ quy tắc kiểm tra tính hợp lệ dữ liệu nhập liệu (Validation) chuẩn cho ứng dụng Thợ Minh Đức
 
 /**
+ * Chuẩn hoá input số điện thoại khi nhập/dán (giữ hỗ trợ +84 / 84 / 0084 và 9 số không 0).
+ */
+export function sanitizeVnPhoneInput(raw) {
+  const digits = String(raw || '').trim().replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('0084') && digits.length >= 13) return `0${digits.slice(4, 13)}`;
+  if (digits.startsWith('84')) {
+    return digits.length >= 11 ? `0${digits.slice(2, 11)}` : digits;
+  }
+  if (!digits.startsWith('0') && digits.length === 9) return `0${digits}`;
+  return digits.slice(0, 10);
+}
+
+/**
+ * Chuẩn hoá số điện thoại Việt Nam để so sánh/tra cứu.
+ */
+export function normalizeVnPhone(raw) {
+  const digits = String(raw || '').trim().replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('0084') && digits.length >= 13) return `0${digits.slice(4, 13)}`;
+  if (digits.startsWith('84') && digits.length >= 11) return `0${digits.slice(2, 11)}`;
+  if (!digits.startsWith('0') && digits.length === 9) return `0${digits}`;
+  return digits;
+}
+
+/**
  * Kiểm tra số điện thoại Việt Nam hợp lệ:
  * - Đúng 10 chữ số
  * - Bắt đầu bằng 03, 05, 07, 08 hoặc 09 (các nhà mạng Viettel, Mobifone, Vinaphone, Vietnamobile, Gmobile, Wintel...)

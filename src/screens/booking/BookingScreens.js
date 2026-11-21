@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Image } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Image, Platform } from 'react-native';
 import { C, R, shadow } from '../../theme';
 import {
   getService, formatVND, discountOf, isEstimate, isClean, durationText, featureFor, stepsFor, videoFor,
@@ -13,7 +13,7 @@ import {
   SelectRow, Segmented, Checkbox, EmptyState, ServiceCard, Price, Chip, ui, HScroll, AppIcon,
   TimeRangeSlider, minutesToSlotStr,
 } from '../../components';
-import { pickImage, validateVietnamesePhone, validateStreetAddress, validateContactName } from '../../utils';
+import { pickImage, validateVietnamesePhone, validateStreetAddress, validateContactName, sanitizeVnPhoneInput } from '../../utils';
 import {
   nextDays, minSelectableMinute, MAX_DAY_MINUTE, LEAD_MINUTES, SLOT_STEP_MINUTES, DEFAULT_SLOT_MINUTE,
 } from '../../utils/dateTime';
@@ -431,8 +431,8 @@ export function CheckoutScreen({ params }) {
   const availableServices = (ALL_SERVICES || []).filter((svc) => {
     if (selectedSvcCat !== 'all' && svc.category !== selectedSvcCat) return false;
     if (svcSearch.trim()) {
-      const q = svcSearch.trim().toLowerCase();
-      return (svc.name || '').toLowerCase().includes(q) || (svc.category || '').toLowerCase().includes(q);
+      const q = normalize(svcSearch.trim());
+      return normalize(svc.name || '').includes(q) || normalize(catLabel(svc.category)).includes(q);
     }
     return true;
   });
@@ -444,7 +444,16 @@ export function CheckoutScreen({ params }) {
   const addAttachment = async () => {
     if (attachments.length >= 5) { u.alert('Giới hạn ảnh', 'Bạn chỉ đính kèm tối đa 5 ảnh cho yêu cầu.', '📷'); return; }
     const uri = await pickImage();
-    if (uri === null) { u.alert('Chưa hỗ trợ', 'Chọn ảnh đang khả dụng trên bản web.', '📷'); return; }
+    if (uri === null) {
+      u.alert(
+        Platform.OS === 'web' ? 'Không thể chọn ảnh' : 'Cần quyền truy cập ảnh',
+        Platform.OS === 'web'
+          ? 'Trình duyệt không hỗ trợ chọn ảnh.'
+          : 'Vui lòng cấp quyền truy cập thư viện ảnh trong Cài đặt thiết bị để đính kèm ảnh.',
+        '📷',
+      );
+      return;
+    }
     if (!uri) return;
     setAttachments((p) => [...p, { id: `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, uri, at: Date.now() }]);
   };
@@ -460,6 +469,7 @@ export function CheckoutScreen({ params }) {
   // Tự áp dụng mã đã chọn từ màn "Quyền lợi của tôi"
   React.useEffect(() => {
     if (!pendingVoucher) return;
+    if (!allVouchers.length) return;
     const v = allVouchers.find((x) => x.code === pendingVoucher);
     setPendingVoucher(null);
     if (!v) return;
@@ -470,7 +480,7 @@ export function CheckoutScreen({ params }) {
     setVoucher(v);
     setVoucherInput(v.code);
     u.toast(`Đã áp dụng ${v.code}`, '🎟️');
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pendingVoucher, s.myVouchers, s.publicVouchers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const applyVoucher = (code) => {
     const v = allVouchers.find((x) => x.code === code.trim().toUpperCase());
@@ -1291,11 +1301,7 @@ export function AddressFormScreen({ params }) {
             label="Số điện thoại"
             value={phone}
             onChangeText={(t) => {
-              // Chuẩn hoá số dán dạng +84 / 84: "+84 912 345 678" → "0912345678" (trước đây thành "0849123456" — sai số).
-              let p = t.replace(/[^0-9]/g, '');
-              if (p.startsWith('84') && p.length >= 11) p = `0${p.slice(2)}`;
-              else if (p.length === 9 && !p.startsWith('0')) p = `0${p}`;
-              p = p.slice(0, 10);
+              const p = sanitizeVnPhoneInput(t);
               setPhone(p);
               if (p.length === 10) {
                 const phoneErr = validateVietnamesePhone(p);
@@ -1349,15 +1355,26 @@ export function AddressFormScreen({ params }) {
           </View>
         ) : null}
         {wardsState === 'ready' && wards.length === 0 ? <Text style={ui.meta}>Chưa có dữ liệu phường/xã.</Text> : null}
-        {wards
-          .filter((w) => !wardQuery.trim() || normalize(w.name).includes(normalize(wardQuery.trim())))
-          .slice(0, 60)
-          .map((w) => (
-            <Tap key={w.code} style={bx.option} onPress={() => { setWard({ code: w.code, name: w.name }); setShowArea(false); setErr((prev) => ({ ...prev, area: '' })); }}>
-              <Radio on={ward?.code === w.code} />
-              <Text style={bx.optionText}>{w.name}</Text>
-            </Tap>
-          ))}
+        {(() => {
+          const q = normalize(wardQuery.trim());
+          const filteredWards = wards.filter((w) => !q || normalize(w.name).includes(q));
+          return (
+            <>
+              {wardsState === 'ready' && filteredWards.length > 0 ? (
+                <Text style={[ui.meta, { marginTop: 4, marginBottom: 4 }]}>{filteredWards.length} phường/xã phù hợp</Text>
+              ) : null}
+              {wardsState === 'ready' && wards.length > 0 && filteredWards.length === 0 ? (
+                <Text style={[ui.meta, { marginTop: 8 }]}>Không tìm thấy phường/xã khớp "{wardQuery.trim()}".</Text>
+              ) : null}
+              {filteredWards.map((w) => (
+                <Tap key={w.code} style={bx.option} onPress={() => { setWard({ code: w.code, name: w.name }); setShowArea(false); setErr((prev) => ({ ...prev, area: '' })); }}>
+                  <Radio on={ward?.code === w.code} />
+                  <Text style={bx.optionText}>{w.name}</Text>
+                </Tap>
+              ))}
+            </>
+          );
+        })()}
       </Sheet>
     </View>
   );

@@ -80,15 +80,54 @@ function HomeTab({ onTab, onLogin, onRegister }) {
 
 function ServicesTab({ onLogin }) {
   const publicServices = (ALL_SERVICES.length ? ALL_SERVICES : SERVICES).filter((service) => !service.hidden);
+  const [selectedCat, setSelectedCat] = useState('all');
+  const [showAll, setShowAll] = useState(false);
+  const activeCats = CATEGORIES.filter((category) => publicServices.some((service) => service.category === category.id));
+  const filtered = selectedCat === 'all' ? publicServices : publicServices.filter((service) => service.category === selectedCat);
+  const displayed = showAll ? filtered : filtered.slice(0, 12);
+
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.innerPage}>
       <Text style={styles.eyebrow}>DANH MỤC CÔNG KHAI</Text><Text style={styles.pageTitle}>Dịch vụ tại nhà</Text>
       <Text style={styles.pageIntro}>Tham khảo dịch vụ và giá khởi điểm. Đăng nhập để xem chi tiết, chọn lịch và đặt thợ.</Text>
-      <View style={styles.categoryChips}>{CATEGORIES.filter((category) => publicServices.some((service) => service.category === category.id)).map((category) => (
-        <View key={category.id} style={styles.categoryChip}><AppIcon icon={category.icon} size={14} color="#087DEB" /><Text style={styles.categoryChipText}>{catLabel(category.id)}</Text></View>
-      ))}</View>
-      <View style={styles.serviceGrid}>{publicServices.slice(0, 12).map((service) => <ServiceTile key={service.id} service={service} onPress={onLogin} />)}</View>
-      <ActionButton title="Đăng nhập để đặt dịch vụ" onPress={onLogin} />
+      <View style={styles.categoryChips}>
+        <Pressable
+          onPress={() => { setSelectedCat('all'); setShowAll(false); }}
+          accessibilityRole="button"
+          style={[styles.categoryChip, selectedCat === 'all' && styles.categoryChipActive]}
+        >
+          <Text style={[styles.categoryChipText, selectedCat === 'all' && styles.categoryChipTextActive]}>
+            Tất cả ({publicServices.length})
+          </Text>
+        </Pressable>
+        {activeCats.map((category) => {
+          const on = selectedCat === category.id;
+          return (
+            <Pressable
+              key={category.id}
+              onPress={() => { setSelectedCat(on ? 'all' : category.id); setShowAll(false); }}
+              accessibilityRole="button"
+              style={[styles.categoryChip, on && styles.categoryChipActive]}
+            >
+              <AppIcon icon={category.icon} size={14} color={on ? '#fff' : '#087DEB'} />
+              <Text style={[styles.categoryChipText, on && styles.categoryChipTextActive]}>{catLabel(category.id)}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={styles.serviceGrid}>{displayed.map((service) => <ServiceTile key={service.id} service={service} onPress={onLogin} />)}</View>
+      {!showAll && filtered.length > 12 ? (
+        <View style={{ marginTop: 12 }}>
+          <ActionButton
+            title={`Xem thêm (${filtered.length - 12} dịch vụ)`}
+            secondary
+            onPress={() => setShowAll(true)}
+          />
+        </View>
+      ) : null}
+      <View style={{ marginTop: 12 }}>
+        <ActionButton title="Đăng nhập để đặt dịch vụ" onPress={onLogin} />
+      </View>
       <Text style={styles.disclaimer}>Giá hiển thị là giá tham khảo; kỹ thuật viên sẽ khảo sát và gửi báo giá trước khi thực hiện.</Text>
     </ScrollView>
   );
@@ -196,7 +235,9 @@ const styles = StyleSheet.create({
   pageIntro: { marginTop: 7, marginBottom: 16, color: '#708095', fontSize: 13, lineHeight: 19 },
   categoryChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 15 },
   categoryChip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 18, backgroundColor: '#fff', borderWidth: 1, borderColor: '#E1E9F2' },
+  categoryChipActive: { backgroundColor: '#087DEB', borderColor: '#087DEB' },
   categoryChipText: { color: '#41566E', fontSize: 10, fontWeight: '700' },
+  categoryChipTextActive: { color: '#fff' },
   disclaimer: { marginTop: 12, color: '#8693A3', fontSize: 10, lineHeight: 15, textAlign: 'center' },
   lockedPage: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 26, paddingBottom: 40 },
   lockedIcon: { width: 76, height: 76, alignItems: 'center', justifyContent: 'center', borderRadius: 25, backgroundColor: '#E6F1FF', marginBottom: 20 },

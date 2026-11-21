@@ -1143,8 +1143,12 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         code: ro.code || lo.code,
         status: keepEditing ? lo.status : (keepOnway ? 'onway' : (keepRepairing ? 'repairing' : ro.status)),
         quoteEditing: keepEditing,
-        tracking: lo.tracking || ro.tracking,
-        checkIn: lo.checkIn || ro.checkIn,
+        tracking: (ro.tracking && (!lo.tracking || (ro.tracking.updatedAt || 0) >= (lo.tracking.updatedAt || 0)))
+          ? ro.tracking
+          : (lo.tracking || ro.tracking),
+        checkIn: (ro.checkIn && (!lo.checkIn || (ro.checkIn.at || 0) >= (lo.checkIn.at || 0)))
+          ? { ...(lo.checkIn || {}), ...ro.checkIn }
+          : (lo.checkIn || ro.checkIn),
         chat: lo.chat?.length ? lo.chat : (ro.chat || []),
         // Ảnh/tiến độ: ưu tiên server; giữ local nếu server chưa có.
         evidence: (Array.isArray(ro.evidence) && ro.evidence.length)

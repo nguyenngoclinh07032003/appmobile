@@ -81,7 +81,7 @@ import {
   parseSymptomPhotoMeta,
   splitSymptomTokens,
 } from "../utils/symptomItems";
-import { WARRANTY_ALERT_MILESTONES } from "../constants/appPolicy";
+import { WARRANTY_ALERT_MILESTONES, OTP_TTL_MINUTES } from "../constants/appPolicy";
 
 // Ngày sinh: server lưu 'YYYY-MM-DD', app hiển thị 'DD/MM/YYYY'.
 const isoToDob = (iso) => {
@@ -941,8 +941,10 @@ export function AppProvider({ children }) {
       return next;
     });
   // Lưu trạng thái theo từng tab trên Web (sessionStorage) để mở 2 tab (1 tab Khách + 1 tab Thợ) không ghi đè mất đơn của nhau.
+  const storageHydratedRef = useRef(IS_WEB_STORAGE);
   const lastWritten = useRef("");
   useEffect(() => {
+    if (!storageHydratedRef.current) return;
     const { auth, ...rest } = s;
     const payload = { ...rest, role: auth?.role || rest.role };
     let raw;
@@ -1489,7 +1491,7 @@ export function AppProvider({ children }) {
               const c = isFinished(r)
                 ? finishedOrderCache.current.get(String(r.request_id))
                 : null;
-              return c && c.cacheVer === 3 && c.status === r.request_status ? c : null;
+              return c && c.cacheVer === 3 && c.status === r.request_status && (c.updatedAt || null) === (r.updated_at || null) ? c : null;
             };
             rawRequests.forEach((r) => {
               const c = cached(r);
@@ -1628,6 +1630,7 @@ export function AppProvider({ children }) {
                 finishedOrderCache.current.set(String(r.request_id), {
                   cacheVer: 3,
                   status: r.request_status,
+                  updatedAt: r.updated_at || null,
                   items: r.items,
                   quotations: r.quotations,
                   diagnoses: r.diagnoses,
@@ -2135,14 +2138,20 @@ export function AppProvider({ children }) {
   useEffect(() => {
     (async () => {
       if (!IS_WEB_STORAGE) {
-        await hydrateAuthStore();
-        const savedNative = await readJson(KEY, "local");
-        if (savedNative) {
-          up((p) => ({
-            ...savedNative,
-            auth: getSession() || p.auth,
-            role: getSession()?.role || savedNative.role || p.role,
-          }));
+        try {
+          await hydrateAuthStore();
+          const savedNative = await readJson(KEY, "local");
+          if (savedNative) {
+            up((p) => ({
+              ...savedNative,
+              auth: getSession() || p.auth,
+              role: getSession()?.role || savedNative.role || p.role,
+              catalogVersion: p.catalogVersion || savedNative.catalogVersion,
+              policy: p.policy || savedNative.policy,
+            }));
+          }
+        } finally {
+          storageHydratedRef.current = true;
         }
       }
       // Tải danh mục & cấu hình công khai ngay khi mở app (dù chưa đăng nhập).
@@ -2330,6 +2339,7 @@ export function AppProvider({ children }) {
   // Trước đây token bị xoá nhưng app vẫn "đã đăng nhập", mọi thao tác chỉ báo "chưa đồng bộ".
   useEffect(() => {
     authTokens.onExpired(() => {
+      clearSessionCaches();
       disconnectSocket();
       clearSession();
       setS((prev) => (prev.auth ? { ...prev, ...signedOutState(prev) } : prev));
@@ -2375,6 +2385,10 @@ export function AppProvider({ children }) {
   // trùng (trước đây mỗi lần bấm lại tạo thêm 1 "ghi chú sửa chữa"). Đã check-in thì lượt đến đã bắt đầu sẵn:
   // không gọi /start (server trả 409). Trả kết quả API, hoặc null khi đã ghi đúng nội dung này rồi.
   const lastDiagnosis = useRef(new Map()); // assignment_id -> nội dung chẩn đoán đã ghi thành công
+  const clearSessionCaches = () => {
+    finishedOrderCache.current.clear();
+    lastDiagnosis.current.clear();
+  };
   const saveDiagnosisOnce = async (
     o,
     { diagnosis, symptoms, recommendation, needsQuotation },
@@ -4297,6 +4311,7 @@ export function AppProvider({ children }) {
     updatePendingRequest: async (code, patch) => {
       const o = s.orders.find((x) => x.code === code);
       if (!o?.dbRequestId || !authTokens.get()) return notSynced("Đơn này");
+      const prevAtts = Array.isArray(o.attachments) ? o.attachments : [];
       const body = {
         ...(patch.dateKey && patch.slot
           ? { preferred_time: buildPreferredTimeIso(patch.dateKey, patch.slot) }
@@ -4307,6 +4322,39 @@ export function AppProvider({ children }) {
       };
       const res = await hrmssApi.updateCustomerRequest(o.dbRequestId, body);
       if (res.ok) {
+        if (Array.isArray(patch.attachments)) {
+          const keptIds = new Set(
+            patch.attachments
+              .map((x) => x?.dbAttachmentId)
+              .filter((id) => id != null)
+              .map(String),
+          );
+          const removedIds = prevAtts
+            .filter((x) => x?.dbAttachmentId != null && !keptIds.has(String(x.dbAttachmentId)))
+            .map((x) => x.dbAttachmentId);
+          if (removedIds.length) {
+            const removedSet = new Set(removedIds.map(String));
+            const delRes = await Promise.all(
+              removedIds.map((attId) =>
+                hrmssApi.deletePhoto(attId).catch(() => null),
+              ),
+            );
+            if (delRes.some((r) => !r?.ok)) {
+              ui.toast("Một số ảnh cũ chưa xoá được", "⚠️");
+            }
+            updateOrder(code, (ord) => ({
+              order: {
+                ...ord,
+                attachments: (ord.attachments || []).filter(
+                  (x) => x?.dbAttachmentId == null || !removedSet.has(String(x.dbAttachmentId)),
+                ),
+                evidence: (ord.evidence || []).filter(
+                  (x) => x?.dbAttachmentId == null || !removedSet.has(String(x.dbAttachmentId)),
+                ),
+              },
+            }));
+          }
+        }
         const fresh = (patch.attachments || [])
           .filter((x) => x?.uri && !x.dbAttachmentId)
           .slice(0, 5);
@@ -4592,6 +4640,7 @@ export function AppProvider({ children }) {
     },
     // Đăng nhập / Đăng ký — phân quyền & tách biệt dữ liệu theo tài khoản
     applyAuth: (account, link) => {
+      clearSessionCaches();
       up((p) => ({
         ...switchCustomerSlice(p, account),
         auth: account,
@@ -4635,6 +4684,7 @@ export function AppProvider({ children }) {
       }
 
       const res = { ok: true, account: backendAccount };
+      clearSessionCaches();
       up((p) => ({
         ...switchCustomerSlice(p, res.account),
         auth: res.account,
@@ -4756,6 +4806,7 @@ export function AppProvider({ children }) {
         };
       }
       const res = { ok: true, account: backendAccount };
+      clearSessionCaches();
       up((p) => ({
         ...switchCustomerSlice(p, res.account),
         auth: res.account,
@@ -4808,7 +4859,7 @@ export function AppProvider({ children }) {
             notifications: pushNotif(p, {
               icon: "📧",
               title: "Mã xác thực Email đã được gửi",
-              body: `Hệ thống vừa gửi mã xác thực 6 chữ số tới ${res.data.email || targetEmail} (hiệu lực 5 phút). Vui lòng kiểm tra hộp thư.`,
+              body: `Hệ thống vừa gửi mã xác thực 6 chữ số tới ${res.data.email || targetEmail} (hiệu lực ${OTP_TTL_MINUTES} phút). Vui lòng kiểm tra hộp thư.`,
             }),
           }));
           ui.toast(
@@ -4991,10 +5042,12 @@ export function AppProvider({ children }) {
         attitude_rating: stars,
         expertise_rating: stars,
       });
-      if (res.ok)
+      if (res.ok) {
+        finishedOrderCache.current.delete(String(o.dbRequestId));
         updateOrder(code, (x) => ({
           order: { ...x, rating: { stars, text } },
         }));
+      }
       return serverDone(res, {
         title: "Không gửi được đánh giá",
         codes: {
@@ -5138,6 +5191,7 @@ export function AppProvider({ children }) {
         }));
       }
       ui.toast("Đã gửi yêu cầu bảo hành · Chờ Văn phòng thẩm định", "🛡️");
+      finishedOrderCache.current.delete(String(o.dbRequestId));
       syncFromBackend(null, true);
       return newCode;
     },
@@ -5215,6 +5269,7 @@ export function AppProvider({ children }) {
     clearSearches: () => up(() => ({ searches: [] })),
 
     logout: () => {
+      clearSessionCaches();
       disconnectSocket();
       hrmssApi.logout();
       clearSession();
@@ -5249,6 +5304,7 @@ export function AppProvider({ children }) {
       }
       const currentId = s.auth?.id;
       if (currentId) deleteAccountById(currentId);
+      clearSessionCaches();
       disconnectSocket();
       hrmssApi.logout();
       clearSession();
@@ -5265,6 +5321,7 @@ export function AppProvider({ children }) {
       return true;
     },
     wipeLocalData: () => {
+      clearSessionCaches();
       disconnectSocket();
       hrmssApi.logout();
       clearSession();

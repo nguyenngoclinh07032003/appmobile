@@ -116,6 +116,9 @@ import {
   Rocket,
   PenTool,
   Lightbulb,
+  Tag,
+  Percent,
+  Receipt,
 } from 'lucide-react-native';
 import { C } from '../../theme';
 
@@ -190,6 +193,7 @@ export const LUCIDE_ICON_MAP = {
   compass: Compass,
   'map-pin': MapPin,
   'receipt-text': ReceiptText,
+  receipt: Receipt,
   'file-text': FileText,
   'file-check-2': FileCheck2,
   link: Link2,
@@ -238,6 +242,8 @@ export const LUCIDE_ICON_MAP = {
   gem: Gem,
   rocket: Rocket,
   lightbulb: Lightbulb,
+  tag: Tag,
+  percent: Percent,
 
   // --- Ánh xạ tự động toàn bộ ký hiệu / Emoji hiện có trong App sang Lucide Icons ---
   '🧼': SprayCan,

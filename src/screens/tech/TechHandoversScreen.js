@@ -46,17 +46,25 @@ export function TechHandoversScreen({ params }) {
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [apiUnavailable, setApiUnavailable] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const statusFilterRef = useRef(statusFilter);
   statusFilterRef.current = statusFilter;
   const submittingRef = useRef(false);
+  const historyReqSeqRef = useRef(0);
 
   const loadPending = useCallback(async () => {
     const res = await hrmssApi.getTechnicianPendingHandovers();
     if (!res.ok) {
-      if (res.status === 404) setApiUnavailable(true);
+      if (res.status === 404) {
+        setApiUnavailable(true);
+        setLoadError('');
+      } else {
+        setLoadError(res.message || 'Không tải được danh sách tiền mặt chờ nộp. Kiểm tra mạng và thử lại.');
+      }
       return;
     }
     setApiUnavailable(false);
+    setLoadError('');
     const items = Array.isArray(res.data?.items) ? res.data.items : [];
     setPendingItems(items);
     setPendingTotal(Number(res.data?.total_amount) || 0);
@@ -65,12 +73,20 @@ export function TechHandoversScreen({ params }) {
   }, []);
 
   const loadHistory = useCallback(async (st = statusFilterRef.current) => {
+    const reqId = ++historyReqSeqRef.current;
     const res = await hrmssApi.getTechnicianHandovers({ status: st, page: 1, limit: 30 });
+    if (reqId !== historyReqSeqRef.current) return;
     if (!res.ok) {
-      if (res.status === 404) setApiUnavailable(true);
+      if (res.status === 404) {
+        setApiUnavailable(true);
+        setLoadError('');
+      } else {
+        setLoadError(res.message || 'Không tải được lịch sử bàn giao tiền mặt. Kiểm tra mạng và thử lại.');
+      }
       return;
     }
     setApiUnavailable(false);
+    setLoadError('');
     setHistoryItems(Array.isArray(res.data?.items) ? res.data.items : []);
   }, []);
 
@@ -191,6 +207,12 @@ export function TechHandoversScreen({ params }) {
               Tính năng bàn giao tiền mặt cần backend bản mới trên VPS. Kéo làm mới lại sau khi backend deploy xong.
             </Text>
           </Card>
+        ) : loadError ? (
+          <Card style={{ backgroundColor: '#FEF2F2', borderColor: '#FECACA', marginBottom: 12 }}>
+            <Text style={{ fontWeight: '800', color: '#991B1B' }}>Không tải được dữ liệu bàn giao</Text>
+            <Text style={{ color: '#7F1D1D', marginTop: 4, lineHeight: 20 }}>{loadError}</Text>
+            <Btn title="Thử lại" small variant="soft" style={{ marginTop: 10, alignSelf: 'flex-start' }} onPress={() => loadAll(false)} />
+          </Card>
         ) : null}
 
         {tab === 'pending' ? (
@@ -203,9 +225,11 @@ export function TechHandoversScreen({ params }) {
 
             {pendingItems.length === 0 ? (
               <EmptyState
-                icon="check-circle"
-                title={loading ? 'Đang tải…' : 'Không còn tiền mặt chờ nộp'}
-                body="Mọi khoản tiền mặt bạn thu đã được lập đợt nộp hoặc chưa có khoản mới."
+                icon={loadError ? 'alert-triangle' : 'check-circle'}
+                title={loading ? 'Đang tải…' : loadError ? 'Chưa tải được dữ liệu' : 'Không còn tiền mặt chờ nộp'}
+                body={loadError || 'Mọi khoản tiền mặt bạn thu đã được lập đợt nộp hoặc chưa có khoản mới.'}
+                action={loadError ? 'Thử lại' : null}
+                onAction={loadError ? () => loadAll(false) : undefined}
               />
             ) : (
               <>
@@ -276,9 +300,11 @@ export function TechHandoversScreen({ params }) {
 
             {historyItems.length === 0 ? (
               <EmptyState
-                icon="receipt"
-                title={loading ? 'Đang tải…' : 'Chưa có đợt nộp tiền nào'}
-                body="Các đợt bàn giao tiền mặt bạn gửi về văn phòng sẽ hiển thị tại đây."
+                icon={loadError ? 'alert-triangle' : 'receipt-text'}
+                title={loading ? 'Đang tải…' : loadError ? 'Chưa tải được lịch sử' : 'Chưa có đợt nộp tiền nào'}
+                body={loadError || 'Các đợt bàn giao tiền mặt bạn gửi về văn phòng sẽ hiển thị tại đây.'}
+                action={loadError ? 'Thử lại' : null}
+                onAction={loadError ? () => loadAll(false) : undefined}
               />
             ) : (
               historyItems.map((h) => {

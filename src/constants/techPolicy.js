@@ -1,5 +1,6 @@
 /** Chính sách kỷ luật / uy tín thợ — hạn chế hủy sau nhận & đến muộn */
 import { vnTimestamp } from '../utils/vnTime.js';
+import { HOTLINE } from './data.js';
 
 export const TECH_POLICY = {
   reputationDefault: 100,
@@ -86,8 +87,8 @@ export const getCancellationWindowStatus = (order, now = Date.now()) => {
       diffMs,
       minsLeft,
       reason: diffMs <= 0
-        ? 'Đã qua thời gian hẹn với kỹ thuật viên. Quý khách không thể tự huỷ đơn. Vui lòng liên hệ Hotline 1900 6868.'
-        : `Chỉ còn ${minsLeft} phút đến giờ hẹn (${order.slot}). Theo quy định, quý khách không thể huỷ đơn trước 1 tiếng để đảm bảo quyền lợi và lịch trình của kỹ thuật viên. Vui lòng liên hệ Hotline 1900 6868 nếu có việc đột xuất.`,
+        ? `Đã qua thời gian hẹn với kỹ thuật viên. Quý khách không thể tự huỷ đơn. Vui lòng liên hệ Hotline ${HOTLINE}.`
+        : `Chỉ còn ${minsLeft} phút đến giờ hẹn (${order.slot}). Theo quy định, quý khách không thể huỷ đơn trước 1 tiếng để đảm bảo quyền lợi và lịch trình của kỹ thuật viên. Vui lòng liên hệ Hotline ${HOTLINE} nếu có việc đột xuất.`,
     };
   }
   return { allowed: true, diffMs };

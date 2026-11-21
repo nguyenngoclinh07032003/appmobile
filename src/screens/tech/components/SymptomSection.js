@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import { View, Text, Image, TextInput, StyleSheet } from 'react-native';
 import { C, R } from '../../../theme';
-import { DIAG_TAGS, DIAG_FINDINGS, DIAG_ACTIONS } from '../../../constants/data';
+import { DIAG_TAGS, DIAG_FINDINGS, DIAG_ACTIONS, categorySlugOf } from '../../../constants/data';
 import { Tap, Card, Field, AppIcon } from '../../../components';
 import { parseSymptomPhotoTitle } from './useQuoteDraft';
 
@@ -97,10 +97,11 @@ export function SymptomSection({
   const [symptomInput, setSymptomInput] = useState('');
   const [expandedIds, setExpandedIds] = useState({});
 
-  const deviceTags = [...new Set(cats.flatMap((c) => DIAG_TAGS[c] || []))];
+  const resolvedCats = [...new Set(cats.flatMap((c) => [c, categorySlugOf(c)]).filter(Boolean))];
+  const deviceTags = [...new Set(resolvedCats.flatMap((c) => DIAG_TAGS[c] || []))];
   const customTags = tags.filter((t) => !deviceTags.includes(t));
-  const findings = [...new Set([...cats.flatMap((c) => DIAG_FINDINGS[c] || []), ...(DIAG_FINDINGS.all || [])])];
-  const actions = [...new Set([...cats.flatMap((c) => DIAG_ACTIONS[c] || []), ...(DIAG_ACTIONS.all || [])])];
+  const findings = [...new Set([...resolvedCats.flatMap((c) => DIAG_FINDINGS[c] || []), ...(DIAG_FINDINGS.all || [])])];
+  const actions = [...new Set([...resolvedCats.flatMap((c) => DIAG_ACTIONS[c] || []), ...(DIAG_ACTIONS.all || [])])];
   const photos = evidence.filter((e) => e.stage === 'diagnosis');
 
   const toggleTag = (t) => setTags((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));

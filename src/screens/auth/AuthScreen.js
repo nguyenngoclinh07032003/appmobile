@@ -51,7 +51,7 @@ function ModernField({
 export default function AuthScreen({ initialMode = 'login', onBackHome }) {
   const { a } = useApp();
 
-  const [mode, setMode] = useState(initialMode); // login | register | forgot | tech_partner
+  const [mode, setMode] = useState(initialMode === 'tech_partner' ? 'login' : initialMode); // login | register | forgot
   const [name, setName] = useState('');
   const [username, setUsername] = useState(''); // Tên đăng nhập cho đăng ký
   const [identifier, setIdentifier] = useState(''); // Nhập Email hoặc Username (Đăng nhập / Quên mật khẩu)
@@ -74,7 +74,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
   };
 
   const submit = async () => {
-    if ((mode === 'register' || mode === 'tech_partner' || (mode === 'forgot' && otpSent)) && password !== password2) {
+    if ((mode === 'register' || (mode === 'forgot' && otpSent)) && password !== password2) {
       setFormErr('Mật khẩu nhập lại không khớp.');
       return;
     }
@@ -103,15 +103,6 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
         // Khách hàng đăng ký bằng Email & Username (không cần SĐT)
         res = await a.register({
           role: 'customer',
-          name: name.trim(),
-          username: username.trim(),
-          email: email.trim(),
-          password,
-        });
-      } else if (mode === 'tech_partner') {
-        // Đăng ký hồ sơ Kỹ thuật viên đối tác bằng Email & Username (không cần SĐT)
-        res = await a.register({
-          role: 'tech',
           name: name.trim(),
           username: username.trim(),
           email: email.trim(),
@@ -161,18 +152,14 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                 ? 'Đăng nhập tài khoản'
                 : mode === 'register'
                   ? 'Tạo tài khoản mới'
-                  : mode === 'tech_partner'
-                    ? 'Đăng ký Kỹ thuật viên'
-                    : 'Đặt lại mật khẩu'}
+                  : 'Đặt lại mật khẩu'}
             </Text>
             <Text style={st.heroSub}>
               {mode === 'login'
                 ? 'Nhập Email hoặc Tên đăng nhập để truy cập đơn dịch vụ và hồ sơ của bạn.'
                 : mode === 'register'
                   ? 'Đăng ký tài khoản để đặt lịch sửa chữa, bảo dưỡng tận nhà và nhận bảo hành đến 120 ngày.'
-                  : mode === 'tech_partner'
-                    ? 'Gia nhập mạng lưới kỹ thuật viên chuyên nghiệp Minh Đức để nhận việc và gia tăng thu nhập.'
-                    : 'Nhập Email hoặc Tên đăng nhập đã đăng ký để tạo mật khẩu bảo vệ mới.'}
+                  : 'Nhập Email hoặc Tên đăng nhập đã đăng ký để tạo mật khẩu bảo vệ mới.'}
             </Text>
           </View>
         </View>
@@ -204,25 +191,23 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                 <Text style={st.backLinkText}>← Quay lại đăng nhập</Text>
               </Tap>
               <Text style={st.forgotNote}>
-                {mode === 'tech_partner'
-                  ? 'Điền thông tin để đăng ký hồ sơ kỹ thuật viên đối tác'
-                  : otpSent
-                    ? 'Nhập mã 6 số đã gửi tới email của tài khoản (hiệu lực 10 phút) và mật khẩu mới'
-                    : 'Nhập email hoặc tên đăng nhập để nhận mã đặt lại mật khẩu qua email'}
+                {otpSent
+                  ? 'Nhập mã 6 số đã gửi tới email của tài khoản (hiệu lực 10 phút) và mật khẩu mới'
+                  : 'Nhập email hoặc tên đăng nhập để nhận mã đặt lại mật khẩu qua email'}
               </Text>
             </View>
           )}
 
           {/* Form Fields */}
           <View style={st.formBody}>
-            {(mode === 'register' || mode === 'tech_partner') && (
+            {mode === 'register' && (
               <>
                 <ModernField
                   label="Họ và tên"
                   icon="👤"
                   value={name}
                   onChangeText={setName}
-                  placeholder={mode === 'tech_partner' ? 'Nguyễn Văn Hùng (Kỹ thuật viên)' : 'Nguyễn Văn An'}
+                  placeholder="Nguyễn Văn An"
                   autoCapitalize="words"
                 />
 
@@ -231,7 +216,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                   icon="🆔"
                   value={username}
                   onChangeText={setUsername}
-                  placeholder="VD: hung_tech hoặc nguyenan99"
+                  placeholder="VD: nguyenan99"
                   autoCapitalize="none"
                 />
 
@@ -286,7 +271,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
             />
             )}
 
-            {(mode === 'register' || (mode === 'forgot' && otpSent) || mode === 'tech_partner') && (
+            {(mode === 'register' || (mode === 'forgot' && otpSent)) && (
               <ModernField
                 label="Xác nhận mật khẩu"
                 icon="shield-check"
@@ -320,11 +305,9 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                     ? 'Đăng nhập'
                     : mode === 'forgot'
                       ? (otpSent ? 'Lưu mật khẩu mới' : 'Gửi mã xác nhận')
-                      : mode === 'tech_partner'
-                        ? 'Đăng ký Kỹ thuật viên'
-                        : 'Tạo tài khoản'
+                      : 'Tạo tài khoản'
               }
-              variant={mode === 'tech_partner' ? 'dark' : 'primary'}
+              variant="primary"
               style={st.submitButton}
               disabled={busy}
               onPress={submit}

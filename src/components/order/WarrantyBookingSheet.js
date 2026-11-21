@@ -10,7 +10,7 @@ import {
   TextInput,
 } from 'react-native';
 import { C, R, shadow } from '../../theme';
-import { HOTLINE } from '../../constants/data';
+import { HOTLINE, getService } from '../../constants/data';
 import { BASE_WARRANTY_DAYS } from '../../constants/appPolicy';
 import { useApp } from '../../context/AppContext';
 import {
@@ -118,7 +118,7 @@ export function WarrantyBookingSheet({
       order.items.forEach((it, idx) => {
         list.push({
           id: String(it.id || it.service_id || `svc-${idx}`),
-          name: it.name || it.service_name || 'Dịch vụ đã thực hiện',
+          name: it.name || it.service_name || getService(it.id)?.name || 'Dịch vụ đã thực hiện',
           qty: it.qty || 1,
           type: 'service',
         });
