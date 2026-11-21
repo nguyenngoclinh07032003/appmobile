@@ -10,7 +10,7 @@ import { C, R, shadow, STATUS_META, toneOf } from '../../theme';
 import {
   getService, formatVND, catIcon, catLabel, categorySlugOf, TECH_ME, MATERIALS, TIME_SLOTS, TECH_STATUS_DESC, TECH_ORDER_STEPS, techStepIndexOf, HOTLINE,
 } from '../../constants/data';
-import { PASSWORD_MIN_LENGTH, BASE_WARRANTY_DAYS } from '../../constants';
+import { APP_VERSION, PASSWORD_MIN_LENGTH, BASE_WARRANTY_DAYS } from '../../constants';
 import {
   useApp, orderTotal, formatOrderTotal, cashToCollect, bookedValue, isActiveOrder, dateKeyOf, todayKey, fmtDateTime, timeAgo,
   assessCancelAfterAccept, slotStartTs, matchJobForTech, isQRPayment, isPaid, latestNotifPerOrder, techStatusMeta,
@@ -768,7 +768,7 @@ export function TechAccountScreen() {
           <Text style={{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }}>Hỗ trợ kỹ thuật viên</Text>
           <View style={tx.menu}>
             <ListRow icon={a.isSoundMuted?.() ? 'bell-off' : 'bell'} label="Âm thanh chuông báo" value={a.isSoundMuted?.() ? 'Tắt' : 'Bật'} onPress={() => a.toggleSound?.()} />
-            <ListRow icon="refresh-cw" label="Đồng bộ lại từ máy chủ" onPress={async () => { await a.syncFromBackend(null, true); u.toast('Đã nạp lại dữ liệu máy chủ mới nhất', 'check'); }} />
+            <ListRow icon="refresh-cw" label="Cập nhật ứng dụng" value={APP_VERSION} onPress={() => u.alert('Bạn đang dùng bản mới nhất', `Phiên bản ${APP_VERSION}.`, '✅')} />
             <ListRow icon="headphones" label="Liên hệ điều phối" value={HOTLINE} onPress={u.call} last />
           </View>
           <Btn
