@@ -1431,7 +1431,10 @@ export function AppProvider({ children }) {
     const now = Date.now();
     if (!force && now - lastSyncAt.current < 3000) return;
     if (syncingRef.current) {
-      if (force) pendingForceSyncRef.current = acc;
+      const sameAcc = String(pendingForceSyncRef.current?.id || acc?.id || "") === String(acc?.id || "");
+      if (force && (!sameAcc || now - lastSyncAt.current > 1000)) {
+        pendingForceSyncRef.current = acc;
+      }
       return;
     }
     syncingRef.current = true;
@@ -1441,7 +1444,7 @@ export function AppProvider({ children }) {
       // Đảm bảo access token còn hạn trước khi bắn hàng loạt request đồng bộ song song
       const hasValidToken = await ensureAccessToken();
       if (!hasValidToken) return;
-      await syncPublicCatalog();
+      const catalogPromise = syncPublicCatalog().catch(() => null);
 
       if (acc.role === "customer") {
         try {
@@ -1480,19 +1483,26 @@ export function AppProvider({ children }) {
           const remoteAddrs = okItems(addrRes)
             ? addrRes.data.items.map(mapBackendAddressToApp).filter(Boolean)
             : null;
-          // Thông tin thợ thật của các đơn đã có thợ (tên, SĐT, điểm): GET /customer/requests/:id/tracking.
           const rawRequests = okItems(reqRes);
+          const remoteEmailVerified =
+            verRes.ok && verRes.data
+              ? Boolean(verRes.data.email_verified)
+              : null;
+          const loyalty = loyaltyRes.ok ? loyaltyRes.data : null;
+          const wallet = okItems(walletRes);
+          const catalog = catalogRes.ok ? catalogRes.data : null;
+
+          const isFinished = (r) =>
+            r.request_status === "COMPLETED" ||
+            String(r.request_status || "").startsWith("CANCELLED");
+          const cached = (r) => {
+            const c = isFinished(r)
+              ? finishedOrderCache.current.get(String(r.request_id))
+              : null;
+            return c && c.cacheVer === 3 && c.status === r.request_status && (c.updatedAt || null) === (r.updated_at || null) ? c : null;
+          };
+
           if (rawRequests) {
-            const isFinished = (r) =>
-              r.request_status === "COMPLETED" ||
-              String(r.request_status || "").startsWith("CANCELLED");
-            // Đơn đã xong / huỷ đã tải đủ ở lần trước (cùng trạng thái & phiên bản cache mới): dùng lại, không gọi API.
-            const cached = (r) => {
-              const c = isFinished(r)
-                ? finishedOrderCache.current.get(String(r.request_id))
-                : null;
-              return c && c.cacheVer === 3 && c.status === r.request_status && (c.updatedAt || null) === (r.updated_at || null) ? c : null;
-            };
             rawRequests.forEach((r) => {
               const c = cached(r);
               if (c)
@@ -1510,293 +1520,284 @@ export function AppProvider({ children }) {
                   _detailLoaded: true,
                 });
             });
-            // Ưu tiên đơn đang hoạt động lên trước để không bị trôi khỏi giới hạn tải chi tiết khi khách có nhiều đơn cũ.
-            const prioritySorted = [...rawRequests].sort((x, y) => {
-              const xAct = !isFinished(x) && x.request_status !== "READY_FOR_ACCEPTANCE" ? 0 : 1;
-              const yAct = !isFinished(y) && y.request_status !== "READY_FOR_ACCEPTANCE" ? 0 : 1;
-              if (xAct !== yAct) return xAct - yAct;
-              return (
-                new Date(y.updated_at || y.created_at || 0).getTime() -
-                new Date(x.updated_at || x.created_at || 0).getTime()
-              );
-            });
-            // Chi tiết đầy đủ của đơn (quotations + items, diagnoses, visits, timeline): GET /customer/requests/:id.
-            const needDetail = prioritySorted
-              .filter(
-                (r) =>
-                  r.request_id &&
-                  r.request_status !== "RECEIVED" &&
-                  !String(r.request_status || "").startsWith("CANCELLED") &&
-                  !cached(r),
-              )
-              .slice(0, 25);
-            const needTech = prioritySorted
-              .filter(
-                (r) =>
-                  r.request_status !== "RECEIVED" &&
-                  !String(r.request_status || "").startsWith("CANCELLED") &&
-                  !cached(r),
-              )
-              .slice(0, 20);
-            // Hoá đơn thật (tiền phải trả, đã trả, giảm giá, phí kiểm tra): GET /customer/requests/:id/bill.
-            const needBill = prioritySorted
-              .filter((r) => r.request_status !== "RECEIVED" && !cached(r))
-              .slice(0, 20);
-            const [details, trackings, bills] = await Promise.all([
-              Promise.all(
-                needDetail.map((r) =>
-                  hrmssApi.getCustomerRequestDetail(r.request_id).catch(() => null),
-                ),
-              ),
-              Promise.all(
-                needTech.map((r) =>
-                  hrmssApi.getRequestTracking(r.request_id).catch(() => null),
-                ),
-              ),
-              Promise.all(
-                needBill.map((r) =>
-                  hrmssApi.getBill(r.request_id).catch(() => null),
-                ),
-              ),
-            ]);
-            needDetail.forEach((r, i) => {
-              const d = details[i];
-              if (d?.ok && d.data) {
-                Object.assign(r, mergeCustomerRequestDetail(r, d.data));
-                r._detailLoaded = true;
-              }
-            });
-            needTech.forEach((r, i) => {
-              const t = trackings[i];
-              if (t?.ok && t.data?.technician) r.technician = t.data.technician;
-              if (t?.ok && t.data?.journey) r.journey = t.data.journey;
-            });
-            needBill.forEach((r, i) => {
-              if (bills[i]?.ok && bills[i].data?.bill) r.bill = bills[i].data;
-            });
-            // Ảnh minh chứng & triệu chứng trên đơn (kể cả đơn mới tạo / đang xử lý / chờ thanh toán): GET /uploads?request_id=
-            const needPhotos = prioritySorted
-              .filter((r) => {
-                const st = String(r.request_status || "").toUpperCase();
-                return r.request_id && !st.startsWith("CANCEL") && (!cached(r) || !r._evidence);
-              })
-              .slice(0, 25);
-            const photoLists = await Promise.all(
-              needPhotos.map((r) =>
-                hrmssApi.listRequestPhotos(r.request_id).catch(() => null),
-              ),
-            );
-            needPhotos.forEach((r, i) => {
-              const res = photoLists[i];
-              const rows = res?.ok
-                ? res.data?.items ||
-                  res.data?.attachments ||
-                  (Array.isArray(res.data) ? res.data : [])
-                : null;
-              const combined = [...(Array.isArray(rows) ? rows : []), ...(Array.isArray(r._detailAttachments) ? r._detailAttachments : [])]
-                .filter(
-                  (row) =>
-                    row &&
-                    (!row.procedure_step_id || String(row.evidence_type || "").toUpperCase() === "AFTER_REPAIR"),
-                );
-              if (rows || combined.length) {
-                const seen = new Set();
-                const mergedRows = [];
-                combined.forEach((row) => {
-                  const key = row.attachment_id != null ? `id:${row.attachment_id}` : `uri:${row.image_url || row.file_url || row.url || row.uri || ''}`;
-                  if (!key || key === 'uri:' || seen.has(key)) return;
-                  seen.add(key);
-                  mergedRows.push(row);
-                });
-                r._evidence = mergedRows.map(mapBackendPhotoToEvidence);
-              }
-            });
-            // Nếu đơn ngoài top needPhotos nhưng detail đã trả ảnh -> vẫn map _evidence.
-            rawRequests.forEach((r) => {
-              if (!r._evidence && Array.isArray(r._detailAttachments) && r._detailAttachments.length) {
-                r._evidence = r._detailAttachments.map(mapBackendPhotoToEvidence);
-              }
-            });
-            // Ghi nhớ đơn đã xong / huỷ khi đã có hoá đơn & chi tiết (lần sau không gọi lại).
-            rawRequests
-              .filter(
-                (r) =>
-                  isFinished(r) &&
-                  r.bill &&
-                  (r._detailLoaded || r.request_status !== "COMPLETED") &&
-                  !cached(r),
-              )
-              .forEach((r) => {
-                finishedOrderCache.current.set(String(r.request_id), {
-                  cacheVer: 3,
-                  status: r.request_status,
-                  updatedAt: r.updated_at || null,
-                  items: r.items,
-                  quotations: r.quotations,
-                  diagnoses: r.diagnoses,
-                  visits: r.visits,
-                  timeline: r.timeline,
-                  _detailAttachments: r._detailAttachments,
-                  technician: r.technician,
-                  journey: r.journey,
-                  bill: r.bill,
-                  _evidence: r._evidence,
-                });
-              });
           }
-          const remoteOrders = rawRequests
-            ? rawRequests
-                .map((r) => {
-                  const mapped = mapBackendCustomerRequestToOrder(
-                    r,
-                    serverPhone || acc.phone,
-                  );
-                  if (!mapped) return null;
-                  const ev = r._evidence || null;
-                  const atts = extractInitialAttachments(ev || [], mapped.attachments);
-                  return {
-                    ...mapped,
-                    ...(ev ? { evidence: ev } : {}),
-                    ...(atts.length ? { attachments: atts } : {}),
-                    ...(r._detailLoaded ? { _detailHydrated: true } : {}),
-                  };
-                })
-                .filter(Boolean)
-            : null;
-          const remoteEmailVerified =
-            verRes.ok && verRes.data
-              ? Boolean(verRes.data.email_verified)
-              : null;
-          const loyalty = loyaltyRes.ok ? loyaltyRes.data : null;
-          const wallet = okItems(walletRes);
-          const catalog = catalogRes.ok ? catalogRes.data : null;
 
-          up((p) => {
-            if (!isSameAccount(p)) return {};
-            const nextAddresses =
-              remoteAddrs !== null ? remoteAddrs : p.addresses;
-            const defaultAddr =
-              nextAddresses.find((x) => x.isDefault) ||
-              nextAddresses[0] ||
-              null;
-            const nextSelectedId = nextAddresses.some(
-              (x) => x.id === p.selectedAddressId,
-            )
-              ? p.selectedAddressId
-              : defaultAddr?.id || null;
-            const remoteWithAcc = remoteOrders
-              ? remoteOrders.map((o) => ({
-                  ...o,
-                  customerAccountId: acc.id || o.customerAccountId || null,
-                }))
+          const commitCustomerSync = (allowStatusToast = false) => {
+            const remoteOrders = rawRequests
+              ? rawRequests
+                  .map((r) => {
+                    const mapped = mapBackendCustomerRequestToOrder(
+                      r,
+                      serverPhone || acc.phone,
+                    );
+                    if (!mapped) return null;
+                    const ev = r._evidence || null;
+                    const atts = extractInitialAttachments(ev || [], mapped.attachments);
+                    return {
+                      ...mapped,
+                      ...(ev ? { evidence: ev } : {}),
+                      ...(atts.length ? { attachments: atts } : {}),
+                      ...(r._detailLoaded ? { _detailHydrated: true } : {}),
+                    };
+                  })
+                  .filter(Boolean)
               : null;
-            const nextOrdersRaw = remoteWithAcc
-              ? mergeBackendOrdersWithLocal(p.orders, remoteWithAcc)
-              : p.orders;
-            // Báo khách khi trạng thái đơn đổi (thợ nhận, thợ trả việc / hết hạn -> điều phối lại, chờ thanh toán, hoàn thành...).
-            const { orders: nextOrders, notifs: detectedNotifs } = remoteWithAcc
-              ? detectCustomerStatusChanges(p.orders, nextOrdersRaw)
-              : { orders: nextOrdersRaw, notifs: [] };
-            const notifItems = okItems(notifRes);
-            // Server vừa gửi thông báo cho đúng đơn đó (≤ 2 phút) thì không tạo thêm bản trên máy (tránh trùng).
-            const recentServerCodes = new Set(
-              (notifItems || [])
-                .filter(
-                  (n) =>
-                    n.created_at &&
-                    Date.now() - new Date(n.created_at).getTime() <
-                      2 * 60 * 1000,
-                )
-                .map(
-                  (n) =>
-                    nextOrders.find(
-                      (o) => String(o.dbRequestId) === String(n.request_id),
-                    )?.code,
-                )
-                .filter(Boolean),
-            );
-            const statusNotifs = detectedNotifs.filter(
-              (n) => !recentServerCodes.has(n.link?.params?.code),
-            );
-            if (statusNotifs.length) statusToastRef.current = statusNotifs[0];
-            // Thông báo tạo trên máy (đổi trạng thái, quá hạn...) không có trên server: giữ lại khi tải danh sách server.
-            const localNotifs = [
-              ...statusNotifs,
-              ...p.notifications.filter((n) => !n.dbNotificationId),
-            ].filter((n) => !p.notifClearedAt || n.at > p.notifClearedAt);
-            const nextAuth = p.auth
-              ? upsertBackendAccount({
-                  ...p.auth,
+
+            up((p) => {
+              if (!isSameAccount(p)) return {};
+              const nextAddresses =
+                remoteAddrs !== null ? remoteAddrs : p.addresses;
+              const defaultAddr =
+                nextAddresses.find((x) => x.isDefault) ||
+                nextAddresses[0] ||
+                null;
+              const nextSelectedId = nextAddresses.some(
+                (x) => x.id === p.selectedAddressId,
+              )
+                ? p.selectedAddressId
+                : defaultAddr?.id || null;
+              const remoteWithAcc = remoteOrders
+                ? remoteOrders.map((o) => ({
+                    ...o,
+                    customerAccountId: acc.id || o.customerAccountId || null,
+                  }))
+                : null;
+              const nextOrdersRaw = remoteWithAcc
+                ? mergeBackendOrdersWithLocal(p.orders, remoteWithAcc)
+                : p.orders;
+              const { orders: nextOrders, notifs: detectedNotifs } =
+                allowStatusToast && remoteWithAcc
+                  ? detectCustomerStatusChanges(p.orders, nextOrdersRaw)
+                  : { orders: nextOrdersRaw, notifs: [] };
+              const notifItems = okItems(notifRes);
+              const recentServerCodes = new Set(
+                (notifItems || [])
+                  .filter(
+                    (n) =>
+                      n.created_at &&
+                      Date.now() - new Date(n.created_at).getTime() <
+                        2 * 60 * 1000,
+                  )
+                  .map(
+                    (n) =>
+                      nextOrders.find(
+                        (o) => String(o.dbRequestId) === String(n.request_id),
+                      )?.code,
+                  )
+                  .filter(Boolean),
+              );
+              const statusNotifs = detectedNotifs.filter(
+                (n) => !recentServerCodes.has(n.link?.params?.code),
+              );
+              if (statusNotifs.length) statusToastRef.current = statusNotifs[0];
+              const localNotifs = [
+                ...statusNotifs,
+                ...p.notifications.filter((n) => !n.dbNotificationId),
+              ].filter((n) => !p.notifClearedAt || n.at > p.notifClearedAt);
+              const nextAuth = p.auth
+                ? upsertBackendAccount({
+                    ...p.auth,
+                    name: serverName,
+                    phone: meRes.ok ? serverPhone : p.auth.phone ?? acc.phone,
+                    email: serverEmail,
+                    emailVerified:
+                      remoteEmailVerified !== null
+                        ? remoteEmailVerified
+                        : p.auth.emailVerified,
+                  })
+                : p.auth;
+              return {
+                user: {
+                  ...(p.user || {}),
                   name: serverName,
-                  phone: meRes.ok ? serverPhone : p.auth.phone ?? acc.phone,
+                  phone: meRes.ok
+                    ? serverPhone
+                    : (p.user?.phone ?? acc.phone ?? ""),
                   email: serverEmail,
-                  emailVerified:
-                    remoteEmailVerified !== null
-                      ? remoteEmailVerified
-                      : p.auth.emailVerified,
-                })
-              : p.auth;
-            return {
-              user: {
-                ...(p.user || {}),
-                name: serverName,
-                phone: meRes.ok
-                  ? serverPhone
-                  : (p.user?.phone ?? acc.phone ?? ""),
-                email: serverEmail,
-              },
-              ...(nextAuth ? { auth: nextAuth } : {}),
-              addresses: nextAddresses,
-              selectedAddressId: nextSelectedId,
-              orders: nextOrders,
-              ...(notifItems
-                ? {
-                    notifications: [
-                      ...notifItems
-                        .map((n) =>
-                          mapBackendNotification(n, nextOrders, "order"),
-                        )
-                        .filter(
-                          (n) =>
-                            n && (!p.notifClearedAt || n.at > p.notifClearedAt),
-                        ),
-                      ...localNotifs,
-                    ]
-                      .sort((x, y) => (y.at || 0) - (x.at || 0))
-                      .slice(0, 50),
-                  }
-                : statusNotifs.length
+                },
+                ...(nextAuth ? { auth: nextAuth } : {}),
+                addresses: nextAddresses,
+                selectedAddressId: nextSelectedId,
+                orders: nextOrders,
+                ...(notifItems
                   ? {
                       notifications: [
-                        ...statusNotifs,
-                        ...p.notifications,
-                      ].slice(0, 50),
+                        ...notifItems
+                          .map((n) =>
+                            mapBackendNotification(n, nextOrders, "order"),
+                          )
+                          .filter(
+                            (n) =>
+                              n && (!p.notifClearedAt || n.at > p.notifClearedAt),
+                          ),
+                        ...localNotifs,
+                      ]
+                        .sort((x, y) => (y.at || 0) - (x.at || 0))
+                        .slice(0, 50),
+                    }
+                  : statusNotifs.length
+                    ? {
+                        notifications: [
+                          ...statusNotifs,
+                          ...p.notifications,
+                        ].slice(0, 50),
+                      }
+                    : {}),
+                ...(loyalty
+                  ? {
+                      points: Number(loyalty.points) || 0,
+                      lifetimePoints: Number(loyalty.lifetime_points) || 0,
+                      pointHistory: (loyalty.history || [])
+                        .map((h) => mapPointHistory(h, nextOrders))
+                        .filter(Boolean),
                     }
                   : {}),
-              ...(loyalty
-                ? {
-                    points: Number(loyalty.points) || 0,
-                    lifetimePoints: Number(loyalty.lifetime_points) || 0,
-                    pointHistory: (loyalty.history || [])
-                      .map((h) => mapPointHistory(h, nextOrders))
-                      .filter(Boolean),
-                  }
-                : {}),
-              ...(wallet
-                ? { myVouchers: wallet.map(mapWalletVoucher).filter(Boolean) }
-                : {}),
-              ...(catalog
-                ? {
-                    publicVouchers: (catalog.public_vouchers || [])
-                      .map(mapPublicVoucher)
-                      .filter(Boolean),
-                    redeemOptions: (catalog.redeem_options || [])
-                      .map(mapRedeemOption)
-                      .filter(Boolean),
-                  }
-                : {}),
-            };
-          });
+                ...(wallet
+                  ? { myVouchers: wallet.map(mapWalletVoucher).filter(Boolean) }
+                  : {}),
+                ...(catalog
+                  ? {
+                      publicVouchers: (catalog.public_vouchers || [])
+                        .map(mapPublicVoucher)
+                        .filter(Boolean),
+                      redeemOptions: (catalog.redeem_options || [])
+                        .map(mapRedeemOption)
+                        .filter(Boolean),
+                    }
+                  : {}),
+              };
+            });
+          };
+
+          // Render ngay lập tức Địa chỉ, Điểm tích luỹ, Số đơn đang xử lý, Voucher & Danh sách đơn sau Tầng 1 (~0.3s)
+          commitCustomerSync(false);
+
+          if (rawRequests) {
+            const activeReqs = rawRequests.filter(
+              (r) => !isFinished(r) && r.request_status !== "READY_FOR_ACCEPTANCE",
+            );
+            const uncachedDoneReqs = rawRequests
+              .filter(
+                (r) =>
+                  (isFinished(r) || r.request_status === "READY_FOR_ACCEPTANCE") &&
+                  !cached(r),
+              )
+              .slice(0, 3);
+            const priorityBatch = [...activeReqs, ...uncachedDoneReqs].slice(0, 6);
+
+            const needDetail = priorityBatch.filter(
+              (r) =>
+                r.request_id &&
+                r.request_status !== "RECEIVED" &&
+                !String(r.request_status || "").startsWith("CANCELLED"),
+            );
+            const needTech = needDetail;
+            const needBill = priorityBatch.filter(
+              (r) => r.request_id && r.request_status !== "RECEIVED",
+            );
+            const needPhotos = priorityBatch.filter((r) => {
+              const st = String(r.request_status || "").toUpperCase();
+              return r.request_id && !st.startsWith("CANCEL") && !r._evidence;
+            });
+
+            if (needDetail.length || needTech.length || needBill.length || needPhotos.length) {
+              const [details, trackings, bills, photoLists] = await Promise.all([
+                Promise.all(
+                  needDetail.map((r) =>
+                    hrmssApi.getCustomerRequestDetail(r.request_id).catch(() => null),
+                  ),
+                ),
+                Promise.all(
+                  needTech.map((r) =>
+                    hrmssApi.getRequestTracking(r.request_id).catch(() => null),
+                  ),
+                ),
+                Promise.all(
+                  needBill.map((r) =>
+                    hrmssApi.getBill(r.request_id).catch(() => null),
+                  ),
+                ),
+                Promise.all(
+                  needPhotos.map((r) =>
+                    hrmssApi.listRequestPhotos(r.request_id).catch(() => null),
+                  ),
+                ),
+              ]);
+              if (!authTokens.get()) return;
+              needDetail.forEach((r, i) => {
+                const d = details[i];
+                if (d?.ok && d.data) {
+                  Object.assign(r, mergeCustomerRequestDetail(r, d.data));
+                  r._detailLoaded = true;
+                }
+              });
+              needTech.forEach((r, i) => {
+                const t = trackings[i];
+                if (t?.ok && t.data?.technician) r.technician = t.data.technician;
+                if (t?.ok && t.data?.journey) r.journey = t.data.journey;
+              });
+              needBill.forEach((r, i) => {
+                if (bills[i]?.ok && bills[i].data?.bill) r.bill = bills[i].data;
+              });
+              needPhotos.forEach((r, i) => {
+                const res = photoLists[i];
+                const rows = res?.ok
+                  ? res.data?.items ||
+                    res.data?.attachments ||
+                    (Array.isArray(res.data) ? res.data : [])
+                  : null;
+                const combined = [...(Array.isArray(rows) ? rows : []), ...(Array.isArray(r._detailAttachments) ? r._detailAttachments : [])]
+                  .filter(
+                    (row) =>
+                      row &&
+                      (!row.procedure_step_id || String(row.evidence_type || "").toUpperCase() === "AFTER_REPAIR"),
+                  );
+                if (rows || combined.length) {
+                  const seen = new Set();
+                  const mergedRows = [];
+                  combined.forEach((row) => {
+                    const key = row.attachment_id != null ? `id:${row.attachment_id}` : `uri:${row.image_url || row.file_url || row.url || row.uri || ''}`;
+                    if (!key || key === 'uri:' || seen.has(key)) return;
+                    seen.add(key);
+                    mergedRows.push(row);
+                  });
+                  r._evidence = mergedRows.map(mapBackendPhotoToEvidence);
+                }
+              });
+              rawRequests.forEach((r) => {
+                if (!r._evidence && Array.isArray(r._detailAttachments) && r._detailAttachments.length) {
+                  r._evidence = r._detailAttachments.map(mapBackendPhotoToEvidence);
+                }
+              });
+              rawRequests
+                .filter(
+                  (r) =>
+                    isFinished(r) &&
+                    r.bill &&
+                    (r._detailLoaded || r.request_status !== "COMPLETED") &&
+                    !cached(r),
+                )
+                .forEach((r) => {
+                  finishedOrderCache.current.set(String(r.request_id), {
+                    cacheVer: 3,
+                    status: r.request_status,
+                    updatedAt: r.updated_at || null,
+                    items: r.items,
+                    quotations: r.quotations,
+                    diagnoses: r.diagnoses,
+                    visits: r.visits,
+                    timeline: r.timeline,
+                    _detailAttachments: r._detailAttachments,
+                    technician: r.technician,
+                    journey: r.journey,
+                    bill: r.bill,
+                    _evidence: r._evidence,
+                  });
+                });
+              commitCustomerSync(true);
+            }
+          }
+          await catalogPromise;
           setTimeout(() => {
             const n = statusToastRef.current;
             if (!n) return;
@@ -2074,6 +2075,7 @@ export function AppProvider({ children }) {
             });
             commitTechSync(billByJob, evidenceByJob);
           }
+          await catalogPromise;
         } catch (e) {
           // eslint-disable-next-line no-console
           console.error("[HRMSS Sync Error][Tech]", e);

@@ -293,8 +293,9 @@ async function rawRequest(endpoint, options = {}) {
   const url = `${baseUrl}${cleanPath}`;
 
   const token = noAuth ? null : authTokens.get();
+  const hasJsonBody = !formData && body !== undefined;
   const reqHeaders = {
-    ...(formData ? {} : { 'Content-Type': 'application/json' }),
+    ...(hasJsonBody ? { 'Content-Type': 'application/json' } : {}),
     Accept: 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...headers,
@@ -374,10 +375,10 @@ async function rawRequest(endpoint, options = {}) {
   } catch (err) {
     if (timer) clearTimeout(timer);
     const isTimeout = err?.name === 'AbortError';
+    // Dùng console.warn thay vì console.error để không bật màn hình đỏ (Redbox) trên Expo Web khi mạng chập chờn / reload trang.
     // eslint-disable-next-line no-console
-    console.error(
-      `[HRMSS API EXCEPTION] ${String(method || 'GET').toUpperCase()} ${cleanPath} (${url}) -> ${err?.name || 'Error'}: ${err?.message || err}`,
-      err,
+    console.warn(
+      `[HRMSS API WARN] ${String(method || 'GET').toUpperCase()} ${cleanPath} (${url}) -> ${err?.name || 'Error'}: ${err?.message || err}`,
     );
 
     // Không tự gửi lại sang server khác khi lỗi mạng: tránh gửi Authorization ra host khác và ghi trùng (POST 2 lần).
