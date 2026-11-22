@@ -8,6 +8,7 @@ import {
 } from '../constants/data';
 import { toVnParts, vnDateKey } from '../utils/vnTime';
 import { viNotification, toVietnamese } from '../utils/viText';
+import { ATTENDANCE_NOTIF_TYPES } from '../utils/attendance';
 import {
   parseExternalPartDesc,
   extractExternalPartLifecycle,
@@ -1230,7 +1231,9 @@ export const mapBackendNotification = (n, orders = [], linkName = 'order') => {
       ? { link: { name: linkName, params: { code: order.code } } }
       : (['HANDOVER_CONFIRMED', 'HANDOVER_REJECTED'].includes(nType)
         ? { link: { name: 'tech-handovers', params: { tab: 'history' } } }
-        : {})),
+        : (ATTENDANCE_NOTIF_TYPES.has(nType)
+          ? { link: { name: 'tech-attendance', params: {} } }
+          : {}))),
   };
 };
 

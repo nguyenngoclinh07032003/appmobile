@@ -790,6 +790,25 @@ export const hrmssApi = {
     if (status) q.set('status', status);
     return apiRequest(`/technician/handovers?${q.toString()}`);
   },
+  // Chấm công của thợ (vào ca có GPS). Trường camelCase; backend kiểm tra ca, trùng ca, ngày khóa / nghỉ.
+  async getMyShiftOptions() {
+    return apiRequest('/attendance/me/shift-options');
+  },
+  // body: buildCheckInBody() trong utils/attendance.js ({ technicianShiftId, latitude, longitude, accuracyM?, note? }).
+  async checkInShift(body) {
+    return apiRequest('/attendance/check-in', { method: 'POST', body });
+  },
+  async getMyAttendance(month, year) {
+    const q = new URLSearchParams({ month: String(month), year: String(year) });
+    return apiRequest(`/attendance/me?${q.toString()}`);
+  },
+  async getMyViolations(from, to) {
+    const q = new URLSearchParams();
+    if (from) q.set('from', from);
+    if (to) q.set('to', to);
+    const qs = q.toString();
+    return apiRequest(`/violations/me${qs ? `?${qs}` : ''}`);
+  },
   async startTechnicianJob(id) {
     return apiRequest(`/technician/jobs/${id}/start`, { method: 'PATCH' });
   },
