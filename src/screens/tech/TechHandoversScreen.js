@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { C, R, shadow } from '../../theme';
 import { formatVND } from '../../constants/data';
+import { toVnParts } from '../../utils/vnTime';
 import { useApp } from '../../context/AppContext';
 import { hrmssApi } from '../../services/api';
 import { subscribeSocketEvent } from '../../services/socketService';
@@ -24,13 +25,13 @@ const HISTORY_FILTERS = [
 
 const fmtDt = (iso) => {
   if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mo = String(d.getMonth() + 1).padStart(2, '0');
-  return `${hh}:${mm} · ${dd}/${mo}/${d.getFullYear()}`;
+  const p = toVnParts(iso);
+  if (!p) return String(iso);
+  const hh = String(p.hour).padStart(2, '0');
+  const mm = String(p.minute).padStart(2, '0');
+  const dd = String(p.day).padStart(2, '0');
+  const mo = String(p.month).padStart(2, '0');
+  return `${hh}:${mm} · ${dd}/${mo}/${p.year}`;
 };
 
 export function TechHandoversScreen({ params }) {
@@ -46,7 +47,9 @@ export function TechHandoversScreen({ params }) {
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [apiUnavailable, setApiUnavailable] = useState(false);
-  const [loadError, setLoadError] = useState('');
+  const [pendingError, setPendingError] = useState('');
+  const [historyError, setHistoryError] = useState('');
+  const loadError = tab === 'pending' ? pendingError : historyError;
   const statusFilterRef = useRef(statusFilter);
   statusFilterRef.current = statusFilter;
   const submittingRef = useRef(false);
@@ -57,14 +60,14 @@ export function TechHandoversScreen({ params }) {
     if (!res.ok) {
       if (res.status === 404) {
         setApiUnavailable(true);
-        setLoadError('');
+        setPendingError('');
       } else {
-        setLoadError(res.message || 'Không tải được danh sách tiền mặt chờ nộp. Kiểm tra mạng và thử lại.');
+        setPendingError(res.message || 'Không tải được danh sách tiền mặt chờ nộp. Kiểm tra mạng và thử lại.');
       }
       return;
     }
     setApiUnavailable(false);
-    setLoadError('');
+    setPendingError('');
     const items = Array.isArray(res.data?.items) ? res.data.items : [];
     setPendingItems(items);
     setPendingTotal(Number(res.data?.total_amount) || 0);
@@ -79,14 +82,14 @@ export function TechHandoversScreen({ params }) {
     if (!res.ok) {
       if (res.status === 404) {
         setApiUnavailable(true);
-        setLoadError('');
+        setHistoryError('');
       } else {
-        setLoadError(res.message || 'Không tải được lịch sử bàn giao tiền mặt. Kiểm tra mạng và thử lại.');
+        setHistoryError(res.message || 'Không tải được lịch sử bàn giao tiền mặt. Kiểm tra mạng và thử lại.');
       }
       return;
     }
     setApiUnavailable(false);
-    setLoadError('');
+    setHistoryError('');
     setHistoryItems(Array.isArray(res.data?.items) ? res.data.items : []);
   }, []);
 

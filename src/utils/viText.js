@@ -68,6 +68,13 @@ const NOTIF_TYPE_VI = {
   VOUCHER_RECEIVED: { title: 'Bạn nhận được voucher', body: 'Một mã giảm giá mới đã được thêm vào ví của bạn.' },
   POINTS_EARNED: { title: 'Cộng điểm thưởng', body: 'Bạn vừa được cộng điểm thưởng.' },
   ACCOUNT_LOCKED: { title: 'Tài khoản bị khoá', body: 'Tài khoản của bạn đang bị tạm khoá.' },
+  SHIFT_ASSIGNED: { title: 'Bạn được xếp ca làm mới', body: 'Văn phòng vừa xếp ca làm việc mới cho bạn. Mở mục Chấm công để xem chi tiết.' },
+  SHIFT_UPDATED: { title: 'Ca làm việc đã được cập nhật', body: 'Văn phòng vừa điều chỉnh lịch ca của bạn. Mở mục Chấm công để xem.' },
+  SHIFT_CANCELLED: { title: 'Ca làm việc đã bị huỷ', body: 'Một ca làm việc của bạn đã bị văn phòng huỷ.' },
+  ATTENDANCE_APPROVED: { title: 'Chấm công đã được duyệt', body: 'Ca vào làm của bạn đã được quản lý duyệt.' },
+  ATTENDANCE_REJECTED: { title: 'Chấm công bị từ chối', body: 'Ca vào làm của bạn bị quản lý từ chối. Mở mục Chấm công để xem lý do.' },
+  VIOLATION_RECORDED: { title: 'Ghi nhận vi phạm mới', body: 'Bạn vừa có một ghi nhận vi phạm mới. Mở mục Chấm công để xem chi tiết.' },
+  ATTENDANCE_PERIOD_LOCKED: { title: 'Đã chốt kỳ công', body: 'Văn phòng đã chốt bảng công kỳ này.' },
   SYSTEM: { title: 'Thông báo hệ thống', body: '' },
 };
 
@@ -124,6 +131,12 @@ const ERROR_CODE_VI = {
   INVALID_FILE_TYPE: 'Định dạng tệp không được hỗ trợ.',
   SLOT_UNAVAILABLE: 'Khung giờ này đã kín. Vui lòng chọn khung giờ khác.',
   TECHNICIAN_LOCKED: 'Tài khoản thợ đang bị tạm khoá.',
+  ATTENDANCE_SHIFT_DUPLICATE: 'Bạn đã vào ca này rồi.',
+  TECHNICIAN_SHIFT_NOT_USABLE: 'Ca này không còn hiệu lực (đã hủy hoặc không phải ca hôm nay).',
+  ATTENDANCE_SHIFT_LIMIT: 'Đã đủ 6 ca trong ngày.',
+  ATTENDANCE_DAY_OFF: 'Hôm nay bạn được đánh dấu nghỉ.',
+  ATTENDANCE_LOCKED: 'Ngày công đã chốt, không chấm được.',
+  ATTENDANCE_NOT_APPLICABLE: 'Tài khoản chưa được phép chấm công. Liên hệ văn phòng.',
   TIMEOUT: 'Kết nối máy chủ quá hạn. Vui lòng thử lại.',
   NETWORK_ERROR: 'Không kết nối được máy chủ. Kiểm tra mạng và thử lại.',
 };
@@ -134,6 +147,7 @@ const FIELD_VI = {
   otp: 'Mã OTP', address: 'Địa chỉ', address_text: 'Địa chỉ', contact_name: 'Tên liên hệ', contact_phone: 'SĐT liên hệ',
   preferred_time: 'Thời gian hẹn', problem_description: 'Mô tả sự cố', quantity: 'Số lượng', reason: 'Lý do',
   rating: 'Số sao', review_text: 'Nội dung đánh giá', code: 'Mã', amount: 'Số tiền', items: 'Hạng mục', file: 'Tệp',
+  note: 'Ghi chú', technicianShiftId: 'Ca làm việc', latitude: 'Vĩ độ GPS', longitude: 'Kinh độ GPS', accuracyM: 'Độ chính xác GPS',
 };
 
 // Cụm từ tiếng Anh -> tiếng Việt (áp dụng lần lượt, không phân biệt hoa thường).

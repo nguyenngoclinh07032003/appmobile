@@ -106,5 +106,7 @@ export function authErrorMessage(error, mode = 'login') {
   if (error?.status >= 500) return 'Máy chủ đang gặp sự cố. Vui lòng thử lại sau.';
   return mode === 'register'
     ? 'Chưa thể tạo tài khoản. Vui lòng kiểm tra thông tin đã nhập và thử lại.'
-    : 'Đăng nhập chưa thành công. Vui lòng kiểm tra thông tin và thử lại.';
+    : mode === 'forgot'
+      ? 'Đặt lại mật khẩu chưa thành công. Vui lòng kiểm tra thông tin và thử lại.'
+      : 'Đăng nhập chưa thành công. Vui lòng kiểm tra thông tin và thử lại.';
 }

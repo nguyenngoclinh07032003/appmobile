@@ -15,10 +15,15 @@ const hasPhrase = (text, phrase) => String(text || '').toLowerCase().includes(ph
 const togglePhrase = (text, phrase) => {
   const cur = String(text || '').trim();
   if (hasPhrase(cur, phrase)) {
-    return cur
+    // Khớp nguyên cụm trước (giữ được cụm gợi ý có chứa dấu phẩy như "Thiết bị bẩn, hiệu suất giảm").
+    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const removed = cur
+      .replace(new RegExp(`(^|[,;]\\s*)${escaped}(?=\\s*[,;]|$)`, 'gi'), '$1')
       .split(/\s*[,;]\s*/)
-      .filter((p) => p && p.toLowerCase() !== phrase.toLowerCase())
+      .map((s) => s.trim())
+      .filter(Boolean)
       .join(', ');
+    if (removed.length < cur.length) return removed;
   }
   if (!cur) return phrase;
   return `${cur.replace(/[,;.\s]+$/, '')}, ${phrase}`;

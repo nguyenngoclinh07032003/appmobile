@@ -70,8 +70,8 @@ export function validateStreetAddress(street) {
     return 'Địa chỉ không được dài quá 120 ký tự.';
   }
 
-  // Chặn lặp 1 ký tự liên tiếp quá 3 lần: e.g. "aaaaa", "111111", "......"
-  if (/(.)\1{3,}/i.test(clean)) {
+  // Chặn lặp ký tự vô nghĩa ("aaaaa", "111111"), vẫn cho phép số phòng/căn 4 chữ số giống nhau ("Phòng 1111").
+  if (/([^\d])\1{3,}|(\d)\2{4,}/i.test(clean)) {
     return 'Địa chỉ chứa ký tự lặp bất thường. Vui lòng nhập địa chỉ cụ thể.';
   }
 

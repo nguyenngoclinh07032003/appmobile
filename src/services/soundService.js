@@ -1,7 +1,19 @@
 import { Platform, Vibration } from 'react-native';
 
-// Trạng thái bật/tắt âm thanh
-let soundMuted = false;
+// Trạng thái bật/tắt âm thanh (lưu qua localStorage trên Web để giữ qua các lần tải lại)
+const SOUND_MUTE_KEY = 'tho-hrmss-sound-muted-v1';
+let soundMuted = (() => {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(SOUND_MUTE_KEY) === '1';
+  } catch (e) {
+    return false;
+  }
+})();
+const persistMuted = (v) => {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(SOUND_MUTE_KEY, v ? '1' : '0');
+  } catch (e) { /* bỏ qua */ }
+};
 
 // Web Audio Context (khởi tạo lười khi có tương tác đầu tiên của người dùng)
 let audioCtx = null;
@@ -120,10 +132,12 @@ export function isSoundMuted() {
 
 export function setSoundMuted(muted) {
   soundMuted = Boolean(muted);
+  persistMuted(soundMuted);
 }
 
 export function toggleSoundMuted() {
   soundMuted = !soundMuted;
+  persistMuted(soundMuted);
   if (!soundMuted) {
     playNotificationSound('success');
   }

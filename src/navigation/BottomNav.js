@@ -9,6 +9,7 @@ export default function BottomNav() {
   const { s, nav, d } = useApp();
   const role = s.auth?.role || s.role;
   const tabs = role === 'tech' ? TECH_TABS : CUSTOMER_TABS;
+  const activeTab = tabs.some((t) => t.id === nav.tab) ? nav.tab : tabs[0]?.id;
   const badges = role === 'tech'
     ? { 'tech-jobs': d.newJobs.length, 'tech-notifs': d.techUnread }
     : { activity: d.activeOrders.length };
@@ -16,7 +17,7 @@ export default function BottomNav() {
   return (
     <View style={styles.nav}>
       {tabs.map((t) => {
-        const on = nav.tab === t.id;
+        const on = activeTab === t.id;
         return (
           <TouchableOpacity
             key={t.id}
@@ -33,9 +34,13 @@ export default function BottomNav() {
                 color={on ? C.primary : C.muted}
                 strokeWidth={on ? 2.4 : 1.9}
               />
-              {badges[t.id] ? <View style={styles.navBadge}><Text style={styles.navBadgeText}>{badges[t.id]}</Text></View> : null}
+              {badges[t.id] ? (
+                <View style={styles.navBadge}>
+                  <Text style={styles.navBadgeText}>{badges[t.id] > 99 ? '99+' : badges[t.id]}</Text>
+                </View>
+              ) : null}
             </View>
-            <Text style={[styles.navLabel, on && styles.navLabelOn]}>{t.label}</Text>
+            <Text style={[styles.navLabel, tabs.length >= 5 && { fontSize: 10 }, on && styles.navLabelOn]} numberOfLines={1}>{t.label}</Text>
             <View style={[styles.navDot, !on && styles.navDotOff]} />
           </TouchableOpacity>
         );

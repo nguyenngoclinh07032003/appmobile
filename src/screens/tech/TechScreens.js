@@ -16,6 +16,7 @@ import {
   assessCancelAfterAccept, slotStartTs, matchJobForTech, isQRPayment, isPaid, latestNotifPerOrder, techStatusMeta,
 } from '../../context';
 import { validateVietnamesePhone, validateContactName, sanitizeVnPhoneInput } from '../../utils';
+import { isAttendanceNotifType } from '../../utils/attendance';
 import { dobError } from '../../utils/dateTime';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, PageHead, Segmented, Chip, Badge, Stars, Field, Sheet, Radio, Checkbox,
@@ -106,8 +107,12 @@ function JobCard({ o, compact, onDecline }) {
               <Text style={{ fontSize: 11.5, fontWeight: '800', color: C.primary }}>ĐIỀU PHỐI TỪ HỆ THỐNG MINH ĐỨC</Text>
             </View>
             <View style={{ gap: 2 }}>
-              <Text style={{ fontSize: 11.5, color: C.ink2, fontWeight: '600' }}>✓ Đúng chuyên môn: {catLabel(svc0?.category)}</Text>
-              <Text style={{ fontSize: 11.5, color: C.ink2, fontWeight: '600' }}>✓ Khu vực phụ trách: {o.address?.district || 'Gần vị trí thợ'}</Text>
+              <Text style={{ fontSize: 11.5, color: match?.skillMatch ? C.ink2 : C.muted, fontWeight: '600' }}>
+                {match?.skillMatch ? '✓ Đúng chuyên môn' : '• Ngoài chuyên môn chính'}: {catLabel(svc0?.category)}
+              </Text>
+              <Text style={{ fontSize: 11.5, color: match?.areaMatch ? C.ink2 : C.muted, fontWeight: '600' }}>
+                {match?.areaMatch ? '✓ Khu vực phụ trách' : '• Khu vực đơn hàng'}: {o.address?.area || o.address?.district || 'Gần vị trí thợ'}
+              </Text>
               <Text style={{ fontSize: 11.5, color: C.ink2, fontWeight: '600' }}>✓ Khung giờ: {o.slot}</Text>
             </View>
           </View>
@@ -122,6 +127,19 @@ function JobCard({ o, compact, onDecline }) {
             const isWarranty = o.kind === 'warranty';
             const qrPay = !isWarranty && isQRPayment(o);
             const orderPaid = isPaid(o);
+            if (o.status === 'cancelled') {
+              const fee = Number(o.inspectionFee) || 0;
+              return (
+                <View style={tx.payBox}>
+                  <Text style={[tx.payLabel, { color: fee > 0 ? C.goldInk : C.redInk, fontWeight: '800' }]}>
+                    {fee > 0 ? 'Phí kiểm tra' : 'Đã huỷ'}
+                  </Text>
+                  <Text style={[ui.price, { fontSize: 14.5, marginTop: 2, color: fee > 0 ? C.ink : C.muted }]}>
+                    {fee > 0 ? formatVND(fee) : '0đ'}
+                  </Text>
+                </View>
+              );
+            }
             if (isWarranty) {
               return (
                 <View style={tx.payBox}>
@@ -204,7 +222,9 @@ function JobCard({ o, compact, onDecline }) {
           {!compact && o.status === 'pending' ? (
             <View style={{ width: '100%', gap: 8 }}>
               <View style={{ flexDirection: 'row', gap: 8 }}>
-                <Btn title="Gọi khách" small variant="ghost" icon="phone-call" style={{ flex: 1 }} onPress={() => callPhone(o.address?.phone)} />
+                {o.address?.phone && !String(o.address.phone).includes('*') ? (
+                  <Btn title="Gọi khách" small variant="ghost" icon="phone-call" style={{ flex: 1 }} onPress={() => callPhone(o.address?.phone)} />
+                ) : null}
                 <Btn title="Chỉ đường" small variant="ghost" icon="compass" style={{ flex: 1 }} onPress={() => openMap(o.address?.full)} />
               </View>
               <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -246,8 +266,14 @@ export function TechJobsScreen() {
   const [declineTarget, setDeclineTarget] = useState(null);
   const [reason, setReason] = useState(DECLINE_REASONS[0]);
   const [reasonNote, setReasonNote] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefreshJobs = async () => {
+    setRefreshing(true);
+    try { await Promise.resolve(a.syncFromBackend?.(null, true)); } catch (_e) { /* giữ danh sách hiện tại */ } finally { setRefreshing(false); }
+  };
   const today = todayKey();
-  const done = d.myJobs.filter((o) => o.status === 'done' || o.status === 'cancelled');
+  const done = d.myJobs.filter((o) => o.status === 'done');
+  const cancelled = d.myJobs.filter((o) => o.status === 'cancelled');
   const doneToday = d.myJobs.filter((o) => o.status === 'done' && sameDay(o.doneAt, today));
   const working = [...d.workingJobs].sort((x, y) => dateKeyOf(x).localeCompare(dateKeyOf(y)) || slotHour(x.slot) - slotHour(y.slot));
   const nextJob = working[0];
@@ -261,18 +287,23 @@ export function TechJobsScreen() {
     if (newFilter === 'area') return m.areaMatch;
     return true;
   });
-  const list = tab === 'new' ? filteredNewJobs : tab === 'working' ? working : done;
+  const list = tab === 'new' ? filteredNewJobs : tab === 'working' ? working : tab === 'cancelled' ? cancelled : done;
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 28 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 28 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefreshJobs} tintColor={C.primary} colors={[C.primary]} />}
+      >
         <View style={tx.header}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <View style={tx.avatar}><AppIcon name="hard-hat" size={28} color={C.primary} strokeWidth={2.1} /></View>
             <View style={{ flex: 1 }}>
               <Text style={tx.hello}>Kỹ thuật viên Minh Đức</Text>
               <Text style={tx.techName} numberOfLines={1}>{me.name}</Text>
-              <Text style={tx.techSub}>{me.code} · ★ {me.rating != null ? me.rating : '—'} ({me.ratingCount || 0} đánh giá dịch vụ)</Text>
+              <Text style={tx.techSub}>{me.code} · ★ {me.rating != null ? Number(me.rating).toFixed(1) : '—'} ({me.ratingCount || 0} đánh giá dịch vụ)</Text>
             </View>
             <IconBtn icon="bell" dark badge={d.techUnread} onPress={() => nav.go('tech-notifs')} label="Thông báo" />
           </View>
@@ -318,7 +349,9 @@ export function TechJobsScreen() {
                 <Text style={tx.nextMeta} numberOfLines={1}>📅 {nextJob.dateLabel} · {nextJob.slot}</Text>
                 <Text style={tx.nextMeta} numberOfLines={1}>📍 {nextJob.address?.full}</Text>
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
-                  <Btn title="Gọi khách" icon="phone" small variant="primary" style={{ flex: 1 }} onPress={() => callPhone(nextJob.address?.phone)} />
+                  {nextJob.address?.phone && !String(nextJob.address.phone).includes('*') ? (
+                    <Btn title="Gọi khách" icon="phone" small variant="primary" style={{ flex: 1 }} onPress={() => callPhone(nextJob.address?.phone)} />
+                  ) : null}
                   <Btn
                     title={nextAct?.label || 'Xem chi tiết'}
                     icon={nextAct?.icon || 'wrench'}
@@ -340,7 +373,8 @@ export function TechJobsScreen() {
             items={[
               { id: 'new', label: 'Việc mới', count: d.newJobs.length },
               { id: 'working', label: 'Đang làm', count: working.length },
-              { id: 'done', label: 'Đã xong', count: done.length },
+              { id: 'done', label: 'Hoàn thành', count: done.length },
+              { id: 'cancelled', label: 'Đã huỷ', count: cancelled.length },
             ]}
           />
           {tab === 'new' && d.newJobs.length > 0 ? (
@@ -353,14 +387,16 @@ export function TechJobsScreen() {
           <View style={{ marginTop: 14 }}>
             {list.length === 0 ? (
               <EmptyState
-                icon={tab === 'new' ? 'inbox' : tab === 'working' ? 'briefcase' : 'clipboard-check'}
-                title={tab === 'new' ? 'Chưa có việc mới' : tab === 'working' ? 'Không có việc đang làm' : 'Chưa có việc hoàn thành'}
+                icon={tab === 'new' ? 'inbox' : tab === 'working' ? 'briefcase' : tab === 'cancelled' ? 'ban' : 'clipboard-check'}
+                title={tab === 'new' ? 'Chưa có việc mới' : tab === 'working' ? 'Không có việc đang làm' : tab === 'cancelled' ? 'Không có đơn đã huỷ' : 'Chưa có việc hoàn thành'}
                 body={
                   tab === 'new'
                     ? 'Khi hệ thống phân công việc mới trong khu vực của bạn, đơn sẽ hiện tại đây.'
                     : tab === 'working'
                       ? 'Nhận việc ở mục “Việc mới” để bắt đầu ca làm.'
-                      : 'Các việc đã xong trong ngày và trước đó sẽ hiện tại đây.'
+                      : tab === 'cancelled'
+                        ? 'Các đơn khách hoặc hệ thống đã huỷ sẽ hiển thị tại đây để bạn đối chiếu.'
+                        : 'Các việc đã hoàn thành trong ngày và trước đó sẽ hiện tại đây.'
                 }
                 action={tab === 'working' ? 'Xem việc mới' : null}
                 onAction={() => {
@@ -438,8 +474,13 @@ const slotBucketFor = (slot) => {
 };
 
 export function TechScheduleScreen() {
-  const { d, nav } = useApp();
+  const { a, d, nav } = useApp();
   const [day, setDay] = useState(0);
+  const [refreshingSched, setRefreshingSched] = useState(false);
+  const onRefreshSched = async () => {
+    setRefreshingSched(true);
+    try { await Promise.resolve(a.syncFromBackend?.(null, true)); } catch (_e) { /* giữ lịch hiện tại */ } finally { setRefreshingSched(false); }
+  };
   const days = Array.from({ length: 7 }, (_, i) => {
     const dt = new Date();
     dt.setDate(dt.getDate() + i);
@@ -472,7 +513,11 @@ export function TechScheduleScreen() {
           })}
         </HScroll>
       </View>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 28 }}
+        refreshControl={<RefreshControl refreshing={refreshingSched} onRefresh={onRefreshSched} tintColor={C.primary} colors={[C.primary]} />}
+      >
         <View style={tx.daySummary}>
           <Text style={tx.sec}>{dayJobs.length} công việc · {days[day].label}</Text>
           <Text style={ui.meta}>
@@ -513,20 +558,31 @@ export function TechScheduleScreen() {
 
 // =========================================================== TAB: THÔNG BÁO
 export function TechNotifsScreen() {
-  const { s, a, nav } = useApp();
+  const { s, a, nav, ui: u } = useApp();
   const [filter, setFilter] = useState('all');
+  const [refreshing, setRefreshing] = useState(false);
+  useEffect(() => {
+    Promise.resolve(a.syncFromBackend?.()).catch(() => {});
+  }, []);
+  const onRefreshNotifs = async () => {
+    setRefreshing(true);
+    try { await Promise.resolve(a.syncFromBackend?.(null, true)); } catch (_e) { /* giữ danh sách cũ */ } finally { setRefreshing(false); }
+  };
   // Mỗi việc chỉ hiện thông báo mới nhất (các cập nhật cũ hơn của việc đó được gom lại).
   const list = latestNotifPerOrder(s.techNotifs || []);
   const filtered = list.filter((n) => {
     if (filter === 'unread') return !n.read;
     if (filter === 'jobs') return /việc|đơn|báo giá|đánh giá|huỷ/i.test(`${n.title} ${n.body || ''}`);
+    if (filter === 'attendance') {
+      return isAttendanceNotifType(n.type) || /chấm công|ca làm|vào ca|vi phạm|kỳ công/i.test(`${n.title} ${n.body || ''}`);
+    }
     return true;
   });
   return (
     <View style={{ flex: 1 }}>
       <TopBar
         title="Thông báo"
-        sub="Việc mới, phản hồi của khách"
+        sub="Việc mới, chấm công & phản hồi của khách"
         onBack={() => {
           if (nav.stack.length > 0) {
             nav.back();
@@ -540,7 +596,9 @@ export function TechNotifsScreen() {
               <Tap onPress={a.readAllTech}><Text style={ui.link}>Đọc hết</Text></Tap>
             ) : null}
             {list.length > 0 ? (
-              <Tap onPress={a.clearAllTechNotifs}><Text style={[ui.link, { color: C.muted }]}>Dọn sạch</Text></Tap>
+              <Tap onPress={() => u.confirm('Dọn sạch thông báo?', 'Xoá toàn bộ thông báo khỏi danh sách trên thiết bị?', a.clearAllTechNotifs, 'Dọn sạch', true)}>
+                <Text style={[ui.link, { color: C.muted }]}>Dọn sạch</Text>
+              </Tap>
             ) : null}
           </View>
         )}
@@ -550,11 +608,16 @@ export function TechNotifsScreen() {
           {[
             { id: 'all', label: `Tất cả (${list.length})` },
             { id: 'unread', label: `Chưa đọc (${list.filter((n) => !n.read).length})` },
+            { id: 'attendance', label: 'Chấm công' },
             { id: 'jobs', label: 'Việc & đơn' },
           ].map((f) => <Chip key={f.id} label={f.label} on={filter === f.id} onPress={() => setFilter(f.id)} />)}
         </HScroll>
       </View>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 28 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefreshNotifs} tintColor={C.primary} colors={[C.primary]} />}
+      >
         {filtered.length === 0 ? (
           <EmptyState
             icon="bell"
@@ -758,6 +821,7 @@ export function TechAccountScreen() {
           <Text style={{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }}>Tài khoản & Công việc</Text>
           <View style={tx.menu}>
             <ListRow icon="briefcase" label="Công việc của tôi" value={d.workingJobs.length ? `${d.workingJobs.length} đang làm` : ''} onPress={() => nav.go('tech-jobs')} />
+            <ListRow icon="clipboard-check" label="Chấm công" value="Vào ca & bảng công" onPress={() => nav.go('tech-attendance')} />
             <ListRow icon="banknote" label="Bàn giao tiền mặt" value="Nộp & lịch sử" onPress={() => nav.push('tech-handovers')} />
             <ListRow icon="calendar-clock" label="Lịch làm việc" onPress={() => nav.go('tech-schedule')} />
             <ListRow icon="bell" label="Thông báo" value={d.techUnread ? `${d.techUnread} mới` : ''} onPress={() => nav.go('tech-notifs')} />
@@ -883,6 +947,7 @@ export function TechAccountScreen() {
 function ReceiptCard({ o, editable }) {
   const { a, ui: u } = useApp();
   const [busyId, setBusyId] = useState(null);
+  const attachBusyRef = useRef(false);
   const reconciledSigRef = useRef('');
   const parts = o.externalParts || [];
   const missingSig = parts.filter((p) => !p.receiptId).map((p) => p.itemId).join(',');
@@ -898,19 +963,22 @@ function ReceiptCard({ o, editable }) {
 
   if (!parts.length) return null;
   const attach = async (part, useCamera = true) => {
-    if (busyId) return;
-    let uri = useCamera ? await pickCamera() : await pickImage();
-    if (useCamera && uri === null) uri = await pickImage();
-    if (uri == null) {
-      if (uri === null) u.alert('Chưa hỗ trợ camera', 'Cho phép camera hoặc chọn ảnh từ thư viện.', '📷');
-      return;
-    }
-    setBusyId(part.itemId);
+    if (busyId || attachBusyRef.current) return;
+    attachBusyRef.current = true;
     try {
+      let uri = useCamera ? await pickCamera() : await pickImage();
+      if (useCamera && uri === null) uri = await pickImage();
+      if (uri == null) {
+        u.alert('Chưa hỗ trợ camera', 'Cho phép camera hoặc chọn ảnh từ thư viện.', '📷');
+        return;
+      }
+      if (!uri) return;
+      setBusyId(part.itemId);
       await Promise.resolve(a.uploadPartReceipt(o.code, part.itemId, uri));
     } catch (e) {
       u.alert('Không tải được biên lai', (e && e.message) || 'Vui lòng thử lại.', '📷');
     } finally {
+      attachBusyRef.current = false;
       setBusyId(null);
     }
   };
@@ -1081,6 +1149,11 @@ export function TechJobScreen({ params }) {
   const [previewTechPhoto, setPreviewTechPhoto] = useState(null);
   const [summary, setSummary] = useState('');
   const [extraBillParts, setExtraBillParts] = useState([]);
+  const [refreshingJob, setRefreshingJob] = useState(false);
+  const onRefreshJob = async () => {
+    setRefreshingJob(true);
+    try { await Promise.resolve(a.syncFromBackend?.(null, true)); } catch (_e) { /* giữ dữ liệu cũ */ } finally { setRefreshingJob(false); }
+  };
   const aRef = useRef(a);
   aRef.current = a;
   const jobReqId = o?.dbRequestId || null;
@@ -1101,12 +1174,12 @@ export function TechJobScreen({ params }) {
   const orderPaid = isPaid(o);
   const meta = techStatusMeta(o);
   const step = techStepIndexOf(o);
-  // Việc của mình: phân công đang ACTIVE (server xác nhận). So mã thợ chỉ để dự phòng: mã trong hồ sơ có thể
-  // chưa nạp / vừa đổi so với lúc tải việc -> khóa nhầm việc của chính mình ("do thợ khác phụ trách").
-  const mine = Boolean(o.assignmentActive) || o.tech?.code === (s.techProfile?.code || TECH_ME.code);
+  // Việc của mình: phân công đang ACTIVE (server xác nhận). So mã thợ chỉ để dự phòng khi mã có thật (khác rỗng).
+  const myTechCode = s.techProfile?.code || TECH_ME.code;
+  const mine = Boolean(o.assignmentActive) || (Boolean(myTechCode) && o.tech?.code === myTechCode);
   const editable = mine || o.status === 'pending';
   const techDesc = meta.desc || TECH_STATUS_DESC[o.status] || '';
-  const canRelease = mine && ['confirmed', 'onway', 'diagnosing', 'quoted', 'repairing'].includes(o.status);
+  const canRelease = mine && ['confirmed', 'onway', 'diagnosing', 'quoted', 'repairing', 'out_of_warranty'].includes(o.status);
   const releaseAssess = canRelease ? assessCancelAfterAccept(o) : null;
   const iDeclined = declinedCodesOf(s, d).includes(o.code);
 
@@ -1221,7 +1294,7 @@ export function TechJobScreen({ params }) {
     const names = (o.items || []).map((it) => getService(it.id)?.name).filter(Boolean).join(', ');
     const defaultSum = `Đã hoàn thành: ${names}.${o.quote?.diagnosis ? ` Tình trạng: ${o.quote.diagnosis}.` : ''} Thiết bị hoạt động ổn định, đã dọn dẹp khu vực.`;
     setSummary(defaultSum);
-    if ((o.pendingExternalEstimates || []).length > 0 || o.externalPriceState === 'revision_requested') {
+    if ((o.pendingExternalEstimates || []).length > 0 || o.externalPriceState === 'revision_requested' || extraBillParts.length > 0) {
       setShowFinalizeExt(true);
       return;
     }
@@ -1231,7 +1304,12 @@ export function TechJobScreen({ params }) {
   return (
     <View style={{ flex: 1 }}>
       <TopBar title={o.kind === 'warranty' ? 'Việc bảo hành' : 'Chi tiết công việc'} sub={o.code} />
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshingJob} onRefresh={onRefreshJob} tintColor={C.primary} colors={[C.primary]} />}
+      >
         {/* Trạng thái */}
         <View style={[tx.hero, { backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 4, borderLeftColor: meta.fg }]}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -1517,7 +1595,7 @@ export function TechJobScreen({ params }) {
         ) : null}
 
         {/* ===== Chẩn đoán & báo giá ===== */}
-        {(o.status === 'diagnosing' || (o.status === 'confirmed' && (showPreQuote || o.quote?.revisionRequested))) && mine && !(o.quote?.isExternalFinalization && o.quote?.revisionRequested) ? (
+        {(o.status === 'diagnosing' || o.status === 'out_of_warranty' || (o.status === 'confirmed' && (showPreQuote || o.quote?.revisionRequested))) && mine && !(o.quote?.isExternalFinalization && o.quote?.revisionRequested) ? (
           <QuoteEditor o={o} draft={draft} cats={cats} matsCount={mats.length} onOpenMaterials={() => setMatMode('quote')} evidence={evidence} />
         ) : null}
 
@@ -1729,7 +1807,7 @@ export function TechJobScreen({ params }) {
                       <Text style={{ color: C.ink, fontWeight: '600', lineHeight: 20 }}>{n.text}</Text>
                       <Text style={[ui.meta, { marginTop: 2 }]}>{fmtDateTime(n.at)}</Text>
                     </View>
-                    {mine && n.dbProgressId ? (
+                    {mine && n.dbProgressId && !['done', 'cancelled', 'pending_payment'].includes(o.status) ? (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
                         <Tap
                           style={{ padding: 6, borderRadius: 6, backgroundColor: C.surface }}
@@ -1901,14 +1979,14 @@ export function TechJobScreen({ params }) {
           ) : null}
         </View>
       ) : null}
-      {mine && o.status === 'diagnosing' && !(o.quote?.isExternalFinalization && o.quote?.revisionRequested) ? (
+      {mine && (o.status === 'diagnosing' || o.status === 'out_of_warranty') && !(o.quote?.isExternalFinalization && o.quote?.revisionRequested) ? (
         <View style={{ paddingHorizontal: 16, paddingTop: 8, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line }}>
           <Tap onPress={() => { setReleaseReason(RELEASE_REASONS[0]); setReleaseNote(''); setShowRelease(true); }}>
             <Text style={{ color: C.red, fontWeight: '700', textAlign: 'center', marginBottom: 4 }}>Không thể tiếp tục? Trả việc cho điều phối</Text>
           </Tap>
         </View>
       ) : null}
-      {mine && o.status === 'diagnosing' ? (
+      {mine && (o.status === 'diagnosing' || o.status === 'out_of_warranty') ? (
         o.quote?.isExternalFinalization && o.quote?.revisionRequested ? (
           <View style={tx.dock}>
             <Btn

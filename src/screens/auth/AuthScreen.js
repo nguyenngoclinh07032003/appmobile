@@ -74,6 +74,14 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
   };
 
   const submit = async () => {
+    if (mode === 'login') {
+      if (!identifier.trim()) { setFormErr('Vui lòng nhập Email hoặc Tên đăng nhập.'); return; }
+      if (!password) { setFormErr('Vui lòng nhập mật khẩu.'); return; }
+    }
+    if (mode === 'forgot' && !otpSent && !identifier.trim()) {
+      setFormErr('Vui lòng nhập Email hoặc Tên đăng nhập.');
+      return;
+    }
     if ((mode === 'register' || (mode === 'forgot' && otpSent)) && password !== password2) {
       setFormErr('Mật khẩu nhập lại không khớp.');
       return;
@@ -115,6 +123,20 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
       setBusy(false);
     }
     if (res && !res.ok) setFormErr(authErrorMessage(res, mode));
+  };
+
+  const resendResetOtp = async () => {
+    if (busy || !identifier.trim()) return;
+    setBusy(true);
+    try {
+      const res = await a.requestPasswordReset({ identifier: identifier.trim() });
+      if (res?.ok) setFormErr('');
+      else setFormErr(authErrorMessage(res, 'forgot'));
+    } catch (err) {
+      setFormErr(authErrorMessage({ message: err?.message, status: 0 }, 'forgot'));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -206,7 +228,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                   label="Họ và tên"
                   icon="👤"
                   value={name}
-                  onChangeText={setName}
+                  onChangeText={(t) => { setName(t); if (formErr) setFormErr(''); }}
                   placeholder="Nguyễn Văn An"
                   autoCapitalize="words"
                 />
@@ -215,7 +237,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                   label="Tên đăng nhập (Username)"
                   icon="🆔"
                   value={username}
-                  onChangeText={setUsername}
+                  onChangeText={(t) => { setUsername(t); if (formErr) setFormErr(''); }}
                   placeholder="VD: nguyenan99"
                   autoCapitalize="none"
                 />
@@ -224,7 +246,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                   label="Địa chỉ Email"
                   icon="✉️"
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(t) => { setEmail(t); if (formErr) setFormErr(''); }}
                   placeholder="example@gmail.com (dùng đăng nhập & nhận hóa đơn)"
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -237,7 +259,14 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                 label="Email hoặc Tên đăng nhập"
                 icon="👤"
                 value={identifier}
-                onChangeText={setIdentifier}
+                onChangeText={(t) => {
+                  setIdentifier(t);
+                  if (formErr) setFormErr('');
+                  if (mode === 'forgot' && otpSent) {
+                    setOtpSent(false);
+                    setOtp('');
+                  }
+                }}
                 placeholder="Nhập email hoặc username của bạn"
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -245,14 +274,19 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
             )}
 
             {mode === 'forgot' && otpSent && (
-              <ModernField
-                label="Mã xác nhận (6 số)"
-                icon="shield-check"
-                value={otp}
-                onChangeText={(t) => setOtp(t.replace(/\D/g, '').slice(0, 6))}
-                placeholder="Mã gửi trong email"
-                keyboardType="number-pad"
-              />
+              <View>
+                <ModernField
+                  label="Mã xác nhận (6 số)"
+                  icon="shield-check"
+                  value={otp}
+                  onChangeText={(t) => { setOtp(t.replace(/\D/g, '').slice(0, 6)); if (formErr) setFormErr(''); }}
+                  placeholder="Mã gửi trong email"
+                  keyboardType="number-pad"
+                />
+                <Tap onPress={resendResetOtp} style={{ alignSelf: 'flex-end', marginTop: -8, marginBottom: 10 }} disabled={busy}>
+                  <Text style={st.forgotLink}>Gửi lại mã OTP</Text>
+                </Tap>
+              </View>
             )}
 
             {!(mode === 'forgot' && !otpSent) && (
@@ -260,7 +294,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
               label={mode === 'forgot' ? 'Mật khẩu mới' : 'Mật khẩu'}
               icon="lock"
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(t) => { setPassword(t); if (formErr) setFormErr(''); }}
               placeholder={mode === 'login' ? 'Nhập mật khẩu của bạn' : 'Tối thiểu 8 ký tự'}
               secure={!showPw}
               right={(
@@ -276,7 +310,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                 label="Xác nhận mật khẩu"
                 icon="shield-check"
                 value={password2}
-                onChangeText={setPassword2}
+                onChangeText={(t) => { setPassword2(t); if (formErr) setFormErr(''); }}
                 placeholder="Nhập lại mật khẩu"
                 secure={!showPw}
               />
@@ -465,7 +499,7 @@ const st = StyleSheet.create({
     borderColor: C.red,
     backgroundColor: C.redSoft,
   },
-  inputIcon: { fontSize: 16, marginRight: 10 },
+  inputIcon: { marginRight: 10 },
   input: {
     flex: 1,
     fontSize: 14.5,

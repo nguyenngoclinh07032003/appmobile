@@ -81,7 +81,7 @@ const nativeLocation = async (timeoutMs) => {
 // - Native (iOS/Android): expo-location (xin quyền vị trí khi dùng app -> vị trí hiện tại -> vị trí gần nhất).
 export const getCheckInLocation = async ({ timeoutMs = DEFAULT_TIMEOUT_MS } = {}) => {
   try {
-    if (Platform.OS === 'web') return await webLocation(timeoutMs);
+    if (Platform.OS === 'web') return await withTimeout(webLocation(timeoutMs), Math.max(2500, timeoutMs));
     return await nativeLocation(timeoutMs);
   } catch (e) {
     devWarn('[geo] getCheckInLocation lỗi', e?.message || e);
@@ -91,7 +91,7 @@ export const getCheckInLocation = async ({ timeoutMs = DEFAULT_TIMEOUT_MS } = {}
 
 /** Haversine km — tính khoảng cách giữa kỹ thuật viên và địa chỉ khách hàng */
 export const distanceKm = (a, b) => {
-  if (!a || !b || a.lat == null || b.lat == null) return null;
+  if (!a || !b || a.lat == null || a.lng == null || b.lat == null || b.lng == null) return null;
   const R = 6371;
   const dLat = ((b.lat - a.lat) * Math.PI) / 180;
   const dLng = ((b.lng - a.lng) * Math.PI) / 180;
