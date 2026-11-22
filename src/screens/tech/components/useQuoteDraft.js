@@ -12,6 +12,7 @@ import {
   buildSymptomsSummary,
   buildSymptomRecommendationFallback,
   stripSymptomsPrefixFromDiagnosis,
+  stripAutoRecommendationPrefix,
 } from '../../../utils/symptomItems.js';
 
 export {
@@ -47,14 +48,25 @@ export const quoteSignature = (q) => {
 // Thợ đã check-in tại nhà khách: mọi báo giá gửi lúc này là báo giá PHÁT SINH (server: SUPPLEMENTAL), được
 // CỘNG THÊM vào giá khách đã đặt -> chỉ chứa phần làm thêm, không chứa lại dịch vụ đã đặt (server trả 400
 // QUOTATION_DUPLICATES_BOOKED_SERVICE, bản server cũ thì tính tiền 2 lần).
-export const isOnSiteQuote = (o) => Boolean(o?.arrivedAt || o?.checkIn || ['diagnosing', 'repairing'].includes(o?.status));
+export const isOnSiteQuote = (o) => Boolean(
+  !(!o?.arrivedAt && !o?.checkIn && o?.status === 'diagnosing' && o?.quote?.revisionRequested && !o?.quote?.isSupplemental) &&
+  (o?.arrivedAt || o?.checkIn || ['diagnosing', 'repairing', 'out_of_warranty'].includes(o?.status)),
+);
+
+const quotePhaseOf = (o) => {
+  const pricingKey = (o?.status === 'out_of_warranty' || o?.outOfWarranty) ? 'paid' : (o?.kind || 'normal');
+  return `${isOnSiteQuote(o) ? 'site' : 'pre'}:${pricingKey}`;
+};
 
 export function draftFromOrder(o) {
   const q = o?.quote;
   const onSite = isOnSiteQuote(o);
+  const isFreeWarranty = o?.kind === 'warranty' && !o?.outOfWarranty && o?.status !== 'out_of_warranty';
   const { tags, symptomItems } = parseSymptomsField(q?.symptoms, o?.evidence || []);
   // Lúc gửi, chẩn đoán được ghép "triệu chứng. kết luận" -> tách lại để không nhân đôi phần triệu chứng.
   const diagnosis = stripSymptomsPrefixFromDiagnosis(q?.diagnosis || '', q?.symptoms, tags, symptomItems);
+  const cleanedReco = stripAutoRecommendationPrefix(q?.recommendation || '', symptomItems);
+  const recommendation = q?.recommendation ? cleanedReco : (q ? 'Thực hiện dịch vụ và hạng mục vật tư theo báo giá' : '');
   const items = o?.items || [];
   const bookedNameSet = new Set(items.map((it) => String(it.name || '').trim().toLowerCase()));
   const bookedIdSet = new Set(items.map((it) => it.id));
@@ -66,7 +78,7 @@ export function draftFromOrder(o) {
       type: 'labor',
       name: it.name || getService(it.id)?.name || 'Dịch vụ',
       qty: Math.max(1, Number(it.qty) || 1),
-      price: o?.kind === 'warranty' ? 0 : (it.price != null ? Number(it.price) : (getService(it.id)?.price || 0)),
+      price: isFreeWarranty ? 0 : (it.price != null ? Number(it.price) : (getService(it.id)?.price || 0)),
       unit: 'lần',
       isOriginal: true,
     }));
@@ -84,7 +96,7 @@ export function draftFromOrder(o) {
       tags,
       symptomItems,
       diagnosis,
-      recommendation: q?.recommendation || (q ? 'Thực hiện dịch vụ và hạng mục vật tư theo báo giá' : ''),
+      recommendation,
       lines,
     };
   }
@@ -111,7 +123,7 @@ export function draftFromOrder(o) {
         type: 'labor',
         name: it.name || sv?.name || 'Dịch vụ',
         qty: Math.max(1, Number(it.qty) || 1),
-        price: o?.kind === 'warranty' ? 0 : unitPrice,
+        price: isFreeWarranty ? 0 : unitPrice,
         unit: 'lần',
         isOriginal: true,
       };
@@ -120,7 +132,7 @@ export function draftFromOrder(o) {
     tags,
     symptomItems,
     diagnosis,
-    recommendation: q?.recommendation || (q ? 'Thực hiện dịch vụ và hạng mục vật tư theo báo giá' : ''),
+    recommendation,
     lines,
   };
 }
@@ -152,7 +164,7 @@ export function useQuoteDraft(o) {
     if (!switchedOrder && dirtyRef.current) return;
     if (switchedOrder) markDirty(false);
     lastSig.current = quoteSignature(orderRef.current?.quote);
-    lastPhase.current = isOnSiteQuote(orderRef.current) ? 'site' : 'pre';
+    lastPhase.current = quotePhaseOf(orderRef.current);
     setDraft(draftFromOrder(orderRef.current));
   }, [orderKey, hasOrder, markDirty]);
 
@@ -167,7 +179,7 @@ export function useQuoteDraft(o) {
   // theo quoteSignature ở trên không chạy, bản nháp vẫn còn các dòng dịch vụ đã đặt (đúng cho báo giá trước khi đi).
   // Tại nhà, báo giá là PHÁT SINH (cộng thêm) -> phải làm mới dòng theo giai đoạn mới, kể cả khi đang sửa dở;
   // nếu giữ lại, "Gửi báo giá phát sinh" sẽ gửi lại dịch vụ đã đặt (server mới trả 400, server cũ tính tiền 2 lần).
-  const phase = isOnSiteQuote(o) ? 'site' : 'pre';
+  const phase = quotePhaseOf(o);
   const lastPhase = useRef(phase);
   useEffect(() => {
     if (phase === lastPhase.current) return;

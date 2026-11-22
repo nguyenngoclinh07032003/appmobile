@@ -1,6 +1,7 @@
 /** Chính sách kỷ luật / uy tín thợ — hạn chế hủy sau nhận & đến muộn */
 import { vnTimestamp } from '../utils/vnTime.js';
 import { HOTLINE } from './data.js';
+import { FREE_CANCEL_MIN_BEFORE } from './appPolicy.js';
 
 export const TECH_POLICY = {
   reputationDefault: 100,
@@ -82,7 +83,7 @@ export const getCancellationWindowStatus = (order, now = Date.now()) => {
     return { allowed: true };
   }
   const diffMs = startTs - now;
-  const ONE_HOUR_MS = 60 * 60 * 1000;
+  const ONE_HOUR_MS = FREE_CANCEL_MIN_BEFORE * 60 * 1000;
   if (diffMs <= ONE_HOUR_MS) {
     const minsLeft = Math.max(0, Math.floor(diffMs / 60000));
     return {
@@ -124,7 +125,7 @@ export const assessCancelAfterAccept = (order, now = Date.now()) => {
   const start = slotStartTs(order);
   const nearSlot = start != null && start - now <= TECH_POLICY.nearSlotMs;
 
-  if (order?.status === 'onway' || order?.status === 'diagnosing' || order?.status === 'quoted' || order?.status === 'repairing') {
+  if (['onway', 'diagnosing', 'quoted', 'repairing', 'out_of_warranty'].includes(order?.status)) {
     return {
       tier: 'onway',
       points: 25,

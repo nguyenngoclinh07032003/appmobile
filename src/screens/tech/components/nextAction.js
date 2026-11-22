@@ -127,6 +127,11 @@ export function useNextAction({ inDetail = false } = {}) {
         }
         return { label: 'Chẩn đoán & báo giá', icon: 'receipt-text', run: open };
       }
+      case 'out_of_warranty': {
+        return inDetail
+          ? null
+          : { label: 'Báo giá có phí', icon: 'receipt-text', variant: 'primary', run: open };
+      }
       case 'quoted':
         return inDetail
           ? null

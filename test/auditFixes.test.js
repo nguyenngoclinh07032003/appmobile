@@ -118,3 +118,92 @@ test('syncService: mergeBackendOrdersWithLocal kiểm tra đổi thợ, revision
   );
   assert.deepEqual(clearedEvidence[0].evidence, []);
 });
+
+const { toVnParts, vnTimestamp } = await import('../src/utils/vnTime.js');
+const { isDayOutOfSlots } = await import('../src/utils/dateTime.js');
+const { getCancellationWindowStatus, assessCancelAfterAccept } = await import('../src/constants/techPolicy.js');
+const { viServerMessage } = await import('../src/utils/viText.js');
+const { isOnSiteQuote, draftFromOrder } = await import('../src/screens/tech/components/useQuoteDraft.js');
+
+test('vnTime & dateTime: weekday GMT+7 và ngưỡng hết ca 19:15 / 19:20 VN', () => {
+  // 2026-11-22 18:00 UTC = 2026-11-23 01:00 VN (Thứ Hai -> weekday 1)
+  const p = toVnParts(Date.UTC(2026, 10, 22, 18, 0, 0));
+  assert.equal(p.year, 2026);
+  assert.equal(p.month, 11);
+  assert.equal(p.day, 23);
+  assert.equal(p.weekday, 1);
+
+  assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 19, 15))), false);
+  assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 19, 20))), true);
+});
+
+test('techPolicy: cửa sổ huỷ miễn phí 60 phút và mức phạt out_of_warranty', () => {
+  const now = Date.UTC(2026, 10, 22, 5, 0, 0);
+  assert.equal(
+    getCancellationWindowStatus({ status: 'confirmed', preferredTimeAt: now + 59 * 60 * 1000 }, now).allowed,
+    false,
+  );
+  assert.equal(
+    getCancellationWindowStatus({ status: 'confirmed', preferredTimeAt: now + 61 * 60 * 1000 }, now).allowed,
+    true,
+  );
+  const penalty = assessCancelAfterAccept({ status: 'out_of_warranty', preferredTimeAt: now + 3 * 3600 * 1000 }, now);
+  assert.equal(penalty.tier, 'onway');
+  assert.equal(penalty.free, false);
+});
+
+test('syncService: giữ nguyên khung giờ lẻ và không nhảy sang repairing khi needs_quotation = true', () => {
+  assert.equal(sync.formatSlotFromIso('2026-11-22T09:00:00+07:00'), '09h00 - 11h00');
+  assert.equal(sync.formatSlotFromIso('2026-11-22T15:00:00+07:00'), '15h00 - 17h00');
+  assert.equal(sync.formatSlotFromIso('2026-11-22T19:00:00+07:00'), '19h00 - 21h00');
+
+  const mapped = sync.mapBackendCustomerRequestToOrder({
+    request_id: 950,
+    request_code: 'REQ-950',
+    request_status: 'IN_PROGRESS',
+    preferred_payment_method: 'CASH',
+    created_at: '2026-11-22T01:00:00Z',
+    items: [{ request_service_id: 1, service_id: 1, service_name: 'Sửa máy lạnh', quantity: 1, selected_price: 200000 }],
+    visits: [{ visit_status: 'IN_PROGRESS' }],
+    quotations: [],
+    diagnoses: [{ findings: 'Hỏng tụ', needs_quotation: true, recorded_at: '2026-11-22T02:00:00Z' }],
+  });
+  assert.equal(mapped.status, 'diagnosing');
+});
+
+test('viText: giữ thông báo tiếng Việt hợp lệ và chặn chuỗi Anh/Việt lẫn lộn chưa dịch', () => {
+  const vnOk = 'Bạn thao tác quá nhanh, vui lòng thử lại sau';
+  assert.equal(viServerMessage(vnOk, null, 429), vnOk);
+
+  const mixedOut = viServerMessage('Unhandled glitch occurred khi server xu ly request', null, 400);
+  assert.ok(!/glitch|Unhandled/i.test(mixedOut));
+});
+
+test('useQuoteDraft: phân biệt báo giá trước khi đi, out_of_warranty và tách tiền tố đề xuất tự động', () => {
+  assert.equal(
+    isOnSiteQuote({
+      status: 'diagnosing',
+      arrivedAt: null,
+      checkIn: null,
+      quote: { revisionRequested: true, isSupplemental: false },
+    }),
+    false,
+  );
+  assert.equal(isOnSiteQuote({ status: 'out_of_warranty' }), true);
+
+  const draft = draftFromOrder({
+    code: 'ORD-OOW',
+    kind: 'warranty',
+    status: 'out_of_warranty',
+    outOfWarranty: true,
+    items: [{ id: 'custom-1', name: 'Sửa board', qty: 1, price: 350000 }],
+    evidence: [{ stage: 'diagnosis', note: '[Triệu chứng] Hỏng tụ (Sửa chữa)' }],
+    quote: {
+      symptoms: 'Hỏng tụ (Sửa chữa)',
+      recommendation: 'Sửa chữa: Hỏng tụ. Kiểm tra lại nguồn cấp',
+      lines: [],
+    },
+  });
+  assert.equal(draft.lines[0].price, 350000);
+  assert.equal(draft.recommendation, 'Kiểm tra lại nguồn cấp');
+});

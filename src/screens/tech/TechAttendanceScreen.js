@@ -17,10 +17,12 @@ import {
   getMonthRange,
   getVnTodayInfo,
   getVnWeekdayInfo,
+  identifyTechWorkShift,
   isAttendanceNotifType,
   normalizeAttendanceResponse,
   normalizeViolationsResponse,
   shiftMonth,
+  sortTechShifts,
   validateCheckInNote,
 } from '../../utils/attendance';
 import {
@@ -64,6 +66,7 @@ export function TechAttendanceScreen() {
 
   const submittingRef = useRef(false);
   const monthReqSeqRef = useRef(0);
+  const todayReqSeqRef = useRef(0);
   const selMonthRef = useRef(selMonth);
   const selYearRef = useRef(selYear);
   selMonthRef.current = selMonth;
@@ -79,7 +82,9 @@ export function TechAttendanceScreen() {
     const isCurrent = month === todayInfo.month && year === todayInfo.year;
     if (!silent) {
       setMonthLoading(true);
+      setMonthError('');
       setViolationsLoading(true);
+      setViolationsError('');
     }
     const { from, to } = getMonthRange(month, year);
     const [attRes, vioRes] = await Promise.all([
@@ -110,14 +115,19 @@ export function TechAttendanceScreen() {
   }, []);
 
   const loadTodayShifts = useCallback(async ({ silent = false, includeTodayAttendance = true } = {}) => {
+    const seq = ++todayReqSeqRef.current;
     const todayInfo = getVnTodayInfo();
-    if (!silent) setTodayLoading(true);
+    if (!silent) {
+      setTodayLoading(true);
+      setTodayError('');
+    }
 
     const optReq = hrmssApi.getMyShiftOptions();
     const attReq = includeTodayAttendance
       ? hrmssApi.getMyAttendance(todayInfo.month, todayInfo.year)
       : Promise.resolve(null);
     const [optRes, attRes] = await Promise.all([optReq, attReq]);
+    if (seq !== todayReqSeqRef.current) return null;
 
     if (!optRes.ok) {
       const optCode = String(optRes.code || '').toUpperCase();
@@ -264,7 +274,10 @@ export function TechAttendanceScreen() {
   };
 
   const workDate = shiftOptions?.workDate || todayVnNow.dateKey;
-  const shiftItems = Array.isArray(shiftOptions?.items) ? shiftOptions.items : [];
+  const shiftItems = useMemo(
+    () => sortTechShifts(Array.isArray(shiftOptions?.items) ? shiftOptions.items : []),
+    [shiftOptions],
+  );
   const monthDays = Array.isArray(monthAttendance?.days) ? monthAttendance.days : [];
   const summary = monthAttendance?.summary || null;
 
@@ -281,9 +294,9 @@ export function TechAttendanceScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       {isStackTop ? (
-        <TopBar title="Chấm công" sub="Vào ca GPS · Bảng công tháng & vi phạm" right={refreshBtn} />
+        <TopBar title="Chấm công" sub="Ca 1: 08h30 – 11h30 · Ca 2: 13h30 – 17h30" right={refreshBtn} />
       ) : (
-        <PageHead title="Chấm công" sub="Vào ca GPS · Bảng công tháng & vi phạm" right={refreshBtn} />
+        <PageHead title="Chấm công" sub="Ca 1: 08h30 – 11h30 · Ca 2: 13h30 – 17h30" right={refreshBtn} />
       )}
 
       <ScrollView
@@ -337,7 +350,7 @@ export function TechAttendanceScreen() {
             </View>
             <Text style={st.emptyTitle}>Hôm nay bạn chưa có ca. Liên hệ văn phòng.</Text>
             <Text style={[ui.meta, { textAlign: 'center', marginTop: 4 }]}>
-              Khi văn phòng xếp ca bắt đầu trong ngày, ca sẽ hiển thị tại đây để bạn chấm công vào ca.
+              Khi văn phòng xếp Ca 1 (08h30 – 11h30) hoặc Ca 2 (13h30 – 17h30), ca sẽ hiển thị tại đây để bạn chấm công vào ca.
             </Text>
           </Card>
         ) : (
@@ -348,18 +361,26 @@ export function TechAttendanceScreen() {
             const statusMeta = rec?.status ? ATT_STATUS_META[rec.status] : null;
             const timeStr = `${item.startTime || '—'} – ${item.endTime || '—'}${item.crossesMidnight ? ' (qua đêm)' : ''}`;
             const isLocatingThis = locatingShiftId === item.technicianShiftId;
+            const matchedShift = identifyTechWorkShift(item);
+            const displayName = item.name || 'Ca làm việc';
+            const showShiftBadge = Boolean(
+              matchedShift && !new RegExp(`\\b${matchedShift.label}\\b`, 'i').test(displayName),
+            );
 
             return (
               <Card key={String(item.technicianShiftId)} style={st.shiftCard}>
                 <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                   <View style={{ flex: 1 }}>
-                    <Text style={st.shiftName}>{item.name || 'Ca làm việc'}</Text>
+                    <Text style={st.shiftName}>{displayName}</Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 }}>
                       <AppIcon name="clock" size={14} color={C.muted} />
                       <Text style={st.shiftTime}>{timeStr}</Text>
                     </View>
                   </View>
-                  {item.code ? <Badge text={item.code} fg={C.ink2} bg={C.surface} /> : null}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    {showShiftBadge ? <Badge text={matchedShift.label} fg={C.primary} bg={C.primarySoft} /> : null}
+                    {item.code ? <Badge text={item.code} fg={C.ink2} bg={C.surface} /> : null}
+                  </View>
                 </View>
 
                 {item.alreadyRecorded ? (
@@ -490,7 +511,7 @@ export function TechAttendanceScreen() {
             ) : (
               monthDays.map((day, idx) => {
                 const wk = getVnWeekdayInfo(day.date, day.dayType);
-                const dayShifts = Array.isArray(day.shifts) ? day.shifts : [];
+                const dayShifts = sortTechShifts(Array.isArray(day.shifts) ? day.shifts : []);
                 return (
                   <Card key={String(day.attendanceId || day.date || idx)} style={st.dayCard}>
                     <View style={st.dayHead}>
@@ -524,6 +545,11 @@ export function TechAttendanceScreen() {
                         const sMeta = ATT_STATUS_META[sh.status] || { label: sh.status || '—', fg: C.ink2, bg: C.surface };
                         const checkHm = formatVnTimeHm(sh.checkedInAt);
                         const isByManager = sh.source && sh.source !== 'self';
+                        const matchedShift = identifyTechWorkShift(sh);
+                        const shName = sh.shiftName || sh.shiftCode || 'Ca làm việc';
+                        const showShiftBadge = Boolean(
+                          matchedShift && !new RegExp(`\\b${matchedShift.label}\\b`, 'i').test(shName),
+                        );
                         return (
                           <View
                             key={String(sh.entryId || `${sh.technicianShiftId || ''}-${sIdx}`)}
@@ -531,12 +557,15 @@ export function TechAttendanceScreen() {
                           >
                             <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
                               <View style={{ flex: 1 }}>
-                                <Text style={st.dayShiftName}>{sh.shiftName || sh.shiftCode || 'Ca làm việc'}</Text>
+                                <Text style={st.dayShiftName}>{shName}</Text>
                                 <Text style={[ui.meta, { marginTop: 2 }]}>
                                   {sh.startTime || '—'} – {sh.endTime || '—'}
                                 </Text>
                               </View>
-                              <Badge text={sMeta.label} fg={sMeta.fg} bg={sMeta.bg} />
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                {showShiftBadge ? <Badge text={matchedShift.label} fg={C.primary} bg={C.primarySoft} /> : null}
+                                <Badge text={sMeta.label} fg={sMeta.fg} bg={sMeta.bg} />
+                              </View>
                             </View>
 
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>

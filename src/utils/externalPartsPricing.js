@@ -58,16 +58,18 @@ export function formatEstimatedExternalDesc({ name, minPrice, maxPrice }) {
   return `[VT ngoài dự kiến ${formatDots(min)}đ - ${formatDots(max)}đ] ${clean}`;
 }
 
-export function formatFinalizedExternalDesc({ name, minPrice, maxPrice, priorDeposit = 0 }) {
+export function formatFinalizedExternalDesc({ name, minPrice, maxPrice, priorDeposit = 0, priorDepositQty = null }) {
   const clean = String(name || '').trim() || 'Linh kiện mua ngoài';
   const min = Math.max(0, Math.round(Number(minPrice) || 0));
   const max = Math.max(min, Math.round(Number(maxPrice) || min));
   const dep = Math.max(0, Math.round(Number(priorDeposit) || 0));
+  const depQtyNum = priorDepositQty != null && Number(priorDepositQty) > 0 ? Math.max(1, Math.round(Number(priorDepositQty))) : null;
+  const depQtyTag = depQtyNum ? ` x${depQtyNum}` : '';
   if (dep > 0 && max > 0) {
-    return `[VT ngoài chốt giá (dự kiến ${formatDots(min)}đ - ${formatDots(max)}đ | đã tạm tính ${formatDots(dep)}đ)] ${clean}`;
+    return `[VT ngoài chốt giá (dự kiến ${formatDots(min)}đ - ${formatDots(max)}đ | đã tạm tính ${formatDots(dep)}đ${depQtyTag})] ${clean}`;
   }
   if (dep > 0) {
-    return `[VT ngoài chốt giá (đã tạm tính ${formatDots(dep)}đ)] ${clean}`;
+    return `[VT ngoài chốt giá (đã tạm tính ${formatDots(dep)}đ${depQtyTag})] ${clean}`;
   }
   if (max > 0) {
     return `[VT ngoài chốt giá (dự kiến ${formatDots(min)}đ - ${formatDots(max)}đ)] ${clean}`;
@@ -95,16 +97,18 @@ export function parseExternalPartDesc(rawDesc) {
   if (finMatch) {
     const meta = finMatch[1] || '';
     const rangeMatch = /dự kiến\s+([\d.,]+)\s*đ?\s*[-–~]\s*([\d.,]+)\s*đ?/i.exec(meta);
-    const depMatch = /đã tạm tính\s+([\d.,]+)\s*đ?/i.exec(meta);
+    const depMatch = /đã tạm tính\s+([\d.,]+)\s*đ?(?:\s*[x×]\s*(\d+))?/i.exec(meta);
     const minPrice = rangeMatch ? parseVnd(rangeMatch[1]) : null;
     const maxPrice = rangeMatch ? Math.max(minPrice, parseVnd(rangeMatch[2])) : null;
     const priorDeposit = depMatch ? parseVnd(depMatch[1]) : 0;
+    const priorDepositQty = depMatch?.[2] ? Math.max(1, Number(depMatch[2])) : null;
     return {
       kind: 'finalized_external',
       cleanName: finMatch[2].trim(),
       minPrice,
       maxPrice,
       priorDeposit,
+      ...(priorDepositQty != null ? { priorDepositQty } : {}),
     };
   }
 
@@ -218,6 +222,9 @@ export function extractExternalPartLifecycle(quotations = []) {
       } else if (meta.kind === 'finalized_external') {
         const unitP = Number(it.unit_price) || 0;
         const dep = Number(meta.priorDeposit) || 0;
+        const qty = Math.max(1, Number(it.quantity) || 1);
+        const depQty = meta.priorDepositQty != null ? Math.max(1, Number(meta.priorDepositQty) || 1) : qty;
+        const actualPrice = dep > 0 ? Math.round((dep * depQty + unitP * qty) / qty) : unitP;
         finalizedApprovedItems.push({
           quotationId: q.quotation_id ?? null,
           itemId: it.quotation_item_id ?? null,
@@ -226,8 +233,9 @@ export function extractExternalPartLifecycle(quotations = []) {
           minPrice: meta.minPrice,
           maxPrice: meta.maxPrice,
           priorDeposit: dep,
-          actualPrice: dep + unitP,
-          qty: Math.max(1, Number(it.quantity) || 1),
+          origQty: depQty,
+          actualPrice,
+          qty,
           unit: 'cái',
           receiptId: it.receipt_attachment_id || null,
         });

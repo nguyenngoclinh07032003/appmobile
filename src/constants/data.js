@@ -178,6 +178,31 @@ export const INSTALL_SERVICES = [];
 export const REPAIR_SERVICES = [];
 export const LIFETIME_SERVICES = [];
 export const TIME_SLOTS = ['08h00 - 10h00', '10h00 - 12h00', '12h00 - 14h00', '14h00 - 16h00', '16h00 - 18h00', '18h00 - 20h00'];
+// 2 ca làm việc / chấm công chính thức của kỹ thuật viên:
+// - Ca 1: 08h30 - 11h30
+// - Ca 2: 13h30 - 17h30
+export const TECH_WORK_SHIFTS = [
+  {
+    id: 'ca1',
+    code: 'CA1',
+    label: 'Ca 1',
+    shortTime: '08h30 - 11h30',
+    startTime: '08:30',
+    endTime: '11:30',
+    startMinutes: 8 * 60 + 30,
+    endMinutes: 11 * 60 + 30,
+  },
+  {
+    id: 'ca2',
+    code: 'CA2',
+    label: 'Ca 2',
+    shortTime: '13h30 - 17h30',
+    startTime: '13:30',
+    endTime: '17:30',
+    startMinutes: 13 * 60 + 30,
+    endMinutes: 17 * 60 + 30,
+  },
+];
 export const imgFor = (id) => `https://picsum.photos/seed/${id}/400/300`;
 
 // ---------------------------------------------------------------------------
@@ -226,7 +251,7 @@ export const TIPS = [
 
 export const FAQ = [
   { q: 'Thợ có đến đúng giờ không?', a: 'Cam kết đúng khung giờ. Trễ 21–45 phút: giảm 20% phí nhân công (tối đa 100.000đ). Trễ trên 45 phút: giảm 50% (tối đa 200.000đ). Trễ ≤10 phút không bị trừ. Thợ đến muộn còn bị trừ điểm uy tín.' },
-  { q: 'Tôi có thể huỷ hoặc đổi lịch không?', a: 'Khi đơn còn chờ thợ nhận, vào Chi tiết đơn → "Sửa yêu cầu" để đổi ngày/giờ, mô tả và ảnh. Huỷ miễn phí khi thợ chưa bắt đầu di chuyển (chờ nhận / đã nhận). Sau khi thợ đang đến thì không huỷ trên app — gọi hotline.' },
+  { q: 'Tôi có thể huỷ hoặc đổi lịch không?', a: 'Khi đơn còn chờ thợ nhận, vào Chi tiết đơn → "Sửa yêu cầu" để đổi ngày/giờ, mô tả và ảnh. Bạn được huỷ miễn phí khi đơn chưa có thợ nhận hoặc trước giờ hẹn ít nhất 1 tiếng (khi thợ chưa di chuyển). Trong vòng 1 tiếng trước giờ hẹn hoặc khi thợ đang đến thì vui lòng liên hệ hotline.' },
   { q: 'Bảo hành 60 ngày được tính thế nào?', a: 'Bảo hành bắt đầu từ lúc đơn hoàn thành. Vào Dịch vụ › Bảo hành hoặc Chi tiết đơn hàng để tra cứu và gửi yêu cầu bảo hành miễn phí.' },
   { q: 'Điểm tích luỹ dùng để làm gì?', a: 'Mỗi 10.000đ thanh toán = 1 điểm, đánh giá đơn hàng được thêm 20 điểm. Dùng điểm để đổi voucher ở mục Quyền lợi của tôi.' },
   { q: 'Phương thức thanh toán nào được hỗ trợ?', a: 'Quý khách có thể thanh toán bằng Chuyển khoản VietQR (MBBank) hoặc Tiền mặt trực tiếp cho thợ sau khi hoàn thành nghiệm thu.' },
@@ -253,7 +278,7 @@ export const TIERS = [
     ],
     terms: [
       'Cam kết đúng giờ: Tự động giảm 20%–50% phí nhân công (tối đa 200.000đ) nếu thợ check-in trễ giờ hẹn.',
-      'Linh hoạt tuyệt đối: Miễn phí 100% khi sửa yêu cầu, đổi lịch hẹn hoặc huỷ đơn trước khi thợ di chuyển.',
+      'Linh hoạt đổi lịch & huỷ đơn: Miễn phí 100% khi sửa yêu cầu (lúc chờ thợ nhận) hoặc huỷ đơn trước giờ hẹn ít nhất 1 tiếng khi thợ chưa di chuyển.',
       'Chu kỳ xét hạng: Điểm tích luỹ được tính trong chu kỳ 12 tháng. Đổi điểm lấy voucher KHÔNG làm giảm điểm xét hạng.',
     ],
   },

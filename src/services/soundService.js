@@ -1,6 +1,7 @@
 import { Platform, Vibration } from 'react-native';
+import { getItem, setItem } from './storage';
 
-// Trạng thái bật/tắt âm thanh (lưu qua localStorage trên Web để giữ qua các lần tải lại)
+// Trạng thái bật/tắt âm thanh (lưu qua localStorage trên Web & AsyncStorage trên Native để giữ qua các lần mở lại)
 const SOUND_MUTE_KEY = 'tho-hrmss-sound-muted-v1';
 let soundMuted = (() => {
   try {
@@ -9,10 +10,18 @@ let soundMuted = (() => {
     return false;
   }
 })();
+if (Platform.OS !== 'web') {
+  Promise.resolve(getItem(SOUND_MUTE_KEY, 'local'))
+    .then((saved) => {
+      if (saved != null) soundMuted = saved === '1';
+    })
+    .catch(() => {});
+}
 const persistMuted = (v) => {
   try {
     if (typeof localStorage !== 'undefined') localStorage.setItem(SOUND_MUTE_KEY, v ? '1' : '0');
   } catch (e) { /* bỏ qua */ }
+  setItem(SOUND_MUTE_KEY, v ? '1' : '0', 'local').catch(() => {});
 };
 
 // Web Audio Context (khởi tạo lười khi có tương tác đầu tiên của người dùng)

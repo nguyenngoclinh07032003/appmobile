@@ -94,6 +94,7 @@ export const authTokens = {
   },
   clear: () => {
     sessionEpoch += 1;
+    refreshing = null;
     currentToken = null;
     setStoredToken(null);
     currentRefresh = null;
@@ -206,6 +207,7 @@ export async function ensureAccessToken() {
  * - Nếu token hết hạn mà không có refresh token (phiên cũ còn sót): tự động dọn phiên và đưa về màn đăng nhập.
  */
 export async function apiRequest(endpoint, options = {}) {
+  const reqEpoch = sessionEpoch;
   const path = String(endpoint || '');
   const isAuthCall =
     Boolean(options.noAuth) ||
@@ -230,10 +232,16 @@ export async function apiRequest(endpoint, options = {}) {
     if (refreshing) {
       await refreshing;
     }
+    if (reqEpoch !== sessionEpoch) {
+      return { ok: false, status: 401, code: 'SESSION_CHANGED', message: 'Phiên đăng nhập đã thay đổi.', data: null, errors: [] };
+    }
     const curToken = authTokens.get();
     if (curToken && isTokenExpiringSoon(curToken, 30)) {
       if (authTokens.getRefresh()) {
         const refreshed = await refreshSession();
+        if (reqEpoch !== sessionEpoch) {
+          return { ok: false, status: 401, code: 'SESSION_CHANGED', message: 'Phiên đăng nhập đã thay đổi.', data: null, errors: [] };
+        }
         if (!refreshed.ok && refreshed.status === 0) return refreshed;
       } else if (isTokenExpiringSoon(curToken, 0)) {
         authTokens.clear();
@@ -253,6 +261,9 @@ export async function apiRequest(endpoint, options = {}) {
     if (!authTokens.get() && !isPublicEndpoint) {
       if (authTokens.getRefresh()) {
         const refreshed = await refreshSession();
+        if (reqEpoch !== sessionEpoch) {
+          return { ok: false, status: 401, code: 'SESSION_CHANGED', message: 'Phiên đăng nhập đã thay đổi.', data: null, errors: [] };
+        }
         if (!refreshed.ok && refreshed.status === 0) return refreshed;
       }
       if (!authTokens.get()) {
@@ -270,8 +281,11 @@ export async function apiRequest(endpoint, options = {}) {
 
   const res = await rawRequest(endpoint, options);
   if (res.status === 401 && !isAuthCall && !isCredentialMutation) {
+    // Nếu phiên đã đổi hoặc đăng xuất trong lúc request đang chạy, không dùng token của phiên mới để retry/clear.
+    if (reqEpoch !== sessionEpoch) return res;
     if (authTokens.getRefresh()) {
       const refreshed = await refreshSession();
+      if (reqEpoch !== sessionEpoch) return res;
       if (refreshed.ok) return rawRequest(endpoint, { ...options, _retried: true });
       if (refreshed.status === 0) return refreshed;
     } else if (authTokens.get()) {
@@ -348,7 +362,7 @@ async function rawRequest(endpoint, options = {}) {
       }
       const isMutation = !['GET', 'HEAD', 'OPTIONS'].includes(String(method || 'GET').toUpperCase());
       if (isMutation && JOB_GONE_CODES.has(resData?.code)) {
-        try { onJobGone?.(resData.code); } catch (e) { /* bỏ qua */ }
+        try { onJobGone?.(resData.code, endpoint); } catch (e) { /* bỏ qua */ }
         return {
           ok: false,
           status: res.status,
@@ -444,6 +458,7 @@ export const hrmssApi = {
 
     if (res.ok && res.data?.access_token) {
       sessionEpoch += 1;
+      refreshing = null;
       authTokens.set(res.data.access_token);
       // Đăng nhập mới: luôn thay refresh token (thiếu thì xoá) để không giữ nhầm token của tài khoản trước.
       authTokens.setRefresh(res.data.refresh_token);
@@ -981,6 +996,10 @@ export const hrmssApi = {
     if (to) params.push(`to=${encodeURIComponent(to)}`);
     const qs = params.length ? `?${params.join('&')}` : '';
     return apiRequest(`/violations/me${qs}`);
+  },
+  async getTechnicianSchedule(date) {
+    const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+    return apiRequest(`/technician/schedule${qs}`);
   },
 
   // 16. Đăng xuất

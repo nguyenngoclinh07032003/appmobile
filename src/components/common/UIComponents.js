@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, ScrollView, Platform, Animated, Easing,
+  View, Text, TouchableOpacity, StyleSheet, Modal, TextInput, ScrollView, Platform, Animated, Easing, KeyboardAvoidingView,
 } from 'react-native';
 import { C, R, shadow, toneOf, STATUS_META, grad } from '../../theme';
 import { formatVND, discountOf, isEstimate, isClean, durationText } from '../../constants/data';
@@ -118,7 +118,7 @@ export function resolveSemanticTone({ tone, title = '', message = '', text = '',
     ['✅', '✓', '🎉', '👍', '🟢', '💸', 'check', 'check-circle-2', 'party-popper', 'thumbs-up', 'shield-check'].includes(ic) ||
     /thành công|hoàn thành|hoàn tất|đã duyệt|đã đồng ý|đã lưu|đã nhận việc|đã nhận đơn|đã xác nhận|đã xác thực|đã thanh toán|mới nhất|đã đồng bộ|đã sao chép|cảm ơn|đánh giá [45]★/i.test(combined);
 
-  if (isSuccess && tone !== 'warning') {
+  if (isSuccess && tone !== 'warning' && tone !== 'info') {
     return {
       key: 'success',
       label: 'Hoàn thành',
@@ -433,7 +433,15 @@ export function Checkbox({ on, label, onPress }) {
 export function Stepper({ value, onChange, min = 1, max = null }) {
   return (
     <View style={ui.stepper}>
-      <Tap style={ui.stepBtn} scaleTo={0.9} onPress={() => onChange(Math.max(min, value - 1))} hitSlop={6}><AppIcon name="minus" size={14} color={C.ink} strokeWidth={2.5} /></Tap>
+      <Tap
+        style={[ui.stepBtn, value <= min && { opacity: 0.45 }]}
+        scaleTo={0.9}
+        disabled={value <= min}
+        onPress={() => onChange(Math.max(min, value - 1))}
+        hitSlop={6}
+      >
+        <AppIcon name="minus" size={14} color={C.ink} strokeWidth={2.5} />
+      </Tap>
       <Text style={ui.stepVal}>{value}</Text>
       <Tap
         style={[ui.stepBtn, { backgroundColor: C.primarySoft }, max != null && value >= max && { opacity: 0.45 }]}
@@ -625,7 +633,7 @@ export function Sheet({ visible, onClose, title, children, footer }) {
   return (
     <Modal visible={visible} animationType="none" transparent onRequestClose={onClose}>
       <View style={frameBox(rect)}>
-        <View style={ui.modalWrap}>
+        <KeyboardAvoidingView style={ui.modalWrap} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <Animated.View style={[ui.backdrop, { opacity: fade }]}>
             <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
           </Animated.View>
@@ -640,7 +648,8 @@ export function Sheet({ visible, onClose, title, children, footer }) {
             </ScrollView>
             {footer ? <View style={{ paddingTop: 8, paddingBottom: 20 }}>{footer}</View> : null}
           </Animated.View>
-        </View>
+        </KeyboardAvoidingView>
+        {visible ? <ToastHost /> : null}
       </View>
     </Modal>
   );

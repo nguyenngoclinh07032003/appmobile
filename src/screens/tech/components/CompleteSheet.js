@@ -26,6 +26,10 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
   const [acceptedAt, setAcceptedAt] = useState(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [localPendingUris, setLocalPendingUris] = useState([]);
+  const allEvidence = o ? (Array.isArray(evidence) ? evidence : (o.evidence || [])) : [];
+  const serverAfterPhotos = allEvidence.filter((e) => e?.stage === 'after' && e?.uri);
+  const [uploadedUris, setUploadedUris] = useState([]);
+  const [baselineServerCount, setBaselineServerCount] = useState(() => serverAfterPhotos.length);
 
   // Mỗi lần mở sheet: làm mới bản nháp (không giữ tick từ lần trước).
   useEffect(() => {
@@ -39,26 +43,24 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
     setAccepted(false);
     setAcceptedAt(null);
     setLocalPendingUris([]);
+    setUploadedUris([]);
+    setBaselineServerCount(serverAfterPhotos.length);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
-
-  if (!o) return null;
-  const allEvidence = Array.isArray(evidence) ? evidence : (o.evidence || []);
-  const serverAfterPhotos = allEvidence.filter((e) => e?.stage === 'after' && e?.uri);
-  const hasInitialPhotos =
-    (o.attachments || []).length > 0 || allEvidence.some((e) => e?.stage === 'diagnosis' && e?.uri);
-  const [uploadedUris, setUploadedUris] = useState([]);
-  const [baselineServerCount, setBaselineServerCount] = useState(() => serverAfterPhotos.length);
 
   // Chỉ xoá ảnh tạm sau khi serverAfterPhotos thực sự tăng lên từ syncFromBackend, tránh nhấp nháy "0 ảnh".
   useEffect(() => {
     if (uploadedUris.length > 0 && serverAfterPhotos.length > baselineServerCount) {
       setUploadedUris([]);
       setBaselineServerCount(serverAfterPhotos.length);
-    } else if (uploadedUris.length === 0) {
+    } else if (uploadedUris.length === 0 || serverAfterPhotos.length < baselineServerCount) {
       setBaselineServerCount(serverAfterPhotos.length);
     }
   }, [serverAfterPhotos.length, uploadedUris.length, baselineServerCount]);
+
+  if (!o) return null;
+  const hasInitialPhotos =
+    (o.attachments || []).length > 0 || allEvidence.some((e) => e?.stage === 'diagnosis' && e?.uri);
 
   const totalAfterCount = serverAfterPhotos.length + localPendingUris.length + uploadedUris.length;
   const busyKey = `complete:${o.code}`;
@@ -92,8 +94,6 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
         setLocalPendingUris((prev) => prev.filter((x) => x !== uri));
         if (ok) {
           setUploadedUris((prev) => (prev.includes(uri) ? prev : [...prev, uri]));
-        } else {
-          u.alert('Không tải được ảnh', 'Không tải lên được ảnh hoàn thành. Vui lòng kiểm tra mạng và thử lại.', 'camera');
         }
       }
     } catch (e) {

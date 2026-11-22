@@ -69,6 +69,7 @@ import {
   analyzeWarrantyEligibility,
   isWarrantySlotBookable,
 } from "../utils/warrantyPolicy";
+import { toVnParts, vnDateKey } from "../utils/vnTime";
 import {
   formatEstimatedExternalDesc,
   formatFinalizedExternalDesc,
@@ -82,6 +83,10 @@ import {
   parseSymptomPhotoMeta,
   splitSymptomTokens,
 } from "../utils/symptomItems";
+import {
+  clearReadNotifications,
+  shouldKeepNotificationAfterClear,
+} from "../utils/notifications";
 import { WARRANTY_ALERT_MILESTONES, OTP_TTL_MINUTES } from "../constants/appPolicy";
 
 // Ngày sinh: server lưu 'YYYY-MM-DD', app hiển thị 'DD/MM/YYYY'.
@@ -166,12 +171,14 @@ export {
 const DAY = 86400000;
 const pad = (n) => String(n).padStart(2, "0");
 export const fmtDate = (ts) => {
-  const d = new Date(ts);
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+  const vn = toVnParts(ts);
+  if (!vn) return "";
+  return `${pad(vn.day)}/${pad(vn.month)}/${vn.year}`;
 };
 export const fmtDateTime = (ts) => {
-  const d = new Date(ts);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())} · ${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
+  const vn = toVnParts(ts);
+  if (!vn) return "";
+  return `${pad(vn.hour)}:${pad(vn.minute)} · ${pad(vn.day)}/${pad(vn.month)}`;
 };
 export const timeAgo = (ts) => {
   if (!ts) return "";
@@ -244,9 +251,10 @@ export const orderTotal = (o) => {
     o.quote.status !== "REJECTED";
   if (
     o?.bill &&
-    o.bill.quotationTotal != null &&
+    (o.bill.quotationTotal != null || o.bill.supplementalTotal > 0) &&
     o.status !== "quoted" &&
-    !(o.quote?.hasEstimatedRange && inQuoteOrRepairStage)
+    !(o.quote?.hasEstimatedRange && inQuoteOrRepairStage) &&
+    !(o.quote?.approvedHasEstimatedRange && inQuoteOrRepairStage)
   ) {
     return Math.max(0, Number(o.bill.amountDue) || 0);
   }
@@ -263,11 +271,11 @@ export const orderTotal = (o) => {
     return Math.max(0, (Number(o.quote.approvedTotalMin) || 0) - deduct);
   } else if (
     o.quote?.approvedTotal != null &&
-    (!o?.bill || o.bill.quotationTotal == null)
+    (!o?.bill || (o.bill.quotationTotal == null && !(o.bill.supplementalTotal > 0)))
   ) {
     return Math.max(0, Number(o.quote.approvedTotal) - deduct);
   }
-  if (o?.bill) return Math.max(0, Number(o.bill.amountDue) || 0);
+  if (o?.bill && o.bill.amountDue != null) return Math.max(0, Number(o.bill.amountDue) || 0);
   const base = o.finalTotal != null ? o.finalTotal : o.total;
   return Math.max(0, Number(base) || 0);
 };
@@ -327,13 +335,16 @@ export const formatOrderTotal = (o) => {
   return r.isRange ? formatRangeVND(r.min, r.max) : formatVND(r.min);
 };
 // Tiền mặt thợ cần thu: bill.cash_to_collect của server (0 nếu khách trả VietQR).
-export const cashToCollect = (o) =>
-  o?.bill?.cashToCollect != null
-    ? o.bill.cashToCollect
-    : (o?.cashToCollect ?? orderTotal(o));
+export const cashToCollect = (o) => {
+  if (o?.bill?.cashToCollect != null) return o.bill.cashToCollect;
+  if (o?.cashToCollect != null) return o.cashToCollect;
+  return isQRPayment(o) ? 0 : amountRemaining(o);
+};
 // Còn phải trả (đã trừ tiền đã thanh toán) và trạng thái thanh toán theo server.
 export const amountRemaining = (o) =>
-  o?.bill ? Math.max(0, Number(o.bill.remainingAmount) || 0) : orderTotal(o);
+  o?.bill?.remainingAmount != null
+    ? Math.max(0, Number(o.bill.remainingAmount) || 0)
+    : orderTotal(o);
 export const isPaid = (o) =>
   o?.bill
     ? ["PAID", "NOTHING_TO_PAY"].includes(o.bill.paymentStatus)
@@ -385,19 +396,15 @@ const clearDeclined = (p, techCode, orderCode) => {
     },
   };
 };
-// Ngày hẹn dạng YYYY-MM-DD (đơn cũ không có dateKey thì đọc dd/mm trong nhãn)
+// Ngày hẹn dạng YYYY-MM-DD (đơn cũ không có dateKey thì đọc dd/mm trong nhãn; thống nhất theo GMT+7)
 export const dateKeyOf = (o) => {
   if (o.dateKey) return o.dateKey;
+  const vn = toVnParts(o.createdAt || Date.now()) || toVnParts(Date.now());
   const m = /(\d{2})\/(\d{2})/.exec(o.dateLabel || "");
-  const d = new Date(o.createdAt || Date.now());
-  if (m) return `${d.getFullYear()}-${m[2]}-${m[1]}`;
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  if (m) return `${vn.year}-${m[2]}-${m[1]}`;
+  return vnDateKey(o.createdAt || Date.now());
 };
-export const todayKey = (offset = 0) => {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-};
+export const todayKey = (offset = 0) => vnDateKey(Date.now() + offset * DAY);
 // orders: danh sách tất cả đơn — dùng để chặn gửi trùng yêu cầu bảo hành khi đã có đơn bảo hành đang xử lý
 export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
   // Hạn bảo hành do server tính theo hạng khách lúc đặt (warranty_days / warranty_end_date).
@@ -437,17 +444,27 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
       text: `Đã có yêu cầu bảo hành ${open.code} đang xử lý.`,
     };
   }
-  const covered = (o.items || []).filter((it) =>
-    ["clean", "gas", "repair", "install"].includes(
-      serviceKind(getService(it.id)),
-    ),
-  );
-  if (!covered.length)
+  const items = o.items || [];
+  if (items.length > 0) {
+    const covered = items.filter((it) => {
+      const svc = getService(it.id);
+      const kind = svc ? serviceKind(svc) : (it.kind || serviceKind({ id: it.id }));
+      return ["clean", "gas", "repair", "install"].includes(kind);
+    });
+    if (!covered.length) {
+      return {
+        ok: false,
+        totalDays,
+        text: `Đơn này là gói dịch vụ định kỳ riêng, không thuộc diện bảo hành ${totalDays} ngày.`,
+      };
+    }
+  } else if (o.kind === "lifetime") {
     return {
       ok: false,
       totalDays,
       text: `Đơn này là gói dịch vụ định kỳ riêng, không thuộc diện bảo hành ${totalDays} ngày.`,
     };
+  }
   if (o.status !== "done")
     return {
       ok: false,
@@ -520,10 +537,12 @@ const mergeTechProfile = (prev, account) => {
 const CUSTOMER_SLICE_KEYS = [
   "addresses",
   "selectedAddressId",
+  "addressGenderMap",
   "cart",
   "favorites",
   "notifications",
   "notifClearedAt",
+  "notifKeptIds",
   "points",
   "lifetimePoints",
   "pointHistory",
@@ -533,10 +552,12 @@ const CUSTOMER_SLICE_KEYS = [
 const makeCustomerSlice = () => ({
   addresses: [],
   selectedAddressId: null,
+  addressGenderMap: {},
   cart: [],
   favorites: [],
   notifications: [],
   notifClearedAt: 0,
+  notifKeptIds: [],
   points: 0,
   lifetimePoints: 0,
   pointHistory: [],
@@ -612,7 +633,9 @@ const signedOutState = (p) => {
     orders: [],
     techNotifs: [],
     notifClearedAt: 0,
+    notifKeptIds: [],
     techNotifClearedAt: 0,
+    techNotifKeptIds: [],
     techProfile: null,
     auth: null,
     role: "customer",
@@ -629,6 +652,8 @@ const makeInitial = () => ({
   // Phía thợ
   role: "customer", // 'customer' | 'tech'
   techNotifs: [],
+  techNotifClearedAt: 0,
+  techNotifKeptIds: [],
   // Dữ liệu chung tải từ backend: mã công khai, lựa chọn đổi điểm, chính sách hệ thống, đánh giá theo dịch vụ.
   publicVouchers: [],
   redeemOptions: [],
@@ -1124,7 +1149,7 @@ export function AppProvider({ children }) {
     },
     services: (serviceTab, category) => {
       setSvc((p) => {
-        const t = serviceTab || p.tab;
+        const t = serviceTab || (p.tab === "bao-hanh" ? "bao-duong" : p.tab);
         if (t === "bao-duong")
           return { ...p, tab: t, category: category || p.category };
         return { ...p, tab: t, kindCat: category || "all" };
@@ -1346,6 +1371,7 @@ export function AppProvider({ children }) {
   // Sync bắt buộc (sau thao tác: hoàn thành đơn, thanh toán, đổi điểm...) gọi lúc đang có sync khác chạy:
   // không bỏ đi mà xếp hàng chạy ngay khi sync hiện tại xong (nếu không sẽ thấy điểm / trạng thái cũ).
   const pendingForceSyncRef = useRef(null);
+  const authIdRef = useRef(s.auth?.id || null);
 
   // Đồng bộ danh mục dịch vụ & cấu hình công khai (không cần đăng nhập): GuestHomeScreen và phiên đăng nhập dùng chung.
   const syncPublicCatalog = async (force = false) => {
@@ -1691,8 +1717,20 @@ export function AppProvider({ children }) {
 
           up((p) => {
             if (!isSameAccount(p)) return {};
+            const prevAddrById = new Map((p.addresses || []).map((ad) => [ad.id, ad]));
+            const genderMap = p.addressGenderMap || {};
             const nextAddresses =
-              remoteAddrs !== null ? remoteAddrs : p.addresses;
+              remoteAddrs !== null
+                ? remoteAddrs.map((ad) => ({
+                    ...ad,
+                    gender:
+                      genderMap[String(ad.dbAddressId)] ||
+                      genderMap[ad.id] ||
+                      prevAddrById.get(ad.id)?.gender ||
+                      ad.gender ||
+                      "Nam",
+                  }))
+                : p.addresses;
             const defaultAddr =
               nextAddresses.find((x) => x.isDefault) ||
               nextAddresses[0] ||
@@ -1741,7 +1779,13 @@ export function AppProvider({ children }) {
             const localNotifs = [
               ...statusNotifs,
               ...p.notifications.filter((n) => !n.dbNotificationId),
-            ].filter((n) => !p.notifClearedAt || n.at > p.notifClearedAt);
+            ].filter((n) =>
+              shouldKeepNotificationAfterClear(
+                n,
+                p.notifClearedAt,
+                p.notifKeptIds,
+              ),
+            );
             const nextAuth = p.auth
               ? upsertBackendAccount({
                   ...p.auth,
@@ -1774,9 +1818,12 @@ export function AppProvider({ children }) {
                         .map((n) =>
                           mapBackendNotification(n, nextOrders, "order"),
                         )
-                        .filter(
-                          (n) =>
-                            n && (!p.notifClearedAt || n.at > p.notifClearedAt),
+                        .filter((n) =>
+                          shouldKeepNotificationAfterClear(
+                            n,
+                            p.notifClearedAt,
+                            p.notifKeptIds,
+                          ),
                         ),
                       ...localNotifs,
                     ]
@@ -1852,8 +1899,12 @@ export function AppProvider({ children }) {
           const specialtyInfo = profRes.ok
             ? readTechnicianSpecialties(profRes.data)
             : null;
-          // Ảnh minh chứng, ảnh triệu chứng ban đầu & ảnh hoàn thành của các việc (ưu tiên việc ACTIVE trước, sau đó việc vừa xong):
-          // GET /uploads?job_id= (ảnh thợ chụp) + GET /uploads?request_id= (ảnh khách đính kèm khi đặt lịch).
+          // Hoá đơn: ưu tiên toàn bộ việc đang chờ thanh toán / trả thiếu (kể cả khi assignment_status='ENDED'), sau đó mới tới ACTIVE khác.
+          const PAYMENT_STATUSES = [
+            "PENDING_PAYMENT",
+            "PARTIALLY_PAID_RECEIVABLE",
+            "PENDING_REVIEW",
+          ];
           const allJobsRaw =
             jobsRes.ok && Array.isArray(jobsRes.data?.items)
               ? jobsRes.data.items
@@ -1863,27 +1914,19 @@ export function AppProvider({ children }) {
             ...allJobsRaw.filter((j) => j.assignment_status !== "ACTIVE" && j.assignment_id),
           ].slice(0, 15);
           const activeJobIds = activeJobsList.map((j) => String(j.assignment_id));
-          // Hoá đơn: việc đang làm + việc đã nộp biên bản còn chờ khách trả tiền (thợ cần biết số tiền mặt / xác nhận đã nhận).
+          const paymentJobIds = allJobsRaw
+            .filter(
+              (j) =>
+                j.assignment_id &&
+                PAYMENT_STATUSES.includes(j.request?.request_status),
+            )
+            .map((j) => String(j.assignment_id));
           const billJobIds = [
             ...new Set([
+              ...paymentJobIds,
               ...activeJobIds,
-              ...(jobsRes.ok && Array.isArray(jobsRes.data?.items)
-                ? jobsRes.data.items
-                : []
-              )
-                .filter(
-                  (j) =>
-                    j.assignment_id &&
-                    j.assignment_status === "ACTIVE" &&
-                    [
-                      "PENDING_PAYMENT",
-                      "PARTIALLY_PAID_RECEIVABLE",
-                      "PENDING_REVIEW",
-                    ].includes(j.request?.request_status),
-                )
-                .map((j) => String(j.assignment_id)),
             ]),
-          ].slice(0, 15);
+          ].slice(0, 20);
           const [photoLists, reqPhotoLists, jobBills] = await Promise.all([
             Promise.all(
               activeJobsList.map((j) =>
@@ -2054,11 +2097,12 @@ export function AppProvider({ children }) {
                       .map((n) =>
                         mapBackendNotification(n, nextOrders, "tech-job"),
                       )
-                      .filter(
-                        (n) =>
-                          n &&
-                          (!p.techNotifClearedAt ||
-                            n.at > p.techNotifClearedAt),
+                      .filter((n) =>
+                        shouldKeepNotificationAfterClear(
+                          n,
+                          p.techNotifClearedAt,
+                          p.techNotifKeptIds,
+                        ),
                       ),
                   }
                 : {}),
@@ -2074,7 +2118,12 @@ export function AppProvider({ children }) {
       const queued = pendingForceSyncRef.current;
       if (queued) {
         pendingForceSyncRef.current = null;
-        if (stateRef.current?.auth?.id && queued.id === stateRef.current.auth.id) {
+        if (
+          authIdRef.current &&
+          String(queued.id) === String(authIdRef.current) &&
+          stateRef.current?.auth?.id &&
+          String(queued.id) === String(stateRef.current.auth.id)
+        ) {
           setTimeout(() => { syncRef.current?.(queued, true); }, 0);
         }
       }
@@ -2168,16 +2217,46 @@ export function AppProvider({ children }) {
           await Promise.all([hydrateAuthStore(), authTokens.restore()]);
           const savedNative = await readJson(KEY, "local");
           const hydratedSession = getSession();
-          if (savedNative || hydratedSession) {
+          if (!authIdRef.current && !stateRef.current?.auth && (savedNative || hydratedSession)) {
+            const rawSaved = savedNative || {};
+            const fromBackend = (list, idKey) =>
+              Array.isArray(list) ? list.filter((x) => x && x[idKey] != null) : [];
+            const { devices: _legacyDevices, ...savedRest } = rawSaved;
+            const role = hydratedSession?.role || rawSaved.role || "customer";
+            const cleanUser = hydratedSession
+              ? {
+                  name: hydratedSession.name || "",
+                  phone: hydratedSession.phone || "",
+                  email: hydratedSession.email || "",
+                }
+              : rawSaved.user;
+            if (hydratedSession?.id) authIdRef.current = hydratedSession.id;
             up((p) => ({
-              ...(savedNative || {}),
+              ...savedRest,
+              orders: (rawSaved.orders || []).filter(
+                (o) => o && (o.dbRequestId != null || o.dbAssignmentId != null),
+              ),
+              addresses: fromBackend(rawSaved.addresses, "dbAddressId"),
+              notifications: fromBackend(rawSaved.notifications, "dbNotificationId"),
+              techNotifs: fromBackend(rawSaved.techNotifs, "dbNotificationId"),
+              pointHistory: (rawSaved.pointHistory || []).filter((h) =>
+                String(h?.id || "").startsWith("pt-db-"),
+              ),
+              myVouchers: (rawSaved.myVouchers || []).filter(
+                (v) => v?.customerVoucherId != null,
+              ),
+              user: cleanUser || p.user,
+              techProfile:
+                hydratedSession?.role === "tech"
+                  ? mergeTechProfile(rawSaved.techProfile || p.techProfile, hydratedSession)
+                  : (rawSaved.techProfile ?? p.techProfile),
               auth: hydratedSession || p.auth,
-              role: hydratedSession?.role || savedNative?.role || p.role,
-              catalogVersion: p.catalogVersion || savedNative?.catalogVersion,
-              policy: p.policy || savedNative?.policy,
+              role: role || p.role,
+              catalogVersion: p.catalogVersion || rawSaved.catalogVersion,
+              policy: p.policy || rawSaved.policy,
             }));
+            if (hydratedSession?.role === "tech") setTab("tech-jobs");
           }
-          if (hydratedSession?.role === "tech") setTab("tech-jobs");
         } finally {
           storageHydratedRef.current = true;
         }
@@ -2187,7 +2266,7 @@ export function AppProvider({ children }) {
       // Bản native lưu phiên trong SecureStore (sessionStorage/localStorage không có trên điện thoại):
       // mở lại app mà chưa có phiên trên máy -> dùng refresh token đã lưu để vào lại, không phải đăng nhập lại.
       // Sau hydrate, `s.auth` của lần render đầu đã cũ: luôn đọc lại phiên từ kho lưu trữ.
-      const session = getSession() || s.auth || null;
+      const session = getSession() || stateRef.current?.auth || null;
       if (!session) {
         const resumed = await hrmssApi.resumeSession().catch(() => null);
         if (resumed?.ok && resumed.data?.account) {
@@ -2299,7 +2378,7 @@ export function AppProvider({ children }) {
       subscribeSocketEvent("request:updated", syncSoon),
       // Vị trí thợ đang đến (latitude = null: thợ đã tắt chia sẻ).
       subscribeSocketEvent("technician:location", (data) => {
-        if (data?.request_id == null || data.latitude == null) return;
+        if (data?.request_id == null) return;
         setS((prev) => {
           const idx = prev.orders.findIndex(
             (o) => String(o.dbRequestId) === String(data.request_id),
@@ -2307,6 +2386,10 @@ export function AppProvider({ children }) {
           if (idx < 0) return prev;
           const cur = prev.orders[idx];
           const next = [...prev.orders];
+          if (data.latitude == null || data.longitude == null) {
+            next[idx] = { ...cur, tracking: null };
+            return { ...prev, orders: next };
+          }
           next[idx] = {
             ...cur,
             tracking: {
@@ -2350,9 +2433,24 @@ export function AppProvider({ children }) {
   // Mã đơn của thao tác thợ đang chạy: server báo "việc không còn được giao / hết hạn" thì gỡ đúng đơn này.
   const actionCodeRef = useRef(null);
   useEffect(() => {
-    apiEvents.onJobGone(() => {
+    apiEvents.onJobGone((_code, endpoint) => {
       if (s.auth?.role !== "tech") return;
-      const targetCode = actionCodeRef.current;
+      const ep = String(endpoint || "");
+      const jobMatch = /\/technician\/jobs\/(\d+)/i.exec(ep);
+      const openMatch = /\/technician\/open-requests\/(\d+)/i.exec(ep);
+      const orders = stateRef.current?.orders || [];
+      let targetCode = null;
+      if (jobMatch) {
+        targetCode =
+          orders.find((o) => String(o.dbAssignmentId) === jobMatch[1])?.code ||
+          null;
+      } else if (openMatch) {
+        targetCode =
+          orders.find((o) => String(o.dbRequestId) === openMatch[1])?.code ||
+          null;
+      } else if (inFlight.current.size <= 1) {
+        targetCode = actionCodeRef.current;
+      }
       // Chỉ gỡ đơn khi chính thao tác người dùng trên đơn đó nhận được thông báo việc đã hết hạn / đã chuyển
       if (!targetCode) return;
       setS((p) => ({
@@ -2368,6 +2466,8 @@ export function AppProvider({ children }) {
   // Trước đây token bị xoá nhưng app vẫn "đã đăng nhập", mọi thao tác chỉ báo "chưa đồng bộ".
   useEffect(() => {
     authTokens.onExpired(() => {
+      if (!authIdRef.current && !stateRef.current?.auth) return;
+      authIdRef.current = null;
       clearSessionCaches();
       disconnectSocket();
       clearSession();
@@ -2475,11 +2575,10 @@ export function AppProvider({ children }) {
     ]);
     const jobData = detailRes?.data?.job || detailRes?.data || {};
     const quotes = Array.isArray(jobData.quotations) ? jobData.quotations : [];
-    const approvedQuotes = quotes.filter((q) => q.quotation_status === "APPROVED");
-    const orderedQuotes = [
-      ...sortQuotationsAsc(approvedQuotes),
-      ...sortQuotationsAsc(quotes.filter((q) => q.quotation_status !== "APPROVED")),
-    ];
+    const approvedQuotes = quotes.filter(
+      (q) => q.quotation_status === "APPROVED" || q.customer_decision === "APPROVED",
+    );
+    const orderedQuotes = sortQuotationsAsc(approvedQuotes);
     const unlinkedItems = orderedQuotes
       .flatMap((q) => (Array.isArray(q.items) ? q.items : []))
       .filter((it) => isExternalQuoteItem(it) && !it.receipt_attachment_id);
@@ -2548,6 +2647,7 @@ export function AppProvider({ children }) {
 
   const a = {
     syncFromBackend,
+    syncCatalog: syncPublicCatalog,
     ensureOrderHydrated: async (code) => {
       if (!code || s.auth?.role !== "customer" || !authTokens.get()) return false;
       const o = s.orders.find((x) => x.code === code);
@@ -2563,6 +2663,12 @@ export function AppProvider({ children }) {
         request_code: o.code,
         request_status: o.backendStatus || "COMPLETED",
         problem_description: o.note || "",
+        goods_amount: o.goods ?? null,
+        product_discount_amount: o.productDiscount ?? 0,
+        combo_discount_amount: o.comboDiscount ?? 0,
+        voucher_discount_amount: o.voucherDiscount ?? 0,
+        estimated_total: o.total ?? o.finalTotal ?? null,
+        ...(o.bill ? { bill: o.bill } : {}),
         created_at: new Date(o.createdAt || Date.now()).toISOString(),
         updated_at: new Date(o.doneAt || o.createdAt || Date.now()).toISOString(),
       };
@@ -2595,28 +2701,38 @@ export function AppProvider({ children }) {
       const ev = dedupRows.map(mapBackendPhotoToEvidence);
       mergedReq._evidence = ev;
       if (photoRes?.ok) mergedReq._evidenceFetched = true;
-      const remapped = mapBackendCustomerRequestToOrder(mergedReq, o.customerPhone || s.auth?.phone || "");
+      const remapped = detRes?.ok || billRes?.ok
+        ? mapBackendCustomerRequestToOrder(mergedReq, o.customerPhone || s.auth?.phone || "")
+        : null;
       const mergedAtts = extractInitialAttachments(ev, remapped?.attachments || o.attachments);
-      updateOrder(code, (cur) => ({
-        order: {
-          ...cur,
-          ...(remapped?.bill ? { bill: remapped.bill } : {}),
-          ...(remapped?.total != null ? { total: remapped.total, finalTotal: remapped.finalTotal } : {}),
-          ...(remapped?.inspectionFee != null ? { inspectionFee: remapped.inspectionFee } : {}),
-          ...(remapped?.materials ? { materials: remapped.materials } : {}),
-          ...(remapped?.pendingExternalEstimates ? { pendingExternalEstimates: remapped.pendingExternalEstimates } : {}),
-          ...(remapped?.finalizedExternalParts ? { finalizedExternalParts: remapped.finalizedExternalParts } : {}),
-          ...(remapped?.externalPriceState ? { externalPriceState: remapped.externalPriceState } : {}),
-          ...(remapped?.history?.length ? { history: remapped.history } : {}),
-          ...(remapped?.tech ? { tech: remapped.tech } : {}),
-          ...(remapped?.quote ? { quote: remapped.quote } : {}),
-          ...(remapped?.diagnosisReport ? { diagnosisReport: remapped.diagnosisReport } : {}),
-          ...(remapped?.report ? { report: { ...(cur.report || {}), ...remapped.report } } : {}),
-          ...(photoRes?.ok ? { evidence: ev, _evidenceFetched: true } : (ev.length ? { evidence: ev } : {})),
-          ...(mergedAtts.length ? { attachments: mergedAtts } : {}),
-          _detailHydrated: true,
-        },
-      }));
+      updateOrder(code, (cur) => {
+        const keepBill = remapped?.bill || cur.bill || null;
+        const resolvedInspFee = cur.status === "cancelled"
+          ? ((billRes?.ok && remapped?.inspectionFee != null)
+              ? remapped.inspectionFee
+              : (Number(cur.inspectionFee) || Number(remapped?.inspectionFee) || 0))
+          : (remapped?.inspectionFee ?? cur.inspectionFee);
+        return {
+          order: {
+            ...cur,
+            ...(keepBill ? { bill: keepBill } : {}),
+            ...(detRes?.ok && remapped?.total != null ? { total: remapped.total, finalTotal: remapped.finalTotal } : {}),
+            ...(resolvedInspFee != null ? { inspectionFee: resolvedInspFee } : {}),
+            ...(detRes?.ok && remapped?.materials ? { materials: remapped.materials } : {}),
+            ...(detRes?.ok && remapped?.pendingExternalEstimates ? { pendingExternalEstimates: remapped.pendingExternalEstimates } : {}),
+            ...(detRes?.ok && remapped?.finalizedExternalParts ? { finalizedExternalParts: remapped.finalizedExternalParts } : {}),
+            ...(detRes?.ok && remapped?.externalPriceState ? { externalPriceState: remapped.externalPriceState } : {}),
+            ...(detRes?.ok && remapped?.history?.length ? { history: remapped.history } : {}),
+            ...(remapped?.tech?.code ? { tech: remapped.tech } : {}),
+            ...(detRes?.ok && remapped?.quote ? { quote: remapped.quote } : {}),
+            ...(detRes?.ok && remapped?.diagnosisReport ? { diagnosisReport: remapped.diagnosisReport } : {}),
+            ...(detRes?.ok && remapped?.report ? { report: { ...(cur.report || {}), ...remapped.report } } : {}),
+            ...(photoRes?.ok ? { evidence: ev, _evidenceFetched: true } : (ev.length ? { evidence: ev } : {})),
+            ...(mergedAtts.length ? { attachments: mergedAtts } : {}),
+            ...(detRes?.ok ? { _detailHydrated: true } : {}),
+          },
+        };
+      });
       return true;
     },
     reconcilePartReceipts: async (code) => {
@@ -2695,14 +2811,19 @@ export function AppProvider({ children }) {
     loadServiceDetail,
     // Giỏ hàng
     addToCart: (id, qty = 1, silent = false) => {
+      const existing = s.cart.find((it) => it.id === id);
+      if (existing && existing.qty >= 20) {
+        if (!silent) ui.toast("Mỗi dịch vụ chọn tối đa 20 lần/đơn", "⚠️");
+        return;
+      }
       up((p) => {
         const i = p.cart.findIndex((it) => it.id === id);
         const cart =
           i >= 0
             ? p.cart.map((it, j) =>
-                j === i ? { ...it, qty: it.qty + qty } : it,
+                j === i ? { ...it, qty: Math.min(20, it.qty + qty) } : it,
               )
-            : [...p.cart, { id, qty }];
+            : [...p.cart, { id, qty: Math.min(20, Math.max(1, qty)) }];
         return { cart };
       });
       if (!silent) ui.toast("Đã thêm vào giỏ hàng", "🛒");
@@ -2710,7 +2831,7 @@ export function AppProvider({ children }) {
     setCartQty: (id, qty) =>
       up((p) => ({
         cart: p.cart.map((it) =>
-          it.id === id ? { ...it, qty: Math.max(1, qty) } : it,
+          it.id === id ? { ...it, qty: Math.min(20, Math.max(1, qty)) } : it,
         ),
       })),
     removeFromCart: (id) =>
@@ -2744,6 +2865,7 @@ export function AppProvider({ children }) {
       const existing = addr.id
         ? s.addresses.find((x) => x.id === addr.id)
         : null;
+      const chosenGender = addr.gender || existing?.gender || "Nam";
       const body = {
         address_text: String(addr.street || addr.full || "").trim(),
         ...(addr.wardCode ? { ward_code: Number(addr.wardCode) } : {}),
@@ -2762,20 +2884,28 @@ export function AppProvider({ children }) {
         }[res.code];
         return {
           ok: false,
+          code: res.code,
           error: msg || (res.status > 0 ? res.message : networkError(res)),
         };
       }
-      const saved = mapBackendAddressToApp(res.data?.address);
-      if (!saved)
+      const mappedSaved = mapBackendAddressToApp(res.data?.address);
+      if (!mappedSaved)
         return { ok: false, error: "Không đọc được địa chỉ vừa lưu." };
+      const saved = { ...mappedSaved, gender: chosenGender };
       up((p) => {
         let list = existing
           ? p.addresses.map((x) => (x.id === existing.id ? saved : x))
           : [...p.addresses.filter((x) => x.id !== saved.id), saved];
         if (saved.isDefault)
           list = list.map((x) => ({ ...x, isDefault: x.id === saved.id }));
+        const nextGenderMap = {
+          ...(p.addressGenderMap || {}),
+          [saved.id]: chosenGender,
+          ...(saved.dbAddressId != null ? { [String(saved.dbAddressId)]: chosenGender } : {}),
+        };
         return {
           addresses: list,
+          addressGenderMap: nextGenderMap,
           selectedAddressId:
             saved.isDefault || !p.selectedAddressId
               ? saved.id
@@ -3092,7 +3222,10 @@ export function AppProvider({ children }) {
           )
         : await hrmssApi.declineTechnicianOpenRequest(o.dbRequestId, why);
       if (!res.ok) return serverDone(res, { title: "Không từ chối được" });
-      up((p) => ({ orders: p.orders.filter((x) => x.code !== code) }));
+      up((p) => ({
+        ...markDeclined(p, p.techProfile?.code || TECH_ME.code, code),
+        orders: p.orders.filter((x) => x.code !== code),
+      }));
       return serverDone(res, { toast: "Đã chuyển việc cho điều phối" });
     },
     // Trả việc sau khi đã nhận — phạt uy tín theo mức (cửa sổ 15 phút / sát giờ / đang đến / đang sửa)
@@ -3102,9 +3235,14 @@ export function AppProvider({ children }) {
       const o = s.orders.find((x) => x.code === code);
       if (
         !o ||
-        !["confirmed", "onway", "diagnosing", "quoted", "repairing"].includes(
-          o.status,
-        )
+        ![
+          "confirmed",
+          "onway",
+          "diagnosing",
+          "quoted",
+          "repairing",
+          "out_of_warranty",
+        ].includes(o.status)
       ) {
         ui.alert(
           "Không trả việc được",
@@ -3535,6 +3673,8 @@ export function AppProvider({ children }) {
               ...(x.bill || {}),
               cashClaimPending: true,
               paymentMethod: "cash",
+              amountDue: x.bill?.amountDue ?? orderTotal(x),
+              remainingAmount: x.bill?.remainingAmount ?? orderTotal(x),
             },
           },
         }));
@@ -3591,7 +3731,8 @@ export function AppProvider({ children }) {
         const isOnSite = Boolean(
           o.arrivedAt ||
           o.checkIn ||
-          o.history?.some((h) => h.status === "diagnosing"),
+          o.status === "out_of_warranty" ||
+          o.status === "repairing",
         );
         return {
           order: withStatus(o, isOnSite ? "diagnosing" : "confirmed", now, {
@@ -3665,10 +3806,25 @@ export function AppProvider({ children }) {
         if (noteSyncs.length) await Promise.all(noteSyncs);
       }
 
-      const isPre = o.status === "confirmed";
+      const isPre =
+        o.status === "confirmed" ||
+        (o.status === "diagnosing" &&
+          !o.arrivedAt &&
+          !o.checkIn &&
+          Boolean(o.quote?.revisionRequested) &&
+          !o.quote?.isSupplemental);
       const isSupplemental = Boolean(
         o.quote && (o.quote.approved || o.status === "repairing"),
       );
+      const hasExtra = lines.some((l) => !l.isOriginal);
+      // Tại nhà khách: nếu không có phát sinh thêm, chuyển sang xác nhận chẩn đoán và bắt đầu làm (không gửi báo giá trùng)
+      if (!isPre && !hasExtra) {
+        return a.startRepairWithoutQuote(code, {
+          diagnosis,
+          symptoms,
+          recommendation,
+        });
+      }
       const hasDiagPayload = Boolean(
         String(symptoms || "").trim() ||
           String(diagnosis || "").trim() ||
@@ -3689,15 +3845,6 @@ export function AppProvider({ children }) {
                 'Bạn chưa check-in tại nhà khách. Hãy bấm "Đã đến nơi (check-in)" trước khi chẩn đoán.',
             },
           });
-      }
-      const hasExtra = lines.some((l) => !l.isOriginal);
-      // Tại nhà khách: nếu không có phát sinh thêm, chuyển sang xác nhận chẩn đoán và bắt đầu làm (không gửi báo giá trùng)
-      if (!isPre && !hasExtra) {
-        return a.startRepairWithoutQuote(code, {
-          diagnosis,
-          symptoms,
-          recommendation,
-        });
       }
       const rawSendLines =
         !isPre || isSupplemental ? lines.filter((l) => !l.isOriginal) : lines;
@@ -3855,10 +4002,12 @@ export function AppProvider({ children }) {
           0,
           Math.round(Number(p.alreadyBilledUnitPrice ?? p.priorDeposit) || 0),
         );
-        if (priorDeposit > 0 && actualPrice < priorDeposit) {
+        const qty = Math.max(1, Number(p.qty) || 1);
+        const origQty = Math.max(1, Number(p.origQty ?? p.qty) || 1);
+        if (priorDeposit > 0 && actualPrice * qty < priorDeposit * origQty) {
           ui.alert(
             "Giá thấp hơn mức tạm tính",
-            `Mức giá cuối của "${name}" không thể thấp hơn mức tối thiểu đã tạm tính (${formatVND(priorDeposit)}).`,
+            `Mức giá cuối của "${name}" không thể thấp hơn mức tối thiểu đã tạm tính (${qty !== origQty ? formatVND(priorDeposit * origQty) : formatVND(priorDeposit)}).`,
             "⚠️",
           );
           return false;
@@ -3912,6 +4061,7 @@ export function AppProvider({ children }) {
           minPrice: part.minPrice,
           maxPrice: part.maxPrice,
           priorDeposit,
+          priorDepositQty: origQty !== qty ? origQty : null,
         });
         if (attachmentId) {
           return {
@@ -3939,6 +4089,9 @@ export function AppProvider({ children }) {
             INVALID_VISIT_STATE: "Việc chưa ở trạng thái cho phép gửi Bill chi phí cuối.",
             JOB_NOT_ACTIVE:
               "Việc không còn được giao cho bạn.",
+            VALIDATION_ERROR:
+              qRes.message || "Giá chốt chưa hợp lệ (kiểm tra lại số lượng/đơn giá hoặc chênh lệch phải lớn hơn 0đ).",
+            INVALID_PRICE: "Đơn giá vật tư chưa hợp lệ.",
           },
         });
       }
@@ -4044,7 +4197,7 @@ export function AppProvider({ children }) {
       { diagnosis, symptoms, recommendation },
     ) => {
       const o = s.orders.find((x) => x.code === code);
-      if (!o || o.status !== "diagnosing") {
+      if (!o || !["diagnosing", "out_of_warranty"].includes(o.status)) {
         ui.alert(
           "Không bắt đầu được",
           "Việc chưa ở bước kiểm tra thiết bị.",
@@ -4308,8 +4461,10 @@ export function AppProvider({ children }) {
                 ...(x.bill || {}),
                 cashClaimPending: false,
                 paymentStatus: isFull ? "PAID" : "PARTIALLY_PAID",
+                amountDue: x.bill?.amountDue ?? orderTotal(x),
                 paidAmount: nextPaidAmt,
                 remainingAmount: nextRem,
+                cashToCollect: nextRem,
                 paymentMethod: "cash",
               },
             },
@@ -4721,13 +4876,30 @@ export function AppProvider({ children }) {
       }));
     },
     clearAllTechNotifs: () => {
-      // Backend không xóa thông báo: đánh dấu đã đọc và ẩn các thông báo tới thời điểm này.
-      hrmssApi.markAllNotificationsRead().catch(() => {});
-      up(() => ({ techNotifs: [], techNotifClearedAt: Date.now() }));
-      ui.toast("Đã dọn sạch thông báo");
+      // Backend không xóa thông báo: chỉ xoá các thông báo đã đọc và giữ lại toàn bộ chưa đọc (local & sync).
+      const cur = s.techNotifs || [];
+      const preview = clearReadNotifications(cur);
+      if (preview.removedCount === 0) {
+        ui.toast("Không có thông báo đã đọc để dọn", "ℹ️");
+        return;
+      }
+      up((p) => {
+        const res = clearReadNotifications(p.techNotifs || [], preview.clearedAt);
+        return {
+          techNotifs: res.remaining,
+          techNotifClearedAt: Math.max(p.techNotifClearedAt || 0, res.clearedAt),
+          techNotifKeptIds: res.keptIds,
+        };
+      });
+      ui.toast(
+        preview.remaining.length > 0
+          ? `Đã xoá ${preview.removedCount} thông báo đã đọc (giữ lại ${preview.remaining.length} chưa đọc)`
+          : `Đã dọn sạch ${preview.removedCount} thông báo đã đọc`,
+      );
     },
     // Đăng nhập / Đăng ký — phân quyền & tách biệt dữ liệu theo tài khoản
     applyAuth: (account, link) => {
+      authIdRef.current = account?.id || null;
       clearSessionCaches();
       up((p) => ({
         ...switchCustomerSlice(p, account),
@@ -4772,6 +4944,7 @@ export function AppProvider({ children }) {
       }
 
       const res = { ok: true, account: backendAccount };
+      authIdRef.current = res.account?.id || null;
       clearSessionCaches();
       up((p) => ({
         ...switchCustomerSlice(p, res.account),
@@ -4894,6 +5067,7 @@ export function AppProvider({ children }) {
         };
       }
       const res = { ok: true, account: backendAccount };
+      authIdRef.current = res.account?.id || null;
       clearSessionCaches();
       up((p) => ({
         ...switchCustomerSlice(p, res.account),
@@ -5106,12 +5280,6 @@ export function AppProvider({ children }) {
             body: reason || "Bạn đã huỷ đơn.",
             link: { name: "order", params: { code } },
           }),
-          techNotifs: pushTech(p, {
-            icon: "✖️",
-            title: `Khách đã huỷ đơn ${code}`,
-            body: reason || "",
-            link: { name: "tech-job", params: { code } },
-          }),
         };
       });
       ui.toast("Đã huỷ đơn hàng");
@@ -5199,8 +5367,9 @@ export function AppProvider({ children }) {
           (u) => /^https?:\/\//i.test(String(u)),
         );
         if (localImgs.length) {
+          const uploadImgs = localImgs.slice(0, 3);
           const uploaded = await Promise.all(
-            localImgs.slice(0, 3).map((uri) =>
+            uploadImgs.map((uri) =>
               hrmssApi.uploadRequestPhoto(o.dbRequestId, uri, "[Bảo hành]").catch(() => null),
             ),
           );
@@ -5217,23 +5386,27 @@ export function AppProvider({ children }) {
               uploadedOk += 1;
             }
           });
-          if (uploadedOk < localImgs.length) {
+          if (uploadedOk < uploadImgs.length) {
             ui.toast("Một số ảnh bảo hành chưa tải lên được", "⚠️");
           }
         }
         payload = { ...payload, attachment_urls: readyUrls, images: readyUrls };
       }
-      // Thử payload đặt lịch mới trước. Chỉ gửi lại dạng { note } khi backend cũ từ chối body (lỗi 400/422):
-      // lỗi 4xx bảo đảm chưa có đơn nào được tạo. Tuyệt đối không gửi lại khi lỗi 5xx / mạng (có thể đã tạo đơn → trùng).
+      // Thử payload đặt lịch mới trước. Chỉ gửi lại dạng { note } khi backend cũ không nhận trường mới:
+      // lỗi 404/405 hoặc 400/422 báo unknown/unsupported field. Tuyệt đối không gửi lại khi lỗi 5xx / mạng (có thể đã tạo đơn → trùng).
       let res = await hrmssApi.requestWarranty(o.dbRequestId, payload || null, "full");
       const firstError = res;
       const canFallbackLegacy =
         !res.ok &&
         typeof payload === "object" &&
         payload &&
-        [400, 422].includes(Number(res.status)) &&
-        ["VALIDATION_ERROR", "BAD_REQUEST"].includes(String(res.code || "")) &&
-        !/phone|sđt|điện thoại/i.test(String(res.message || ""));
+        (Number(res.status) === 404 ||
+          Number(res.status) === 405 ||
+          ([400, 422].includes(Number(res.status)) &&
+            ["VALIDATION_ERROR", "BAD_REQUEST"].includes(String(res.code || "")) &&
+            /unknown|unexpected|unrecognized|not allowed|additional|unsupported/i.test(
+              String(res.message || ""),
+            )));
       if (canFallbackLegacy) {
         res = await hrmssApi.requestWarranty(o.dbRequestId, payload, "legacy");
         if (!res.ok) res = firstError;
@@ -5341,9 +5514,28 @@ export function AppProvider({ children }) {
       }));
     },
     clearAllNotifs: () => {
-      hrmssApi.markAllNotificationsRead().catch(() => {});
-      up(() => ({ notifications: [], notifClearedAt: Date.now() }));
-      ui.toast("Đã dọn sạch thông báo");
+      const cur = s.notifications || [];
+      const preview = clearReadNotifications(cur);
+      if (preview.removedCount === 0) {
+        ui.toast("Không có thông báo đã đọc để dọn", "ℹ️");
+        return;
+      }
+      up((p) => {
+        const res = clearReadNotifications(
+          p.notifications || [],
+          preview.clearedAt,
+        );
+        return {
+          notifications: res.remaining,
+          notifClearedAt: Math.max(p.notifClearedAt || 0, res.clearedAt),
+          notifKeptIds: res.keptIds,
+        };
+      });
+      ui.toast(
+        preview.remaining.length > 0
+          ? `Đã xoá ${preview.removedCount} thông báo đã đọc (giữ lại ${preview.remaining.length} chưa đọc)`
+          : `Đã dọn sạch ${preview.removedCount} thông báo đã đọc`,
+      );
     },
 
     // Tìm kiếm
@@ -5357,6 +5549,7 @@ export function AppProvider({ children }) {
     clearSearches: () => up(() => ({ searches: [] })),
 
     logout: () => {
+      authIdRef.current = null;
       clearSessionCaches();
       disconnectSocket();
       hrmssApi.logout();
@@ -5390,6 +5583,7 @@ export function AppProvider({ children }) {
         );
         return false;
       }
+      authIdRef.current = null;
       const currentId = s.auth?.id;
       if (currentId) deleteAccountById(currentId);
       clearSessionCaches();
@@ -5409,6 +5603,7 @@ export function AppProvider({ children }) {
       return true;
     },
     wipeLocalData: () => {
+      authIdRef.current = null;
       clearSessionCaches();
       disconnectSocket();
       hrmssApi.logout();

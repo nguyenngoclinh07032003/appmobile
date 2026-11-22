@@ -1,6 +1,9 @@
 // Tiện ích nghiệp vụ Chấm công (vào ca có GPS, bảng công tháng, vi phạm) theo giờ Việt Nam (GMT+7).
 import { toVnParts, vnDateKey } from './vnTime.js';
 import { viFieldError, viServerMessage } from './viText.js';
+import { TECH_WORK_SHIFTS } from '../constants/data.js';
+
+export { TECH_WORK_SHIFTS };
 
 export const ATTENDANCE_NOTIF_TYPES = new Set([
   'SHIFT_ASSIGNED',
@@ -212,4 +215,79 @@ export const findTodayShiftRecord = (attendanceData, workDate, technicianShiftId
   const day = attendanceData.days.find((d) => String(d?.date || '') === String(workDate || ''));
   if (!day || !Array.isArray(day.shifts)) return null;
   return day.shifts.find((sh) => String(sh?.technicianShiftId) === String(technicianShiftId)) || null;
+};
+
+/** Đổi chuỗi giờ ('08:30', '08h30 - 11h30', ISO timestamp, Date, ms) thành số phút từ 00:00 (GMT+7). */
+export const parseShiftTimeToMinutes = (value) => {
+  if (value == null || value === '') return null;
+  if (value instanceof Date || typeof value === 'number') {
+    const p = toVnParts(value);
+    return p ? p.hour * 60 + p.minute : null;
+  }
+  const str = String(value).trim();
+  if (!str) return null;
+  if (/T\d{2}:\d{2}/.test(str)) {
+    const p = toVnParts(str);
+    return p ? p.hour * 60 + p.minute : null;
+  }
+  const m = /(\d{1,2})\s*[h:]\s*(\d{2})/i.exec(str);
+  if (m) {
+    const hh = parseInt(m[1], 10);
+    const mm = parseInt(m[2], 10);
+    if (hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
+      return hh * 60 + mm;
+    }
+  }
+  const p = toVnParts(str);
+  return p ? p.hour * 60 + p.minute : null;
+};
+
+/** Xếp công việc (slot hoặc order) vào Ca 1 ('ca1': 08h30-11h30), Ca 2 ('ca2': 13h30-17h30) hoặc null (ngoài khung ca). */
+export const classifyJobToWorkShift = (slotOrOrder) => {
+  if (!slotOrOrder) return null;
+  const isObj = typeof slotOrOrder === 'object' && !(slotOrOrder instanceof Date);
+  const slot = isObj ? slotOrOrder.slot : slotOrOrder;
+  const slotStr = String(slot || '').trim();
+  if (/\bca\s*1\b|\bca1\b/i.test(slotStr)) return 'ca1';
+  if (/\bca\s*2\b|\bca2\b/i.test(slotStr)) return 'ca2';
+  let mins = slotStr ? parseShiftTimeToMinutes(slotStr) : null;
+  if (mins == null && isObj && slotOrOrder.preferredTimeAt != null) {
+    mins = parseShiftTimeToMinutes(slotOrOrder.preferredTimeAt);
+  }
+  if (mins == null) return null;
+  if (mins >= 6 * 60 && mins < 12 * 60) return 'ca1';
+  if (mins >= 12 * 60 && mins <= 17 * 60 + 30) return 'ca2';
+  return null;
+};
+
+/** Nhận diện một bản ghi ca làm việc / chấm công có khớp Ca 1 (08:30-11:30) hay Ca 2 (13:30-17:30) không. */
+export const identifyTechWorkShift = (shift) => {
+  if (!shift || typeof shift !== 'object') return null;
+  const startRaw = shift.startTime ?? shift.startsAt ?? shift.starts_at;
+  const endRaw = shift.endTime ?? shift.endsAt ?? shift.ends_at;
+  const startMin = parseShiftTimeToMinutes(startRaw);
+  const endMin = parseShiftTimeToMinutes(endRaw);
+  if (startMin != null && endMin != null) {
+    if (startMin >= 7 * 60 + 30 && startMin <= 10 * 60 + 30 && endMin <= 12 * 60 + 30) {
+      return TECH_WORK_SHIFTS[0];
+    }
+    if (startMin >= 12 * 60 + 30 && startMin <= 15 * 60 + 30 && endMin <= 18 * 60 + 30) {
+      return TECH_WORK_SHIFTS[1];
+    }
+    return null;
+  }
+  const labelText = `${shift.code || ''} ${shift.shiftCode || ''} ${shift.name || ''} ${shift.shiftName || ''}`.trim();
+  if (/\bca\s*1\b|\bca1\b/i.test(labelText)) return TECH_WORK_SHIFTS[0];
+  if (/\bca\s*2\b|\bca2\b/i.test(labelText)) return TECH_WORK_SHIFTS[1];
+  return null;
+};
+
+/** Sắp xếp danh sách ca làm việc theo giờ bắt đầu (Ca 1 trước Ca 2). */
+export const sortTechShifts = (items = []) => {
+  if (!Array.isArray(items)) return [];
+  return [...items].sort((a, b) => {
+    const ma = parseShiftTimeToMinutes(a?.startTime ?? a?.startsAt ?? a?.starts_at) ?? 9999;
+    const mb = parseShiftTimeToMinutes(b?.startTime ?? b?.startsAt ?? b?.starts_at) ?? 9999;
+    return ma - mb;
+  });
 };

@@ -114,7 +114,7 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
           </View>
         ))}
         {(o.quote?.lines || [])
-          .filter((l) => !l.isOriginal && !l.isEstimatedRange)
+          .filter((l) => (o.quote?.approved || l.isPriorApproved) && !l.isOriginal && !l.isEstimatedRange)
           .map((l, i) => (
             <View key={`q-${l.name}-${i}`} style={st.itemRow}>
               <View style={[st.itemDot, { backgroundColor: C.orange }]} />

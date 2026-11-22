@@ -51,7 +51,7 @@ export function ServicesScreen() {
         )}
       />
       <View style={{ backgroundColor: '#fff', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
-        <Pills items={SERVICE_TYPES} value={svc.tab} onChange={(id) => setSvc((p) => ({ ...p, tab: id }))} />
+        <Pills items={SERVICE_TYPES} value={svc.tab} onChange={(id) => setSvc((p) => ({ ...p, tab: id, kindCat: 'all' }))} />
       </View>
 
       {svc.tab === 'bao-hanh' ? <WarrantyView /> : (
@@ -106,11 +106,11 @@ export function ServicesScreen() {
 function WarrantyView() {
   const { s, a, nav, ui: u, warrantyQuery, setWarrantyQuery, warrantyNonce } = useApp();
   const [result, setResult] = useState(null);
-  // Đơn còn hạn bảo hành, kể cả đơn đã gửi yêu cầu (để hiện trạng thái "đang xử lý")
-  const eligible = s.orders.filter((o) => { const w = warrantyInfo(o, s.orders, s.lifetimePoints); return w.ok || w.openCode; });
+  // Đơn còn hạn bảo hành (kể cả đã gửi yêu cầu hoặc đã chốt ca ngày cuối 18h)
+  const eligible = s.orders.filter((o) => { const w = warrantyInfo(o, s.orders, s.lifetimePoints); return w.ok || w.openCode || w.isCutoff; });
 
   const lookup = (q = warrantyQuery) => {
-    const raw = q.replace(/\s/g, '');
+    const raw = String(q || '').replace(/\s/g, '');
     const t = raw.toUpperCase();
     if (!t) { setResult({ error: 'Nhập số điện thoại hoặc mã đơn hàng.' }); return; }
     const normQueryPhone = normalizeVnPhone(raw);
@@ -125,7 +125,7 @@ function WarrantyView() {
       (isMine || o.code === t || (isPhoneQuery && o.address?.phone && normalizeVnPhone(o.address.phone) === normQueryPhone))
     ));
     if (!found.length) { setResult({ error: 'Không tìm thấy đơn khớp. Kiểm tra lại số điện thoại hoặc mã đơn ở tab Hoạt động.' }); return; }
-    setResult({ orders: found });
+    setResult({ codes: found.map((o) => o.code) });
   };
   React.useEffect(() => {
     if (warrantyQuery) lookup(warrantyQuery); else setResult(null);
@@ -134,15 +134,20 @@ function WarrantyView() {
   const [bookingOrder, setBookingOrder] = useState(null);
   const request = (o) => setBookingOrder(o);
 
+  const liveResultOrders = result?.codes
+    ? result.codes.map((c) => s.orders.find((o) => o.code === c)).filter(Boolean)
+    : null;
+
   const OrderLine = ({ o }) => {
     const info = warrantyInfo(o, s.orders, s.lifetimePoints);
     const svc0 = getService((o.items || [])[0]?.id);
+    const svcTitle = svc0?.name || (o.items || [])[0]?.name || 'Dịch vụ kỹ thuật';
     return (
       <Card style={{ marginTop: 10 }}>
         <Tap style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }} onPress={() => nav.push('order', { code: o.code })}>
           <Media item={svc0} height={48} width={48} radius={12} />
           <View style={{ flex: 1 }}>
-            <Text style={sx.oName} numberOfLines={1}>{svc0?.name}</Text>
+            <Text style={sx.oName} numberOfLines={1}>{svcTitle}</Text>
             <Text style={ui.meta}>{o.code} · {fmtDate(o.createdAt)}</Text>
           </View>
           <StatusChip status={o.status} />
@@ -153,7 +158,7 @@ function WarrantyView() {
             {info.text}
           </Text>
         </View>
-        {info.ok ? <Btn title="Yêu cầu bảo hành" icon="shield-check" small variant="soft" style={{ marginTop: 10 }} onPress={() => request(o)} /> : null}
+        {(info.ok || info.isCutoff) ? <Btn title="Yêu cầu bảo hành" icon="shield-check" small variant="soft" style={{ marginTop: 10 }} onPress={() => request(o)} /> : null}
         {info.openCode ? <Btn title={`Xem đơn bảo hành ${info.openCode}`} icon="eye" small variant="outline" style={{ marginTop: 10 }} onPress={() => nav.push('order', { code: info.openCode })} /> : null}
       </Card>
     );
@@ -178,7 +183,10 @@ function WarrantyView() {
         <Field
           label="Số điện thoại hoặc mã đơn"
           value={warrantyQuery}
-          onChangeText={setWarrantyQuery}
+          onChangeText={(txt) => {
+            setWarrantyQuery(txt);
+            if (!String(txt || '').trim()) setResult(null);
+          }}
           placeholder="VD: 0901234567 hoặc REQ-123456"
           autoCapitalize="characters"
           onSubmitEditing={() => lookup()}
@@ -187,10 +195,10 @@ function WarrantyView() {
         {result?.error ? <Text style={ui.fieldErr}>{result.error}</Text> : null}
         <Btn title="Tra cứu" icon="search" style={{ marginTop: 14 }} onPress={() => lookup()} />
       </Card>
-      {result?.orders ? (
+      {liveResultOrders ? (
         <View>
-          <Text style={sx.groupTitle}>Kết quả ({result.orders.length})</Text>
-          {result.orders.map((o) => <OrderLine key={o.code} o={o} />)}
+          <Text style={sx.groupTitle}>Kết quả ({liveResultOrders.length})</Text>
+          {liveResultOrders.map((o) => <OrderLine key={o.code} o={o} />)}
         </View>
       ) : null}
       {!result?.orders && eligible.length ? (
@@ -257,7 +265,17 @@ export function ActivityScreen() {
     return `${formatShortDmFromYmd(from)} – ${formatShortDmFromYmd(to)}`;
   })();
 
-  const reorder = (o) => nav.push('checkout', { items: (o.items || []).map(({ id, qty }) => ({ id, qty })) });
+  const reorder = (o) => {
+    const valid = (o.items || []).filter((it) => {
+      const sv = getService(it.id);
+      return sv && !sv.hidden;
+    }).map(({ id, qty }) => ({ id, qty }));
+    if (!valid.length) {
+      u.alert('Dịch vụ ngừng cung cấp', 'Các dịch vụ trong đơn này hiện không còn phục vụ.', 'ℹ️');
+      return;
+    }
+    nav.push('checkout', { items: valid });
+  };
 
   return (
     <View style={{ flex: 1 }}>
@@ -361,11 +379,12 @@ export function ActivityScreen() {
               title={actFilter === 'active' ? 'Không có đơn đang xử lý' : actFilter === 'done' ? 'Chưa có đơn hoàn thành' : 'Không có đơn bị huỷ'}
               body="Đặt dịch vụ để thợ Minh Đức đến tận nhà. Đơn của bạn sẽ hiện tại đây."
               action="Đặt dịch vụ ngay"
-              onAction={() => nav.services()}
+              onAction={() => nav.services('bao-duong')}
             />
           )
         ) : list.map((o) => {
           const svc0 = getService((o.items || [])[0]?.id);
+          const svcTitle = svc0?.name || (o.items || [])[0]?.name || 'Dịch vụ kỹ thuật';
           const meta = customerStatusMeta(o);
           return (
             <Card key={o.code} style={{ marginBottom: 12, padding: 0, overflow: 'hidden' }} onPress={() => nav.push('order', { code: o.code })}>
@@ -381,7 +400,7 @@ export function ActivityScreen() {
                 <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
                   <Media item={svc0} height={56} width={56} radius={14} />
                   <View style={{ flex: 1 }}>
-                    <Text style={sx.oName} numberOfLines={2}>{svc0?.name}</Text>
+                    <Text style={sx.oName} numberOfLines={2}>{svcTitle}</Text>
                     {(o.items || []).length > 1 ? <Text style={ui.meta}>+{(o.items || []).length - 1} dịch vụ khác</Text> : null}
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3 }}>
                       <AppIcon name="calendar" size={13} color={C.muted} strokeWidth={2.1} />
@@ -471,7 +490,19 @@ export function PersonalScreen() {
 
       <View style={sx.pStats}>
         {[
-          { v: s.orders.length, l: 'Đơn hàng', onPress: () => nav.activity(d.activeOrders.length ? 'active' : s.orders.some((o) => o.status === 'done') ? 'done' : 'active') },
+          {
+            v: s.orders.length,
+            l: 'Đơn hàng',
+            onPress: () => nav.activity(
+              d.activeOrders.length
+                ? 'active'
+                : s.orders.some((o) => o.status === 'done')
+                  ? 'done'
+                  : s.orders.some((o) => o.status === 'cancelled')
+                    ? 'cancelled'
+                    : 'active',
+            ),
+          },
           { v: s.points, l: 'Điểm tích luỹ', onPress: () => nav.push('rewards') },
           { v: s.myVouchers.length, l: 'Voucher', onPress: () => nav.push('rewards') },
         ].map((x, i) => (

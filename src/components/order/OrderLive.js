@@ -61,8 +61,8 @@ export function TrackingCard({ order, compact }) {
     return () => { cancelled = true; clearInterval(id); };
   }, [shouldTick, o.code, role]);
 
-  const hasArrived = Boolean(o.arrivedAt || o.checkIn) || ['diagnosing', 'quoted', 'repairing', 'pending_payment', 'done'].includes(o.status);
-  if (!active && (!tr || !hasArrived)) return null;
+  const hasArrived = o.status !== 'cancelled' && (Boolean(o.arrivedAt || o.checkIn) || ['diagnosing', 'quoted', 'repairing', 'pending_payment', 'done'].includes(o.status));
+  if (o.status === 'cancelled' || (!active && (!tr || !hasArrived))) return null;
   if (!active && tr) {
     return (
       <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.green }}>

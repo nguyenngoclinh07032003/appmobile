@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AppIcon } from '../../components';
 import { ALL_SERVICES, CATEGORIES, SERVICES, catLabel, catIcon, formatVND } from '../../constants/data';
 import { useApp } from '../../context';
@@ -33,7 +33,7 @@ function ServiceTile({ service, onPress }) {
   );
 }
 
-function HomeTab({ onTab, onLogin, onRegister }) {
+function HomeTab({ onTab, onLogin, onRegister, onRetryCatalog }) {
   const featured = (SERVICES.length ? SERVICES : ALL_SERVICES).filter((service) => !service.hidden).slice(0, 4);
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -66,7 +66,15 @@ function HomeTab({ onTab, onLogin, onRegister }) {
         <View><Text style={styles.eyebrow}>CHỌN DỊCH VỤ</Text><Text style={styles.sectionTitle}>Chăm sóc thiết bị nhà bạn</Text></View>
         <Pressable onPress={() => onTab('services')} style={styles.seeAll}><Text style={styles.seeAllText}>Tất cả</Text><AppIcon icon="chevron-right" size={15} color={C.primary} /></Pressable>
       </View>
-      <View style={styles.serviceGrid}>{featured.map((service) => <ServiceTile key={service.id} service={service} onPress={onLogin} />)}</View>
+      {featured.length ? (
+        <View style={styles.serviceGrid}>{featured.map((service) => <ServiceTile key={service.id} service={service} onPress={onLogin} />)}</View>
+      ) : (
+        <View style={styles.emptyCatalogCard}>
+          <Text style={styles.emptyCatalogTitle}>Chưa tải được danh mục dịch vụ</Text>
+          <Text style={styles.emptyCatalogBody}>Kiểm tra kết nối mạng và chạm để tải lại bảng dịch vụ công khai.</Text>
+          <ActionButton title="Tải lại danh mục" secondary onPress={onRetryCatalog} />
+        </View>
+      )}
 
       <Pressable onPress={onRegister} style={styles.accountBanner} accessibilityRole="button">
         <View style={styles.bannerIcon}><AppIcon icon="sparkles" size={20} color={C.primary} /></View>
@@ -78,7 +86,7 @@ function HomeTab({ onTab, onLogin, onRegister }) {
   );
 }
 
-function ServicesTab({ onLogin }) {
+function ServicesTab({ onLogin, onRetryCatalog }) {
   const publicServices = (ALL_SERVICES.length ? ALL_SERVICES : SERVICES).filter((service) => !service.hidden);
   const [selectedCat, setSelectedCat] = useState('all');
   const [showAll, setShowAll] = useState(false);
@@ -115,7 +123,15 @@ function ServicesTab({ onLogin }) {
           );
         })}
       </View>
-      <View style={styles.serviceGrid}>{displayed.map((service) => <ServiceTile key={service.id} service={service} onPress={onLogin} />)}</View>
+      {displayed.length ? (
+        <View style={styles.serviceGrid}>{displayed.map((service) => <ServiceTile key={service.id} service={service} onPress={onLogin} />)}</View>
+      ) : (
+        <View style={styles.emptyCatalogCard}>
+          <Text style={styles.emptyCatalogTitle}>Chưa tải được dịch vụ</Text>
+          <Text style={styles.emptyCatalogBody}>Vui lòng kiểm tra kết nối và tải lại danh mục công khai.</Text>
+          <ActionButton title="Tải lại danh mục" secondary onPress={onRetryCatalog} />
+        </View>
+      )}
       {!showAll && filtered.length > 12 ? (
         <View style={{ marginTop: 12 }}>
           <ActionButton
@@ -157,13 +173,14 @@ function LockedTab({ tab, onLogin, onRegister }) {
 }
 
 export default function GuestHomeScreen({ onLogin, onRegister }) {
-  const { s } = useApp();
+  const { s, a } = useApp();
   const [tab, setTab] = useState('home');
+  const retryCatalog = () => { Promise.resolve(a.syncCatalog?.(true)).catch(() => {}); };
   return (
     <View style={styles.page}>
       <View style={styles.content}>
-        {tab === 'home' ? <HomeTab onTab={setTab} onLogin={onLogin} onRegister={onRegister} catalogVersion={s?.catalogVersion} /> : null}
-        {tab === 'services' ? <ServicesTab onLogin={onLogin} catalogVersion={s?.catalogVersion} /> : null}
+        {tab === 'home' ? <HomeTab onTab={setTab} onLogin={onLogin} onRegister={onRegister} onRetryCatalog={retryCatalog} catalogVersion={s?.catalogVersion} /> : null}
+        {tab === 'services' ? <ServicesTab onLogin={onLogin} onRetryCatalog={retryCatalog} catalogVersion={s?.catalogVersion} /> : null}
         {tab === 'activity' || tab === 'personal' ? <LockedTab tab={tab} onLogin={onLogin} onRegister={onRegister} /> : null}
       </View>
       <View style={styles.bottomNav}>
@@ -248,7 +265,10 @@ const styles = StyleSheet.create({
   lockedBenefitText: { color: C.ink2, fontSize: 12, fontWeight: '700' },
   registerLink: { marginTop: 14, padding: 8 },
   registerLinkText: { color: C.muted, fontSize: 12 },
-  bottomNav: { flexDirection: 'row', alignItems: 'center', paddingTop: 8, paddingBottom: 8, backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.line },
+  bottomNav: { flexDirection: 'row', alignItems: 'center', paddingTop: 8, paddingBottom: Platform.OS === 'ios' ? 22 : 8, backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.line },
+  emptyCatalogCard: { padding: 18, borderRadius: 17, backgroundColor: C.card, borderWidth: 1, borderColor: C.line, alignItems: 'center', gap: 10 },
+  emptyCatalogTitle: { fontSize: 14, fontWeight: '800', color: C.ink, textAlign: 'center' },
+  emptyCatalogBody: { fontSize: 12, color: C.muted, textAlign: 'center', lineHeight: 17 },
   navItem: { flex: 1, alignItems: 'center', gap: 3 },
   navIcon: { width: 43, height: 29, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
   navIconSelected: { backgroundColor: C.primarySoft },

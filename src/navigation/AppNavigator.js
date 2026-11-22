@@ -36,14 +36,16 @@ export function Shell() {
   const [authMode, setAuthMode] = React.useState(null);
   const previousLoggedIn = useRef(loggedIn);
   useEffect(() => {
-    if (previousLoggedIn.current && !loggedIn) setAuthMode(null);
+    if (loggedIn && authMode !== null) setAuthMode(null);
+    else if (previousLoggedIn.current && !loggedIn) setAuthMode(null);
     previousLoggedIn.current = loggedIn;
-  }, [loggedIn]);
+  }, [loggedIn, authMode]);
   const role = s.auth?.role || s.role;
   const tabs = role === 'tech' ? TECH_TABS : CUSTOMER_TABS;
   const activeTab = tabs.some((t) => t.id === nav.tab) ? nav.tab : tabs[0]?.id;
   const Tab = tabs.find((t) => t.id === activeTab)?.Comp || tabs[0].Comp;
-  const effectiveAuthMode = loggedIn ? null : authMode;
+  const justLoggedOut = previousLoggedIn.current && !loggedIn;
+  const effectiveAuthMode = (loggedIn || justLoggedOut) ? null : authMode;
 
   useEffect(() => {
     if (Platform.OS !== 'android' || loggedIn || !authMode) return undefined;
@@ -79,7 +81,7 @@ export function Shell() {
       ) : (
         <>
           <View style={st.fill}>
-            <AnimatedScreen key={`tab-${role}-${nav.tab}`} mode="tab">
+            <AnimatedScreen key={`tab-${role}-${activeTab}`} mode="tab">
               <Tab />
             </AnimatedScreen>
             {allowedStack.map((entry, i) => {

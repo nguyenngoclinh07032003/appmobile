@@ -17,6 +17,7 @@ export const toVnParts = (input) => {
     day: v.getUTCDate(),
     hour: v.getUTCHours(),
     minute: v.getUTCMinutes(),
+    weekday: v.getUTCDay(),
   };
 };
 

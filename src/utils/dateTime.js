@@ -1,5 +1,6 @@
 // Tiện ích ngày/giờ dùng chung cho màn Đặt lịch (Checkout) và Sửa yêu cầu (OrderScreen).
-// Một nguồn duy nhất cho khung giờ phục vụ, tránh mỗi màn hình tự ghi cứng 8h/20h/45 phút.
+// Một nguồn duy nhất cho khung giờ phục vụ (cố định theo GMT+7), tránh lệ thuộc múi giờ máy.
+import { toVnParts } from './vnTime.js';
 
 export const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 
@@ -15,27 +16,30 @@ export const DEFAULT_SLOT_MINUTE = 14 * 60;
 
 const pad2 = (n) => String(n).padStart(2, '0');
 
-/** Danh sách n ngày kể từ hôm nay: { label, ddmm, key: 'YYYY-MM-DD' }. */
-export const nextDays = (n, base = new Date()) => Array.from({ length: n }, (_, i) => {
-  const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
-  d.setDate(d.getDate() + i);
-  return {
-    label: i === 0 ? 'Hôm nay' : i === 1 ? 'Ngày mai' : WEEKDAYS[d.getDay()],
-    ddmm: `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}`,
-    key: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
-  };
-});
+/** Danh sách n ngày kể từ hôm nay (theo giờ Việt Nam GMT+7): { label, ddmm, key: 'YYYY-MM-DD' }. */
+export const nextDays = (n, base = new Date()) => {
+  const vn = toVnParts(base) || toVnParts(Date.now());
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(Date.UTC(vn.year, vn.month - 1, vn.day + i));
+    return {
+      label: i === 0 ? 'Hôm nay' : i === 1 ? 'Ngày mai' : WEEKDAYS[d.getUTCDay()],
+      ddmm: `${pad2(d.getUTCDate())}/${pad2(d.getUTCMonth() + 1)}`,
+      key: `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`,
+    };
+  });
+};
 
-/** Phút sớm nhất có thể chọn cho ngày thứ dayIdx (0 = hôm nay). */
+/** Phút sớm nhất có thể chọn cho ngày thứ dayIdx (0 = hôm nay, tính theo giờ Việt Nam GMT+7). */
 export const minSelectableMinute = (dayIdx, now = new Date()) => {
   if (dayIdx > 0) return MIN_DAY_MINUTE;
-  const nowTotal = now.getHours() * 60 + now.getMinutes();
+  const vn = toVnParts(now) || toVnParts(Date.now());
+  const nowTotal = vn.hour * 60 + vn.minute;
   const earliest = Math.ceil((nowTotal + LEAD_MINUTES) / SLOT_STEP_MINUTES) * SLOT_STEP_MINUTES;
   return Math.max(MIN_DAY_MINUTE, earliest);
 };
 
 /** Hôm nay đã hết giờ nhận lịch chưa. */
-export const isDayOutOfSlots = (dayIdx, now = new Date()) => dayIdx === 0 && minSelectableMinute(0, now) >= MAX_DAY_MINUTE;
+export const isDayOutOfSlots = (dayIdx, now = new Date()) => dayIdx === 0 && minSelectableMinute(0, now) > MAX_DAY_MINUTE;
 
 /** Kẹp phút vào khung cho phép của ngày dayIdx. */
 export const clampToDay = (minutes, dayIdx, now = new Date()) => (

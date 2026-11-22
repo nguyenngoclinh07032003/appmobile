@@ -44,9 +44,12 @@ export function TechHandoversScreen({ params }) {
   const [historyItems, setHistoryItems] = useState([]);
   const [statusFilter, setStatusFilter] = useState('');
   const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [apiUnavailable, setApiUnavailable] = useState(false);
+  const [pendingApiUnavailable, setPendingApiUnavailable] = useState(false);
+  const [historyApiUnavailable, setHistoryApiUnavailable] = useState(false);
+  const apiUnavailable = tab === 'pending' ? pendingApiUnavailable : historyApiUnavailable;
   const [pendingError, setPendingError] = useState('');
   const [historyError, setHistoryError] = useState('');
   const loadError = tab === 'pending' ? pendingError : historyError;
@@ -59,14 +62,14 @@ export function TechHandoversScreen({ params }) {
     const res = await hrmssApi.getTechnicianPendingHandovers();
     if (!res.ok) {
       if (res.status === 404) {
-        setApiUnavailable(true);
+        setPendingApiUnavailable(true);
         setPendingError('');
       } else {
         setPendingError(res.message || 'Không tải được danh sách tiền mặt chờ nộp. Kiểm tra mạng và thử lại.');
       }
       return;
     }
-    setApiUnavailable(false);
+    setPendingApiUnavailable(false);
     setPendingError('');
     const items = Array.isArray(res.data?.items) ? res.data.items : [];
     setPendingItems(items);
@@ -77,20 +80,25 @@ export function TechHandoversScreen({ params }) {
 
   const loadHistory = useCallback(async (st = statusFilterRef.current) => {
     const reqId = ++historyReqSeqRef.current;
-    const res = await hrmssApi.getTechnicianHandovers({ status: st, page: 1, limit: 30 });
-    if (reqId !== historyReqSeqRef.current) return;
-    if (!res.ok) {
-      if (res.status === 404) {
-        setApiUnavailable(true);
-        setHistoryError('');
-      } else {
-        setHistoryError(res.message || 'Không tải được lịch sử bàn giao tiền mặt. Kiểm tra mạng và thử lại.');
+    setHistoryLoading(true);
+    try {
+      const res = await hrmssApi.getTechnicianHandovers({ status: st, page: 1, limit: 30 });
+      if (reqId !== historyReqSeqRef.current) return;
+      if (!res.ok) {
+        if (res.status === 404) {
+          setHistoryApiUnavailable(true);
+          setHistoryError('');
+        } else {
+          setHistoryError(res.message || 'Không tải được lịch sử bàn giao tiền mặt. Kiểm tra mạng và thử lại.');
+        }
+        return;
       }
-      return;
+      setHistoryApiUnavailable(false);
+      setHistoryError('');
+      setHistoryItems(Array.isArray(res.data?.items) ? res.data.items : []);
+    } finally {
+      if (reqId === historyReqSeqRef.current) setHistoryLoading(false);
     }
-    setApiUnavailable(false);
-    setHistoryError('');
-    setHistoryItems(Array.isArray(res.data?.items) ? res.data.items : []);
   }, []);
 
   const loadAll = useCallback(async (isRefresh = false) => {
@@ -175,6 +183,8 @@ export function TechHandoversScreen({ params }) {
         return;
       }
       setNotes('');
+      setStatusFilter('');
+      statusFilterRef.current = '';
       u.toast(`Đã gửi đợt nộp ${formatVND(selectedAmount)}`, '✅');
       await loadAll(false);
       setTab('history');
@@ -219,6 +229,7 @@ export function TechHandoversScreen({ params }) {
         ) : null}
 
         {tab === 'pending' ? (
+          pendingApiUnavailable || (pendingError && pendingItems.length === 0) ? null : (
           <>
             <Card style={{ backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary, ...shadow.sm }}>
               <Text style={{ color: C.ink2, fontSize: 12.5, fontWeight: '600' }}>Tổng tiền mặt đang giữ chưa nộp</Text>
@@ -228,11 +239,9 @@ export function TechHandoversScreen({ params }) {
 
             {pendingItems.length === 0 ? (
               <EmptyState
-                icon={loadError ? 'alert-triangle' : 'check-circle'}
-                title={loading ? 'Đang tải…' : loadError ? 'Chưa tải được dữ liệu' : 'Không còn tiền mặt chờ nộp'}
-                body={loadError || 'Mọi khoản tiền mặt bạn thu đã được lập đợt nộp hoặc chưa có khoản mới.'}
-                action={loadError ? 'Thử lại' : null}
-                onAction={loadError ? () => loadAll(false) : undefined}
+                icon="check-circle"
+                title={loading ? 'Đang tải…' : 'Không còn tiền mặt chờ nộp'}
+                body="Mọi khoản tiền mặt bạn thu đã được lập đợt nộp hoặc chưa có khoản mới."
               />
             ) : (
               <>
@@ -281,7 +290,9 @@ export function TechHandoversScreen({ params }) {
               </>
             )}
           </>
+          )
         ) : (
+          historyApiUnavailable ? null : (
           <>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 12 }}>
               {HISTORY_FILTERS.map((f) => {
@@ -302,13 +313,13 @@ export function TechHandoversScreen({ params }) {
             </ScrollView>
 
             {historyItems.length === 0 ? (
+              historyError ? null : (
               <EmptyState
-                icon={loadError ? 'alert-triangle' : 'receipt-text'}
-                title={loading ? 'Đang tải…' : loadError ? 'Chưa tải được lịch sử' : 'Chưa có đợt nộp tiền nào'}
-                body={loadError || 'Các đợt bàn giao tiền mặt bạn gửi về văn phòng sẽ hiển thị tại đây.'}
-                action={loadError ? 'Thử lại' : null}
-                onAction={loadError ? () => loadAll(false) : undefined}
+                icon="receipt-text"
+                title={loading || historyLoading ? 'Đang tải…' : 'Chưa có đợt nộp tiền nào'}
+                body="Các đợt bàn giao tiền mặt bạn gửi về văn phòng sẽ hiển thị tại đây."
               />
+              )
             ) : (
               historyItems.map((h) => {
                 const meta = HANDOVER_STATUS_META[h.handover_status] || { label: h.handover_status, fg: C.ink2, bg: C.surface };
@@ -348,10 +359,11 @@ export function TechHandoversScreen({ params }) {
               })
             )}
           </>
+          )
         )}
       </ScrollView>
 
-      {tab === 'pending' && pendingItems.length > 0 ? (
+      {tab === 'pending' && !pendingApiUnavailable && pendingItems.length > 0 ? (
         <View style={hs.footer}>
           <Btn
             title={submitting ? 'Đang gửi…' : `Nộp ${selectedIds.size} khoản · ${formatVND(selectedAmount)}`}

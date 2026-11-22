@@ -190,11 +190,20 @@ const PHRASES = [
 ];
 
 const isVietnamese = (s) => VI_CHARS.test(String(s || ''));
-// Còn chữ tiếng Anh (có ít nhất 2 từ Latin không dấu, không phải mã đơn / mã trạng thái).
-const looksEnglish = (s) => {
-  const t = String(s || '').replace(/\b[A-Z]{2,5}[-\d]{3,}\b/g, '').replace(/\b[A-Z_]{3,}\b/g, '');
-  if (isVietnamese(t)) return false;
-  return (t.match(/[a-z]{2,}/gi) || []).length >= 2;
+// Còn chữ tiếng Anh chưa dịch được (trừ mã đơn / mã trạng thái).
+// Kiểm tra cả phần còn dư chưa khớp PHRASES khi chuỗi gốc không có dấu tiếng Việt để tránh dịch nửa vời (vd. "User email đã tồn tại").
+const looksEnglish = (s, rawUnaccented = null) => {
+  const stripCodes = (txt) => String(txt || '').replace(/\b[A-Z]{2,5}[-\d]{3,}\b/g, '').replace(/\b[A-Z_]{3,}\b/g, '');
+  const t = stripCodes(s);
+  if (!isVietnamese(t)) {
+    return (t.match(/[a-z]{2,}/gi) || []).length >= 2;
+  }
+  if (rawUnaccented) {
+    const residual = stripCodes(PHRASES.reduce((acc, [re]) => acc.replace(re, ' '), String(rawUnaccented || '')));
+    const safeResidual = residual.replace(/\b(otp|gps|sms|app|qr|vietqr|vip|api|id|ok)\b/gi, ' ');
+    return (safeResidual.match(/(?<![a-zA-ZÀ-ỹ])[a-z]{3,}(?![a-zA-ZÀ-ỹ])/gi) || []).length >= 2;
+  }
+  return false;
 };
 
 const replaceStatusCodes = (s) => String(s || '').replace(/\b[A-Z][A-Z_]{3,}\b/g, (m) => REQUEST_STATUS_VI[m] || m);
@@ -215,9 +224,10 @@ const fill = (tpl, code) => String(tpl || '').replace(/\{code\}/g, code || '').r
 export const toVietnamese = (text, fallback = '') => {
   if (text == null || text === '') return fallback || '';
   const raw = String(text);
-  if (isVietnamese(raw) && !/\b[A-Z][A-Z_]{3,}\b/.test(raw)) return raw;
+  const rawHadVi = isVietnamese(raw);
+  if (rawHadVi && !/\b[A-Z][A-Z_]{3,}\b/.test(raw)) return raw;
   const out = replaceStatusCodes(applyPhrases(raw));
-  if (!looksEnglish(out)) return out;
+  if (!looksEnglish(out, rawHadVi ? null : raw)) return out;
   return fallback || out;
 };
 

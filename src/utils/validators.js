@@ -6,8 +6,13 @@
 export function sanitizeVnPhoneInput(raw) {
   const digits = String(raw || '').trim().replace(/\D/g, '');
   if (!digits) return '';
-  if (digits.startsWith('0084') && digits.length >= 13) return `0${digits.slice(4, 13)}`;
+  if (digits.startsWith('0084') && digits.length >= 13) {
+    const rest = digits.slice(4);
+    if (rest.startsWith('0') && rest.length >= 10) return rest.slice(0, 10);
+    return `0${rest.slice(0, 9)}`;
+  }
   if (digits.startsWith('84')) {
+    if (digits.startsWith('840') && digits.length >= 12) return digits.slice(2, 12);
     return digits.length >= 11 ? `0${digits.slice(2, 11)}` : digits;
   }
   if (!digits.startsWith('0') && digits.length === 9) return `0${digits}`;
@@ -20,8 +25,15 @@ export function sanitizeVnPhoneInput(raw) {
 export function normalizeVnPhone(raw) {
   const digits = String(raw || '').trim().replace(/\D/g, '');
   if (!digits) return '';
-  if (digits.startsWith('0084') && digits.length >= 13) return `0${digits.slice(4, 13)}`;
-  if (digits.startsWith('84') && digits.length >= 11) return `0${digits.slice(2, 11)}`;
+  if (digits.startsWith('0084') && digits.length >= 13) {
+    const rest = digits.slice(4);
+    if (rest.startsWith('0') && rest.length >= 10) return rest.slice(0, 10);
+    return `0${rest.slice(0, 9)}`;
+  }
+  if (digits.startsWith('84')) {
+    if (digits.startsWith('840') && digits.length >= 12) return digits.slice(2, 12);
+    if (digits.length >= 11) return `0${digits.slice(2, 11)}`;
+  }
   if (!digits.startsWith('0') && digits.length === 9) return `0${digits}`;
   return digits;
 }
@@ -82,7 +94,7 @@ export function validateStreetAddress(street) {
   }
 
   // Chặn các chuỗi gõ phím rác / thử nghiệm phổ biến
-  const FAKE_PATTERNS = /^(test|demo|abc|abcd|xyz|asdf|qwerty|jhjjhg| linh tinh|chua co|khong co|khong biet|ha noi|sai gon|viet nam)$/i;
+  const FAKE_PATTERNS = /^(test|demo|abc|abcd|xyz|asdf|qwerty|jhjjhg|linh tinh|chua co|khong co|khong biet|ha noi|sai gon|viet nam)$/i;
   if (FAKE_PATTERNS.test(clean)) {
     return 'Vui lòng nhập địa chỉ thực tế nơi thợ đến thi công (ví dụ: Số 12 ngõ 45 hoặc Toà CT1).';
   }

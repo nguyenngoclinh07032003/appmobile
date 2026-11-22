@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Animated, Easing, Image } from 'react-native';
 import { C, R, shadow, toneOf, grad } from '../../theme';
 import {
-  CATEGORIES, SERVICES, ALL_SERVICES, COMMITMENTS, SERVICE_TYPES, TIPS, PARTNERS, CAT_SHORT, HOTLINE, catLabel, catIcon, getService, formatVND, normalize,
+  CATEGORIES, SERVICES, REPAIR_SERVICES, ALL_SERVICES, COMMITMENTS, SERVICE_TYPES, TIPS, PARTNERS, CAT_SHORT, HOTLINE, catLabel, catIcon, getService, formatVND, normalize, tierOf,
 } from '../../constants/data';
 import { useApp, customerStatusMeta, formatOrderTotal, amountRemaining } from '../../context';
 import {
@@ -169,7 +169,11 @@ export default function HomeScreen() {
         {[
           { value: s.points, label: 'Điểm tích luỹ', onPress: () => nav.push('rewards') },
           { value: d.activeOrders.length, label: 'Đang xử lý', onPress: () => nav.activity('active') },
-          { value: s.myVouchers.length, label: 'Voucher', onPress: () => nav.push('rewards') },
+          {
+            value: (s.myVouchers || []).filter((v) => !v.expiresAt || v.expiresAt > Date.now()).length,
+            label: 'Voucher',
+            onPress: () => nav.push('rewards'),
+          },
         ].map((x, i) => (
           <Tap key={x.label} style={[st.stat, i > 0 && st.statBorder]} onPress={x.onPress}>
             <Text style={st.statValue}>{x.value}</Text>
@@ -235,9 +239,11 @@ export default function HomeScreen() {
         <View style={st.cats}>
           {CATEGORIES.map((c) => {
             const tone = toneOf(c.id);
+            const targetTab = SERVICES.some((x) => x.category === c.id)
+              ? 'bao-duong'
+              : (REPAIR_SERVICES.some((x) => x.category === c.id) ? 'sua-chua' : 'tron-doi');
             return (
-              // Danh mục chỉ có dịch vụ sửa chữa thì mở tab Sửa chữa, lọc theo danh mục đó.
-              <Tap key={c.id} style={st.cat} onPress={() => (SERVICES.some((x) => x.category === c.id) ? nav.services('bao-duong', c.id) : nav.services('sua-chua', c.id))}>
+              <Tap key={c.id} style={st.cat} onPress={() => nav.services(targetTab, c.id)}>
                 <View style={[st.catIcon, { backgroundColor: tone.bg }]}><AppIcon icon={c.icon} size={24} color={tone.fg} strokeWidth={2} /></View>
                 <Text style={st.catLabel} numberOfLines={1}>{CAT_SHORT[c.id]}</Text>
               </Tap>
@@ -256,14 +262,14 @@ export default function HomeScreen() {
         {[
           // Mã ưu đãi công khai thật từ backend (GET /customer/vouchers/catalog); chưa có thì không hiện thẻ mã.
           ...(s.publicVouchers || []).slice(0, 2).map((v) => ({ bg: C.navy, gradStyle: grad.navyCard, fg: '#fff', tag: `MÃ ${v.code}`, title: v.label, body: v.min ? `Cho đơn từ ${formatVND(v.min)}` : 'Nhập mã ở bước đặt lịch', icon: 'ticket', onPress: () => nav.push('rewards') })),
-          ...(SERVICES[0] ? [{ bg: C.primary, gradStyle: grad.primaryBtn, fg: '#fff', tag: 'NỔI BẬT', title: `${SERVICES[0].name} ${formatVND(SERVICES[0].price)}`, body: 'Bảo hành 60 ngày', icon: SERVICES[0].icon || 'wrench', onPress: () => nav.push('detail', { id: SERVICES[0].id }) }] : []),
+          ...(SERVICES[0] ? [{ bg: C.primary, gradStyle: grad.primaryBtn, fg: '#fff', tag: 'NỔI BẬT', title: `${SERVICES[0].name} ${formatVND(SERVICES[0].price)}`, body: `Bảo hành ${tierOf(s.lifetimePoints || 0).cur.warrantyDays || 60} ngày`, icon: SERVICES[0].icon || 'wrench', onPress: () => nav.push('detail', { id: SERVICES[0].id }) }] : []),
           { bg: C.navy2, gradStyle: grad.navyCard, fg: '#fff', tag: 'TIẾT KIỆM', title: 'Bảo dưỡng định kỳ', body: 'Nhắc lịch tự động, ưu đãi dài lâu', icon: 'infinity', onPress: () => nav.services('tron-doi') },
         ].map((b) => (
           <Tap key={b.tag} style={[st.promo, { backgroundColor: b.bg }, b.gradStyle]} onPress={b.onPress}>
             <View style={st.promoIcon}><AppIcon icon={b.icon} size={36} color="rgba(255,255,255,0.28)" strokeWidth={1.8} /></View>
             <Text style={[st.promoTag, { color: b.fg, borderColor: b.fg }]}>{b.tag}</Text>
-            <Text style={[st.promoTitle, { color: b.fg }]}>{b.title}</Text>
-            <Text style={[st.promoBody, { color: b.fg }]}>{b.body}</Text>
+            <Text style={[st.promoTitle, { color: b.fg }]} numberOfLines={2}>{b.title}</Text>
+            <Text style={[st.promoBody, { color: b.fg }]} numberOfLines={1}>{b.body}</Text>
           </Tap>
         ))}
       </HScroll>
@@ -382,7 +388,7 @@ export const st = StyleSheet.create({
   activeCode: { fontSize: 12, fontWeight: '800', color: C.ink2 },
   activeName: { fontSize: 14, fontWeight: '700', color: C.ink, marginTop: 4 },
   types: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 18 },
-  type: { alignItems: 'center', width: '19%' },
+  type: { alignItems: 'center', width: '23%' },
   typeIcon: { width: 54, height: 54, borderRadius: 18, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center', ...shadow.sm, borderWidth: 1, borderColor: C.line },
   typeLabel: { fontSize: 12, fontWeight: '700', color: C.ink2, marginTop: 7 },
   cats: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 14 },

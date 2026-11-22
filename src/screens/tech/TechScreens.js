@@ -8,7 +8,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, Image, Linking, RefreshControl } from 'react-native';
 import { C, R, shadow, STATUS_META, toneOf } from '../../theme';
 import {
-  getService, formatVND, catIcon, catLabel, categorySlugOf, TECH_ME, MATERIALS, TIME_SLOTS, TECH_STATUS_DESC, TECH_ORDER_STEPS, techStepIndexOf, HOTLINE,
+  getService, formatVND, catIcon, catLabel, categorySlugOf, TECH_ME, MATERIALS, TECH_WORK_SHIFTS, TECH_STATUS_DESC, TECH_ORDER_STEPS, techStepIndexOf, HOTLINE,
 } from '../../constants/data';
 import { APP_VERSION, PASSWORD_MIN_LENGTH, BASE_WARRANTY_DAYS } from '../../constants';
 import {
@@ -16,8 +16,16 @@ import {
   assessCancelAfterAccept, slotStartTs, matchJobForTech, isQRPayment, isPaid, latestNotifPerOrder, techStatusMeta,
 } from '../../context';
 import { validateVietnamesePhone, validateContactName, sanitizeVnPhoneInput } from '../../utils';
-import { isAttendanceNotifType } from '../../utils/attendance';
+import {
+  isAttendanceNotifType,
+  classifyJobToWorkShift,
+  identifyTechWorkShift,
+  formatVnTimeHm,
+  sortTechShifts,
+} from '../../utils/attendance';
+import { hrmssApi } from '../../services/api';
 import { dobError } from '../../utils/dateTime';
+import { toVnParts, vnDateKey } from '../../utils/vnTime';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, PageHead, Segmented, Chip, Badge, Stars, Field, Sheet, Radio, Checkbox,
   EmptyState, Progress, Media, ListRow, Stepper, HScroll, ui, AppIcon, resolveSemanticTone,
@@ -42,11 +50,7 @@ import { UsedAndExtraMaterialsCard } from './components/UsedAndExtraMaterialsCar
 const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const DECLINE_REASONS = ['Bận lịch khác', 'Ngoài khu vực phục vụ', 'Không đúng chuyên môn', 'Lý do khác'];
 const RELEASE_REASONS = ['Khẩn cấp gia đình', 'Xe / phương tiện hỏng', 'Ốm đột xuất', 'Lịch trùng không xử lý kịp', 'Lý do khác'];
-const sameDay = (ts, key) => {
-  if (!ts) return false;
-  const d = new Date(ts);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` === key;
-};
+const sameDay = (ts, key) => Boolean(ts && vnDateKey(ts) === key);
 const slotHour = (slot) => parseInt(slot, 10) || 0;
 const callPhone = (phone) => Linking.openURL(`tel:${String(phone || '').replace(/[^\d+]/g, '')}`).catch(() => {});
 const openMap = (addr) => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addr || '')}`).catch(() => {});
@@ -120,7 +124,7 @@ function JobCard({ o, compact, onDecline }) {
         <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
           <Media item={svc0} height={56} width={56} radius={16} />
           <View style={{ flex: 1 }}>
-            <Text style={tx.name} numberOfLines={2}>{svc0?.name}</Text>
+            <Text style={tx.name} numberOfLines={2}>{svc0?.name || o.items[0]?.name || 'Dịch vụ kỹ thuật'}</Text>
             {o.items.length > 1 ? <Text style={[ui.meta, { marginTop: 2 }]}>+{o.items.length - 1} dịch vụ khác</Text> : null}
           </View>
           {(() => {
@@ -458,46 +462,74 @@ const slotStartMinutes = (slot) => {
   if (!m) return 9999;
   return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
 };
-const slotBucketFor = (slot) => {
-  if (!slot) return null;
-  if (TIME_SLOTS.includes(slot)) return slot;
-  const m = /(\d{1,2})[h:](\d{2})/.exec(String(slot));
-  if (!m) return null;
-  const h = parseInt(m[1], 10);
-  if (h >= 6 && h < 10) return '08h00 - 10h00';
-  if (h >= 10 && h < 12) return '10h00 - 12h00';
-  if (h >= 12 && h < 14) return '12h00 - 14h00';
-  if (h >= 14 && h < 16) return '14h00 - 16h00';
-  if (h >= 16 && h < 18) return '16h00 - 18h00';
-  if (h >= 18 && h <= 22) return '18h00 - 20h00';
-  return null;
+const formatShiftHm = (hm) => (hm ? String(hm).replace(':', 'h') : '');
+const shiftRangeLabel = (backendShift, fallbackShort) => {
+  if (!backendShift) return fallbackShort;
+  const s = backendShift.startTime || formatVnTimeHm(backendShift.starts_at || backendShift.startsAt);
+  const e = backendShift.endTime || formatVnTimeHm(backendShift.ends_at || backendShift.endsAt);
+  if (s && e) return `${formatShiftHm(s)} - ${formatShiftHm(e)}`;
+  return fallbackShort;
 };
 
 export function TechScheduleScreen() {
   const { a, d, nav } = useApp();
   const [day, setDay] = useState(0);
   const [refreshingSched, setRefreshingSched] = useState(false);
-  const onRefreshSched = async () => {
-    setRefreshingSched(true);
-    try { await Promise.resolve(a.syncFromBackend?.(null, true)); } catch (_e) { /* giữ lịch hiện tại */ } finally { setRefreshingSched(false); }
-  };
+  const [scheduleShifts, setScheduleShifts] = useState([]);
+  const schedReqSeqRef = useRef(0);
+
   const days = Array.from({ length: 7 }, (_, i) => {
-    const dt = new Date();
-    dt.setDate(dt.getDate() + i);
-    return { key: todayKey(i), label: i === 0 ? 'Hôm nay' : i === 1 ? 'Ngày mai' : WEEKDAYS[dt.getDay()], dd: String(dt.getDate()).padStart(2, '0') };
+    const p = toVnParts(Date.now() + i * 86400000);
+    return { key: todayKey(i), label: i === 0 ? 'Hôm nay' : i === 1 ? 'Ngày mai' : WEEKDAYS[p.weekday], dd: String(p.day).padStart(2, '0') };
   });
   // Lịch gồm việc của tôi (trừ đã huỷ) + việc mới chưa nhận (so theo mã đơn, không theo tham chiếu object)
   const myCodes = new Set(d.myJobs.map((o) => o.code));
   const all = [...d.myJobs.filter((o) => o.status !== 'cancelled'), ...d.newJobs.filter((o) => !myCodes.has(o.code))];
   const key = days[day].key;
+
+  const fetchScheduleShifts = async (targetDate) => {
+    const seq = ++schedReqSeqRef.current;
+    try {
+      const res = await hrmssApi.getTechnicianSchedule(targetDate);
+      if (seq !== schedReqSeqRef.current) return;
+      if (res?.ok) {
+        const raw = Array.isArray(res.data?.shifts) ? res.data.shifts : [];
+        const active = raw.filter(
+          (sh) => String(sh?.shift_status || sh?.shiftStatus || 'AVAILABLE').toUpperCase() !== 'CANCELLED',
+        );
+        setScheduleShifts(sortTechShifts(active));
+      } else {
+        setScheduleShifts([]);
+      }
+    } catch (_e) {
+      if (seq === schedReqSeqRef.current) setScheduleShifts([]);
+    }
+  };
+
+  useEffect(() => {
+    fetchScheduleShifts(key);
+  }, [key]);
+
+  const onRefreshSched = async () => {
+    setRefreshingSched(true);
+    try {
+      await Promise.all([
+        Promise.resolve(a.syncFromBackend?.(null, true)),
+        fetchScheduleShifts(key),
+      ]);
+    } catch (_e) { /* giữ lịch hiện tại */ } finally { setRefreshingSched(false); }
+  };
+
   const dayJobs = all
     .filter((o) => dateKeyOf(o) === key)
-    .sort((a, b) => slotStartMinutes(a.slot) - slotStartMinutes(b.slot));
-  const others = dayJobs.filter((o) => !slotBucketFor(o.slot));
+    .sort((x, y) => slotStartMinutes(x.slot) - slotStartMinutes(y.slot));
+  const others = dayJobs.filter((o) => !classifyJobToWorkShift(o));
+  const officialShiftIds = new Set(TECH_WORK_SHIFTS.map((s) => s.id));
+  const customShifts = scheduleShifts.filter((sh) => !officialShiftIds.has(identifyTechWorkShift(sh)?.id));
 
   return (
     <View style={{ flex: 1 }}>
-      <PageHead title="Lịch làm việc" sub={`${all.filter((o) => isActiveOrder(o)).length} việc đang chờ xử lý`} />
+      <PageHead title="Lịch làm việc" sub="Ca 1 (08h30 - 11h30) · Ca 2 (13h30 - 17h30)" />
       <View style={{ backgroundColor: '#fff', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
         <HScroll contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
           {days.map((dd, i) => {
@@ -518,39 +550,116 @@ export function TechScheduleScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: 28 }}
         refreshControl={<RefreshControl refreshing={refreshingSched} onRefresh={onRefreshSched} tintColor={C.primary} colors={[C.primary]} />}
       >
-        <View style={tx.daySummary}>
-          <Text style={tx.sec}>{dayJobs.length} công việc · {days[day].label}</Text>
-          <Text style={ui.meta}>
-            {dayJobs.filter((o) => o.status === 'pending').length} chờ nhận · {dayJobs.filter((o) => isActiveOrder(o) && o.status !== 'pending').length} đang xử lý · {dayJobs.filter((o) => o.status === 'done').length} xong
-          </Text>
-        </View>
-        {dayJobs.length === 0 ? (
-          <EmptyState
-            icon="calendar"
-            title="Không có lịch trong ngày"
-            body="Ngày này chưa có việc. Kiểm tra Việc mới hoặc chọn ngày khác."
-            action="Xem việc mới"
-            onAction={() => nav.go('tech-jobs')}
-          />
-        ) : null}
-        {others.length ? (
-          <View style={tx.slotRow}>
-            <Text style={tx.slotTime}>Linh hoạt</Text>
-            <View style={{ flex: 1 }}>{others.map((o) => <JobCard key={o.code} o={o} compact />)}</View>
+        <View style={[tx.daySummary, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={[tx.sec, { marginBottom: 4 }]}>{dayJobs.length} công việc · {days[day].label}</Text>
+            <Text style={ui.meta}>
+              {dayJobs.filter((o) => o.status === 'pending').length} chờ nhận · {dayJobs.filter((o) => isActiveOrder(o) && o.status !== 'pending').length} đang xử lý · {dayJobs.filter((o) => o.status === 'done').length} xong
+            </Text>
           </View>
-        ) : null}
-        {dayJobs.length > 0 ? TIME_SLOTS.map((sl) => {
-          const jobs = dayJobs.filter((o) => slotBucketFor(o.slot) === sl);
+          {day === 0 ? (
+            <Tap onPress={() => nav.go('tech-attendance')} hitSlop={8}>
+              <Text style={ui.link}>Chấm công ›</Text>
+            </Tap>
+          ) : null}
+        </View>
+
+        {TECH_WORK_SHIFTS.map((shift) => {
+          const jobs = dayJobs.filter((o) => classifyJobToWorkShift(o) === shift.id);
+          const backendShift = scheduleShifts.find((sh) => identifyTechWorkShift(sh)?.id === shift.id) || null;
+          const bStatus = String(backendShift?.shift_status || backendShift?.shiftStatus || '').toUpperCase();
+          const bReason = backendShift?.status_reason || backendShift?.statusReason || '';
+          const shiftIcon = shift.id === 'ca1' ? 'sun' : 'clock';
+          const rangeText = shiftRangeLabel(backendShift, shift.shortTime);
+
           return (
-            <View key={sl} style={tx.slotRow}>
-              <Text style={tx.slotTime}>{sl.replace(' - ', '\n')}</Text>
-              <View style={{ flex: 1 }}>
-                {jobs.length ? jobs.map((o) => <JobCard key={o.code} o={o} compact />) : <View style={tx.slotEmpty}><Text style={{ color: C.faint, fontSize: 13 }}>Trống</Text></View>}
+            <View key={shift.id} style={tx.shiftSection}>
+              <View style={tx.shiftHead}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                  <View style={tx.shiftIconBox}>
+                    <AppIcon name={shiftIcon} size={18} color={C.primary} strokeWidth={2.2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={tx.shiftTitle}>{shift.label}</Text>
+                    <Text style={tx.shiftRange}>{rangeText}</Text>
+                    {bStatus === 'UNAVAILABLE' && bReason ? (
+                      <Text style={tx.shiftReason} numberOfLines={2}>Lý do nghỉ: {bReason}</Text>
+                    ) : null}
+                  </View>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  {backendShift ? (
+                    bStatus === 'UNAVAILABLE' ? (
+                      <Badge text="Nghỉ" fg={C.goldInk} bg={C.goldSoft} />
+                    ) : (
+                      <Badge text="Đã xếp ca" fg={C.greenInk} bg={C.greenSoft} />
+                    )
+                  ) : null}
+                  <Badge
+                    text={jobs.length ? `${jobs.length} việc` : 'Trống'}
+                    fg={jobs.length ? C.primary : C.muted}
+                    bg={jobs.length ? C.primarySoft : C.surface}
+                  />
+                </View>
               </View>
+              {jobs.length ? (
+                jobs.map((o) => <JobCard key={o.code} o={o} compact />)
+              ) : (
+                <View style={tx.shiftEmptyBox}>
+                  <Text style={{ color: C.faint, fontSize: 13 }}>Trống · Chưa có công việc trong ca này</Text>
+                </View>
+              )}
             </View>
           );
-        }) : null}
-        <Btn title="Về danh sách công việc" variant="soft" style={{ marginTop: 8 }} onPress={() => nav.go('tech-jobs')} />
+        })}
+
+        {customShifts.length > 0 ? (
+          <View style={tx.shiftSection}>
+            <Text style={[ui.meta, { fontWeight: '700', marginBottom: 6 }]}>Ca bổ sung từ văn phòng</Text>
+            {customShifts.map((sh, idx) => {
+              const stCode = String(sh.shift_status || sh.shiftStatus || 'AVAILABLE').toUpperCase();
+              const rText = shiftRangeLabel(sh, 'Theo lịch phân công');
+              const reasonText = sh.status_reason || sh.statusReason || '';
+              return (
+                <Card key={String(sh.shift_id || sh.id || idx)} style={{ marginBottom: 8, padding: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>{sh.name || rText}</Text>
+                    <Badge
+                      text={stCode === 'UNAVAILABLE' ? 'Nghỉ' : 'Đã xếp ca'}
+                      fg={stCode === 'UNAVAILABLE' ? C.goldInk : C.greenInk}
+                      bg={stCode === 'UNAVAILABLE' ? C.goldSoft : C.greenSoft}
+                    />
+                  </View>
+                  <Text style={[ui.meta, { marginTop: 2 }]}>{rText}</Text>
+                  {reasonText ? <Text style={tx.shiftReason}>{reasonText}</Text> : null}
+                </Card>
+              );
+            })}
+          </View>
+        ) : null}
+
+        {others.length ? (
+          <View style={tx.shiftSection}>
+            <View style={tx.shiftHead}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                <View style={[tx.shiftIconBox, { backgroundColor: C.goldSoft }]}>
+                  <AppIcon name="calendar" size={18} color={C.goldInk} strokeWidth={2.2} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={tx.shiftTitle}>Ngoài khung ca</Text>
+                  <Text style={[ui.meta, { marginTop: 1 }]}>Ngoài 08h30 - 11h30 & 13h30 - 17h30</Text>
+                </View>
+              </View>
+              <Badge text={`${others.length} việc`} fg={C.goldInk} bg={C.goldSoft} />
+            </View>
+            {others.map((o) => <JobCard key={o.code} o={o} compact />)}
+          </View>
+        ) : null}
+
+        {dayJobs.length === 0 ? (
+          <Btn title="Xem việc mới" icon="briefcase" variant="soft" style={{ marginTop: 4, marginBottom: 8 }} onPress={() => nav.go('tech-jobs')} />
+        ) : null}
+        <Btn title="Về danh sách công việc" variant="soft" style={{ marginTop: 4 }} onPress={() => nav.go('tech-jobs')} />
       </ScrollView>
     </View>
   );
@@ -570,9 +679,10 @@ export function TechNotifsScreen() {
   };
   // Mỗi việc chỉ hiện thông báo mới nhất (các cập nhật cũ hơn của việc đó được gom lại).
   const list = latestNotifPerOrder(s.techNotifs || []);
+  const hasRead = (s.techNotifs || []).some((n) => Boolean(n.read));
   const filtered = list.filter((n) => {
     if (filter === 'unread') return !n.read;
-    if (filter === 'jobs') return /việc|đơn|báo giá|đánh giá|huỷ/i.test(`${n.title} ${n.body || ''}`);
+    if (filter === 'jobs') return /việc|đơn|báo giá|đánh giá|huỷ|hủy|lịch|khách|hoàn thành|thanh toán|phân công|bảo hành|vật tư/i.test(`${n.title} ${n.body || ''}`);
     if (filter === 'attendance') {
       return isAttendanceNotifType(n.type) || /chấm công|ca làm|vào ca|vi phạm|kỳ công/i.test(`${n.title} ${n.body || ''}`);
     }
@@ -595,8 +705,8 @@ export function TechNotifsScreen() {
             {list.some((n) => !n.read) ? (
               <Tap onPress={a.readAllTech}><Text style={ui.link}>Đọc hết</Text></Tap>
             ) : null}
-            {list.length > 0 ? (
-              <Tap onPress={() => u.confirm('Dọn sạch thông báo?', 'Xoá toàn bộ thông báo khỏi danh sách trên thiết bị?', a.clearAllTechNotifs, 'Dọn sạch', true)}>
+            {hasRead ? (
+              <Tap onPress={() => u.confirm('Dọn sạch thông báo đã đọc?', 'Xoá hết các thông báo đã đọc và giữ lại các thông báo chưa đọc?', a.clearAllTechNotifs, 'Dọn sạch', true)}>
                 <Text style={[ui.link, { color: C.muted }]}>Dọn sạch</Text>
               </Tap>
             ) : null}
@@ -968,7 +1078,7 @@ function ReceiptCard({ o, editable }) {
     try {
       let uri = useCamera ? await pickCamera() : await pickImage();
       if (useCamera && uri === null) uri = await pickImage();
-      if (uri == null) {
+      if (uri === null) {
         u.alert('Chưa hỗ trợ camera', 'Cho phép camera hoặc chọn ảnh từ thư viện.', '📷');
         return;
       }
@@ -1291,8 +1401,8 @@ export function TechJobScreen({ params }) {
       u.alert('Chưa xong các bước thực hiện', `Còn ${pendingSteps.length} bước bắt buộc chưa xong:\n${pendingSteps.map((st) => `• Bước ${st.step_no}: ${st.title}`).join('\n')}`, '📋');
       return;
     }
-    const names = (o.items || []).map((it) => getService(it.id)?.name).filter(Boolean).join(', ');
-    const defaultSum = `Đã hoàn thành: ${names}.${o.quote?.diagnosis ? ` Tình trạng: ${o.quote.diagnosis}.` : ''} Thiết bị hoạt động ổn định, đã dọn dẹp khu vực.`;
+    const names = (o.items || []).map((it) => getService(it.id)?.name || it.name).filter(Boolean).join(', ');
+    const defaultSum = `Đã hoàn thành: ${names || 'dịch vụ kỹ thuật'}.${o.quote?.diagnosis ? ` Tình trạng: ${o.quote.diagnosis}.` : ''} Thiết bị hoạt động ổn định, đã dọn dẹp khu vực.`;
     setSummary(defaultSum);
     if ((o.pendingExternalEstimates || []).length > 0 || o.externalPriceState === 'revision_requested' || extraBillParts.length > 0) {
       setShowFinalizeExt(true);
@@ -1405,14 +1515,23 @@ export function TechJobScreen({ params }) {
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={{ fontWeight: '800', color: C.primary, fontSize: 13.5 }}>CA ĐƯỢC HỆ THỐNG PHÂN CÔNG</Text>
             </View>
-            <Text style={{ color: C.ink2, fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>
-              Hệ thống đã khớp chuyên môn {catLabel((o.items || [])[0]?.id ? getService((o.items || [])[0].id)?.category : '')} và khu vực {o.address?.district || 'của bạn'}. Vui lòng xác nhận tiếp nhận ca để đưa vào lịch trình làm việc.
-            </Text>
-            <View style={{ marginTop: 8, gap: 4 }}>
-              <Text style={{ fontSize: 12, color: C.ink2, fontWeight: '600' }}>✓ Đúng chuyên môn: {catLabel((o.items || [])[0]?.id ? getService((o.items || [])[0].id)?.category : '')}</Text>
-              <Text style={{ fontSize: 12, color: C.ink2, fontWeight: '600' }}>✓ Khu vực phụ trách: {o.address?.district || 'Gần bạn'}</Text>
-              <Text style={{ fontSize: 12, color: C.ink2, fontWeight: '600' }}>✓ Khung giờ hẹn: {o.dateLabel} · {o.slot}</Text>
-            </View>
+            {(() => {
+              const svcCat = (o.items || [])[0]?.id ? getService((o.items || [])[0].id)?.category : '';
+              const resolvedCat = svcCat || (o.items || [])[0]?.category || o.device?.category || '';
+              const resolvedArea = o.address?.area || o.address?.district || 'của bạn';
+              return (
+                <>
+                  <Text style={{ color: C.ink2, fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>
+                    Hệ thống đã khớp chuyên môn {catLabel(resolvedCat)} và khu vực {resolvedArea}. Vui lòng xác nhận tiếp nhận ca để đưa vào lịch trình làm việc.
+                  </Text>
+                  <View style={{ marginTop: 8, gap: 4 }}>
+                    <Text style={{ fontSize: 12, color: C.ink2, fontWeight: '600' }}>✓ Đúng chuyên môn: {catLabel(resolvedCat)}</Text>
+                    <Text style={{ fontSize: 12, color: C.ink2, fontWeight: '600' }}>✓ Khu vực phụ trách: {o.address?.area || o.address?.district || 'Gần bạn'}</Text>
+                    <Text style={{ fontSize: 12, color: C.ink2, fontWeight: '600' }}>✓ Khung giờ hẹn: {o.dateLabel} · {o.slot}</Text>
+                  </View>
+                </>
+              );
+            })()}
           </Card>
         ) : null}
 
@@ -1550,7 +1669,7 @@ export function TechJobScreen({ params }) {
                   <Text style={{ fontWeight: '800', color: orderPaid ? C.greenInk : C.ink, fontSize: 13 }}>
                     {orderPaid
                       ? '✓ Đã thu tiền mặt tại nhà'
-                      : `Đơn thu tiền mặt tại nhà: ${o.quote?.hasEstimatedRange && !o.bill?.quotationTotal ? formatOrderTotal(o) : formatVND(cashToCollect(o))}`}
+                      : `Đơn thu tiền mặt tại nhà: ${(o.quote?.hasEstimatedRange || o.quote?.approvedHasEstimatedRange) && !o.bill?.quotationTotal ? formatOrderTotal(o) : formatVND(cashToCollect(o))}`}
                   </Text>
                   <Text style={{ fontSize: 12, color: C.ink2, marginTop: 2 }}>
                     {orderPaid ? 'Đã đối soát thanh toán hoàn tất.' : 'Kỹ thuật viên trực tiếp thu tiền mặt từ khách sau khi nghiệm thu.'}
@@ -1566,7 +1685,7 @@ export function TechJobScreen({ params }) {
               return (
                 <View key={it.id} style={tx.svcRow}>
                   <AppIcon icon={sv?.icon} size={20} color={C.primary} strokeWidth={2.1} />
-                  <Text style={{ flex: 1, color: C.ink, fontWeight: '600' }} numberOfLines={2}>{sv?.name}</Text>
+                  <Text style={{ flex: 1, color: C.ink, fontWeight: '600' }} numberOfLines={2}>{sv?.name || it.name || 'Dịch vụ kỹ thuật'}</Text>
                   <Text style={{ color: C.ink2, fontWeight: '800' }}>x{it.qty}</Text>
                 </View>
               );
@@ -1627,7 +1746,7 @@ export function TechJobScreen({ params }) {
         ) : null}
 
         {/* ===== Báo giá đã gửi ===== */}
-        {o.quote && !(mine && ['diagnosing', 'confirmed'].includes(o.status) && ((o.quote.revisionRequested && !o.quote.isExternalFinalization) || showPreQuote)) ? (
+        {o.quote && !(mine && ['diagnosing', 'confirmed', 'out_of_warranty'].includes(o.status) && ((o.quote.revisionRequested && !o.quote.isExternalFinalization) || showPreQuote)) ? (
           <Card style={{ marginTop: 12 }}>
             {(() => {
               // Báo giá trước khi đi (status confirmed) chưa duyệt và chưa bị từ chối = đang chờ khách.

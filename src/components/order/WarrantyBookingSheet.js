@@ -176,14 +176,17 @@ export function WarrantyBookingSheet({
   const [description, setDescription] = useState('');
   const [images, setImages] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  const seenItemIdsRef = React.useRef(new Set());
 
-  // Mỗi lần mở modal: điền sẵn SĐT của đơn hàng và danh sách công việc đã làm
+  // Chỉ reset form khi mở sheet hoặc chuyển sang đơn khác (tránh mất dữ liệu đang nhập khi hydrate xong giữa chừng).
   useEffect(() => {
     if (!visible || !order) return;
     const initialPhone = resolveContactPhone(order, s);
     setPhone(initialPhone);
     setAddress(resolveOrderAddress(order));
-    setSelectedItemIds(new Set(completedItems.map((it) => it.id)));
+    const initialIds = completedItems.map((it) => it.id);
+    seenItemIdsRef.current = new Set(initialIds);
+    setSelectedItemIds(new Set(initialIds));
     setDescription('');
     setImages([]);
 
@@ -192,7 +195,16 @@ export function WarrantyBookingSheet({
     setSelectedDate(nextDate);
     const slots = getSlotsForDate(nextDate, { now: new Date(), endYmd: winfo?.endYmd || null });
     setSelectedSlot(slots[0] || null);
-  }, [visible, order?.code, completedItems.length]);
+  }, [visible, order?.code]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Nếu đơn được hydrate thêm hạng mục sau khi sheet đã mở: tự tick thêm hạng mục mới, giữ nguyên nội dung khách đang nhập.
+  useEffect(() => {
+    if (!visible || !order) return;
+    const newIds = completedItems.map((it) => it.id).filter((id) => !seenItemIdsRef.current.has(id));
+    if (!newIds.length) return;
+    newIds.forEach((id) => seenItemIdsRef.current.add(id));
+    setSelectedItemIds((prev) => new Set([...prev, ...newIds]));
+  }, [visible, order?.code, completedItems.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!order) return null;
 
@@ -219,6 +231,14 @@ export function WarrantyBookingSheet({
   const handleAddImage = async (fromCamera = false) => {
     try {
       const uri = fromCamera ? await pickCamera() : await pickImage();
+      if (uri === null) {
+        u.alert(
+          fromCamera ? 'Cần quyền truy cập máy ảnh' : 'Cần quyền truy cập ảnh',
+          'Vui lòng cấp quyền truy cập trong Cài đặt thiết bị để đính kèm ảnh.',
+          '📷',
+        );
+        return;
+      }
       if (uri) {
         setImages((prev) => [...prev, uri].slice(0, 3));
       }
@@ -488,7 +508,7 @@ export function WarrantyBookingSheet({
         <TextInput
           style={styles.textInput}
           keyboardType="phone-pad"
-          maxLength={11}
+          maxLength={15}
           placeholder="Nhập số điện thoại để thợ liên hệ khi đến..."
           placeholderTextColor={C.faint}
           value={phone}

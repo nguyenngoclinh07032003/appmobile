@@ -406,3 +406,60 @@ test('sortQuotationsAsc: luôn đặt báo giá mới nhất ở cuối kể c�
   const sorted = sortQuotationsAsc(descQuotes);
   assert.equal(sorted[sorted.length - 1].quotation_id, 22);
 });
+
+test('externalPartsPricing: bảo toàn đơn giá chốt khi số lượng cuối khác số lượng tạm tính ban đầu (priorDepositQty)', () => {
+  const desc = formatFinalizedExternalDesc({
+    name: 'Tụ kích máy nén',
+    minPrice: 100000,
+    maxPrice: 150000,
+    priorDeposit: 100000,
+    priorDepositQty: 1,
+  });
+  const parsed = parseExternalPartDesc(desc);
+  assert.equal(parsed?.kind, 'finalized_external');
+  assert.equal(parsed?.priorDeposit, 100000);
+  assert.equal(parsed?.priorDepositQty, 1);
+
+  const qEstApproved = {
+    quotation_id: 30,
+    quotation_type: 'SUPPLEMENTAL',
+    quotation_status: 'APPROVED',
+    items: [
+      {
+        quotation_item_id: 301,
+        item_type: 'SERVICE',
+        description_snapshot: formatEstimatedExternalDesc({
+          name: 'Tụ kích máy nén',
+          minPrice: 100000,
+          maxPrice: 150000,
+        }),
+        quantity: 1,
+        unit_price: 100000,
+      },
+    ],
+  };
+
+  // Thợ tăng số lượng lên 2 với giá chốt 120.000đ/cái (tổng 240.000đ - đã thu 100.000đ x 1 = chênh lệch 140.000đ -> unit_price 70.000đ x 2)
+  const qFinalApproved = {
+    quotation_id: 31,
+    quotation_type: 'SUPPLEMENTAL',
+    quotation_status: 'APPROVED',
+    customer_decision: 'APPROVED',
+    items: [
+      {
+        quotation_item_id: 302,
+        item_type: 'MATERIAL',
+        is_external_purchase: true,
+        description_snapshot: desc,
+        quantity: 2,
+        unit_price: 70000,
+      },
+    ],
+  };
+
+  const lc = extractExternalPartLifecycle([qEstApproved, qFinalApproved]);
+  assert.equal(lc.finalizedApprovedItems.length, 1);
+  assert.equal(lc.finalizedApprovedItems[0].actualPrice, 120000);
+  assert.equal(lc.finalizedApprovedItems[0].qty, 2);
+  assert.equal(lc.finalizedApprovedItems[0].origQty, 1);
+});

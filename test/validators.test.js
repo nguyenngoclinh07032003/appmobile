@@ -85,4 +85,17 @@ test('sanitizeVnPhoneInput & normalizeVnPhone: giữ nguyên đầu 84 khi đang
   assert.equal(normalizeVnPhone('0084912345678'), '0912345678');
   assert.equal(normalizeVnPhone('912345678'), '0912345678');
   assert.equal(normalizeVnPhone('0912345678'), '0912345678');
+
+  // Đầu +84 / 0084 / 84 kèm 0 dư (+84 09...)
+  assert.equal(sanitizeVnPhoneInput('+84 0912345678'), '0912345678');
+  assert.equal(sanitizeVnPhoneInput('0084 0912345678'), '0912345678');
+  assert.equal(sanitizeVnPhoneInput('840912345678'), '0912345678');
+  assert.equal(normalizeVnPhone('+84 0912345678'), '0912345678');
+  assert.equal(normalizeVnPhone('0084 0912345678'), '0912345678');
+  assert.equal(normalizeVnPhone('840912345678'), '0912345678');
+});
+
+test('validateStreetAddress: chặn cụm "linh tinh"', () => {
+  assert.notEqual(validateStreetAddress('linh tinh'), '');
+  assert.notEqual(validateStreetAddress('Linh Tinh'), '');
 });

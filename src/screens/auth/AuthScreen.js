@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Image,
+  View, Text, TextInput, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Image, BackHandler,
 } from 'react-native';
 import { C, R, shadow, grad } from '../../theme';
 import { useApp } from '../../context';
@@ -49,7 +49,7 @@ function ModernField({
 }
 
 export default function AuthScreen({ initialMode = 'login', onBackHome }) {
-  const { a } = useApp();
+  const { a, ui: u } = useApp();
 
   const [mode, setMode] = useState(initialMode === 'tech_partner' ? 'login' : initialMode); // login | register | forgot
   const [name, setName] = useState('');
@@ -63,17 +63,39 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
   const [busy, setBusy] = useState(false);
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
+  const [resendLeft, setResendLeft] = useState(0);
+  const submittingRef = useRef(false);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+
+  useEffect(() => {
+    if (resendLeft <= 0) return undefined;
+    const t = setTimeout(() => setResendLeft((c) => Math.max(0, c - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [resendLeft]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android' || mode !== 'forgot') return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!busy) handleModeChange('login');
+      return true;
+    });
+    return () => sub.remove();
+  }, [mode, busy]);
 
   const handleModeChange = (nextMode) => {
+    if (busy || submittingRef.current) return;
     setMode(nextMode);
     setFormErr('');
     setPassword('');
     setPassword2('');
     setOtp('');
     setOtpSent(false);
+    setResendLeft(0);
   };
 
   const submit = async () => {
+    if (submittingRef.current || busy) return;
     if (mode === 'login') {
       if (!identifier.trim()) { setFormErr('Vui lòng nhập Email hoặc Tên đăng nhập.'); return; }
       if (!password) { setFormErr('Vui lòng nhập mật khẩu.'); return; }
@@ -86,28 +108,35 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
       setFormErr('Mật khẩu nhập lại không khớp.');
       return;
     }
+    const opMode = mode;
+    submittingRef.current = true;
     setBusy(true);
     let res;
     try {
-      if (mode === 'login') {
+      if (opMode === 'login') {
         // Đăng nhập bằng Email hoặc Username (áp dụng đồng bộ cho cả Thợ và Khách)
         res = await a.login({ identifier: identifier.trim(), password });
-      } else if (mode === 'forgot') {
+      } else if (opMode === 'forgot') {
         if (!otpSent) {
           res = await a.requestPasswordReset({ identifier: identifier.trim() });
-          if (res.ok) { setOtpSent(true); setFormErr(''); }
+          if (res?.ok && modeRef.current === 'forgot') {
+            setOtpSent(true);
+            setResendLeft(30);
+            setFormErr('');
+          }
         } else {
           res = await a.resetPassword({ identifier: identifier.trim(), otp, newPassword: password });
-          if (res.ok) {
+          if (res?.ok && modeRef.current === 'forgot') {
             setMode('login');
             setPassword('');
             setPassword2('');
             setOtp('');
             setOtpSent(false);
+            setResendLeft(0);
             setFormErr('');
           }
         }
-      } else if (mode === 'register') {
+      } else if (opMode === 'register') {
         // Khách hàng đăng ký bằng Email & Username (không cần SĐT)
         res = await a.register({
           role: 'customer',
@@ -118,23 +147,35 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
         });
       }
     } catch (err) {
-      res = { ok: false, error: authErrorMessage({ message: err?.message, status: 0 }, mode) };
+      res = { ok: false, error: authErrorMessage({ message: err?.message, status: 0 }, opMode) };
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
-    if (res && !res.ok) setFormErr(authErrorMessage(res, mode));
+    if (res && !res.ok && modeRef.current === opMode) setFormErr(authErrorMessage(res, opMode));
   };
 
   const resendResetOtp = async () => {
-    if (busy || !identifier.trim()) return;
+    if (submittingRef.current || busy || resendLeft > 0 || !identifier.trim()) return;
+    submittingRef.current = true;
     setBusy(true);
     try {
       const res = await a.requestPasswordReset({ identifier: identifier.trim() });
-      if (res?.ok) setFormErr('');
-      else setFormErr(authErrorMessage(res, 'forgot'));
+      if (modeRef.current !== 'forgot') return;
+      if (res?.ok) {
+        setFormErr('');
+        setOtp('');
+        setResendLeft(30);
+        u.toast('Đã gửi lại mã OTP tới email của bạn', '📧');
+      } else {
+        setFormErr(authErrorMessage(res, 'forgot'));
+      }
     } catch (err) {
-      setFormErr(authErrorMessage({ message: err?.message, status: 0 }, 'forgot'));
+      if (modeRef.current === 'forgot') {
+        setFormErr(authErrorMessage({ message: err?.message, status: 0 }, 'forgot'));
+      }
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   };
@@ -199,7 +240,8 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                 return (
                   <Tap
                     key={m.id}
-                    style={[st.tabItem, on && st.tabItemOn]}
+                    style={[st.tabItem, on && st.tabItemOn, busy && !on && { opacity: 0.5 }]}
+                    disabled={busy}
                     onPress={() => handleModeChange(m.id)}
                   >
                     <Text style={[st.tabText, on && st.tabTextOn]}>{m.label}</Text>
@@ -209,8 +251,8 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
             </View>
           ) : (
             <View style={st.forgotHeader}>
-              <Tap onPress={() => handleModeChange('login')} style={st.backLink}>
-                <Text style={st.backLinkText}>← Quay lại đăng nhập</Text>
+              <Tap onPress={() => handleModeChange('login')} style={st.backLink} disabled={busy}>
+                <Text style={[st.backLinkText, busy && { opacity: 0.5 }]}>← Quay lại đăng nhập</Text>
               </Tap>
               <Text style={st.forgotNote}>
                 {otpSent
@@ -265,6 +307,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                   if (mode === 'forgot' && otpSent) {
                     setOtpSent(false);
                     setOtp('');
+                    setResendLeft(0);
                   }
                 }}
                 placeholder="Nhập email hoặc username của bạn"
@@ -283,8 +326,10 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                   placeholder="Mã gửi trong email"
                   keyboardType="number-pad"
                 />
-                <Tap onPress={resendResetOtp} style={{ alignSelf: 'flex-end', marginTop: -8, marginBottom: 10 }} disabled={busy}>
-                  <Text style={st.forgotLink}>Gửi lại mã OTP</Text>
+                <Tap onPress={resendResetOtp} style={{ alignSelf: 'flex-end', marginTop: -8, marginBottom: 10 }} disabled={busy || resendLeft > 0}>
+                  <Text style={[st.forgotLink, (busy || resendLeft > 0) && { color: C.muted }]}>
+                    {resendLeft > 0 ? `Gửi lại mã OTP (${resendLeft}s)` : 'Gửi lại mã OTP'}
+                  </Text>
                 </Tap>
               </View>
             )}
@@ -325,7 +370,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
 
             {mode === 'login' && (
               <View style={st.forgotRow}>
-                <Tap onPress={() => handleModeChange('forgot')} hitSlop={8}>
+                <Tap onPress={() => handleModeChange('forgot')} hitSlop={8} disabled={busy}>
                   <Text style={st.forgotLink}>Quên mật khẩu?</Text>
                 </Tap>
               </View>

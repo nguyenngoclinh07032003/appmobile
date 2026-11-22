@@ -52,7 +52,7 @@ export function ExternalPartsFinalizeSheet({
           minPrice: l.minPrice,
           maxPrice: l.maxPrice,
           qty: draft ? Math.max(1, Number(draft.qty) || 1) : Math.max(1, Number(l.qty) || 1),
-          origQty: draft?.origQty ?? Math.max(1, Number(l.qty) || 1),
+          origQty: draft?.origQty ?? Math.max(1, Number(l.origQty ?? l.qty) || 1),
           alreadyBilledUnitPrice: Number(l.priorDeposit) || 0,
           actualPriceText: draft?.actualPriceText || formatNumberInput(String(l.actualPrice ?? l.price ?? '')),
           receiptId: draft?.receiptId || l.receiptId || null,
@@ -72,7 +72,7 @@ export function ExternalPartsFinalizeSheet({
         minPrice: est.minPrice,
         maxPrice: est.maxPrice,
         qty: draft ? Math.max(1, Number(draft.qty) || 1) : Math.max(1, Number(est.qty) || 1),
-        origQty: draft?.origQty ?? Math.max(1, Number(est.qty) || 1),
+        origQty: draft?.origQty ?? Math.max(1, Number(est.origQty ?? est.qty) || 1),
         alreadyBilledUnitPrice: Number(est.alreadyBilledUnitPrice) || 0,
         actualPriceText: draft?.actualPriceText
           || (est.alreadyBilledUnitPrice > 0 ? formatNumberInput(String(est.alreadyBilledUnitPrice)) : ''),
@@ -213,7 +213,15 @@ export function ExternalPartsFinalizeSheet({
                   onChange={(q) => setParts((prev) => prev.map((x) => (x.id === p.id ? { ...x, qty: q } : x)))}
                 />
                 {p.isAddedInline ? (
-                  <Tap onPress={() => setParts((prev) => prev.filter((x) => x.id !== p.id))} hitSlop={8} style={{ padding: 4 }}>
+                  <Tap
+                    onPress={() => {
+                      setParts((prev) => prev.filter((x) => x.id !== p.id));
+                      const cleanKey = normalizeExternalPartName(p.name);
+                      onChangeSharedExtraParts?.((prev) => prev.filter((x) => x.id !== p.id && normalizeExternalPartName(x.name) !== cleanKey));
+                    }}
+                    hitSlop={8}
+                    style={{ padding: 4 }}
+                  >
                     <Text style={{ color: C.red, fontSize: 13, fontWeight: '800' }}>✕</Text>
                   </Tap>
                 ) : null}
@@ -340,20 +348,22 @@ export function ExternalPartsFinalizeSheet({
                     u.alert('Giá không hợp lệ', 'Vui lòng nhập mức giá cuối cùng lớn hơn 0đ.', 'alert-triangle');
                     return;
                   }
-                  setParts((prev) => [
-                    ...prev,
-                    {
-                      id: `sheet_ext_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                      name: clean,
-                      minPrice: null,
-                      maxPrice: null,
-                      qty: 1,
-                      alreadyBilledUnitPrice: 0,
-                      actualPriceText: formatNumberInput(String(priceNum)),
-                      receiptId: null,
-                      receiptUri: null,
-                      isAddedInline: true,
-                    },
+                  const newPart = {
+                    id: `sheet_ext_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                    name: clean,
+                    minPrice: null,
+                    maxPrice: null,
+                    qty: 1,
+                    alreadyBilledUnitPrice: 0,
+                    actualPriceText: formatNumberInput(String(priceNum)),
+                    receiptId: null,
+                    receiptUri: null,
+                    isAddedInline: true,
+                  };
+                  setParts((prev) => [...prev, newPart]);
+                  onChangeSharedExtraParts?.((prev) => [
+                    ...(Array.isArray(prev) ? prev : []).filter((x) => normalizeExternalPartName(x.name) !== normalizeExternalPartName(newPart.name)),
+                    newPart,
                   ]);
                   setNewPartName('');
                   setNewPartPriceText('');

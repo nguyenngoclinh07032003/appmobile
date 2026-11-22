@@ -363,6 +363,8 @@ export function UsedAndExtraMaterialsCard({
                     <Text style={{ color: C.ink, fontWeight: '700' }} numberOfLines={1}>{m.name}</Text>
                     {!isUsage ? (
                       <Badge text="Đã tính trong báo giá" fg={C.green} bg={C.greenSoft} />
+                    ) : isAlreadyBilledOrListed(m) ? (
+                      <Badge text="Đã đưa vào Bill" fg={C.primary} bg={C.primarySoft} />
                     ) : null}
                   </View>
                   {unitP > 0 ? (
@@ -569,6 +571,7 @@ export function UsedAndExtraMaterialsCard({
                 onPress={() => {
                   setExtraName(m.name);
                   if (Number(m.price) > 0) setExtraPriceText(formatNumberInput(String(m.price)));
+                  else setExtraPriceText('');
                 }}
                 style={st.quickChip}
               >

@@ -56,17 +56,11 @@ export const formatSlotFromIso = (isoStr) => {
   if (!p) return '08h00 - 10h00';
   const h = p.hour;
   const m = p.minute || 0;
-  if (m > 0) {
-    const startMins = h * 60 + m;
-    const endMins = Math.min(startMins + 120, 22 * 60);
-    return `${pad(h)}h${pad(m)} - ${pad(Math.floor(endMins / 60))}h${pad(endMins % 60)}`;
-  }
-  if (h < 10) return '08h00 - 10h00';
-  if (h < 12) return '10h00 - 12h00';
-  if (h < 14) return '12h00 - 14h00';
-  if (h < 16) return '14h00 - 16h00';
-  if (h < 18) return '16h00 - 18h00';
-  return '18h00 - 20h00';
+  if (h < 6) return '08h00 - 10h00';
+  if (h > 20 || (h === 20 && m > 0)) return '18h00 - 20h00';
+  const startMins = h * 60 + m;
+  const endMins = Math.min(startMins + 120, 22 * 60);
+  return `${pad(h)}h${pad(m)} - ${pad(Math.floor(endMins / 60))}h${pad(endMins % 60)}`;
 };
 
 export const buildPreferredTimeIso = (dateKey, slot) => {
@@ -235,12 +229,16 @@ export const mapBackendQuotationToAppQuote = (
     if (extMeta?.kind === 'finalized_external') {
       const unitP = Number(qi.unit_price) || 0;
       const priorDeposit = extMeta.priorDeposit || 0;
+      const qty = Math.max(1, Number(qi.quantity) || 1);
+      const depQty = extMeta.priorDepositQty != null ? Math.max(1, Number(extMeta.priorDepositQty) || 1) : qty;
+      const actualPrice = priorDeposit > 0 ? Math.round((priorDeposit * depQty + unitP * qty) / qty) : unitP;
       return {
         type: 'part',
         matId: qi.material_id ? `m-db-${qi.material_id}` : undefined,
         name: extMeta.cleanName,
         unit: 'cái',
-        qty: Number(qi.quantity) || 1,
+        qty,
+        origQty: depQty,
         price: unitP,
         dbItemId: qi.quotation_item_id || null,
         isCustom: true,
@@ -248,7 +246,7 @@ export const mapBackendQuotationToAppQuote = (
         minPrice: extMeta.minPrice,
         maxPrice: extMeta.maxPrice,
         priorDeposit,
-        actualPrice: priorDeposit + unitP,
+        actualPrice,
         receiptId: qi.receipt_attachment_id || null,
         isOriginal: false,
       };
@@ -580,7 +578,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     (q) => q.quotation_status === 'APPROVED' || q.customer_decision === 'APPROVED',
   );
   const decidedNoQuote = (
-    (Array.isArray(req.diagnoses) && req.diagnoses.length > 0) ||
+    (Boolean(latestDiag) && latestDiag.needs_quotation !== true) ||
     req.needs_quotation === false ||
     latestVisit?.needs_quotation === false
   ) && !quote?.revisionRequested;
@@ -636,14 +634,16 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     : ['COMPLETED', 'READY_FOR_ACCEPTANCE'].includes(String(req.request_status || '').toUpperCase());
   const estimated = Number(req.estimated_total);
 
-  const voucherDiscount = isWarranty ? 0 : (Number(req.voucher_discount_amount) || 0);
+  const voucherDiscount = isWarranty
+    ? 0
+    : (bill?.voucherDiscount != null ? Number(bill.voucherDiscount) : (Number(req.voucher_discount_amount) || 0));
   const activeQuoteTotal =
     quote && !quote.rejectReason && !quote.revisionRequested && quote.status !== 'REJECTED'
       ? (quote.approved && quote.approvedTotal != null ? quote.approvedTotal : quote.total)
       : (quote?.approvedTotal != null ? quote.approvedTotal : null);
   const resolvedTotal = isWarranty
     ? 0
-    : bill && bill.quotationTotal != null && status !== 'quoted'
+    : bill && (bill.quotationTotal != null || bill.supplementalTotal > 0) && status !== 'quoted'
       ? bill.amountDue
       : activeQuoteTotal != null
         ? Math.max(0, activeQuoteTotal - voucherDiscount)
@@ -665,6 +665,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     originalRequestId: req.original_request_id || null,
     customerPhone: customerPhoneFallback || contactPhone,
     customerTier: req.customer_tier_code || null,
+    customerTierLabel: req.customer_tier_label || req.customer_tier_name || null,
     warrantyDays,
     warrantyStartAt,
     warrantyEndAt,
@@ -735,7 +736,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
         externalPriceState: extLifecycle.externalPriceState,
       };
     })(),
-    materials: (quote?.lines || [])
+    materials: (quote?.approved ? (quote.lines || []) : (quote?.lines || []).filter((l) => l.isPriorApproved))
       .filter((l) => l.type === 'part' && !l.isEstimatedRange)
       .map((l, idx) => ({
         id: `mat-${req.request_id}-${idx}`,
@@ -806,8 +807,15 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     else if (job.completed_at) status = 'done';
     else return null;
   } else {
-    // Đã ghi chẩn đoán mà đơn vẫn IN_PROGRESS (và không có báo giá đang chờ sửa lại) = thợ xác nhận không có phát sinh, đang sửa.
-    const decidedNoQuote = ((job.diagnoses || []).length > 0 || req.needs_quotation === false || visit?.needs_quotation === false) && !quote?.revisionRequested;
+    // Đã ghi chẩn đoán (không gắn needs_quotation: true) mà đơn vẫn IN_PROGRESS = thợ xác nhận không có phát sinh, đang sửa.
+    const latestTechDiag = Array.isArray(job.diagnoses) && job.diagnoses.length > 0
+      ? job.diagnoses[job.diagnoses.length - 1]
+      : null;
+    const decidedNoQuote = (
+      (Boolean(latestTechDiag) && latestTechDiag.needs_quotation !== true) ||
+      req.needs_quotation === false ||
+      visit?.needs_quotation === false
+    ) && !quote?.revisionRequested;
     status = mapBackendStatusToAppStatus(
       rs,
       visit.visit_status,
@@ -847,6 +855,11 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
   }));
 
   const isDone = status === 'done';
+  const warrantyStartAt = dateMs(req.warranty_start_date);
+  const warrantyEndAt = dateMs(req.warranty_end_date);
+  const warrantyDays = Number(req.warranty_days) > 0
+    ? Number(req.warranty_days)
+    : (warrantyStartAt && warrantyEndAt ? Math.round((warrantyEndAt - warrantyStartAt) / DAY_MS) : null);
   const doneAt = isDone ? (dateMs(job.completed_at) || dateMs(visit.actual_end) || dateMs(visit.scheduled_end) || createdAt) : null;
   const voucherDiscount = isWarranty ? 0 : (bill ? bill.voucherDiscount : (Number(req.voucher_discount_amount) || 0));
   const activeQuoteTotal =
@@ -855,7 +868,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
       : (quote?.approvedTotal != null ? quote.approvedTotal : null);
   const resolvedTotal = isWarranty
     ? 0
-    : bill && bill.quotationTotal != null && status !== 'quoted'
+    : bill && (bill.quotationTotal != null || bill.supplementalTotal > 0) && status !== 'quoted'
       ? bill.amountDue
       : activeQuoteTotal != null
         ? Math.max(0, activeQuoteTotal - voucherDiscount)
@@ -875,7 +888,9 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     backendStatus: req.request_status,
     kind: kindOf(req),
     customerPhone: req.contact_phone || '',
-    warrantyDays: null,
+    customerTier: req.customer_tier_code || null,
+    customerTierLabel: req.customer_tier_label || req.customer_tier_name || null,
+    warrantyDays,
     items,
     goods,
     productDiscount,
@@ -891,7 +906,9 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     travelStartedAt: dateMs(job.travel_started_at),
     arrivedAt: dateMs(job.arrived_at),
     checkIn: job.check_in ? { lat: job.check_in.latitude, lng: job.check_in.longitude, at: dateMs(job.arrived_at) } : null,
-    lateCompensation: req.late_minutes > 0 ? { minutes: req.late_minutes, minutesLate: req.late_minutes, tier: req.late_tier || null, amount: bill?.lateDiscount || 0 } : null,
+    lateCompensation: (bill?.lateDiscount || Number(req.late_minutes) > 0)
+      ? { minutes: Number(req.late_minutes) || null, minutesLate: Number(req.late_minutes) || null, tier: req.late_tier || null, amount: bill?.lateDiscount || 0 }
+      : null,
     preferredTimeAt: dateMs(req.preferred_time),
     preferredTimeEndAt: dateMs(req.preferred_time_end),
     offerExpiresAt: dateMs(job.offer_expires_at || job.expires_at || job.accept_deadline),
@@ -932,14 +949,16 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     })(),
     materials: materialsFromUsages.length > 0
       ? materialsFromUsages
-      : (quote?.lines || []).filter((l) => l.type === 'part' && !l.isEstimatedRange).map((l, idx) => ({
-        id: `qmat-${job.assignment_id}-${idx}`,
-        matId: l.matId || null,
-        name: l.name,
-        unit: l.unit,
-        qty: l.qty,
-        price: l.isFinalizedExternal ? l.actualPrice : l.price,
-      })),
+      : (quote?.approved ? (quote.lines || []) : (quote?.lines || []).filter((l) => l.isPriorApproved))
+        .filter((l) => l.type === 'part' && !l.isEstimatedRange)
+        .map((l, idx) => ({
+          id: `qmat-${job.assignment_id}-${idx}`,
+          matId: l.matId || null,
+          name: l.name,
+          unit: l.unit,
+          qty: l.qty,
+          price: l.isFinalizedExternal ? l.actualPrice : l.price,
+        })),
     // Các bước thực hiện (backend: job.procedure; null = đơn không có bước bắt buộc)
     procedure: job.procedure || null,
     // Tiến độ / ghi chú thợ gửi (POST /technician/jobs/:id/progress).
@@ -952,8 +971,8 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     })),
     // Linh kiện mua ngoài trong các báo giá đã duyệt: phải gắn ảnh biên lai trước khi nộp hoàn thành (backend RECEIPT_REQUIRED).
     externalParts: (job.quotations || [])
-      .filter((q) => q.quotation_status === 'APPROVED')
-      .flatMap((q) => (q.items || []).filter((it) => it.is_external_purchase))
+      .filter((q) => q.quotation_status === 'APPROVED' || q.customer_decision === 'APPROVED')
+      .flatMap((q) => (q.items || []).filter((it) => it.is_external_purchase || it.external_purchase || (it.item_type === 'MATERIAL' && !it.material_id)))
       .map((it) => ({
         itemId: it.quotation_item_id,
         name: parseExternalPartDesc(it.description_snapshot)?.cleanName || it.description_snapshot,
@@ -989,6 +1008,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
       at: doneAt || dateMs(job.completed_at),
       tech: myTech.name,
       techCode: myTech.code,
+      customerSignature: visit.customer_signature || null,
       warrantyCertificateCode: `BH-${req.request_code}`,
     } : null,
   };
@@ -1139,7 +1159,7 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
       // Giữ trạng thái di chuyển ('onway') hoặc chat/ảnh minh chứng trên máy nếu backend đang ở ASSIGNED / IN_PROGRESS
       const sameTech = !lo.tech?.code || !ro.tech?.code || lo.tech.code === ro.tech.code;
       const keepOnway = sameTech && lo.status === 'onway' && ro.status === 'confirmed';
-      const keepRepairing = lo.status === 'repairing' && ro.status === 'diagnosing' && !ro.quote?.revisionRequested;
+      const keepRepairing = sameTech && lo.status === 'repairing' && ro.status === 'diagnosing' && !ro.quote?.revisionRequested;
       // Thợ đang sửa lại báo giá (reopenQuote): giữ form mở tới khi server có báo giá mới.
       const keepEditing = Boolean(lo.quoteEditing) && ['quoted', 'repairing'].includes(ro.status)
         && (ro.quote?.dbQuotationId || null) === (lo.quoteEditingFrom || null);
@@ -1148,8 +1168,10 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         && (lo.paymentMethod === 'cash' || lo.paymentMethod === 'vietqr')
         && !lo.report?.paid
         && ro.paymentMethod !== lo.paymentMethod;
-      // Khách đã báo trả tiền mặt khi BE còn GD VietQR chờ → giữ cashClaimPending local.
+      // Khách đã báo trả tiền mặt khi BE còn GD VietQR chờ → giữ cashClaimPending local (chỉ khi có bill thật hoặc dữ liệu số tiền từ local).
+      const hasBillAmounts = Boolean(ro.bill || lo.bill);
       const keepCashClaim = Boolean(lo.cashClaimLocked)
+        && hasBillAmounts
         && !lo.report?.paid
         && !ro.bill?.cashClaimPending
         && !['PAID', 'NOTHING_TO_PAY'].includes(ro.bill?.paymentStatus);
@@ -1210,7 +1232,7 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         ...(keepCashClaim ? {
           cashClaimLocked: true,
           bill: {
-            ...(ro.bill || lo.bill || {}),
+            ...(ro.bill || lo.bill),
             cashClaimPending: true,
             paymentMethod: 'cash',
           },

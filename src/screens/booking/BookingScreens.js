@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Image, Platform } from 'react-native';
 import { C, R, shadow } from '../../theme';
 import {
@@ -44,8 +44,9 @@ export function DetailScreen({ params }) {
     callAction(a.loadServiceReviews, service.dbId).catch(() => {});
     callAction(a.loadServiceDetail, service.dbId).catch(() => {});
   }, [service?.dbId]);
-  if (!service) return <View style={{ flex: 1 }}><TopBar title="Không tìm thấy" /></View>;
+  if (!service) return <NotFoundView title="Không tìm thấy dịch vụ" body="Dịch vụ này hiện không còn khả dụng." onBack={nav.back} />;
   const curTier = tierOf(s.lifetimePoints || 0).cur;
+  const isLifetimeSvc = service.kind === 'lifetime';
   const catMaterials = MATERIALS.filter((m) => m.category === service.category || m.category === 'all');
   const discount = discountOf(service);
   const detail = (s.serviceDetails || {})[service.dbId] || null;
@@ -90,7 +91,7 @@ export function DetailScreen({ params }) {
           </View>
           <Text style={bx.name}>{service.name}</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
-            {ratingAvg != null ? <Stars value={Math.round(ratingAvg)} size={13} /> : null}
+            {ratingCount > 0 && ratingAvg != null ? <Stars value={Math.round(ratingAvg)} size={13} /> : null}
             <Text style={ui.meta}>
               {ratingCount ? `${fmtRating(ratingAvg)} · ${ratingCount.toLocaleString('vi-VN')} đánh giá` : 'Chưa có đánh giá'}
             </Text>
@@ -102,7 +103,7 @@ export function DetailScreen({ params }) {
 
           <View style={bx.trust}>
             {[
-              { i: 'shield-check', t: 'Bảo hành', v: `${curTier.warrantyDays || BASE_WARRANTY_DAYS} ngày` },
+              ...(!isLifetimeSvc ? [{ i: 'shield-check', t: 'Bảo hành', v: `${curTier.warrantyDays || BASE_WARRANTY_DAYS} ngày` }] : [{ i: 'sparkles', t: 'Gói dịch vụ', v: 'Định kỳ trọn gói' }]),
               { i: 'timer', t: 'Thời gian', v: isClean(service) ? durationText(service.id) : 'Theo khảo sát' },
               { i: 'navigation', t: 'Phí đi lại', v: 'Miễn phí' },
             ].map((x) => (
@@ -314,22 +315,23 @@ export function DetailScreen({ params }) {
 // =========================================================== GIỎ HÀNG
 export function CartScreen() {
   const { s, a, nav, ui: u } = useApp();
-  const total = cartTotal(s.cart);
-  const cats = new Set(s.cart.map((c) => getService(c.id)?.category));
-  const suggest = ALL_SERVICES.filter((x) => cats.has(x.category) && !s.cart.some((c) => c.id === x.id)).slice(0, 6);
+  const validCart = s.cart.filter((it) => Boolean(getService(it.id)));
+  const total = cartTotal(validCart);
+  const cats = new Set(validCart.map((c) => getService(c.id)?.category));
+  const suggest = ALL_SERVICES.filter((x) => cats.has(x.category) && !validCart.some((c) => c.id === x.id)).slice(0, 6);
   return (
     <View style={{ flex: 1 }}>
       <TopBar
         title="Giỏ hàng"
-        sub={s.cart.length ? `${s.cart.length} dịch vụ` : null}
-        right={s.cart.length ? <Tap onPress={() => u.confirm('Xoá toàn bộ giỏ hàng?', '', a.clearCart, 'Xoá hết', true)}><Text style={{ color: C.red, fontWeight: '700' }}>Xoá hết</Text></Tap> : null}
+        sub={validCart.length ? `${validCart.length} dịch vụ` : null}
+        right={validCart.length ? <Tap onPress={() => u.confirm('Xoá toàn bộ giỏ hàng?', '', a.clearCart, 'Xoá hết', true)}><Text style={{ color: C.red, fontWeight: '700' }}>Xoá hết</Text></Tap> : null}
       />
-      {s.cart.length === 0 ? (
+      {validCart.length === 0 ? (
         <EmptyState icon="shopping-cart" title="Giỏ hàng đang trống" body="Thêm dịch vụ bạn cần, chọn giờ và thợ Minh Đức sẽ đến tận nhà." action="Khám phá dịch vụ" onAction={() => nav.services()} style={{ flex: 1 }} />
       ) : (
         <View style={{ flex: 1 }}>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
-            {s.cart.map((it) => {
+            {validCart.map((it) => {
               const svc = getService(it.id);
               if (!svc) return null;
               return (
@@ -365,7 +367,7 @@ export function CartScreen() {
               <Text style={{ color: C.muted, fontWeight: '600' }}>Tạm tính</Text>
               <Text style={[bx.price, { fontSize: 22 }]}>{formatVND(total)}</Text>
             </View>
-            <Btn title="Chọn giờ & đặt lịch" onPress={() => nav.push('checkout', { items: s.cart.map(({ id, qty }) => ({ id, qty })), fromCart: true })} />
+            <Btn title="Chọn giờ & đặt lịch" onPress={() => nav.push('checkout', { items: validCart.map(({ id, qty }) => ({ id, qty })), fromCart: true })} />
           </View>
         </View>
       )}
@@ -405,12 +407,26 @@ export function CheckoutScreen({ params }) {
   const [slot, setSlot] = useState(() => minutesToSlotStr(DEFAULT_SLOT_MINUTE));
 
   const minAvailable = getMinSelectable(dayIdx);
-  const isTodayOutOfSlots = dayIdx === 0 && minAvailable >= MAX_DAY_MINUTE;
+  const isTodayOutOfSlots = dayIdx === 0 && minAvailable > MAX_DAY_MINUTE;
+  const attachBusyRef = useRef(false);
+
+  // Giữ slot & timeMinutes đồng bộ với minAvailable khi đồng hồ nhảy qua mốc 15 phút hoặc cuối ngày.
+  useEffect(() => {
+    if (dayIdx !== 0) return;
+    if (minAvailable > MAX_DAY_MINUTE) {
+      if (slot) setSlot('');
+      return;
+    }
+    if (timeMinutes < minAvailable) {
+      setTimeMinutes(minAvailable);
+      setSlot(minutesToSlotStr(minAvailable));
+    }
+  }, [dayIdx, minAvailable]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDaySelect = (i) => {
     setDayIdx(i);
     const newMin = getMinSelectable(i);
-    if (i === 0 && newMin >= MAX_DAY_MINUTE) {
+    if (i === 0 && newMin > MAX_DAY_MINUTE) {
       setSlot('');
       return;
     }
@@ -445,20 +461,26 @@ export function CheckoutScreen({ params }) {
   const curTier = tierOf(s.lifetimePoints || 0).cur;
 
   const addAttachment = async () => {
+    if (attachBusyRef.current) return;
     if (attachments.length >= 5) { u.alert('Giới hạn ảnh', 'Bạn chỉ đính kèm tối đa 5 ảnh cho yêu cầu.', '📷'); return; }
-    const uri = await pickImage();
-    if (uri === null) {
-      u.alert(
-        Platform.OS === 'web' ? 'Không thể chọn ảnh' : 'Cần quyền truy cập ảnh',
-        Platform.OS === 'web'
-          ? 'Trình duyệt không hỗ trợ chọn ảnh.'
-          : 'Vui lòng cấp quyền truy cập thư viện ảnh trong Cài đặt thiết bị để đính kèm ảnh.',
-        '📷',
-      );
-      return;
+    attachBusyRef.current = true;
+    try {
+      const uri = await pickImage();
+      if (uri === null) {
+        u.alert(
+          Platform.OS === 'web' ? 'Không thể chọn ảnh' : 'Cần quyền truy cập ảnh',
+          Platform.OS === 'web'
+            ? 'Trình duyệt không hỗ trợ chọn ảnh.'
+            : 'Vui lòng cấp quyền truy cập thư viện ảnh trong Cài đặt thiết bị để đính kèm ảnh.',
+          '📷',
+        );
+        return;
+      }
+      if (!uri) return;
+      setAttachments((p) => (p.length >= 5 ? p : [...p, { id: `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, uri, at: Date.now() }]));
+    } finally {
+      attachBusyRef.current = false;
     }
-    if (!uri) return;
-    setAttachments((p) => [...p, { id: `a${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, uri, at: Date.now() }]);
   };
 
   const goods = lines.reduce((sum, x) => sum + (x.svc.oldPrice || x.svc.price) * x.qty, 0);
@@ -477,11 +499,18 @@ export function CheckoutScreen({ params }) {
   React.useEffect(() => {
     if (!pendingVoucher) return;
     if (!allVouchers.length) return;
-    const v = allVouchers.find((x) => x.code === pendingVoucher);
+    const wanted = String(pendingVoucher).trim().toUpperCase();
+    const v = allVouchers.find((x) => String(x.code || '').trim().toUpperCase() === wanted);
+    // Nếu mới chỉ có publicVouchers mà myVouchers chưa kịp đồng bộ xong lúc đăng nhập, đợi thêm vòng đồng bộ ví.
+    if (!v && s.auth && !(s.myVouchers || []).length) return;
     setPendingVoucher(null);
     if (!v) return;
     if (v.min && subtotal < v.min) {
       u.alert('Chưa đủ điều kiện', `${v.code} áp dụng cho đơn từ ${formatVND(v.min)}. Đơn hiện tại ${formatVND(subtotal)}.`, '🎟️');
+      return;
+    }
+    if (voucherDiscount(v, subtotal) <= 0) {
+      u.alert('Chưa đủ điều kiện', `Mã ${v.code} chưa thể áp dụng với đơn hiện tại.`, '🎟️');
       return;
     }
     setVoucher(v);
@@ -489,11 +518,24 @@ export function CheckoutScreen({ params }) {
     u.toast(`Đã áp dụng ${v.code}`, '🎟️');
   }, [pendingVoucher, s.myVouchers, s.publicVouchers]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const applyVoucher = (code) => {
-    const v = allVouchers.find((x) => x.code === code.trim().toUpperCase());
+  const applyVoucher = (codeOrVoucher) => {
+    const isObj = codeOrVoucher && typeof codeOrVoucher === 'object';
+    const rawCode = isObj ? codeOrVoucher.code : codeOrVoucher;
+    const upper = String(rawCode || '').trim().toUpperCase();
+    const v = isObj
+      ? (allVouchers.find((x) => (codeOrVoucher.customerVoucherId
+          ? x.customerVoucherId === codeOrVoucher.customerVoucherId
+          : String(x.code || '').trim().toUpperCase() === upper && !x.customerVoucherId))
+        || allVouchers.find((x) => String(x.code || '').trim().toUpperCase() === upper))
+      : allVouchers.find((x) => String(x.code || '').trim().toUpperCase() === upper);
     if (!v) {
       setShowVoucher(false);
       u.alert('Mã không hợp lệ', 'Kiểm tra lại mã, hoặc chọn voucher trong ví / mã ưu đãi đang mở ở mục Quyền lợi.', '🎟️');
+      return;
+    }
+    if (v.expiresAt && v.expiresAt <= Date.now()) {
+      setShowVoucher(false);
+      u.alert('Mã đã hết hạn', `Voucher ${v.code} đã hết hạn sử dụng.`, '🎟️');
       return;
     }
     if (v.min && subtotal < v.min) {
@@ -501,17 +543,31 @@ export function CheckoutScreen({ params }) {
       u.alert('Chưa đủ điều kiện', `${v.code} áp dụng cho đơn từ ${formatVND(v.min)}. Đơn hiện tại ${formatVND(subtotal)}.`, '🎟️');
       return;
     }
+    if (voucherDiscount(v, subtotal) <= 0) {
+      setShowVoucher(false);
+      u.alert('Chưa đủ điều kiện', `Mã ${v.code} chưa giảm thêm được cho đơn hiện tại.`, '🎟️');
+      return;
+    }
     setVoucher(v); setVoucherInput(v.code); setShowVoucher(false);
     u.toast(`Đã áp dụng ${v.code}`, '🎟️');
   };
 
-  // Giảm dịch vụ/số lượng làm tạm tính dưới mức tối thiểu → tự bỏ mã và báo khách (không giữ mã không hợp lệ).
+  // Giảm dịch vụ/số lượng hoặc voucher quá hạn → tự bỏ mã và báo khách (không giữ mã không hợp lệ).
   useEffect(() => {
-    if (!voucher || !voucher.min || subtotal >= voucher.min) return;
-    const dropped = voucher.code;
-    setVoucher(null);
-    setVoucherInput('');
-    u.toast(`Đã bỏ mã ${dropped}: đơn chưa đạt tối thiểu ${formatVND(voucher.min)}`, '🎟️');
+    if (!voucher) return;
+    if (voucher.expiresAt && voucher.expiresAt <= Date.now()) {
+      const dropped = voucher.code;
+      setVoucher(null);
+      setVoucherInput('');
+      u.toast(`Mã ${dropped} đã hết hạn sử dụng`, 'ℹ️');
+      return;
+    }
+    if (voucher.min && subtotal < voucher.min) {
+      const dropped = voucher.code;
+      setVoucher(null);
+      setVoucherInput('');
+      u.toast(`Đã bỏ mã ${dropped}: đơn chưa đạt tối thiểu ${formatVND(voucher.min)}`, '🎟️');
+    }
   }, [subtotal, voucher]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSendEmailOtp = async () => {
@@ -572,7 +628,7 @@ export function CheckoutScreen({ params }) {
       return;
     }
     const liveMin = getMinSelectable(dayIdx);
-    const liveOut = dayIdx === 0 && liveMin >= MAX_DAY_MINUTE;
+    const liveOut = dayIdx === 0 && liveMin > MAX_DAY_MINUTE;
     if (dayIdx === 0 && liveOut) {
       setSlot('');
       u.alert('Hết giờ phục vụ', 'Hôm nay thợ đã kết thúc nhận ca. Quý khách vui lòng chuyển sang Ngày mai.', '⏰');
@@ -586,6 +642,13 @@ export function CheckoutScreen({ params }) {
     }
     if (lines.length > 10) {
       u.alert('Giới hạn dịch vụ', 'Mỗi đơn hỗ trợ tối đa 10 dịch vụ. Vui lòng tách bớt sang đơn khác để thợ phục vụ tốt nhất.', '📋');
+      return;
+    }
+    if (voucher?.expiresAt && voucher.expiresAt <= Date.now()) {
+      const expCode = voucher.code;
+      setVoucher(null);
+      setVoucherInput('');
+      u.alert('Mã giảm giá đã hết hạn', `Voucher ${expCode} vừa hết hạn. Vui lòng kiểm tra tổng thanh toán hoặc chọn mã khác trước khi đặt.`, '🎟️');
       return;
     }
 
@@ -720,7 +783,7 @@ export function CheckoutScreen({ params }) {
                 <Text style={[ui.price, { fontSize: 14 }]}>{formatVND(x.svc.price * x.qty)}</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   {lines.length > 1 ? <Tap onPress={() => setItems((p) => p.filter((it) => it.id !== x.id))} hitSlop={6}><Text style={{ color: C.faint }}>✕</Text></Tap> : null}
-                  <Stepper value={x.qty} onChange={(q) => setItems((p) => p.map((it) => (it.id === x.id ? { ...it, qty: q } : it)))} />
+                  <Stepper value={x.qty} max={20} onChange={(q) => setItems((p) => p.map((it) => (it.id === x.id ? { ...it, qty: q } : it)))} />
                 </View>
               </View>
               {isEstimate(x.svc) ? <Text style={ui.estimate}>Giá tham khảo · chốt sau khảo sát</Text> : null}
@@ -796,7 +859,7 @@ export function CheckoutScreen({ params }) {
                 const oldCode = voucher.code;
                 setVoucher(null);
                 setVoucherInput('');
-                u.toast(`Đã huỷ mã ${oldCode}`);
+                u.toast(`Đã huỷ mã ${oldCode}`, 'ℹ️');
               }}
               hitSlop={8}
               style={{ backgroundColor: C.redSoft, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 }}
@@ -971,7 +1034,7 @@ export function CheckoutScreen({ params }) {
               setVoucher(null);
               setVoucherInput('');
               setShowVoucher(false);
-              u.toast(`Đã huỷ mã ${oldCode}`);
+              u.toast(`Đã huỷ mã ${oldCode}`, 'ℹ️');
             }}
             style={{
               flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -1009,9 +1072,9 @@ export function CheckoutScreen({ params }) {
                   setVoucher(null);
                   setVoucherInput('');
                   setShowVoucher(false);
-                  u.toast(`Đã huỷ mã ${v.code}`);
+                  u.toast(`Đã huỷ mã ${v.code}`, 'ℹ️');
                 } else {
-                  applyVoucher(v.code);
+                  applyVoucher(v);
                 }
               }}
             >
@@ -1034,111 +1097,124 @@ export function CheckoutScreen({ params }) {
       </Sheet>
 
       {/* Sheet Thêm dịch vụ khác vào đơn đặt lịch */}
-      <Sheet visible={showAddServiceSheet} onClose={() => setShowAddServiceSheet(false)} title="Thêm dịch vụ vào đơn">
-        <ScrollView style={{ maxHeight: 520 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          <Text style={[ui.meta, { marginBottom: 10 }]}>
-            Chọn thêm các dịch vụ vệ sinh, bảo dưỡng, nạp gas để thợ xử lý trọn gói cùng lúc (áp dụng ưu đãi combo giảm tới 10%).
-          </Text>
-
-          {/* Tìm kiếm */}
-          <Field
-            value={svcSearch}
-            onChangeText={setSvcSearch}
-            placeholder="🔍 Tìm tên dịch vụ (VD: Sạc gas, Vệ sinh...)"
-            style={{ marginBottom: 10 }}
-          />
-
-          {/* Phân loại danh mục */}
-          <HScroll contentContainerStyle={{ gap: 6, marginBottom: 12 }}>
-            <Chip
-              label="Tất cả"
-              on={selectedSvcCat === 'all'}
-              onPress={() => setSelectedSvcCat('all')}
-            />
-            {CATEGORIES.map((c) => (
-              <Chip
-                key={c.id}
-                icon={c.icon}
-                label={c.label}
-                on={selectedSvcCat === c.id}
-                onPress={() => setSelectedSvcCat(c.id)}
-              />
-            ))}
-          </HScroll>
-
-          {/* Danh sách dịch vụ khả dụng */}
-          <View style={{ gap: 10 }}>
-            {availableServices.length === 0 ? (
-              <Text style={[ui.meta, { textAlign: 'center', paddingVertical: 20 }]}>Không tìm thấy dịch vụ phù hợp.</Text>
-            ) : (
-              availableServices.map((svc) => {
-                const existing = items.find((it) => it.id === svc.id);
-                const curQty = existing?.qty || 0;
-                return (
-                  <Card
-                    key={svc.id}
-                    style={{
-                      flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12,
-                      borderColor: curQty > 0 ? C.primary : C.line,
-                      backgroundColor: curQty > 0 ? '#F6FAFF' : '#fff',
-                    }}
-                  >
-                    <Media item={svc} height={48} width={48} radius={10} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontWeight: '800', fontSize: 13, color: C.ink }} numberOfLines={2}>
-                        {svc.name}
-                      </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                        <Text style={[ui.price, { fontSize: 13 }]}>{formatVND(svc.price)}</Text>
-                        {svc.warranty ? (
-                          <Badge text={svc.warranty} fg={C.primary} bg={C.primarySoft} style={{ paddingHorizontal: 5, paddingVertical: 1 }} />
-                        ) : null}
-                      </View>
-                    </View>
-
-                    {curQty > 0 ? (
-                      <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                        <Stepper
-                          value={curQty}
-                          min={items.length > 1 ? 0 : 1}
-                          onChange={(q) => {
-                            if (q <= 0) {
-                              if (items.length <= 1) {
-                                u.toast('Đơn cần ít nhất 1 dịch vụ', 'ℹ️');
-                                return;
-                              }
-                              setItems((p) => (p.length <= 1 ? p : p.filter((it) => it.id !== svc.id)));
-                            } else {
-                              setItems((p) => p.map((it) => (it.id === svc.id ? { ...it, qty: q } : it)));
-                            }
-                          }}
-                        />
-                        <Text style={{ fontSize: 10.5, color: C.green, fontWeight: '700' }}>✓ Đã chọn ({curQty})</Text>
-                      </View>
-                    ) : (
-                      <Btn
-                        title="＋ Thêm"
-                        variant="soft"
-                        small
-                        onPress={() => {
-                          setItems((p) => [...p, { id: svc.id, qty: 1 }]);
-                          u.toast(`Đã thêm ${svc.name}`, '✅');
-                        }}
-                      />
-                    )}
-                  </Card>
-                );
-              })
-            )}
-          </View>
-
+      <Sheet
+        visible={showAddServiceSheet}
+        onClose={() => setShowAddServiceSheet(false)}
+        title="Thêm dịch vụ vào đơn"
+        footer={(
           <Btn
             title={`Xong (${lines.length} dịch vụ · ${formatVND(total)})`}
             icon="✓"
             onPress={() => setShowAddServiceSheet(false)}
-            style={{ marginTop: 16, marginBottom: 12 }}
           />
-        </ScrollView>
+        )}
+      >
+        <Text style={[ui.meta, { marginBottom: 10 }]}>
+          Chọn thêm các dịch vụ vệ sinh, bảo dưỡng, nạp gas để thợ xử lý trọn gói cùng lúc (áp dụng ưu đãi combo giảm tới 10%).
+        </Text>
+
+        {/* Tìm kiếm */}
+        <Field
+          value={svcSearch}
+          onChangeText={setSvcSearch}
+          placeholder="🔍 Tìm tên dịch vụ (VD: Sạc gas, Vệ sinh...)"
+          style={{ marginBottom: 10 }}
+        />
+
+        {/* Phân loại danh mục */}
+        <HScroll contentContainerStyle={{ gap: 6, marginBottom: 12 }}>
+          <Chip
+            label="Tất cả"
+            on={selectedSvcCat === 'all'}
+            onPress={() => setSelectedSvcCat('all')}
+          />
+          {CATEGORIES.map((c) => (
+            <Chip
+              key={c.id}
+              icon={c.icon}
+              label={c.label}
+              on={selectedSvcCat === c.id}
+              onPress={() => setSelectedSvcCat(c.id)}
+            />
+          ))}
+        </HScroll>
+
+        {/* Danh sách dịch vụ khả dụng */}
+        <View style={{ gap: 10 }}>
+          {availableServices.length === 0 ? (
+            <Text style={[ui.meta, { textAlign: 'center', paddingVertical: 20 }]}>Không tìm thấy dịch vụ phù hợp.</Text>
+          ) : (
+            availableServices.map((svc) => {
+              const existing = items.find((it) => it.id === svc.id);
+              const curQty = existing?.qty || 0;
+              return (
+                <Card
+                  key={svc.id}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12,
+                    borderColor: curQty > 0 ? C.primary : C.line,
+                    backgroundColor: curQty > 0 ? '#F6FAFF' : '#fff',
+                  }}
+                >
+                  <Media item={svc} height={48} width={48} radius={10} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: '800', fontSize: 13, color: C.ink }} numberOfLines={2}>
+                      {svc.name}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                      <Text style={[ui.price, { fontSize: 13 }]}>{formatVND(svc.price)}</Text>
+                      {svc.warranty ? (
+                        <Badge text={svc.warranty} fg={C.primary} bg={C.primarySoft} style={{ paddingHorizontal: 5, paddingVertical: 1 }} />
+                      ) : null}
+                    </View>
+                  </View>
+
+                  {curQty > 0 ? (
+                    <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                      <Stepper
+                        value={curQty}
+                        min={0}
+                        max={20}
+                        onChange={(q) => {
+                          if (q <= 0) {
+                            if (lines.length <= 1) {
+                              u.toast('Đơn cần ít nhất 1 dịch vụ', 'ℹ️');
+                              return;
+                            }
+                            setItems((p) => (p.length <= 1 ? p : p.filter((it) => it.id !== svc.id)));
+                          } else {
+                            setItems((p) => p.map((it) => (it.id === svc.id ? { ...it, qty: q } : it)));
+                          }
+                        }}
+                      />
+                      <Text style={{ fontSize: 10.5, color: C.green, fontWeight: '700' }}>✓ Đã chọn ({curQty})</Text>
+                    </View>
+                  ) : (
+                    <Btn
+                      title="＋ Thêm"
+                      variant="soft"
+                      small
+                      onPress={() => {
+                        if (items.some((it) => it.id === svc.id)) return;
+                        if (lines.length >= 10) {
+                          u.toast('Mỗi đơn chọn tối đa 10 dịch vụ', '⚠️');
+                          return;
+                        }
+                        let added = false;
+                        setItems((p) => {
+                          if (p.some((it) => it.id === svc.id) || p.length >= 10) return p;
+                          added = true;
+                          return [...p, { id: svc.id, qty: 1 }];
+                        });
+                        if (added) u.toast(`Đã thêm ${svc.name}`, '✅');
+                      }}
+                    />
+                  )}
+                </Card>
+              );
+            })
+          )}
+        </View>
       </Sheet>
     </View>
   );
@@ -1257,7 +1333,7 @@ export function AddressFormScreen({ params }) {
   const initial = params.id ? s.addresses.find((x) => x.id === params.id) : null;
   const [name, setName] = useState(initial?.name || s.user?.name || '');
   const [gender, setGender] = useState(initial?.gender || 'Nam');
-  const [phone, setPhone] = useState(initial?.phone || s.user?.phone || '');
+  const [phone, setPhone] = useState(sanitizeVnPhoneInput(initial?.phone || s.user?.phone || ''));
   // Phường/xã Hà Nội sau sáp nhập: lấy từ backend (GET /locations/hanoi/wards), lưu ward_code.
   const [ward, setWard] = useState(initial?.wardCode ? { code: initial.wardCode, name: initial.wardName || initial.area } : null);
   const [wards, setWards] = useState([]);
@@ -1300,8 +1376,9 @@ export function AddressFormScreen({ params }) {
     }
     return full;
   })();
+  const mustBeDefault = initial ? (s.addresses.length <= 1 && Boolean(initial.isDefault)) : s.addresses.length === 0;
   const [street, setStreet] = useState(initialStreet);
-  const [isDefault, setIsDefault] = useState(initial ? !!initial.isDefault : s.addresses.length === 0);
+  const [isDefault, setIsDefault] = useState(mustBeDefault ? true : (initial ? !!initial.isDefault : false));
   const [showArea, setShowArea] = useState(false);
   const [err, setErr] = useState({});
 
@@ -1322,11 +1399,16 @@ export function AddressFormScreen({ params }) {
     await runSaving(async () => {
       let res;
       try {
-        res = (await callAction(a.saveAddress, { id: initial?.id, name: name.trim(), gender, phone: phone.trim(), area, wardCode: ward.code, wardName: ward.name, street: street.trim(), isDefault })) || {};
+        res = (await callAction(a.saveAddress, { id: initial?.id, name: name.trim(), gender, phone: phone.trim(), area, wardCode: ward.code, wardName: ward.name, street: street.trim(), isDefault: mustBeDefault ? true : isDefault })) || {};
       } catch (ex) {
         res = { ok: false, error: errorText(ex, 'Không lưu được địa chỉ. Vui lòng thử lại.') };
       }
-      if (!res.ok) { setErr((prev) => ({ ...prev, area: errorText(res, 'Không lưu được địa chỉ. Vui lòng thử lại.') })); return; }
+      if (!res.ok) {
+        const apiMsg = errorText(res, 'Không lưu được địa chỉ. Vui lòng thử lại.');
+        const isAreaErr = res.code === 'INVALID_WARD' || /phường|xã|khu vực|ward/i.test(apiMsg);
+        setErr((prev) => ({ ...prev, ...(isAreaErr ? { area: apiMsg } : { form: apiMsg }) }));
+        return;
+      }
       const id = res.id;
       if (params.useNow) {
         if (id) a.selectAddress(id);
@@ -1348,7 +1430,7 @@ export function AddressFormScreen({ params }) {
             value={name}
             onChangeText={(t) => {
               setName(t);
-              if (err.name) setErr((prev) => ({ ...prev, name: '' }));
+              if (err.name || err.form) setErr((prev) => ({ ...prev, name: '', form: '' }));
             }}
             onBlur={() => {
               if (name.trim()) {
@@ -1367,9 +1449,9 @@ export function AddressFormScreen({ params }) {
               setPhone(p);
               if (p.length === 10) {
                 const phoneErr = validateVietnamesePhone(p);
-                setErr((prev) => ({ ...prev, phone: phoneErr }));
-              } else if (err.phone) {
-                setErr((prev) => ({ ...prev, phone: '' }));
+                setErr((prev) => ({ ...prev, phone: phoneErr, form: '' }));
+              } else if (err.phone || err.form) {
+                setErr((prev) => ({ ...prev, phone: '', form: '' }));
               }
             }}
             onBlur={() => {
@@ -1392,7 +1474,7 @@ export function AddressFormScreen({ params }) {
             value={street}
             onChangeText={(t) => {
               setStreet(t);
-              if (err.street) setErr((prev) => ({ ...prev, street: '' }));
+              if (err.street || err.form) setErr((prev) => ({ ...prev, street: '', form: '' }));
             }}
             onBlur={() => {
               if (street.trim()) {
@@ -1403,8 +1485,13 @@ export function AddressFormScreen({ params }) {
             placeholder="VD: Số 12 ngõ 45 hoặc 128 Trần Duy Hưng"
             error={err.street}
           />
-          <Checkbox on={isDefault} onPress={() => setIsDefault(!isDefault)} label="Đặt làm địa chỉ mặc định" />
+          <Checkbox
+            on={mustBeDefault ? true : isDefault}
+            onPress={() => { if (!mustBeDefault) setIsDefault(!isDefault); }}
+            label={mustBeDefault ? 'Đặt làm địa chỉ mặc định (bắt buộc)' : 'Đặt làm địa chỉ mặc định'}
+          />
         </Card>
+        {err.form ? <Text style={{ color: C.red, fontSize: 12.5, fontWeight: '600', marginTop: 10 }}>{err.form}</Text> : null}
       </ScrollView>
       <View style={bx.dockCol}><Btn title={saving ? 'Đang lưu…' : 'Lưu địa chỉ'} disabled={saving} onPress={save} /></View>
       <Sheet visible={showArea} onClose={() => setShowArea(false)} title="Chọn phường/xã (Hà Nội)">
@@ -1430,7 +1517,7 @@ export function AddressFormScreen({ params }) {
               ) : null}
               {filteredWards.map((w) => (
                 <Tap key={w.code} style={bx.option} onPress={() => { setWard({ code: w.code, name: w.name }); setShowArea(false); setErr((prev) => ({ ...prev, area: '' })); }}>
-                  <Radio on={ward?.code === w.code} />
+                  <Radio on={String(ward?.code ?? '') === String(w.code)} />
                   <Text style={bx.optionText}>{w.name}</Text>
                 </Tap>
               ))}
