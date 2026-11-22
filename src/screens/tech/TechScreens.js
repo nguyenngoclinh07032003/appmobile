@@ -309,7 +309,7 @@ export function TechJobsScreen() {
               <Text style={tx.techName} numberOfLines={1}>{me.name}</Text>
               <Text style={tx.techSub}>{me.code} · ★ {me.rating != null ? Number(me.rating).toFixed(1) : '—'} ({me.ratingCount || 0} đánh giá dịch vụ)</Text>
             </View>
-            <IconBtn icon="bell" dark badge={d.techUnread} onPress={() => nav.go('tech-notifs')} label="Thông báo" />
+            <IconBtn icon="bell" dark badge={d.techUnread} onPress={() => nav.push('tech-notifs')} label="Thông báo" />
           </View>
         </View>
 
@@ -934,7 +934,7 @@ export function TechAccountScreen() {
             <ListRow icon="clipboard-check" label="Chấm công" value="Vào ca & bảng công" onPress={() => nav.go('tech-attendance')} />
             <ListRow icon="banknote" label="Bàn giao tiền mặt" value="Nộp & lịch sử" onPress={() => nav.push('tech-handovers')} />
             <ListRow icon="calendar-clock" label="Lịch làm việc" onPress={() => nav.go('tech-schedule')} />
-            <ListRow icon="bell" label="Thông báo" value={d.techUnread ? `${d.techUnread} mới` : ''} onPress={() => nav.go('tech-notifs')} />
+            <ListRow icon="bell" label="Thông báo" value={d.techUnread ? `${d.techUnread} mới` : ''} onPress={() => nav.push('tech-notifs')} />
             <ListRow icon="circle-user-round" label="Sửa thông tin kỹ thuật viên" onPress={openProfile} />
             <ListRow icon="lock" label="Đổi mật khẩu" onPress={() => { setCurPw(''); setNewPw(''); setNewPw2(''); setShowPw(true); }} />
           </View>

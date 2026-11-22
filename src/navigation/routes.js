@@ -26,7 +26,6 @@ export const TECH_TABS = [
   { id: 'tech-jobs', label: 'Công việc', icon: 'briefcase', Comp: TechJobsScreen },
   { id: 'tech-attendance', label: 'Chấm công', icon: 'clipboard-check', Comp: TechAttendanceScreen },
   { id: 'tech-schedule', label: 'Lịch', icon: 'calendar-clock', Comp: TechScheduleScreen },
-  { id: 'tech-notifs', label: 'Thông báo', icon: 'bell', Comp: TechNotifsScreen },
   { id: 'tech-account', label: 'Tài khoản', icon: 'hard-hat', Comp: TechAccountScreen },
 ];
 

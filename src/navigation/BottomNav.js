@@ -11,7 +11,7 @@ export default function BottomNav() {
   const tabs = role === 'tech' ? TECH_TABS : CUSTOMER_TABS;
   const activeTab = tabs.some((t) => t.id === nav.tab) ? nav.tab : tabs[0]?.id;
   const badges = role === 'tech'
-    ? { 'tech-jobs': d.newJobs.length, 'tech-notifs': d.techUnread }
+    ? { 'tech-jobs': d.newJobs.length }
     : { activity: d.activeOrders.length };
 
   return (
