@@ -68,14 +68,6 @@ const NOTIF_TYPE_VI = {
   VOUCHER_RECEIVED: { title: 'Bạn nhận được voucher', body: 'Một mã giảm giá mới đã được thêm vào ví của bạn.' },
   POINTS_EARNED: { title: 'Cộng điểm thưởng', body: 'Bạn vừa được cộng điểm thưởng.' },
   ACCOUNT_LOCKED: { title: 'Tài khoản bị khoá', body: 'Tài khoản của bạn đang bị tạm khoá.' },
-  // Ca làm & chấm công của thợ (bấm vào mở màn Chấm công).
-  SHIFT_ASSIGNED: { title: 'Bạn được xếp ca làm mới', body: 'Mở Chấm công để xem ca của bạn.' },
-  SHIFT_UPDATED: { title: 'Ca làm của bạn đã thay đổi', body: 'Mở Chấm công để xem ca của bạn.' },
-  SHIFT_CANCELLED: { title: 'Ca làm của bạn đã bị hủy', body: 'Mở Chấm công để xem ca của bạn.' },
-  ATTENDANCE_APPROVED: { title: 'Ca chấm công đã được duyệt', body: 'Văn phòng đã duyệt ca bạn vào.' },
-  ATTENDANCE_REJECTED: { title: 'Ca chấm công bị từ chối', body: 'Mở Chấm công để xem lý do.' },
-  VIOLATION_RECORDED: { title: 'Bạn bị ghi nhận một vi phạm', body: 'Xem chi tiết ở mục Vi phạm trong Chấm công.' },
-  ATTENDANCE_PERIOD_LOCKED: { title: 'Kỳ công đã được chốt', body: 'Bảng công không còn chỉnh sửa được.' },
   SYSTEM: { title: 'Thông báo hệ thống', body: '' },
 };
 
@@ -134,13 +126,6 @@ const ERROR_CODE_VI = {
   TECHNICIAN_LOCKED: 'Tài khoản thợ đang bị tạm khoá.',
   TIMEOUT: 'Kết nối máy chủ quá hạn. Vui lòng thử lại.',
   NETWORK_ERROR: 'Không kết nối được máy chủ. Kiểm tra mạng và thử lại.',
-  // Chấm công (POST /attendance/check-in).
-  ATTENDANCE_SHIFT_DUPLICATE: 'Bạn đã vào ca này rồi.',
-  TECHNICIAN_SHIFT_NOT_USABLE: 'Ca này không còn hiệu lực (đã hủy hoặc không phải ca hôm nay).',
-  ATTENDANCE_SHIFT_LIMIT: 'Đã đủ 6 ca trong ngày.',
-  ATTENDANCE_DAY_OFF: 'Hôm nay bạn được đánh dấu nghỉ.',
-  ATTENDANCE_LOCKED: 'Ngày công đã chốt, không chấm được.',
-  ATTENDANCE_NOT_APPLICABLE: 'Tài khoản chưa được phép chấm công. Liên hệ văn phòng.',
 };
 
 // Tên trường hay gặp trong lỗi kiểm tra dữ liệu.
@@ -149,8 +134,6 @@ const FIELD_VI = {
   otp: 'Mã OTP', address: 'Địa chỉ', address_text: 'Địa chỉ', contact_name: 'Tên liên hệ', contact_phone: 'SĐT liên hệ',
   preferred_time: 'Thời gian hẹn', problem_description: 'Mô tả sự cố', quantity: 'Số lượng', reason: 'Lý do',
   rating: 'Số sao', review_text: 'Nội dung đánh giá', code: 'Mã', amount: 'Số tiền', items: 'Hạng mục', file: 'Tệp',
-  note: 'Ghi chú', notes: 'Ghi chú', latitude: 'Vĩ độ', longitude: 'Kinh độ', accuracyM: 'Độ chính xác GPS',
-  technicianShiftId: 'Ca làm', month: 'Tháng', year: 'Năm', from: 'Từ ngày', to: 'Đến ngày',
 };
 
 // Cụm từ tiếng Anh -> tiếng Việt (áp dụng lần lượt, không phân biệt hoa thường).

@@ -11,7 +11,6 @@ import {
 } from '../screens/misc';
 import {
   TechJobsScreen, TechScheduleScreen, TechNotifsScreen, TechAccountScreen, TechJobScreen, TechHandoversScreen,
-  TechAttendanceScreen,
 } from '../screens/tech';
 import AuthScreen from '../screens/auth';
 
@@ -49,7 +48,6 @@ export const SCREENS = {
   'tech-job': TechJobScreen,
   'tech-notifs': TechNotifsScreen,
   'tech-handovers': TechHandoversScreen,
-  'tech-attendance': TechAttendanceScreen,
 };
 
 export const DARK_TOP = ['home', 'personal', 'tech-jobs', 'tech-account'];

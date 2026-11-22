@@ -456,11 +456,7 @@ export function TechScheduleScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      <PageHead
-        title="Lịch làm việc"
-        sub={`${all.filter((o) => isActiveOrder(o)).length} việc đang chờ xử lý`}
-        right={<Btn title="Chấm công" icon="clock" small variant="soft" onPress={() => nav.push('tech-attendance')} />}
-      />
+      <PageHead title="Lịch làm việc" sub={`${all.filter((o) => isActiveOrder(o)).length} việc đang chờ xử lý`} />
       <View style={{ backgroundColor: '#fff', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
         <HScroll contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
           {days.map((dd, i) => {
@@ -762,7 +758,6 @@ export function TechAccountScreen() {
           <Text style={{ fontSize: 18, fontWeight: '700', color: C.ink, marginTop: 20, marginBottom: 10, marginLeft: 2, letterSpacing: -0.2 }}>Tài khoản & Công việc</Text>
           <View style={tx.menu}>
             <ListRow icon="briefcase" label="Công việc của tôi" value={d.workingJobs.length ? `${d.workingJobs.length} đang làm` : ''} onPress={() => nav.go('tech-jobs')} />
-            <ListRow icon="clock" label="Chấm công" value="Vào ca & bảng công" onPress={() => nav.push('tech-attendance')} />
             <ListRow icon="banknote" label="Bàn giao tiền mặt" value="Nộp & lịch sử" onPress={() => nav.push('tech-handovers')} />
             <ListRow icon="calendar-clock" label="Lịch làm việc" onPress={() => nav.go('tech-schedule')} />
             <ListRow icon="bell" label="Thông báo" value={d.techUnread ? `${d.techUnread} mới` : ''} onPress={() => nav.go('tech-notifs')} />
