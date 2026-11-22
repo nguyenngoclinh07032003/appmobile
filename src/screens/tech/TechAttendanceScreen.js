@@ -294,9 +294,9 @@ export function TechAttendanceScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       {isStackTop ? (
-        <TopBar title="Chấm công" sub="Ca 1: 08h30 – 11h30 · Ca 2: 13h30 – 17h30" right={refreshBtn} />
+        <TopBar title="Chấm công" sub="Ca 1: 08h00 – 12h00 · Ca 2: 13h30 – 17h30" right={refreshBtn} />
       ) : (
-        <PageHead title="Chấm công" sub="Ca 1: 08h30 – 11h30 · Ca 2: 13h30 – 17h30" right={refreshBtn} />
+        <PageHead title="Chấm công" sub="Ca 1: 08h00 – 12h00 · Ca 2: 13h30 – 17h30" right={refreshBtn} />
       )}
 
       <ScrollView
@@ -350,7 +350,7 @@ export function TechAttendanceScreen() {
             </View>
             <Text style={st.emptyTitle}>Hôm nay bạn chưa có ca. Liên hệ văn phòng.</Text>
             <Text style={[ui.meta, { textAlign: 'center', marginTop: 4 }]}>
-              Khi văn phòng xếp Ca 1 (08h30 – 11h30) hoặc Ca 2 (13h30 – 17h30), ca sẽ hiển thị tại đây để bạn chấm công vào ca.
+              Khi văn phòng xếp Ca 1 (08h00 – 12h00) hoặc Ca 2 (13h30 – 17h30), ca sẽ hiển thị tại đây để bạn chấm công vào ca.
             </Text>
           </Card>
         ) : (

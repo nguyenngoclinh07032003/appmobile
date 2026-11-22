@@ -179,18 +179,18 @@ export const REPAIR_SERVICES = [];
 export const LIFETIME_SERVICES = [];
 export const TIME_SLOTS = ['08h00 - 10h00', '10h00 - 12h00', '12h00 - 14h00', '14h00 - 16h00', '16h00 - 18h00', '18h00 - 20h00'];
 // 2 ca làm việc / chấm công chính thức của kỹ thuật viên:
-// - Ca 1: 08h30 - 11h30
+// - Ca 1: 08h00 - 12h00
 // - Ca 2: 13h30 - 17h30
 export const TECH_WORK_SHIFTS = [
   {
     id: 'ca1',
     code: 'CA1',
     label: 'Ca 1',
-    shortTime: '08h30 - 11h30',
-    startTime: '08:30',
-    endTime: '11:30',
-    startMinutes: 8 * 60 + 30,
-    endMinutes: 11 * 60 + 30,
+    shortTime: '08h00 - 12h00',
+    startTime: '08:00',
+    endTime: '12:00',
+    startMinutes: 8 * 60,
+    endMinutes: 12 * 60,
   },
   {
     id: 'ca2',

@@ -217,7 +217,7 @@ export const findTodayShiftRecord = (attendanceData, workDate, technicianShiftId
   return day.shifts.find((sh) => String(sh?.technicianShiftId) === String(technicianShiftId)) || null;
 };
 
-/** Đổi chuỗi giờ ('08:30', '08h30 - 11h30', ISO timestamp, Date, ms) thành số phút từ 00:00 (GMT+7). */
+/** Đổi chuỗi giờ ('08:00', '08h00 - 12h00', ISO timestamp, Date, ms) thành số phút từ 00:00 (GMT+7). */
 export const parseShiftTimeToMinutes = (value) => {
   if (value == null || value === '') return null;
   if (value instanceof Date || typeof value === 'number') {
@@ -242,7 +242,7 @@ export const parseShiftTimeToMinutes = (value) => {
   return p ? p.hour * 60 + p.minute : null;
 };
 
-/** Xếp công việc (slot hoặc order) vào Ca 1 ('ca1': 08h30-11h30), Ca 2 ('ca2': 13h30-17h30) hoặc null (ngoài khung ca). */
+/** Xếp công việc (slot hoặc order) vào Ca 1 ('ca1': 08h00-12h00), Ca 2 ('ca2': 13h30-17h30) hoặc null (ngoài khung ca). */
 export const classifyJobToWorkShift = (slotOrOrder) => {
   if (!slotOrOrder) return null;
   const isObj = typeof slotOrOrder === 'object' && !(slotOrOrder instanceof Date);
@@ -260,7 +260,7 @@ export const classifyJobToWorkShift = (slotOrOrder) => {
   return null;
 };
 
-/** Nhận diện một bản ghi ca làm việc / chấm công có khớp Ca 1 (08:30-11:30) hay Ca 2 (13:30-17:30) không. */
+/** Nhận diện một bản ghi ca làm việc / chấm công có khớp Ca 1 (08:00-12:00) hay Ca 2 (13:30-17:30) không. */
 export const identifyTechWorkShift = (shift) => {
   if (!shift || typeof shift !== 'object') return null;
   const startRaw = shift.startTime ?? shift.startsAt ?? shift.starts_at;

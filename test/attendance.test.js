@@ -182,12 +182,12 @@ test('attendance: buildAttendanceNotifSignature phân biệt được ID vượt
   assert.equal(buildAttendanceNotifSignature([other]), '');
 });
 
-test('attendance: TECH_WORK_SHIFTS đúng 2 ca chính thức (Ca 1 08:30-11:30, Ca 2 13:30-17:30)', () => {
+test('attendance: TECH_WORK_SHIFTS đúng 2 ca chính thức (Ca 1 08:00-12:00, Ca 2 13:30-17:30)', () => {
   assert.equal(TECH_WORK_SHIFTS.length, 2);
   assert.equal(TECH_WORK_SHIFTS[0].id, 'ca1');
-  assert.equal(TECH_WORK_SHIFTS[0].startTime, '08:30');
-  assert.equal(TECH_WORK_SHIFTS[0].endTime, '11:30');
-  assert.equal(TECH_WORK_SHIFTS[0].shortTime, '08h30 - 11h30');
+  assert.equal(TECH_WORK_SHIFTS[0].startTime, '08:00');
+  assert.equal(TECH_WORK_SHIFTS[0].endTime, '12:00');
+  assert.equal(TECH_WORK_SHIFTS[0].shortTime, '08h00 - 12h00');
   assert.equal(TECH_WORK_SHIFTS[1].id, 'ca2');
   assert.equal(TECH_WORK_SHIFTS[1].startTime, '13:30');
   assert.equal(TECH_WORK_SHIFTS[1].endTime, '17:30');
@@ -195,15 +195,15 @@ test('attendance: TECH_WORK_SHIFTS đúng 2 ca chính thức (Ca 1 08:30-11:30, 
 });
 
 test('attendance: parseShiftTimeToMinutes & classifyJobToWorkShift xếp đúng Ca 1 / Ca 2 / ngoài ca', () => {
-  assert.equal(parseShiftTimeToMinutes('08:30'), 8 * 60 + 30);
+  assert.equal(parseShiftTimeToMinutes('08:00'), 8 * 60);
   assert.equal(parseShiftTimeToMinutes('13h30 - 17h30'), 13 * 60 + 30);
-  // 2026-11-22T01:30:00.000Z = 08:30 GMT+7
-  assert.equal(parseShiftTimeToMinutes('2026-11-22T01:30:00.000Z'), 8 * 60 + 30);
+  // 2026-11-22T01:00:00.000Z = 08:00 GMT+7
+  assert.equal(parseShiftTimeToMinutes('2026-11-22T01:00:00.000Z'), 8 * 60);
   assert.equal(parseShiftTimeToMinutes(''), null);
 
   // Ca 1 (06:00 - <12:00)
   assert.equal(classifyJobToWorkShift('08h00 - 10h00'), 'ca1');
-  assert.equal(classifyJobToWorkShift('08h30 - 11h30'), 'ca1');
+  assert.equal(classifyJobToWorkShift('08h00 - 12h00'), 'ca1');
   assert.equal(classifyJobToWorkShift('10h00 - 12h00'), 'ca1');
   assert.equal(classifyJobToWorkShift('Ca 1'), 'ca1');
 
@@ -235,11 +235,11 @@ test('attendance: parseShiftTimeToMinutes & classifyJobToWorkShift xếp đúng 
 });
 
 test('attendance: identifyTechWorkShift & sortTechShifts nhận diện Ca 1/Ca 2, bỏ qua ca cả ngày và sắp xếp đúng thứ tự', () => {
-  assert.equal(identifyTechWorkShift({ startTime: '08:30', endTime: '11:30', name: 'Ca sáng' })?.id, 'ca1');
+  assert.equal(identifyTechWorkShift({ startTime: '08:00', endTime: '12:00', name: 'Ca sáng' })?.id, 'ca1');
   assert.equal(identifyTechWorkShift({ startTime: '13:30', endTime: '17:30', name: 'Ca chiều' })?.id, 'ca2');
-  // ISO UTC: 01:30Z -> 08:30 VN; 04:30Z -> 11:30 VN
+  // ISO UTC: 01:00Z -> 08:00 VN; 05:00Z -> 12:00 VN
   assert.equal(
-    identifyTechWorkShift({ starts_at: '2026-11-22T01:30:00.000Z', ends_at: '2026-11-22T04:30:00.000Z' })?.id,
+    identifyTechWorkShift({ starts_at: '2026-11-22T01:00:00.000Z', ends_at: '2026-11-22T05:00:00.000Z' })?.id,
     'ca1',
   );
   // ISO UTC: 06:30Z -> 13:30 VN; 10:30Z -> 17:30 VN
@@ -252,7 +252,7 @@ test('attendance: identifyTechWorkShift & sortTechShifts nhận diện Ca 1/Ca 2
 
   const sorted = sortTechShifts([
     { code: 'CA2', startTime: '13:30', endTime: '17:30' },
-    { code: 'CA1', startTime: '08:30', endTime: '11:30' },
+    { code: 'CA1', startTime: '08:00', endTime: '12:00' },
   ]);
   assert.deepEqual(sorted.map((x) => x.code), ['CA1', 'CA2']);
 });

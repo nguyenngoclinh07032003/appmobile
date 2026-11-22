@@ -529,7 +529,7 @@ export function TechScheduleScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      <PageHead title="Lịch làm việc" sub="Ca 1 (08h30 - 11h30) · Ca 2 (13h30 - 17h30)" />
+      <PageHead title="Lịch làm việc" sub="Ca 1 (08h00 - 12h00) · Ca 2 (13h30 - 17h30)" />
       <View style={{ backgroundColor: '#fff', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.line }}>
         <HScroll contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
           {days.map((dd, i) => {
@@ -647,7 +647,7 @@ export function TechScheduleScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={tx.shiftTitle}>Ngoài khung ca</Text>
-                  <Text style={[ui.meta, { marginTop: 1 }]}>Ngoài 08h30 - 11h30 & 13h30 - 17h30</Text>
+                  <Text style={[ui.meta, { marginTop: 1 }]}>Ngoài 08h00 - 12h00 & 13h30 - 17h30</Text>
                 </View>
               </View>
               <Badge text={`${others.length} việc`} fg={C.goldInk} bg={C.goldSoft} />
@@ -656,10 +656,13 @@ export function TechScheduleScreen() {
           </View>
         ) : null}
 
-        {dayJobs.length === 0 ? (
-          <Btn title="Xem việc mới" icon="briefcase" variant="soft" style={{ marginTop: 4, marginBottom: 8 }} onPress={() => nav.go('tech-jobs')} />
-        ) : null}
-        <Btn title="Về danh sách công việc" variant="soft" style={{ marginTop: 4 }} onPress={() => nav.go('tech-jobs')} />
+        <Btn
+          title={dayJobs.length === 0 ? 'Xem việc mới' : 'Về danh sách công việc'}
+          icon={dayJobs.length === 0 ? 'briefcase' : undefined}
+          variant="soft"
+          style={{ marginTop: 4 }}
+          onPress={() => nav.go('tech-jobs')}
+        />
       </ScrollView>
     </View>
   );
