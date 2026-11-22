@@ -37,6 +37,7 @@ import {
   setSession,
   upsertBackendAccount,
   deleteAccountById,
+  clearAccounts,
   hydrateAuthStore,
 } from "../services/authService";
 import {
@@ -145,6 +146,7 @@ import {
 } from "../constants/techPolicy";
 import { getCheckInLocation } from "../utils/geo";
 import { viNotification } from "../utils/viText";
+import { isAttendanceNotifType } from "../utils/attendance";
 export {
   TECH_POLICY,
   isTechLocked,
@@ -417,14 +419,24 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
         (o.dbRequestId &&
           String(x.originalRequestId) === String(o.dbRequestId))),
   );
-  if (open)
+  if (open) {
+    const openSched = analyzeWarrantyEligibility({
+      completedAt: o.warrantyStartAt || o.doneAt,
+      warrantyDays: totalDays,
+      serverNow: Date.now(),
+      warrantyEndAt: o.warrantyEndAt || null,
+    });
     return {
       ok: false,
       pending: true,
       totalDays,
+      daysLeft: openSched.daysLeft ?? 0,
+      stillValid: Boolean(openSched.eligible),
+      until: openSched.until || null,
       openCode: open.code,
       text: `Đã có yêu cầu bảo hành ${open.code} đang xử lý.`,
     };
+  }
   const covered = (o.items || []).filter((it) =>
     ["clean", "gas", "repair", "install"].includes(
       serviceKind(getService(it.id)),
@@ -511,6 +523,7 @@ const CUSTOMER_SLICE_KEYS = [
   "cart",
   "favorites",
   "notifications",
+  "notifClearedAt",
   "points",
   "lifetimePoints",
   "pointHistory",
@@ -523,6 +536,7 @@ const makeCustomerSlice = () => ({
   cart: [],
   favorites: [],
   notifications: [],
+  notifClearedAt: 0,
   points: 0,
   lifetimePoints: 0,
   pointHistory: [],
@@ -597,6 +611,8 @@ const signedOutState = (p) => {
     customerProfiles: profiles,
     orders: [],
     techNotifs: [],
+    notifClearedAt: 0,
+    techNotifClearedAt: 0,
     techProfile: null,
     auth: null,
     role: "customer",
@@ -1610,6 +1626,7 @@ export function AppProvider({ children }) {
                 });
                 r._evidence = mergedRows.map(mapBackendPhotoToEvidence);
               }
+              if (res?.ok) r._evidenceFetched = true;
             });
             // Nếu đơn ngoài top needPhotos nhưng detail đã trả ảnh -> vẫn map _evidence.
             rawRequests.forEach((r) => {
@@ -1641,6 +1658,7 @@ export function AppProvider({ children }) {
                   journey: r.journey,
                   bill: r.bill,
                   _evidence: r._evidence,
+                  _evidenceFetched: Boolean(r._evidenceFetched),
                 });
               });
           }
@@ -1892,6 +1910,7 @@ export function AppProvider({ children }) {
               billByJob.set(id, jobBills[i].data);
           });
           const evidenceByJob = new Map();
+          const fetchedEvidenceIds = new Set();
           activeJobsList.forEach((j, i) => {
             const id = String(j.assignment_id);
             const extractRows = (res) =>
@@ -1903,6 +1922,7 @@ export function AppProvider({ children }) {
             const jobRows = extractRows(photoLists[i]);
             const reqRows = extractRows(reqPhotoLists[i]);
             if (photoLists[i]?.ok || reqPhotoLists[i]?.ok) {
+              fetchedEvidenceIds.add(id);
               const seen = new Set();
               const mergedRows = [];
               [...jobRows, ...reqRows]
@@ -1926,13 +1946,15 @@ export function AppProvider({ children }) {
             const techProf = {
               ...base,
               ...(profRes.ok
-                ? { area: profRes.data?.work_area || "Hà Nội" }
+                ? {
+                    area: profRes.data?.work_area || profRes.data?.profile?.work_area || base.area || "Hà Nội",
+                    specialtiesAvailable: Boolean(specialtyInfo?.available),
+                    specialties: specialtyInfo?.specialties || [],
+                    specialtyCategoryIds: specialtyInfo?.categoryIds || [],
+                    acceptsAllCategories:
+                      specialtyInfo?.acceptsAllCategories || false,
+                  }
                 : { area: base.area || "Hà Nội" }),
-              specialtiesAvailable: Boolean(specialtyInfo?.available),
-              specialties: specialtyInfo?.specialties || [],
-              specialtyCategoryIds: specialtyInfo?.categoryIds || [],
-              acceptsAllCategories:
-                specialtyInfo?.acceptsAllCategories || false,
               ...(summary
                 ? {
                     rating: summary.rating_average,
@@ -1969,11 +1991,13 @@ export function AppProvider({ children }) {
                         techProf,
                       );
                       const ev = evidenceByJob.get(String(j.assignment_id));
-                      if (o && ev) {
-                        const mergedAtts = extractInitialAttachments(ev, o.attachments);
+                      const evFetched = fetchedEvidenceIds.has(String(j.assignment_id));
+                      if (o && (ev || evFetched)) {
+                        const mergedAtts = extractInitialAttachments(ev || [], o.attachments);
                         o = {
                           ...o,
-                          evidence: ev,
+                          ...(evFetched ? { _evidenceFetched: true } : {}),
+                          ...(ev ? { evidence: ev } : {}),
                           ...(mergedAtts.length ? { attachments: mergedAtts } : {}),
                         };
                       }
@@ -2050,7 +2074,9 @@ export function AppProvider({ children }) {
       const queued = pendingForceSyncRef.current;
       if (queued) {
         pendingForceSyncRef.current = null;
-        setTimeout(() => { syncFromBackend(queued, true); }, 0);
+        if (stateRef.current?.auth?.id && queued.id === stateRef.current.auth.id) {
+          setTimeout(() => { syncRef.current?.(queued, true); }, 0);
+        }
       }
     }
   };
@@ -2139,17 +2165,19 @@ export function AppProvider({ children }) {
     (async () => {
       if (!IS_WEB_STORAGE) {
         try {
-          await hydrateAuthStore();
+          await Promise.all([hydrateAuthStore(), authTokens.restore()]);
           const savedNative = await readJson(KEY, "local");
-          if (savedNative) {
+          const hydratedSession = getSession();
+          if (savedNative || hydratedSession) {
             up((p) => ({
-              ...savedNative,
-              auth: getSession() || p.auth,
-              role: getSession()?.role || savedNative.role || p.role,
-              catalogVersion: p.catalogVersion || savedNative.catalogVersion,
-              policy: p.policy || savedNative.policy,
+              ...(savedNative || {}),
+              auth: hydratedSession || p.auth,
+              role: hydratedSession?.role || savedNative?.role || p.role,
+              catalogVersion: p.catalogVersion || savedNative?.catalogVersion,
+              policy: p.policy || savedNative?.policy,
             }));
           }
+          if (hydratedSession?.role === "tech") setTab("tech-jobs");
         } finally {
           storageHydratedRef.current = true;
         }
@@ -2244,10 +2272,10 @@ export function AppProvider({ children }) {
       // Thông báo mới cho chính tài khoản này (thợ có việc mới, khách có thợ nhận, báo giá, tiền về...).
       subscribeSocketEvent("notification:new", (n) => {
         syncSoon();
-        if (n?.title)
-          uiRef.current?.toast(viNotification(n).title, n.icon || "🔔");
-        // Thợ bị gỡ khỏi đơn (văn phòng đổi thợ / trả việc): thoát màn chi tiết và ngừng chờ cập nhật của đơn đó.
         const nType = n?.notification_type || n?.type;
+        if (n?.title || isAttendanceNotifType(nType))
+          uiRef.current?.toast(viNotification(n).title, n?.icon || "🔔");
+        // Thợ bị gỡ khỏi đơn (văn phòng đổi thợ / trả việc): thoát màn chi tiết và ngừng chờ cập nhật của đơn đó.
         if (
           stateRef.current?.auth?.role === "tech" &&
           nType === "JOB_REASSIGNED" &&
@@ -2314,6 +2342,7 @@ export function AppProvider({ children }) {
     return () => {
       clearTimeout(syncTimer);
       unsubs.forEach((off) => off());
+      disconnectSocket();
     };
   }, [s.auth?.id]);
 
@@ -2386,6 +2415,7 @@ export function AppProvider({ children }) {
   // không gọi /start (server trả 409). Trả kết quả API, hoặc null khi đã ghi đúng nội dung này rồi.
   const lastDiagnosis = useRef(new Map()); // assignment_id -> nội dung chẩn đoán đã ghi thành công
   const clearSessionCaches = () => {
+    pendingForceSyncRef.current = null;
     finishedOrderCache.current.clear();
     lastDiagnosis.current.clear();
   };
@@ -2499,8 +2529,9 @@ export function AppProvider({ children }) {
       const candidate =
         docUploads.find((r) => !usedAttIds.has(String(r.attachment_id)) && matchesDesc(r)) ||
         docUploads.find(matchesDesc) ||
-        docUploads.find((r) => !usedAttIds.has(String(r.attachment_id))) ||
-        docUploads[0] ||
+        (unlinkedItems.length === 1
+          ? docUploads.find((r) => !usedAttIds.has(String(r.attachment_id)))
+          : null) ||
         nonSymptomUploads.find((r) => !usedAttIds.has(String(r.attachment_id)) && matchesDesc(r)) ||
         nonSymptomUploads.find(matchesDesc);
       if (!candidate) continue;
@@ -2526,6 +2557,7 @@ export function AppProvider({ children }) {
         hrmssApi.listRequestPhotos(o.dbRequestId).catch(() => null),
         o.bill ? Promise.resolve(null) : hrmssApi.getBill(o.dbRequestId).catch(() => null),
       ]);
+      if (!detRes?.ok && !photoRes?.ok && !billRes?.ok) return false;
       const baseReq = {
         request_id: o.dbRequestId,
         request_code: o.code,
@@ -2562,15 +2594,25 @@ export function AppProvider({ children }) {
       });
       const ev = dedupRows.map(mapBackendPhotoToEvidence);
       mergedReq._evidence = ev;
+      if (photoRes?.ok) mergedReq._evidenceFetched = true;
       const remapped = mapBackendCustomerRequestToOrder(mergedReq, o.customerPhone || s.auth?.phone || "");
       const mergedAtts = extractInitialAttachments(ev, remapped?.attachments || o.attachments);
       updateOrder(code, (cur) => ({
         order: {
           ...cur,
+          ...(remapped?.bill ? { bill: remapped.bill } : {}),
+          ...(remapped?.total != null ? { total: remapped.total, finalTotal: remapped.finalTotal } : {}),
+          ...(remapped?.inspectionFee != null ? { inspectionFee: remapped.inspectionFee } : {}),
+          ...(remapped?.materials ? { materials: remapped.materials } : {}),
+          ...(remapped?.pendingExternalEstimates ? { pendingExternalEstimates: remapped.pendingExternalEstimates } : {}),
+          ...(remapped?.finalizedExternalParts ? { finalizedExternalParts: remapped.finalizedExternalParts } : {}),
+          ...(remapped?.externalPriceState ? { externalPriceState: remapped.externalPriceState } : {}),
+          ...(remapped?.history?.length ? { history: remapped.history } : {}),
+          ...(remapped?.tech ? { tech: remapped.tech } : {}),
           ...(remapped?.quote ? { quote: remapped.quote } : {}),
           ...(remapped?.diagnosisReport ? { diagnosisReport: remapped.diagnosisReport } : {}),
           ...(remapped?.report ? { report: { ...(cur.report || {}), ...remapped.report } } : {}),
-          ...(ev.length ? { evidence: ev } : {}),
+          ...(photoRes?.ok ? { evidence: ev, _evidenceFetched: true } : (ev.length ? { evidence: ev } : {})),
           ...(mergedAtts.length ? { attachments: mergedAtts } : {}),
           _detailHydrated: true,
         },
@@ -2849,7 +2891,8 @@ export function AppProvider({ children }) {
         return null;
       }
       const svc0 = getService(payload.items[0]?.id);
-      const items = (payload.items || []).slice(0, 10).map((it) => ({
+      const orderedItems = (payload.items || []).slice(0, 10);
+      const items = orderedItems.map((it) => ({
         service_id: resolveDbServiceId(it.id),
         quantity: Math.min(20, Math.max(1, Number(it.qty) || 1)),
       }));
@@ -2931,7 +2974,7 @@ export function AppProvider({ children }) {
             ]
           : p.orders,
         cart: payload.fromCart
-          ? p.cart.filter((c) => !payload.items.some((it) => it.id === c.id))
+          ? p.cart.filter((c) => !orderedItems.some((it) => it.id === c.id))
           : p.cart,
       }));
       syncFromBackend(null, true);
@@ -3157,7 +3200,17 @@ export function AppProvider({ children }) {
       }
       up((p) => {
         const base = p.techProfile || TECH_ME;
+        const nextAuth = p.auth
+          ? {
+              ...p.auth,
+              ...(patch.name != null ? { name: patch.name } : {}),
+              ...(patch.phone != null ? { phone: patch.phone } : {}),
+              ...(patch.dob !== undefined ? { dob: patch.dob } : {}),
+            }
+          : p.auth;
+        if (nextAuth) upsertBackendAccount(nextAuth);
         return {
+          ...(nextAuth ? { auth: nextAuth } : {}),
           techProfile: {
             ...base,
             ...patch,
@@ -3417,6 +3470,14 @@ export function AppProvider({ children }) {
             payment: toQr ? "Chuyển khoản VietQR" : "Tiền mặt tại nhà",
             paymentMethod: toQr ? "vietqr" : "cash",
             qrPaymentRequested: toQr,
+            cashClaimLocked: false,
+            bill: x.bill
+              ? {
+                  ...x.bill,
+                  cashClaimPending: false,
+                  paymentMethod: toQr ? "vietqr" : "cash",
+                }
+              : x.bill,
             // Giữ lựa chọn local khi sync nếu BE chưa nhận method mới.
             paymentMethodLocked: Boolean(opts.lock),
           },
@@ -3554,7 +3615,7 @@ export function AppProvider({ children }) {
       const o = s.orders.find((x) => x.code === code);
       if (
         !o ||
-        !["diagnosing", "confirmed", "quoted", "repairing"].includes(o.status)
+        !["diagnosing", "confirmed", "quoted", "repairing", "out_of_warranty"].includes(o.status)
       ) {
         ui.alert(
           "Không gửi được",
@@ -3839,8 +3900,13 @@ export function AppProvider({ children }) {
       // Dòng có ảnh hoá đơn -> MATERIAL + external_purchase để gắn biên lai; dòng không kèm hoá đơn -> SERVICE kèm thẻ [VT ngoài chốt giá] để BE không chặn 422 RECEIPT_REQUIRED.
       const items = resolved.map(({ part, attachmentId, priorDeposit }) => {
         const actualPrice = Math.round(Number(part.actualPrice) || 0);
-        const unitPrice =
-          priorDeposit > 0 ? Math.max(0, actualPrice - priorDeposit) : actualPrice;
+        const qty = Math.max(1, Number(part.qty) || 1);
+        const origQty = Math.max(1, Number(part.origQty ?? part.qty) || 1);
+        const totalDelta =
+          priorDeposit > 0
+            ? Math.max(0, actualPrice * qty - priorDeposit * origQty)
+            : actualPrice * qty;
+        const unitPrice = Math.round(totalDelta / qty);
         const desc = formatFinalizedExternalDesc({
           name: part.name,
           minPrice: part.minPrice,
@@ -3852,14 +3918,14 @@ export function AppProvider({ children }) {
             item_type: "MATERIAL",
             external_purchase: true,
             description_snapshot: desc,
-            quantity: Math.max(1, Number(part.qty) || 1),
+            quantity: qty,
             unit_price: unitPrice,
           };
         }
         return {
           item_type: "SERVICE",
           description_snapshot: desc,
-          quantity: Math.max(1, Number(part.qty) || 1),
+          quantity: qty,
           unit_price: unitPrice,
         };
       });
@@ -4002,7 +4068,16 @@ export function AppProvider({ children }) {
           },
         });
       updateOrder(code, (ord) => ({
-        order: withStatus(ord, "repairing", Date.now()),
+        order: withStatus(
+          {
+            ...ord,
+            quoteEditing: false,
+            quoteEditingFrom: null,
+            ...(ord.quote ? { quote: { ...ord.quote, revisionRequested: false } } : {}),
+          },
+          "repairing",
+          Date.now(),
+        ),
       }));
       return serverDone(
         { ok: true },
@@ -4474,7 +4549,10 @@ export function AppProvider({ children }) {
       const testingBase = checklist.length > 0
         ? checklist.join("; ")
         : "Đã vận hành chạy thử thiết bị ổn định (≥15 phút)";
-      const handoverBase = paid
+      const qrOrder = isQRPayment(o0);
+      const cashDue = qrOrder ? 0 : cashToCollect(o0);
+      const collectedCash = Boolean(paid) && !qrOrder && cashDue > 0;
+      const handoverBase = collectedCash
         ? "Đã thu tiền dịch vụ, bàn giao thiết bị và kích hoạt bảo hành điện tử"
         : "Đã bàn giao thiết bị cho khách hàng và kích hoạt bảo hành điện tử";
       if (Array.isArray(completionPhotoUris) && completionPhotoUris.length) {
@@ -4483,6 +4561,14 @@ export function AppProvider({ children }) {
           const upRes = await hrmssApi
             .uploadJobPhoto(o0.dbAssignmentId, uri, "AFTER_REPAIR", "Ảnh hoàn thành bàn giao thiết bị")
             .catch(() => null);
+          if (!upRes?.ok) {
+            ui.alert(
+              "Chưa tải được ảnh hoàn thành",
+              upRes?.message || "Không tải lên được ảnh hoàn thành. Vui lòng kiểm tra mạng và thử lại.",
+              "📷",
+            );
+            return false;
+          }
           if (
             upRes?.ok &&
             upRes.data?.attachment?.attachment_id &&
@@ -4503,7 +4589,7 @@ export function AppProvider({ children }) {
         handover_result: sig
           ? `${handoverBase}. Khách ký nhận: ${sig}`
           : handoverBase,
-        cash_collected: Boolean(paid) && !isQRPayment(o0),
+        cash_collected: collectedCash,
         customer_signature: sig || null,
         safety_checklist: checklist,
       };
@@ -4571,9 +4657,11 @@ export function AppProvider({ children }) {
         },
       }));
       ui.toast(
-        Boolean(paid) && !isQRPayment(o0)
+        collectedCash
           ? "Đã hoàn thành · Đã thu tiền"
-          : "Đã hoàn thành · Chờ khách thanh toán",
+          : cashDue === 0
+            ? "Đã hoàn thành công việc"
+            : "Đã hoàn thành · Chờ khách thanh toán",
         "✅",
       );
       syncFromBackend(null, true);
@@ -5113,7 +5201,7 @@ export function AppProvider({ children }) {
         if (localImgs.length) {
           const uploaded = await Promise.all(
             localImgs.slice(0, 3).map((uri) =>
-              hrmssApi.uploadRequestPhoto(o.dbRequestId, uri).catch(() => null),
+              hrmssApi.uploadRequestPhoto(o.dbRequestId, uri, "[Bảo hành]").catch(() => null),
             ),
           );
           let uploadedOk = 0;
@@ -5325,6 +5413,7 @@ export function AppProvider({ children }) {
       disconnectSocket();
       hrmssApi.logout();
       clearSession();
+      clearAccounts();
       storage.clear();
       setS({ ...makeInitial(), auth: null });
       setStack([]);

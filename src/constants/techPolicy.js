@@ -73,6 +73,10 @@ export const getCancellationWindowStatus = (order, now = Date.now()) => {
       reason: 'Đơn hàng ở trạng thái hiện tại không thể tự huỷ qua ứng dụng.',
     };
   }
+  // Đơn đang chờ nhận (chưa có thợ) hoặc đã quá hạn tiếp nhận: khách luôn được huỷ tự do.
+  if (order.status === 'pending' || isOfferExpired(order, now)) {
+    return { allowed: true };
+  }
   const startTs = slotStartTs(order);
   if (!startTs) {
     return { allowed: true };

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, StatusBar, Platform, useWindowDimensions, Animated, Easing,
+  View, Text, StyleSheet, StatusBar, Platform, useWindowDimensions, Animated, Easing, BackHandler,
 } from 'react-native';
 import { C, shadow } from '../theme';
 import { useApp } from '../context';
@@ -41,15 +41,26 @@ export function Shell() {
   }, [loggedIn]);
   const role = s.auth?.role || s.role;
   const tabs = role === 'tech' ? TECH_TABS : CUSTOMER_TABS;
-  const Tab = tabs.find((t) => t.id === nav.tab)?.Comp || tabs[0].Comp;
-  const topName = nav.top?.name;
-  const darkTop = !loggedIn ? true : (topName ? false : DARK_TOP.includes(nav.tab));
-  const topInset = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : Platform.OS === 'ios' ? 47 : 0;
+  const activeTab = tabs.some((t) => t.id === nav.tab) ? nav.tab : tabs[0]?.id;
+  const Tab = tabs.find((t) => t.id === activeTab)?.Comp || tabs[0].Comp;
+  const effectiveAuthMode = loggedIn ? null : authMode;
+
+  useEffect(() => {
+    if (Platform.OS !== 'android' || loggedIn || !authMode) return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      setAuthMode(null);
+      return true;
+    });
+    return () => sub.remove();
+  }, [loggedIn, authMode]);
 
   // Chặn stack thuộc vai trò khác (phân quyền) & chỉ giữ màn hình có định nghĩa trong SCREENS
   const allowedStack = loggedIn
     ? nav.stack.filter((entry) => Boolean(SCREENS[entry.name]) && (role === 'tech' ? String(entry.name).startsWith('tech') : !String(entry.name).startsWith('tech')))
     : [];
+  const topName = allowedStack[allowedStack.length - 1]?.name;
+  const darkTop = !loggedIn ? Boolean(effectiveAuthMode) : (topName ? false : DARK_TOP.includes(activeTab));
+  const topInset = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : Platform.OS === 'ios' ? 47 : 0;
 
   return (
     <View style={[st.fill, { backgroundColor: C.bg }]}>
@@ -57,8 +68,8 @@ export function Shell() {
       <View style={{ height: topInset, backgroundColor: darkTop ? C.navy : '#fff' }} />
       {!loggedIn ? (
         <View style={st.fill}>
-          {authMode ? (
-            <AuthScreen key={authMode} initialMode={authMode} onBackHome={() => setAuthMode(null)} />
+          {effectiveAuthMode ? (
+            <AuthScreen key={effectiveAuthMode} initialMode={effectiveAuthMode} onBackHome={() => setAuthMode(null)} />
           ) : (
             <GuestHomeScreen onLogin={() => setAuthMode('login')} onRegister={() => setAuthMode('register')} />
           )}

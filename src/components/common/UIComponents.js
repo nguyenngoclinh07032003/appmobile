@@ -18,13 +18,14 @@ const webTapStyle = Platform.select({
   default: {},
 });
 
-export function Tap({ style, children, disabled, onPressIn, onPressOut, scaleTo = 0.97, ...rest }) {
+export function Tap({ style, children, disabled, onPress, onPressIn, onPressOut, scaleTo = 0.97, ...rest }) {
   const [pressed, setPressed] = React.useState(false);
   return (
     <TouchableOpacity
       activeOpacity={0.82}
       disabled={disabled}
-      onPressIn={(e) => { setPressed(true); onPressIn?.(e); }}
+      onPress={onPress ? (e) => { e?.stopPropagation?.(); onPress(e); } : undefined}
+      onPressIn={(e) => { e?.stopPropagation?.(); setPressed(true); onPressIn?.(e); }}
       onPressOut={(e) => { setPressed(false); onPressOut?.(e); }}
       style={[
         webTapStyle,
@@ -46,8 +47,8 @@ export function Btn({ title, onPress, variant = 'primary', small, style, disable
   return (
     <TouchableOpacity
       activeOpacity={0.86}
-      onPress={onPress}
-      onPressIn={() => setPressed(true)}
+      onPress={onPress ? (e) => { e?.stopPropagation?.(); onPress(e); } : undefined}
+      onPressIn={(e) => { e?.stopPropagation?.(); setPressed(true); }}
       onPressOut={() => setPressed(false)}
       disabled={disabled}
       style={[
@@ -88,12 +89,15 @@ export function resolveSemanticTone({ tone, title = '', message = '', text = '',
   const combined = `${title} ${message} ${text}`.toLowerCase();
   const ic = String(icon || '').trim().toLowerCase();
 
+  const hasExplicitTone = ['success', 'info', 'warning'].includes(tone);
   const isDanger =
     tone === 'danger' ||
     tone === 'error' ||
     danger === true ||
-    ['🚫', '❌', '✖️', '✖', '🗑️', '🗑', '↩️', 'ban', 'x-circle', 'trash-2', 'shield-alert'].includes(ic) ||
-    /lỗi|không hợp lệ|không khớp|không thể|sai phân quyền|từ chối|đã huỷ|huỷ đơn|xoá tài khoản|vĩnh viễn|nguy hiểm|quá hạn|vi phạm|bị khoá|thất bại|trả việc|trừ \d+ điểm/i.test(combined);
+    (!hasExplicitTone && (
+      ['🚫', '❌', '✖️', '✖', '🗑️', '🗑', '↩️', 'ban', 'x-circle', 'trash-2', 'shield-alert'].includes(ic) ||
+      /lỗi|không hợp lệ|không khớp|không thể|sai phân quyền|từ chối|đã huỷ|huỷ đơn|xoá tài khoản|vĩnh viễn|nguy hiểm|quá hạn|vi phạm|bị khoá|thất bại|trả việc|trừ \d+ điểm/i.test(combined)
+    ));
 
   if (isDanger) {
     return {
@@ -331,13 +335,34 @@ export const HScroll = React.forwardRef(({ children, style, contentContainerStyl
 });
 
 export function Segmented({ items, value, onChange, style }) {
+  const compact = items.length >= 4;
   return (
     <View style={[ui.segment, style]}>
       {items.map((it) => {
         const on = value === it.id;
         return (
-          <Tap key={it.id} onPress={() => onChange(it.id)} scaleTo={0.97} style={[ui.segmentItem, on && ui.segmentOn]}>
-            <Text style={[ui.segmentText, on && ui.segmentTextOn]} numberOfLines={1}>{it.label}{it.count ? ` (${it.count})` : ''}</Text>
+          <Tap
+            key={it.id}
+            onPress={() => onChange(it.id)}
+            scaleTo={0.97}
+            style={[
+              ui.segmentItem,
+              compact && { height: 'auto', minHeight: 44, paddingVertical: 5, paddingHorizontal: 2 },
+              on && ui.segmentOn,
+            ]}
+          >
+            {compact ? (
+              <>
+                <Text style={[ui.segmentText, { fontSize: 11.5 }, on && ui.segmentTextOn]} numberOfLines={1}>{it.label}</Text>
+                {it.count != null ? (
+                  <Text style={{ fontSize: 10.5, fontWeight: on ? '800' : '600', color: on ? C.primary : C.faint, marginTop: 1 }}>
+                    {it.count}
+                  </Text>
+                ) : null}
+              </>
+            ) : (
+              <Text style={[ui.segmentText, on && ui.segmentTextOn]} numberOfLines={1}>{it.label}{it.count ? ` (${it.count})` : ''}</Text>
+            )}
           </Tap>
         );
       })}
@@ -405,12 +430,20 @@ export function Checkbox({ on, label, onPress }) {
   );
 }
 
-export function Stepper({ value, onChange, min = 1 }) {
+export function Stepper({ value, onChange, min = 1, max = null }) {
   return (
     <View style={ui.stepper}>
       <Tap style={ui.stepBtn} scaleTo={0.9} onPress={() => onChange(Math.max(min, value - 1))} hitSlop={6}><AppIcon name="minus" size={14} color={C.ink} strokeWidth={2.5} /></Tap>
       <Text style={ui.stepVal}>{value}</Text>
-      <Tap style={[ui.stepBtn, { backgroundColor: C.primarySoft }]} scaleTo={0.9} onPress={() => onChange(value + 1)} hitSlop={6}><AppIcon name="plus" size={14} color={C.primary} strokeWidth={2.5} /></Tap>
+      <Tap
+        style={[ui.stepBtn, { backgroundColor: C.primarySoft }, max != null && value >= max && { opacity: 0.45 }]}
+        scaleTo={0.9}
+        disabled={max != null && value >= max}
+        onPress={() => onChange(max != null ? Math.min(max, value + 1) : value + 1)}
+        hitSlop={6}
+      >
+        <AppIcon name="plus" size={14} color={C.primary} strokeWidth={2.5} />
+      </Tap>
     </View>
   );
 }
@@ -522,10 +555,12 @@ export function ServiceCard({ item, style }) {
       <View>
         <Media item={item} height={110} />
         {discount > 0 ? <View style={ui.offTag}><Text style={ui.offTagText}>-{discount}%</Text></View> : null}
-        <View style={[ui.warrantyTag, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
-          <AppIcon name="shield-check" size={11} color={C.primary} strokeWidth={2.4} />
-          <Text style={ui.warrantyTagText}>BH 60 ngày</Text>
-        </View>
+        {item?.kind !== 'lifetime' ? (
+          <View style={[ui.warrantyTag, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
+            <AppIcon name="shield-check" size={11} color={C.primary} strokeWidth={2.4} />
+            <Text style={ui.warrantyTagText}>BH 60 ngày</Text>
+          </View>
+        ) : null}
       </View>
       <View style={{ padding: 11, flex: 1 }}>
         <Text numberOfLines={2} style={ui.sCardName}>{item.name}</Text>
@@ -740,9 +775,10 @@ export function ToastHost() {
 
 // Mã QR minh hoạ (sinh lưới ô vuông theo chuỗi)
 export function PseudoQR({ value, size = 200 }) {
+  const safeVal = String(value || 'MINHDUC');
   const n = 21;
   let h = 2166136261;
-  for (let i = 0; i < value.length; i += 1) { h ^= value.charCodeAt(i); h = Math.imul(h, 16777619); }
+  for (let i = 0; i < safeVal.length; i += 1) { h ^= safeVal.charCodeAt(i); h = Math.imul(h, 16777619); }
   const rand = () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 1000) / 1000; };
   const finder = (r, c) => {
     const inBox = (r0, c0) => r >= r0 && r < r0 + 7 && c >= c0 && c < c0 + 7;
@@ -886,9 +922,9 @@ export const ui = StyleSheet.create({
   dialogPillText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.2, textTransform: 'uppercase' },
   dialogTitle: { fontSize: 18, fontWeight: '800', color: C.ink, textAlign: 'left' },
   dialogBody: { fontSize: 14.5, color: C.ink2, textAlign: 'left', marginTop: 6, lineHeight: 21 },
-  toast: { position: 'absolute', alignSelf: 'center', bottom: 94, backgroundColor: 'rgba(7,26,58,0.96)', paddingLeft: 10, paddingRight: 18, paddingVertical: 9, borderRadius: 999, flexDirection: 'row', alignItems: 'center', zIndex: 100, ...shadow.lg, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.12)' },
+  toast: { position: 'absolute', alignSelf: 'center', maxWidth: '92%', bottom: 94, backgroundColor: 'rgba(7,26,58,0.96)', paddingLeft: 10, paddingRight: 18, paddingVertical: 9, borderRadius: 999, flexDirection: 'row', alignItems: 'center', zIndex: 100, ...shadow.lg, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.12)' },
   toastIconWrap: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
-  toastText: { color: '#fff', fontWeight: '700', fontSize: 13.5 },
+  toastText: { color: '#fff', fontWeight: '700', fontSize: 13.5, flexShrink: 1 },
 });
 
 export const isWeb = Platform.OS === 'web';
@@ -942,29 +978,34 @@ export function TimeRangeSlider({
   ];
 
   const periodLabel = clampedVal < 12 * 60 ? 'Buổi sáng' : clampedVal < 18 * 60 ? 'Buổi chiều' : 'Buổi tối';
+  const progressPct = maxMinutes > minMinutes
+    ? `${Math.max(0, Math.min(100, ((clampedVal - minMinutes) / (maxMinutes - minMinutes)) * 100))}%`
+    : '0%';
 
   return (
     <View style={[trsStyles.card, style]}>
-      <View style={trsStyles.topRow}>
-        <View style={{ flex: 1 }}>
-          <Text style={trsStyles.eyebrow}>GIỜ HẸN KỸ THUẬT VIÊN ĐẾN</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
-            <Text style={trsStyles.bigTime}>{minutesToTimeStr(clampedVal)}</Text>
-            <View style={trsStyles.periodBadge}>
-              <Text style={trsStyles.periodText}>{periodLabel}</Text>
+      {!isOutOfRange ? (
+        <View style={trsStyles.topRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={trsStyles.eyebrow}>GIỜ HẸN KỸ THUẬT VIÊN ĐẾN</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
+              <Text style={trsStyles.bigTime}>{minutesToTimeStr(clampedVal)}</Text>
+              <View style={trsStyles.periodBadge}>
+                <Text style={trsStyles.periodText}>{periodLabel}</Text>
+              </View>
             </View>
           </View>
+          <View style={trsStyles.slotBadge}>
+            <Text style={trsStyles.slotBadgeLabel}>Ca phục vụ:</Text>
+            <Text style={trsStyles.slotBadgeVal}>{minutesToSlotStr(clampedVal)}</Text>
+          </View>
         </View>
-        <View style={trsStyles.slotBadge}>
-          <Text style={trsStyles.slotBadgeLabel}>Ca phục vụ:</Text>
-          <Text style={trsStyles.slotBadgeVal}>{minutesToSlotStr(clampedVal)}</Text>
-        </View>
-      </View>
+      ) : null}
 
       {isOutOfRange ? (
-        <View style={trsStyles.closedBox}>
+        <View style={[trsStyles.closedBox, { marginTop: 0 }]}>
           <Text style={trsStyles.closedText}>
-            Hôm nay đã quá giờ tiếp nhận phục vụ (sau 19:15). Quý khách vui lòng chọn Ngày mai hoặc các ngày tiếp theo.
+            Hôm nay đã hết khung giờ nhận lịch (trước 20:00 cần đặt sớm tối thiểu 45 phút). Quý khách vui lòng chọn Ngày mai hoặc các ngày tiếp theo.
           </Text>
           {onSelectTomorrow && (
             <Tap style={trsStyles.tomorrowBtn} onPress={onSelectTomorrow}>
@@ -996,14 +1037,18 @@ export function TimeRangeSlider({
                 }}
               />
             ) : (
-              <View style={trsStyles.nativeFallbackTrack} />
+              <View style={[trsStyles.nativeFallbackTrack, { overflow: 'hidden' }]}>
+                <View style={{ width: progressPct, height: '100%', backgroundColor: C.primary, borderRadius: 4 }} />
+              </View>
             )}
           </View>
 
           {/* Bound labels */}
           <View style={trsStyles.boundsRow}>
             <Text style={trsStyles.boundText}>{minutesToTimeStr(minMinutes)}</Text>
-            <Text style={[trsStyles.boundText, { color: C.muted }]}>Kéo thanh trượt để chỉnh giờ</Text>
+            <Text style={[trsStyles.boundText, { color: C.muted }]}>
+              {Platform.OS === 'web' ? 'Kéo thanh trượt để chỉnh giờ' : 'Bấm −15p / +15p hoặc mốc nhanh'}
+            </Text>
             <Text style={trsStyles.boundText}>{minutesToTimeStr(maxMinutes)}</Text>
           </View>
 

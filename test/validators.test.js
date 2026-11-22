@@ -38,9 +38,12 @@ test('validateContactName: kiểm tra họ tên', () => {
 test('validateStreetAddress: kiểm tra địa chỉ chi tiết', () => {
   assert.equal(validateStreetAddress('Số 12 ngõ 45 phố Kim Mã'), '');
   assert.equal(validateStreetAddress('Tòa Golden Park số 2 Phạm Văn Bạch'), '');
+  assert.equal(validateStreetAddress('Phòng 1111 Toà Golden Park'), '');
   assert.match(validateStreetAddress(''), /Vui lòng nhập/);
   assert.match(validateStreetAddress('HN'), /quá ngắn/);
   assert.match(validateStreetAddress('12345 67890 bcdfgh'), /không chứa từ có nghĩa/);
+  assert.notEqual(validateStreetAddress('Số 12 aaaaa phố Kim Mã'), '');
+  assert.notEqual(validateStreetAddress('Số 111111 phố Kim Mã'), '');
 });
 
 test('isValidDob & parseDobToIso: kiểm tra ngày sinh và chặn ngày ảo 31/02', () => {

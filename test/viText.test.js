@@ -36,3 +36,17 @@ test('viText: lỗi server tiếng Anh được Việt hoá', () => {
   assert.equal(toVietnamese('Payment received', ''), 'Đã nhận thanh toán');
   assert.equal(viFieldError({ field: 'phone', message: 'phone is required' }), 'Số điện thoại: là bắt buộc');
 });
+
+test('viText: thông báo và mã lỗi chấm công ra tiếng Việt chuẩn', () => {
+  assert.equal(viServerMessage('Duplicate shift', 'ATTENDANCE_SHIFT_DUPLICATE', 409), 'Bạn đã vào ca này rồi.');
+  assert.equal(
+    viServerMessage('Not usable', 'TECHNICIAN_SHIFT_NOT_USABLE', 422),
+    'Ca này không còn hiệu lực (đã hủy hoặc không phải ca hôm nay).',
+  );
+  assert.equal(viServerMessage('Locked', 'ATTENDANCE_LOCKED', 422), 'Ngày công đã chốt, không chấm được.');
+  assert.equal(viNotification({ type: 'SHIFT_ASSIGNED' }).title, 'Bạn được xếp ca làm mới');
+  assert.equal(viNotification({ type: 'ATTENDANCE_APPROVED' }).title, 'Chấm công đã được duyệt');
+  assert.equal(viNotification({ type: 'ATTENDANCE_REJECTED' }).title, 'Chấm công bị từ chối');
+  assert.equal(viNotification({ type: 'VIOLATION_RECORDED' }).title, 'Ghi nhận vi phạm mới');
+  assert.equal(viNotification({ type: 'ATTENDANCE_PERIOD_LOCKED' }).title, 'Đã chốt kỳ công');
+});

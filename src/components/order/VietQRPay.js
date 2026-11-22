@@ -195,7 +195,9 @@ export function VietQRPay({ requestId, onPaid, size = 220 }) {
       {qr.qr_image_url ? <QrImage uri={qr.qr_image_url} size={size} /> : <Text style={{ color: C.muted }}>Chưa hiện được ảnh QR, chuyển khoản theo thông tin bên dưới.</Text>}
       <Text style={{ fontWeight: '800', color: C.ink, fontSize: 16 }}>{formatVND(qr.amount)}</Text>
       <Text style={{ color: C.muted }}>Nội dung: <Text style={{ fontWeight: '800', color: C.ink }}>{qr.transfer_content}</Text> (giữ nguyên, không sửa)</Text>
-      <Text style={{ color: C.muted }}>{qr.account_name || ''} · {qr.account_no}</Text>
+      <Text style={{ color: C.muted, textAlign: 'center' }}>
+        {[qr.bank_name || qr.bank_code || qr.bank_id, qr.account_name, qr.account_no].filter(Boolean).join(' · ')}
+      </Text>
       {error ? (
         <View style={{ alignItems: 'center' }}>
           <Text style={{ color: C.red, fontSize: 12, textAlign: 'center' }}>Không tạo được mã mới: {error}</Text>

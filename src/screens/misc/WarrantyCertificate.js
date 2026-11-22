@@ -35,7 +35,8 @@ function Section({ icon, title, right, children, style }) {
 export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
   const certCode = o.report?.warrantyCertificateCode || `BH-${o.code}`;
   const totalDays = winfo.totalDays || tierWarrantyDays;
-  const daysLeft = winfo.ok ? winfo.daysLeft : 0;
+  const isActivePending = Boolean(winfo.pending && winfo.stillValid);
+  const daysLeft = (winfo.ok || isActivePending) ? (winfo.daysLeft ?? 0) : 0;
   const ratio = totalDays ? Math.max(0, Math.min(1, daysLeft / totalDays)) : 0;
   const checklist = o.report?.safetyChecklist?.length ? o.report.safetyChecklist : SAFETY_CHECKLIST_ITEMS;
   const device = o.device
@@ -46,8 +47,8 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
   const evidence = Array.isArray(o.evidence) ? o.evidence : [];
   const initialPhotos = [];
   const seenInitial = new Set();
-  [...(o.attachments || []), ...evidence.filter((e) => e?.stage === 'diagnosis')].forEach((ph) => {
-    if (!ph?.uri) return;
+  [...(o.attachments || []), ...evidence.filter((e) => e?.stage === 'diagnosis' && !e?.isWarrantyUpload)].forEach((ph) => {
+    if (!ph?.uri || ph?.isWarrantyUpload) return;
     const key = ph.dbAttachmentId != null ? `id:${ph.dbAttachmentId}` : `uri:${ph.uri}`;
     if (seenInitial.has(key)) return;
     seenInitial.add(key);
@@ -67,9 +68,9 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
               <Text style={st.heroBrandSub}>Chứng nhận bảo hành điện tử</Text>
             </View>
           </View>
-          <View style={[st.statusPill, { backgroundColor: winfo.ok ? 'rgba(16,185,129,0.22)' : 'rgba(255,255,255,0.16)' }]}>
-            <View style={[st.statusDot, { backgroundColor: winfo.ok ? '#34D399' : '#FCD34D' }]} />
-            <Text style={st.statusText}>{winfo.ok ? 'Còn hiệu lực' : 'Hết hiệu lực'}</Text>
+          <View style={[st.statusPill, { backgroundColor: (winfo.ok || isActivePending) ? 'rgba(16,185,129,0.22)' : 'rgba(255,255,255,0.16)' }]}>
+            <View style={[st.statusDot, { backgroundColor: winfo.ok ? '#34D399' : isActivePending ? '#93C5FD' : '#FCD34D' }]} />
+            <Text style={st.statusText}>{isActivePending ? 'Đang bảo hành' : (winfo.ok ? 'Còn hiệu lực' : 'Hết hiệu lực')}</Text>
           </View>
         </View>
 
@@ -83,8 +84,8 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
               <Text style={st.heroDays}>{daysLeft}</Text>
               <Text style={st.heroDaysOf}>/ {totalDays} ngày</Text>
             </View>
-            <View style={st.bar}><View style={[st.barFill, { width: `${ratio * 100}%`, backgroundColor: winfo.ok ? '#34D399' : '#FCD34D' }]} /></View>
-            <Text style={st.heroUntil}>{winfo.ok ? `Hiệu lực đến ${fmtDate(winfo.until)}` : winfo.text}</Text>
+            <View style={st.bar}><View style={[st.barFill, { width: `${ratio * 100}%`, backgroundColor: winfo.ok ? '#34D399' : isActivePending ? '#93C5FD' : '#FCD34D' }]} /></View>
+            <Text style={st.heroUntil}>{winfo.ok ? `Hiệu lực đến ${fmtDate(winfo.until)}` : (isActivePending && winfo.until ? `${winfo.text} (Còn hiệu lực đến ${fmtDate(winfo.until)})` : winfo.text)}</Text>
           </View>
           <View style={st.qrWrap}>
             <PseudoQR value={`MINHDUC-WARRANTY|${o.code}|${o.address?.phone || ''}|${totalDays}D`} size={96} />

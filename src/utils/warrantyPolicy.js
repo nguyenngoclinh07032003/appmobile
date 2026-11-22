@@ -152,7 +152,9 @@ export function analyzeWarrantyEligibility({
       return {
         eligible: false,
         reason: 'WARRANTY_FINAL_DAY_CUTOFF',
-        message: 'Hôm nay là ngày cuối cùng trong thời hạn bảo hành và đã quá giờ làm việc khả dụng của kỹ thuật viên (sau 18h00).',
+        message: curHour >= WARRANTY_FINAL_DAY_CUTOFF_HOUR
+          ? 'Hôm nay là ngày cuối cùng trong thời hạn bảo hành và đã quá giờ làm việc khả dụng của kỹ thuật viên (sau 18h00).'
+          : 'Hôm nay là ngày cuối cùng trong thời hạn bảo hành và đã hết khung giờ nhận ca khả dụng trước 18h00.',
         isFinalDay: true,
         daysLeft: 1,
         cutoffHour: WARRANTY_FINAL_DAY_CUTOFF_HOUR,

@@ -52,6 +52,7 @@ export function ExternalPartsFinalizeSheet({
           minPrice: l.minPrice,
           maxPrice: l.maxPrice,
           qty: draft ? Math.max(1, Number(draft.qty) || 1) : Math.max(1, Number(l.qty) || 1),
+          origQty: draft?.origQty ?? Math.max(1, Number(l.qty) || 1),
           alreadyBilledUnitPrice: Number(l.priorDeposit) || 0,
           actualPriceText: draft?.actualPriceText || formatNumberInput(String(l.actualPrice ?? l.price ?? '')),
           receiptId: draft?.receiptId || l.receiptId || null,
@@ -71,6 +72,7 @@ export function ExternalPartsFinalizeSheet({
         minPrice: est.minPrice,
         maxPrice: est.maxPrice,
         qty: draft ? Math.max(1, Number(draft.qty) || 1) : Math.max(1, Number(est.qty) || 1),
+        origQty: draft?.origQty ?? Math.max(1, Number(est.qty) || 1),
         alreadyBilledUnitPrice: Number(est.alreadyBilledUnitPrice) || 0,
         actualPriceText: draft?.actualPriceText
           || (est.alreadyBilledUnitPrice > 0 ? formatNumberInput(String(est.alreadyBilledUnitPrice)) : ''),
@@ -107,7 +109,7 @@ export function ExternalPartsFinalizeSheet({
     .filter((l) => !l.isOriginal && !l.isEstimatedRange && !l.isFinalizedExternal)
     .reduce((sum, l) => sum + (Number(l.price) || 0) * Math.max(1, Number(l.qty) || 1), 0);
   const billedExternalDeposits = parts.reduce(
-    (sum, p) => sum + (Number(p.alreadyBilledUnitPrice) || 0) * Math.max(1, Number(p.qty) || 1),
+    (sum, p) => sum + (Number(p.alreadyBilledUnitPrice) || 0) * Math.max(1, Number(p.origQty ?? p.qty) || 1),
     0,
   );
   const baseBeforeFinalization = !isRevision && o?.bill && o.bill.quotationTotal != null
@@ -125,7 +127,7 @@ export function ExternalPartsFinalizeSheet({
 
   const actualPartsTotal = parts.reduce((sum, p) => sum + parseNum(p.actualPriceText) * p.qty, 0);
   const addedExternalDelta = parts.reduce(
-    (sum, p) => sum + Math.max(0, parseNum(p.actualPriceText) - (Number(p.alreadyBilledUnitPrice) || 0)) * p.qty,
+    (sum, p) => sum + Math.max(0, parseNum(p.actualPriceText) * p.qty - (Number(p.alreadyBilledUnitPrice) || 0) * Math.max(1, Number(p.origQty ?? p.qty) || 1)),
     0,
   );
   const projectedTotal = baseBeforeFinalization + addedExternalDelta;
@@ -138,6 +140,7 @@ export function ExternalPartsFinalizeSheet({
       minPrice: p.minPrice,
       maxPrice: p.maxPrice,
       qty: p.qty,
+      origQty: Math.max(1, Number(p.origQty ?? p.qty) || 1),
       alreadyBilledUnitPrice: p.alreadyBilledUnitPrice,
       actualPrice: parseNum(p.actualPriceText),
       receiptUri: p.receiptUri,

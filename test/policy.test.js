@@ -32,3 +32,13 @@ test('techPolicy: getCancellationWindowStatus dùng đúng HOTLINE hiện hành'
   assert.equal(res.reason.includes(HOTLINE), true);
   assert.equal(res.reason.includes('1900 6868'), false);
 });
+
+test('techPolicy: đơn pending chưa có thợ nhận vẫn được huỷ dù sát giờ hẹn (< 60 phút)', () => {
+  const now = Date.UTC(2026, 10, 21, 5, 0, 0); // 12:00 VN
+  const pendingNear = { status: 'pending', preferredTimeAt: now + 20 * 60 * 1000, slot: '12h20 - 14h20' };
+  const res = getCancellationWindowStatus(pendingNear, now);
+  assert.equal(res.allowed, true);
+
+  const farConfirmed = { status: 'confirmed', preferredTimeAt: now + 90 * 60 * 1000, slot: '13h30 - 15h30' };
+  assert.equal(getCancellationWindowStatus(farConfirmed, now).allowed, true);
+});

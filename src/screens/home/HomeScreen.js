@@ -394,7 +394,7 @@ export const st = StyleSheet.create({
   dueRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.line },
   dueName: { fontSize: 14, fontWeight: '700', color: C.ink },
   promo: { width: 250, height: 138, borderRadius: 20, padding: 16, overflow: 'hidden', justifyContent: 'flex-end' },
-  promoIcon: { position: 'absolute', right: 14, top: 12, fontSize: 40 },
+  promoIcon: { position: 'absolute', right: 14, top: 12 },
   promoTag: { alignSelf: 'flex-start', fontSize: 10, fontWeight: '800', borderWidth: 1, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, marginBottom: 8, opacity: 0.9 },
   promoTitle: { fontSize: 18, fontWeight: '900', letterSpacing: -0.3 },
   promoBody: { fontSize: 12, marginTop: 4, opacity: 0.85, fontWeight: '500' },

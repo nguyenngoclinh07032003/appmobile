@@ -17,6 +17,7 @@ import {
   isQuotationPendingCustomer,
 } from '../utils/externalPartsPricing';
 import { parseSymptomPhotoMeta } from '../utils/symptomItems';
+import { isAttendanceNotifType, defaultAttendanceNotifIcon } from '../utils/attendance';
 
 // Tên hiển thị khi đơn đã có thợ nhưng chưa tải được thông tin thợ (GET /customer/requests/:id/tracking).
 const ASSIGNED_TECH_PLACEHOLDER = 'Thợ được phân công';
@@ -54,6 +55,12 @@ export const formatSlotFromIso = (isoStr) => {
   const p = isoStr ? toVnParts(new Date(isoStr)) : null;
   if (!p) return '08h00 - 10h00';
   const h = p.hour;
+  const m = p.minute || 0;
+  if (m > 0) {
+    const startMins = h * 60 + m;
+    const endMins = Math.min(startMins + 120, 22 * 60);
+    return `${pad(h)}h${pad(m)} - ${pad(Math.floor(endMins / 60))}h${pad(endMins % 60)}`;
+  }
   if (h < 10) return '08h00 - 10h00';
   if (h < 12) return '10h00 - 12h00';
   if (h < 14) return '12h00 - 14h00';
@@ -67,9 +74,10 @@ export const buildPreferredTimeIso = (dateKey, slot) => {
     const baseDate = dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)
       ? dateKey
       : formatDateKeyFromIso(new Date().toISOString());
-    const m = /(\d{1,2})h/.exec(slot || '');
+    const m = /(\d{1,2})\s*[h:](\d{2})?/i.exec(slot || '');
     const hour = m ? pad(Math.min(23, Math.max(0, Number(m[1])))) : '09';
-    return new Date(`${baseDate}T${hour}:00:00+07:00`).toISOString();
+    const minute = m && m[2] != null ? pad(Math.min(59, Math.max(0, Number(m[2])))) : '00';
+    return new Date(`${baseDate}T${hour}:${minute}:00+07:00`).toISOString();
   } catch (e) {
     return new Date().toISOString();
   }
@@ -713,6 +721,8 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     },
     quote,
     diagnosisReport,
+    ...(req._evidence ? { evidence: req._evidence } : {}),
+    ...(req._evidenceFetched ? { _evidenceFetched: true } : {}),
     attachments: extractInitialAttachments(
       req._evidence || [],
       req.attachments || req.initial_attachments || req._detailAttachments || [],
@@ -907,6 +917,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     doneAt,
     tech: myTech,
     quote,
+    ...(job._evidenceFetched ? { _evidenceFetched: true } : {}),
     attachments: extractInitialAttachments(
       job._evidence || [],
       req.attachments || req.initial_attachments || job.attachments || req.photos || [],
@@ -1048,7 +1059,9 @@ export const mapBackendPhotoToEvidence = (row) => {
   const stage = EVIDENCE_STAGE[rawType] || (!rawType && !hasJob ? 'diagnosis' : 'after');
   const uploaderRole = String(row?.uploaded_by_role || row?.uploader_role || row?.role || '').trim().toUpperCase();
   const note = row?.description || row?.note || '';
+  const isWarrantyUpload = /^\[Bảo hành\]/i.test(String(note).trim());
   const isCustomerInitial = Boolean(
+    !isWarrantyUpload &&
     stage === 'diagnosis' &&
     (uploaderRole === 'CUSTOMER' || (!hasJob && !parseSymptomPhotoMeta(note))),
   );
@@ -1058,6 +1071,7 @@ export const mapBackendPhotoToEvidence = (row) => {
     uri: row?.image_url || row?.file_url || row?.url || row?.uri || '',
     stage,
     note,
+    isWarrantyUpload,
     isCustomerInitial,
     at: row?.uploaded_at ? new Date(row.uploaded_at).getTime() : Date.now(),
   };
@@ -1068,7 +1082,8 @@ export const extractInitialAttachments = (evidence = [], rawAttachments = []) =>
   const out = [];
   const seen = new Set();
   const pushOne = (item) => {
-    if (!item?.uri) return;
+    if (!item?.uri || item.isWarrantyUpload) return;
+    if (/^\[Bảo hành\]/i.test(String(item.note || item.description || '').trim())) return;
     const key = item.dbAttachmentId != null ? `id:${item.dbAttachmentId}` : `uri:${item.uri}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -1122,8 +1137,9 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
     if (matchKey) {
       const ro = byKey.get(matchKey);
       // Giữ trạng thái di chuyển ('onway') hoặc chat/ảnh minh chứng trên máy nếu backend đang ở ASSIGNED / IN_PROGRESS
-      const keepOnway = lo.status === 'onway' && ro.status === 'confirmed';
-      const keepRepairing = lo.status === 'repairing' && ro.status === 'diagnosing';
+      const sameTech = !lo.tech?.code || !ro.tech?.code || lo.tech.code === ro.tech.code;
+      const keepOnway = sameTech && lo.status === 'onway' && ro.status === 'confirmed';
+      const keepRepairing = lo.status === 'repairing' && ro.status === 'diagnosing' && !ro.quote?.revisionRequested;
       // Thợ đang sửa lại báo giá (reopenQuote): giữ form mở tới khi server có báo giá mới.
       const keepEditing = Boolean(lo.quoteEditing) && ['quoted', 'repairing'].includes(ro.status)
         && (ro.quote?.dbQuotationId || null) === (lo.quoteEditingFrom || null);
@@ -1143,17 +1159,21 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         code: ro.code || lo.code,
         status: keepEditing ? lo.status : (keepOnway ? 'onway' : (keepRepairing ? 'repairing' : ro.status)),
         quoteEditing: keepEditing,
-        tracking: (ro.tracking && (!lo.tracking || (ro.tracking.updatedAt || 0) >= (lo.tracking.updatedAt || 0)))
-          ? ro.tracking
-          : (lo.tracking || ro.tracking),
+        tracking: !sameTech
+          ? (ro.tracking || null)
+          : (ro.tracking && (!lo.tracking || (ro.tracking.updatedAt || 0) >= (lo.tracking.updatedAt || 0)))
+            ? ro.tracking
+            : (lo.tracking || ro.tracking),
         checkIn: (ro.checkIn && (!lo.checkIn || (ro.checkIn.at || 0) >= (lo.checkIn.at || 0)))
           ? { ...(lo.checkIn || {}), ...ro.checkIn }
           : (lo.checkIn || ro.checkIn),
         chat: lo.chat?.length ? lo.chat : (ro.chat || []),
-        // Ảnh/tiến độ: ưu tiên server; giữ local nếu server chưa có.
-        evidence: (Array.isArray(ro.evidence) && ro.evidence.length)
+        // Ảnh/tiến độ: ưu tiên server khi đã fetch thành công (kể cả mảng rỗng sau khi xoá ảnh cuối).
+        evidence: (ro._evidenceFetched && Array.isArray(ro.evidence))
           ? ro.evidence
-          : (lo.evidence || ro.evidence || []),
+          : ((Array.isArray(ro.evidence) && ro.evidence.length)
+            ? ro.evidence
+            : (lo.evidence || ro.evidence || [])),
         attachments: (Array.isArray(ro.attachments) && ro.attachments.length)
           ? ro.attachments
           : (lo.attachments || ro.attachments || []),
@@ -1214,6 +1234,7 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
 export const mapBackendNotification = (n, orders = [], linkName = 'order') => {
   if (!n) return null;
   const nType = n.type || n.notification_type || null;
+  const nTypeUpper = String(nType || '').trim().toUpperCase();
   const order = n.request_id != null ? orders.find((o) => String(o.dbRequestId) === String(n.request_id)) : null;
   // Backend có thể gửi tiêu đề / nội dung tiếng Anh: luôn Việt hoá.
   const vi = viNotification({ ...n, type: nType, request_code: n.request_code || order?.code });
@@ -1222,15 +1243,17 @@ export const mapBackendNotification = (n, orders = [], linkName = 'order') => {
     dbNotificationId: n.notification_id,
     at: ts(n.created_at),
     read: Boolean(n.is_read),
-    icon: n.icon || '🔔',
+    icon: n.icon || defaultAttendanceNotifIcon(nTypeUpper) || '🔔',
     type: nType,
     title: vi.title,
     body: vi.body,
     ...(order
       ? { link: { name: linkName, params: { code: order.code } } }
-      : (['HANDOVER_CONFIRMED', 'HANDOVER_REJECTED'].includes(nType)
+      : (['HANDOVER_CONFIRMED', 'HANDOVER_REJECTED'].includes(nTypeUpper)
         ? { link: { name: 'tech-handovers', params: { tab: 'history' } } }
-        : {})),
+        : (isAttendanceNotifType(nTypeUpper)
+          ? { link: { tab: 'tech-attendance' } }
+          : {}))),
   };
 };
 

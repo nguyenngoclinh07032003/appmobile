@@ -59,6 +59,7 @@ export function UsedAndExtraMaterialsCard({
             minPrice: l.minPrice,
             maxPrice: l.maxPrice,
             qty: Math.max(1, Number(l.qty) || 1),
+            origQty: Math.max(1, Number(l.origQty ?? l.qty) || 1),
             alreadyBilledUnitPrice: Number(l.priorDeposit) || 0,
             defaultPrice: l.actualPrice ?? l.price ?? '',
             receiptId: l.receiptId || null,
@@ -69,6 +70,7 @@ export function UsedAndExtraMaterialsCard({
           minPrice: est.minPrice,
           maxPrice: est.maxPrice,
           qty: Math.max(1, Number(est.qty) || 1),
+          origQty: Math.max(1, Number(est.qty) || 1),
           alreadyBilledUnitPrice: Number(est.alreadyBilledUnitPrice) || 0,
           defaultPrice: est.alreadyBilledUnitPrice > 0 ? est.alreadyBilledUnitPrice : '',
           receiptId: null,
@@ -90,6 +92,7 @@ export function UsedAndExtraMaterialsCard({
             maxPrice: src.maxPrice,
             // Thợ chưa tự chỉnh số lượng -> theo số lượng mới nhất từ server.
             qty: existing.qtyTouched ? existing.qty : src.qty,
+            origQty: existing.origQty ?? src.origQty,
             alreadyBilledUnitPrice: src.alreadyBilledUnitPrice,
             receiptId: existing.receiptId || src.receiptId,
           };
@@ -101,6 +104,7 @@ export function UsedAndExtraMaterialsCard({
           minPrice: src.minPrice,
           maxPrice: src.maxPrice,
           qty: src.qty,
+          origQty: src.origQty,
           alreadyBilledUnitPrice: src.alreadyBilledUnitPrice,
           actualPriceText: src.defaultPrice ? formatNumberInput(String(src.defaultPrice)) : '',
           receiptId: src.receiptId,
@@ -261,7 +265,7 @@ export function UsedAndExtraMaterialsCard({
     .filter((l) => !l.isOriginal && !l.isEstimatedRange && !l.isFinalizedExternal)
     .reduce((sum, l) => sum + (Number(l.price) || 0) * Math.max(1, Number(l.qty) || 1), 0);
   const billedExternalDeposits = extraParts.reduce(
-    (sum, p) => sum + (Number(p.alreadyBilledUnitPrice) || 0) * Math.max(1, Number(p.qty) || 1),
+    (sum, p) => sum + (Number(p.alreadyBilledUnitPrice) || 0) * Math.max(1, Number(p.origQty ?? p.qty) || 1),
     0,
   );
   const baseBeforeExtra = !isRevision && o?.bill && o.bill.quotationTotal != null
@@ -282,7 +286,11 @@ export function UsedAndExtraMaterialsCard({
     0,
   );
   const extraAddedDelta = extraParts.reduce(
-    (sum, p) => sum + Math.max(0, parseNum(p.actualPriceText) - (Number(p.alreadyBilledUnitPrice) || 0)) * Math.max(1, Number(p.qty) || 1),
+    (sum, p) => {
+      const qty = Math.max(1, Number(p.qty) || 1);
+      const origQty = Math.max(1, Number(p.origQty ?? qty) || 1);
+      return sum + Math.max(0, parseNum(p.actualPriceText) * qty - (Number(p.alreadyBilledUnitPrice) || 0) * origQty);
+    },
     0,
   );
   const projectedBillTotal = baseBeforeExtra + extraAddedDelta;
@@ -292,16 +300,20 @@ export function UsedAndExtraMaterialsCard({
       u.alert('Chưa có vật tư phát sinh', 'Thêm ít nhất 1 vật tư phát sinh và nhập mức giá cuối để gửi Bill.', 'ℹ️');
       return false;
     }
-    const payloadParts = extraParts.map((p) => ({
-      name: p.name,
-      minPrice: p.minPrice,
-      maxPrice: p.maxPrice,
-      qty: Math.max(1, Number(p.qty) || 1),
-      alreadyBilledUnitPrice: Number(p.alreadyBilledUnitPrice) || 0,
-      actualPrice: parseNum(p.actualPriceText),
-      receiptUri: p.receiptUri,
-      receiptId: p.receiptId,
-    }));
+    const payloadParts = extraParts.map((p) => {
+      const qty = Math.max(1, Number(p.qty) || 1);
+      return {
+        name: p.name,
+        minPrice: p.minPrice,
+        maxPrice: p.maxPrice,
+        qty,
+        origQty: Math.max(1, Number(p.origQty ?? qty) || 1),
+        alreadyBilledUnitPrice: Number(p.alreadyBilledUnitPrice) || 0,
+        actualPrice: parseNum(p.actualPriceText),
+        receiptUri: p.receiptUri,
+        receiptId: p.receiptId,
+      };
+    });
     const ok = await Promise.resolve(
       a.submitExternalPartsActualPrice(o.code, {
         parts: payloadParts,

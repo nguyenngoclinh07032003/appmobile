@@ -168,6 +168,10 @@ export function setSession(accountId) {
   writeSessionData({ accountId, loggedAt: Date.now() });
 }
 
+export function clearAccounts() {
+  saveAccounts([]);
+}
+
 export function urlRoleHint() {
   try {
     if (typeof window === 'undefined' || !window.location?.search) return null;

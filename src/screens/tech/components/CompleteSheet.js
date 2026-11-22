@@ -47,7 +47,20 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
   const serverAfterPhotos = allEvidence.filter((e) => e?.stage === 'after' && e?.uri);
   const hasInitialPhotos =
     (o.attachments || []).length > 0 || allEvidence.some((e) => e?.stage === 'diagnosis' && e?.uri);
-  const totalAfterCount = serverAfterPhotos.length + localPendingUris.length;
+  const [uploadedUris, setUploadedUris] = useState([]);
+  const [baselineServerCount, setBaselineServerCount] = useState(() => serverAfterPhotos.length);
+
+  // Chỉ xoá ảnh tạm sau khi serverAfterPhotos thực sự tăng lên từ syncFromBackend, tránh nhấp nháy "0 ảnh".
+  useEffect(() => {
+    if (uploadedUris.length > 0 && serverAfterPhotos.length > baselineServerCount) {
+      setUploadedUris([]);
+      setBaselineServerCount(serverAfterPhotos.length);
+    } else if (uploadedUris.length === 0) {
+      setBaselineServerCount(serverAfterPhotos.length);
+    }
+  }, [serverAfterPhotos.length, uploadedUris.length, baselineServerCount]);
+
+  const totalAfterCount = serverAfterPhotos.length + localPendingUris.length + uploadedUris.length;
   const busyKey = `complete:${o.code}`;
   const busy = isBusy(busyKey);
   const qr = isQRPayment(o);
@@ -76,8 +89,11 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
       setLocalPendingUris((prev) => (prev.includes(uri) ? prev : [...prev, uri]));
       if (o.dbAssignmentId) {
         const ok = await Promise.resolve(a.addEvidence(o.code, { uri, stage: 'after', note: AFTER_NOTE }));
+        setLocalPendingUris((prev) => prev.filter((x) => x !== uri));
         if (ok) {
-          setLocalPendingUris((prev) => prev.filter((x) => x !== uri));
+          setUploadedUris((prev) => (prev.includes(uri) ? prev : [...prev, uri]));
+        } else {
+          u.alert('Không tải được ảnh', 'Không tải lên được ảnh hoàn thành. Vui lòng kiểm tra mạng và thử lại.', 'camera');
         }
       }
     } catch (e) {
@@ -145,7 +161,7 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
     }
     const ok = await Promise.resolve(a.completeJob(o.code, {
       summary: summary.trim(),
-      paid: qr ? orderPaid : (needsCash ? paid : true),
+      paid: qr ? orderPaid : (needsCash ? paid : false),
       safetyChecklist: SAFETY_ITEMS.filter((it) => safetyChecks.includes(it)),
       customerSignature: name, // giữ kiểu cũ: chuỗi họ tên
       customerAcceptance: { name, confirmedAt: acceptedAt },
@@ -215,6 +231,11 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
                 <Tap style={tx.photoX} disabled={uploadingPhoto} onPress={() => handleRemoveServerPhoto(ph)} hitSlop={6}>
                   <AppIcon name="x" size={11} color="#fff" strokeWidth={3} />
                 </Tap>
+              </View>
+            ))}
+            {uploadedUris.map((uri, idx) => (
+              <View key={`up_after_${idx}`} style={tx.photo}>
+                <Image source={{ uri }} style={{ width: '100%', height: '100%' }} />
               </View>
             ))}
             {localPendingUris.map((uri, idx) => (

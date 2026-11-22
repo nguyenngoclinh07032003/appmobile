@@ -158,7 +158,9 @@ export function NotificationsScreen() {
               <Tap onPress={a.readAll}><Text style={ui.link}>Đọc hết</Text></Tap>
             ) : null}
             {list.length > 0 ? (
-              <Tap onPress={a.clearAllNotifs}><Text style={[ui.link, { color: C.muted }]}>Dọn sạch</Text></Tap>
+              <Tap onPress={() => u.confirm('Dọn sạch thông báo?', 'Xoá toàn bộ thông báo khỏi danh sách trên thiết bị?', a.clearAllNotifs, 'Dọn sạch', true)}>
+                <Text style={[ui.link, { color: C.muted }]}>Dọn sạch</Text>
+              </Tap>
             ) : null}
           </View>
         )}
@@ -211,14 +213,17 @@ export function NotificationsScreen() {
 // =========================================================== CHI TIẾT ĐƠN
 const CANCEL_REASONS = ['Tôi muốn đổi lịch khác', 'Đặt nhầm dịch vụ', 'Không còn nhu cầu', 'Thợ liên hệ không phù hợp', 'Lý do khác'];
 const REJECT_REASONS = ['Giá cao hơn dự kiến', 'Muốn tham khảo thêm', 'Không cần sửa nữa', 'Lý do khác'];
+const FINALIZE_REVISION_REASONS = ['Giá chênh lệch so với thực tế', 'Ảnh hoá đơn chưa rõ / cần bổ sung', 'Sai số lượng hoặc tên vật tư', 'Lý do khác'];
 
 export function OrderScreen({ params }) {
   const { s, a, nav, ui: u } = useApp();
   const [showCancel, setShowCancel] = useState(false);
   const [reason, setReason] = useState(CANCEL_REASONS[0]);
+  const [reasonCustom, setReasonCustom] = useState('');
   const [showReject, setShowReject] = useState(false);
   const [rejectMode, setRejectMode] = useState('revise');
   const [rejectReason, setRejectReason] = useState(REJECT_REASONS[0]);
+  const [rejectCustom, setRejectCustom] = useState('');
   const [showMatPrice, setShowMatPrice] = useState(false);
   const [showCertificate, setShowCertificate] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -389,10 +394,16 @@ export function OrderScreen({ params }) {
   });
 
   const cancelOrder = () => runCancel(async () => {
+    const finalReason = reason === 'Lý do khác' ? reasonCustom.trim() : reason;
+    if (reason === 'Lý do khác' && finalReason.length < 3) {
+      u.alert('Thiếu lý do', 'Vui lòng nhập ngắn gọn lý do huỷ đơn (tối thiểu 3 ký tự).', '✏️');
+      return;
+    }
     try {
-      await callAction(a.cancelOrder, o.code, reason);
+      await callAction(a.cancelOrder, o.code, finalReason);
       // Thành công hoặc bị từ chối (context đã báo lý do) đều đóng sheet; chỉ giữ lại khi lỗi bất ngờ để thử lại.
       setShowCancel(false);
+      setReasonCustom('');
     } catch (e) {
       u.alert('Không huỷ được', errorText(e, 'Không gửi được yêu cầu huỷ. Vui lòng thử lại.'), '⚠️');
     }
@@ -507,7 +518,7 @@ export function OrderScreen({ params }) {
         ) : null}
 
         {/* ===== Thợ đang cập nhật lại mức giá vật tư theo yêu cầu khách ===== */}
-        {o.status === 'diagnosing' && o.quote?.isExternalFinalization && o.quote?.revisionRequested ? (
+        {o.status !== 'quoted' && o.quote?.isExternalFinalization && o.quote?.revisionRequested ? (
           <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.gold }}>
             <Text style={[mx.tlTitle, { color: C.goldInk }]}>Đang chờ thợ cập nhật lại mức giá vật tư</Text>
             <Text style={{ color: C.ink2, marginTop: 4, fontSize: 13, lineHeight: 19 }}>
@@ -615,6 +626,7 @@ export function OrderScreen({ params }) {
           const goodsBase = o.goods || (bookedBase + prodDisc + comboDisc);
           const priorApprovedExtra = Number(o.quote.priorApprovedExtra) || 0;
           const effectivePriorExtra = o.quote.includesPriorApprovedLines ? 0 : priorApprovedExtra;
+          const lateDisc = lateDiscountAmount(o);
           const rangeTotals = computeQuoteRangeTotals(lines, {
             bookedBase,
             priorApprovedExtra: effectivePriorExtra,
@@ -622,14 +634,13 @@ export function OrderScreen({ params }) {
             comboDisc,
             partDisc: partDisc || 0,
             voucherDisc: o.voucherDiscount || 0,
-            lateDisc: lateDiscountAmount(o),
+            lateDisc,
             isOnSite: isOnSite || o.quote.quotationType === 'SUPPLEMENTAL' || Boolean(o.quote.includesPriorApprovedLines),
           });
           const hasRange = rangeTotals.hasEstimatedRange;
           const extraMin = rangeTotals.extraMin;
           const extraMax = rangeTotals.extraMax;
           const finalAfterQuote = rangeTotals.totalMax;
-          const receiptFallback = (o.evidence || []).filter((e) => e.stage === 'receipt');
 
           return (
             <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: isExternalFinalization ? C.primary : C.gold }}>
@@ -737,8 +748,8 @@ export function OrderScreen({ params }) {
                     const hasOrigRange = l.minPrice != null && l.maxPrice != null && l.maxPrice > 0;
                     const inOrigRange = hasOrigRange && displayUnit >= l.minPrice && displayUnit <= l.maxPrice;
                     const receiptEv = l.receiptId
-                      ? ((o.evidence || []).find((e) => String(e.dbAttachmentId) === String(l.receiptId)) || receiptFallback[i])
-                      : (l.isFinalizedExternal ? receiptFallback[i] : null);
+                      ? (o.evidence || []).find((e) => String(e.dbAttachmentId) === String(l.receiptId))
+                      : null;
 
                     return (
                       <View key={`custom_${l.name}_${i}`} style={{ paddingVertical: 6 }}>
@@ -787,10 +798,14 @@ export function OrderScreen({ params }) {
                           </Text>
                         </View>
                         {receiptEv?.uri ? (
-                          <View style={{ marginTop: 6 }}>
+                          <Tap
+                            style={{ marginTop: 6, alignSelf: 'flex-start' }}
+                            scaleTo={0.97}
+                            onPress={() => setPreviewOrderPhoto({ uri: receiptEv.uri, title: `Hoá đơn mua ngoài · ${l.name}` })}
+                          >
                             <Image source={{ uri: receiptEv.uri }} style={{ width: 72, height: 72, borderRadius: 10, borderWidth: 1, borderColor: C.line }} />
-                            <Text style={[ui.meta, { fontSize: 11, marginTop: 2 }]}>Hoá đơn mua ngoài đính kèm</Text>
-                          </View>
+                            <Text style={[ui.meta, { fontSize: 11, marginTop: 2, color: C.primary }]}>Hoá đơn mua ngoài đính kèm · Chạm để phóng to</Text>
+                          </Tap>
                         ) : null}
                       </View>
                     );
@@ -832,6 +847,7 @@ export function OrderScreen({ params }) {
                 )}
                 {partDisc ? <Bill l={`Ưu đãi hạng thành viên (−${o.bill?.tierPartDiscountPercent || 0}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
                 {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
+                {lateDisc > 0 ? <Bill l="Bồi thường thợ đến muộn" v={`−${formatVND(lateDisc)}`} green /> : null}
                 <View style={mx.totalRow}>
                   <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>
                     {isExternalFinalization
@@ -1007,7 +1023,8 @@ export function OrderScreen({ params }) {
             <InfoLine icon="building-2" label="Vị trí thi công" value={o.siteCondition.label} />
           ) : null}
           {o.note ? <InfoLine icon="file-text" label="Ghi chú" value={o.note} /> : null}
-          {(o.attachments || []).length ? (
+          {o.outOfWarrantyReason ? <InfoLine icon="alert-triangle" label="Lý do ngoài bảo hành" value={o.outOfWarrantyReason} /> : null}
+          {(o.attachments || []).length && o.status === 'quoted' ? (
             <View style={{ marginTop: 4, marginBottom: 4 }}>
               <Text style={{ fontSize: 12, color: C.muted, fontWeight: '600', marginBottom: 6 }}>Hình ảnh triệu chứng ban đầu</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -1019,9 +1036,12 @@ export function OrderScreen({ params }) {
               </View>
             </View>
           ) : null}
-          {o.warrantyOf ? (
-            <Tap onPress={() => openRelatedOrder(o.warrantyOf)}><InfoLine icon="link" label="Bảo hành cho đơn" value={`${o.warrantyOf} ›`} link /></Tap>
-          ) : null}
+          {(() => {
+            const parentCode = o.warrantyOf || (o.originalRequestId ? s.orders.find((x) => String(x.dbRequestId) === String(o.originalRequestId))?.code : null);
+            return parentCode ? (
+              <Tap onPress={() => openRelatedOrder(parentCode)}><InfoLine icon="link" label="Bảo hành cho đơn" value={`${parentCode} ›`} link /></Tap>
+            ) : null;
+          })()}
         </Card>
 
         <Text style={mx.sec}>Dịch vụ</Text>
@@ -1120,49 +1140,46 @@ export function OrderScreen({ params }) {
               ) : null}
 
               {/* Danh sách vật tư mua ngoài (nếu có) */}
-              {customItems.length ? (() => {
-                const receiptFallback = (o.evidence || []).filter((e) => e.stage === 'receipt');
-                return (
-                  <View style={{ marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: C.line }}>
-                    <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.ink, marginBottom: 2 }}>
-                      Vật tư mua ngoài / phát sinh ({customItems.length})
-                    </Text>
-                    {customItems.map((l, i) => {
-                      const receiptEv = l.receiptId
-                        ? ((o.evidence || []).find((e) => String(e.dbAttachmentId) === String(l.receiptId)) || receiptFallback[i])
-                        : (l.isFinalizedExternal ? receiptFallback[i] : null);
-                      return (
-                        <View key={`d_custom_${l.name}_${i}`} style={{ marginTop: 4 }}>
-                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Text style={[ui.meta, { fontSize: 13, color: C.ink2, flex: 1, paddingRight: 6 }]} numberOfLines={2}>
-                              {l.name} x{l.qty}{l.isEstimatedRange ? ' (Giá dao động)' : l.isFinalizedExternal ? ' (Giá chốt cuối)' : ''}
-                            </Text>
-                            <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: l.isEstimatedRange ? C.goldInk : C.ink }]}>
-                              {l.isEstimatedRange
-                                ? formatRangeVND(l.minPrice * l.qty, l.maxPrice * l.qty)
-                                : `+${formatVND((l.actualPrice ?? l.price) * l.qty)}`}
-                            </Text>
-                          </View>
-                          {receiptEv?.uri ? (
-                            <Tap
-                              style={{ marginTop: 5, alignSelf: 'flex-start' }}
-                              scaleTo={0.97}
-                              onPress={() => setPreviewOrderPhoto({ uri: receiptEv.uri, title: `Hoá đơn mua ngoài · ${l.name}` })}
-                            >
-                              <Image source={{ uri: receiptEv.uri }} style={{ width: 64, height: 64, borderRadius: 8, borderWidth: 1, borderColor: C.line }} />
-                              <Text style={[ui.meta, { fontSize: 11, marginTop: 2 }]}>Hoá đơn mua ngoài đính kèm</Text>
-                            </Tap>
-                          ) : null}
+              {customItems.length ? (
+                <View style={{ marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: C.line }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.ink, marginBottom: 2 }}>
+                    Vật tư mua ngoài / phát sinh ({customItems.length})
+                  </Text>
+                  {customItems.map((l, i) => {
+                    const receiptEv = l.receiptId
+                      ? (o.evidence || []).find((e) => String(e.dbAttachmentId) === String(l.receiptId))
+                      : null;
+                    return (
+                      <View key={`d_custom_${l.name}_${i}`} style={{ marginTop: 4 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <Text style={[ui.meta, { fontSize: 13, color: C.ink2, flex: 1, paddingRight: 6 }]} numberOfLines={2}>
+                            {l.name} x{l.qty}{l.isEstimatedRange ? ' (Giá dao động)' : l.isFinalizedExternal ? ' (Giá chốt cuối)' : ''}
+                          </Text>
+                          <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: l.isEstimatedRange ? C.goldInk : C.ink }]}>
+                            {l.isEstimatedRange
+                              ? formatRangeVND(l.minPrice * l.qty, l.maxPrice * l.qty)
+                              : `+${formatVND((l.actualPrice ?? l.price) * l.qty)}`}
+                          </Text>
                         </View>
-                      );
-                    })}
-                  </View>
-                );
-              })() : null}
+                        {receiptEv?.uri ? (
+                          <Tap
+                            style={{ marginTop: 5, alignSelf: 'flex-start' }}
+                            scaleTo={0.97}
+                            onPress={() => setPreviewOrderPhoto({ uri: receiptEv.uri, title: `Hoá đơn mua ngoài · ${l.name}` })}
+                          >
+                            <Image source={{ uri: receiptEv.uri }} style={{ width: 64, height: 64, borderRadius: 8, borderWidth: 1, borderColor: C.line }} />
+                            <Text style={[ui.meta, { fontSize: 11, marginTop: 2 }]}>Hoá đơn mua ngoài đính kèm</Text>
+                          </Tap>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null}
 
               {o.quote?.rejectReason ? (
-                <Text style={[ui.meta, { color: o.quote?.revisionRequested && o.status === 'diagnosing' ? C.orange : C.red, fontWeight: '700', marginTop: 8 }]}>
-                  {o.quote?.revisionRequested && o.status === 'diagnosing'
+                <Text style={[ui.meta, { color: o.quote?.revisionRequested ? C.orange : C.red, fontWeight: '700', marginTop: 8 }]}>
+                  {o.quote?.revisionRequested
                     ? `Bạn đã yêu cầu thợ điều chỉnh báo giá: ${o.quote.rejectReason}`
                     : `Bạn đã từ chối báo giá: ${o.quote.rejectReason}`}
                 </Text>
@@ -1432,7 +1449,7 @@ export function OrderScreen({ params }) {
                 <Text style={[ui.meta, winfo.ok && { color: C.green, fontWeight: '700' }]}>{winfo.text}</Text>
               </View>
             </View>
-            {winfo.ok ? (
+            {(winfo.ok || winfo.isCutoff || (winfo.pending && winfo.stillValid)) ? (
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
                 <Btn
                   title="Phiếu bảo hành điện tử"
@@ -1441,13 +1458,15 @@ export function OrderScreen({ params }) {
                   style={{ flex: 1 }}
                   onPress={() => setShowCertificate(true)}
                 />
-                <Btn
-                  title="Yêu cầu bảo hành"
-                  variant="soft"
-                  small
-                  style={{ flex: 1 }}
-                  onPress={requestWarranty}
-                />
+                {(winfo.ok || winfo.isCutoff) ? (
+                  <Btn
+                    title="Yêu cầu bảo hành"
+                    variant="soft"
+                    small
+                    style={{ flex: 1 }}
+                    onPress={requestWarranty}
+                  />
+                ) : null}
               </View>
             ) : null}
             {winfo.openCode ? (
@@ -1550,6 +1569,15 @@ export function OrderScreen({ params }) {
             <Text style={{ fontSize: 15, color: C.ink, flex: 1 }}>{r}</Text>
           </Tap>
         ))}
+        {reason === 'Lý do khác' ? (
+          <Field
+            label="Mô tả lý do huỷ"
+            value={reasonCustom}
+            onChangeText={setReasonCustom}
+            placeholder="Nhập ngắn gọn lý do của bạn…"
+            style={{ marginTop: 6 }}
+          />
+        ) : null}
       </Sheet>
       <Sheet
         visible={showReject}
@@ -1569,9 +1597,17 @@ export function OrderScreen({ params }) {
             variant={o.quote?.isExternalFinalization || rejectMode === 'revise' ? 'primary' : 'danger'}
             disabled={quoteBusy}
             onPress={() => {
+              const reasonList = o.quote?.isExternalFinalization ? FINALIZE_REVISION_REASONS : REJECT_REASONS;
+              const chosen = reasonList.includes(rejectReason) ? rejectReason : reasonList[0];
+              const finalWhy = chosen === 'Lý do khác' ? rejectCustom.trim() : chosen;
+              if (chosen === 'Lý do khác' && finalWhy.length < 3) {
+                u.alert('Thiếu lý do', 'Vui lòng nhập ngắn gọn lý do phản hồi (tối thiểu 3 ký tự).', '✏️');
+                return;
+              }
               setShowReject(false);
+              setRejectCustom('');
               const sendRevise = o.quote?.isExternalFinalization || rejectMode === 'revise';
-              respondQuote(sendRevise ? 'revise' : false, rejectReason);
+              respondQuote(sendRevise ? 'revise' : false, finalWhy);
             }}
           />
         )}
@@ -1623,12 +1659,25 @@ export function OrderScreen({ params }) {
               ? 'Thợ sẽ nhận được yêu cầu và điều chỉnh lại phương án / chi phí cho bạn.'
               : 'Đơn hàng sẽ được huỷ ngay lập tức. Chính sách Minh Đức miễn phí 100% kiểm tra tại nhà (0đ), bạn không phải trả bất kỳ khoản phí nào.'}
         </Text>
-        {REJECT_REASONS.map((r) => (
-          <Tap key={r} style={mx.option} onPress={() => setRejectReason(r)}>
-            <Radio on={rejectReason === r} />
-            <Text style={{ fontSize: 15, color: C.ink, flex: 1 }}>{r}</Text>
-          </Tap>
-        ))}
+        {(o.quote?.isExternalFinalization ? FINALIZE_REVISION_REASONS : REJECT_REASONS).map((r) => {
+          const reasonList = o.quote?.isExternalFinalization ? FINALIZE_REVISION_REASONS : REJECT_REASONS;
+          const active = (reasonList.includes(rejectReason) ? rejectReason : reasonList[0]) === r;
+          return (
+            <Tap key={r} style={mx.option} onPress={() => setRejectReason(r)}>
+              <Radio on={active} />
+              <Text style={{ fontSize: 15, color: C.ink, flex: 1 }}>{r}</Text>
+            </Tap>
+          );
+        })}
+        {rejectReason === 'Lý do khác' ? (
+          <Field
+            label="Nhập lý do chi tiết"
+            value={rejectCustom}
+            onChangeText={setRejectCustom}
+            placeholder="Nhập ngắn gọn điều bạn muốn thợ kiểm tra lại…"
+            style={{ marginTop: 6 }}
+          />
+        ) : null}
       </Sheet>
       <Sheet
         visible={showEdit}
@@ -1712,7 +1761,8 @@ const Bill = ({ l, v, green }) => (
 );
 
 // =========================================================== ĐÁNH GIÁ
-const QUICK_TAGS = ['Đúng giờ', 'Tay nghề tốt', 'Thân thiện', 'Sạch sẽ', 'Giá hợp lý', 'Tư vấn tận tình'];
+const QUICK_TAGS_POS = ['Đúng giờ', 'Tay nghề tốt', 'Thân thiện', 'Sạch sẽ', 'Giá hợp lý', 'Tư vấn tận tình'];
+const QUICK_TAGS_NEG = ['Thợ đến muộn', 'Thái độ chưa tốt', 'Chưa sạch sẽ', 'Giá chưa hợp lý', 'Xử lý chưa triệt để', 'Cần tư vấn rõ hơn'];
 export function RateScreen({ params }) {
   const { s, a, nav, ui: u } = useApp();
   const o = (s.orders || []).find((x) => x.code === params?.code);
@@ -1721,8 +1771,18 @@ export function RateScreen({ params }) {
   const [text, setText] = useState('');
   const [sending, runSend] = useBusy();
   if (!o) return <NotFoundView title="Không tìm thấy đơn" body="Không tìm thấy đơn cần đánh giá. Đơn có thể đã được đánh giá hoặc chưa đồng bộ." onBack={() => nav.back()} />;
+  if (o.rating || o.status !== 'done') {
+    return (
+      <NotFoundView
+        title={o.rating ? 'Đơn đã được đánh giá' : 'Chưa thể đánh giá'}
+        body={o.rating ? 'Cảm ơn bạn đã gửi đánh giá cho đơn hàng này.' : 'Bạn chỉ có thể gửi đánh giá sau khi đơn hàng đã hoàn thành.'}
+        onBack={() => nav.back()}
+      />
+    );
+  }
   const svc = getService(o.items?.[0]?.id);
   const LABEL = ['', 'Rất tệ', 'Chưa hài lòng', 'Bình thường', 'Hài lòng', 'Tuyệt vời!'];
+  const activeTags = stars <= 3 ? QUICK_TAGS_NEG : QUICK_TAGS_POS;
   const submit = () => runSend(async () => {
     const full = [tags.join(', '), text.trim()].filter(Boolean).join('. ');
     try {
@@ -1739,14 +1799,16 @@ export function RateScreen({ params }) {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 24 }} keyboardShouldPersistTaps="handled">
         <Card style={{ alignItems: 'center', paddingVertical: 24 }}>
           <Media item={svc} height={72} width={72} radius={20} />
-          <Text style={[mx.tlTitle, { textAlign: 'center', marginTop: 12 }]}>{svc?.name}</Text>
-          <Text style={ui.meta}>Thợ {o.tech?.name}</Text>
-          <View style={{ marginTop: 18 }}><Stars value={stars} size={38} onChange={setStars} /></View>
+          <Text style={[mx.tlTitle, { textAlign: 'center', marginTop: 12 }]}>{svc?.name || o.items?.[0]?.name || 'Dịch vụ kỹ thuật'}</Text>
+          <Text style={ui.meta}>Thợ {o.tech?.name || 'kỹ thuật viên'}</Text>
+          <View style={{ marginTop: 18 }}>
+            <Stars value={stars} size={38} onChange={(v) => { setStars(v); setTags([]); }} />
+          </View>
           <Text style={{ marginTop: 10, fontWeight: '800', color: C.orange, fontSize: 15 }}>{LABEL[stars]}</Text>
         </Card>
-        <Text style={mx.sec}>Bạn hài lòng điều gì?</Text>
+        <Text style={mx.sec}>{stars <= 3 ? 'Điểm cần cải thiện?' : 'Bạn hài lòng điều gì?'}</Text>
         <View style={mx.chips}>
-          {QUICK_TAGS.map((t) => <Chip key={t} label={t} on={tags.includes(t)} onPress={() => setTags((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]))} />)}
+          {activeTags.map((t) => <Chip key={t} label={t} on={tags.includes(t)} onPress={() => setTags((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]))} />)}
         </View>
         <Field label="Nhận xét thêm" multiline value={text} onChangeText={setText} placeholder="Chia sẻ trải nghiệm của bạn…" />
         <View style={mx.bonus}><Text style={{ color: C.goldInk, fontWeight: '700' }}>🎁 Nhận ngay +{s.policy?.loyalty?.review_bonus_points ?? 20} điểm thưởng khi gửi đánh giá</Text></View>

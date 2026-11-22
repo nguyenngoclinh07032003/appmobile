@@ -296,9 +296,11 @@ export function DetailScreen({ params }) {
             </View>
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={{ fontWeight: '800', color: C.primary, fontSize: 14 }}>
-                {formatVND(curTier.partDiscountPercent ? Math.round(m.price * (1 - curTier.partDiscountPercent / 100)) : m.price)}/{m.unit}
+                {(m.unpricedInCatalog || !(Number(m.price) > 0))
+                  ? 'Báo giá thực tế'
+                  : `${formatVND(curTier.partDiscountPercent ? Math.round(m.price * (1 - curTier.partDiscountPercent / 100)) : m.price)}/${m.unit}`}
               </Text>
-              {curTier.partDiscountPercent ? (
+              {!m.unpricedInCatalog && Number(m.price) > 0 && curTier.partDiscountPercent ? (
                 <Text style={{ fontSize: 11, color: C.faint, textDecorationLine: 'line-through' }}>{formatVND(m.price)}</Text>
               ) : null}
             </View>
@@ -340,7 +342,7 @@ export function CartScreen() {
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
                       <Price value={svc.price * it.qty} size={15} />
-                      <Stepper value={it.qty} onChange={(q) => a.setCartQty(svc.id, q)} />
+                      <Stepper value={it.qty} max={20} onChange={(q) => a.setCartQty(svc.id, q)} />
                     </View>
                   </View>
                 </Card>
@@ -409,6 +411,7 @@ export function CheckoutScreen({ params }) {
     setDayIdx(i);
     const newMin = getMinSelectable(i);
     if (i === 0 && newMin >= MAX_DAY_MINUTE) {
+      setSlot('');
       return;
     }
     const clamped = Math.min(Math.max(timeMinutes, newMin), MAX_DAY_MINUTE);
@@ -464,7 +467,11 @@ export function CheckoutScreen({ params }) {
   const subtotal = Math.max(0, goods - productDiscount - combo.amount);
   const vDiscount = voucherDiscount(voucher, subtotal);
   const total = Math.max(0, subtotal - vDiscount);
-  const allVouchers = [...(s.myVouchers || []), ...(s.publicVouchers || [])];
+  const nowTs = Date.now();
+  const allVouchers = [
+    ...(s.myVouchers || []).filter((v) => !v.expiresAt || v.expiresAt > nowTs),
+    ...(s.publicVouchers || []).filter((v) => !v.expiresAt || v.expiresAt > nowTs),
+  ];
 
   // Tự áp dụng mã đã chọn từ màn "Quyền lợi của tôi"
   React.useEffect(() => {
@@ -484,8 +491,16 @@ export function CheckoutScreen({ params }) {
 
   const applyVoucher = (code) => {
     const v = allVouchers.find((x) => x.code === code.trim().toUpperCase());
-    if (!v) { u.alert('Mã không hợp lệ', 'Kiểm tra lại mã, hoặc chọn voucher trong ví / mã ưu đãi đang mở ở mục Quyền lợi.', '🎟️'); return; }
-    if (v.min && subtotal < v.min) { u.alert('Chưa đủ điều kiện', `${v.code} áp dụng cho đơn từ ${formatVND(v.min)}. Đơn hiện tại ${formatVND(subtotal)}.`, '🎟️'); return; }
+    if (!v) {
+      setShowVoucher(false);
+      u.alert('Mã không hợp lệ', 'Kiểm tra lại mã, hoặc chọn voucher trong ví / mã ưu đãi đang mở ở mục Quyền lợi.', '🎟️');
+      return;
+    }
+    if (v.min && subtotal < v.min) {
+      setShowVoucher(false);
+      u.alert('Chưa đủ điều kiện', `${v.code} áp dụng cho đơn từ ${formatVND(v.min)}. Đơn hiện tại ${formatVND(subtotal)}.`, '🎟️');
+      return;
+    }
     setVoucher(v); setVoucherInput(v.code); setShowVoucher(false);
     u.toast(`Đã áp dụng ${v.code}`, '🎟️');
   };
@@ -556,12 +571,21 @@ export function CheckoutScreen({ params }) {
       });
       return;
     }
-    if (dayIdx === 0 && isTodayOutOfSlots) {
+    const liveMin = getMinSelectable(dayIdx);
+    const liveOut = dayIdx === 0 && liveMin >= MAX_DAY_MINUTE;
+    if (dayIdx === 0 && liveOut) {
+      setSlot('');
       u.alert('Hết giờ phục vụ', 'Hôm nay thợ đã kết thúc nhận ca. Quý khách vui lòng chuyển sang Ngày mai.', '⏰');
       return;
     }
-    if (dayIdx === 0 && timeMinutes < minAvailable) {
-      u.alert('Giờ hẹn quá gần', `Vui lòng chọn khung giờ cách hiện tại ít nhất ${LEAD_MINUTES} phút để thợ kịp di chuyển.`, '⏰');
+    if (dayIdx === 0 && timeMinutes < liveMin) {
+      setTimeMinutes(liveMin);
+      setSlot(minutesToSlotStr(liveMin));
+      u.alert('Giờ hẹn quá gần', `Khung giờ vừa cập nhật theo thời gian hiện tại (tối thiểu sau ${LEAD_MINUTES} phút). Vui lòng kiểm tra lại giờ hẹn rồi bấm Đặt lịch.`, '⏰');
+      return;
+    }
+    if (lines.length > 10) {
+      u.alert('Giới hạn dịch vụ', 'Mỗi đơn hỗ trợ tối đa 10 dịch vụ. Vui lòng tách bớt sang đơn khác để thợ phục vụ tốt nhất.', '📋');
       return;
     }
 
@@ -759,7 +783,7 @@ export function CheckoutScreen({ params }) {
           onPress={() => setShowVoucher(true)}
         />
         {voucher && !vDiscount ? <Text style={ui.fieldErr}>Mã {voucher.code} chưa đủ điều kiện với đơn hiện tại.</Text> : null}
-        {voucher ? (
+        {voucher && vDiscount > 0 ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.card, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.green, borderRadius: R.md, paddingHorizontal: 12, paddingVertical: 8, marginTop: 4, marginBottom: 8 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Badge text="MÃ ÁP DỤNG" fg={C.greenInk} bg={C.greenSoft} />
@@ -817,12 +841,14 @@ export function CheckoutScreen({ params }) {
 
       <View style={bx.dockCol}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <Text style={{ color: C.ink2, fontWeight: '700', flex: 1 }} numberOfLines={1}>{days[dayIdx].label} · {slot}</Text>
+          <Text style={{ color: C.ink2, fontWeight: '700', flex: 1 }} numberOfLines={1}>
+            {isTodayOutOfSlots ? `${days[dayIdx].label} · Hết ca nhận lịch` : `${days[dayIdx].label} · ${slot}`}
+          </Text>
           <Text style={[bx.price, { fontSize: 20 }]}>{formatVND(total)}</Text>
         </View>
         <Btn
           title={placing ? 'Đang gửi yêu cầu…' : s.auth?.role === 'customer' && !s.auth.emailVerified ? 'Xác thực Email để đặt lịch' : 'Xác nhận đặt lịch'}
-          disabled={placing}
+          disabled={placing || isTodayOutOfSlots}
           onPress={confirm}
         />
       </View>
@@ -962,12 +988,17 @@ export function CheckoutScreen({ params }) {
             <Text style={{ color: C.redInk, fontWeight: '800', fontSize: 12.5 }}>✕ Bỏ chọn</Text>
           </Tap>
         ) : null}
-        {allVouchers.map((v) => {
+        {allVouchers.map((v, idx) => {
           const ok = !v.min || subtotal >= v.min;
-          const isSelected = voucher?.code === v.code;
+          const isSelected = Boolean(
+            voucher && (v.customerVoucherId
+              ? voucher.customerVoucherId === v.customerVoucherId
+              : voucher.code === v.code && !voucher.customerVoucherId),
+          );
+          const vKey = v.customerVoucherId ? `w-${v.customerVoucherId}` : `p-${v.code}-${idx}`;
           return (
             <Tap
-              key={v.code}
+              key={vKey}
               style={[
                 bx.voucher,
                 !ok && { opacity: 0.5 },
@@ -1354,7 +1385,7 @@ export function AddressFormScreen({ params }) {
         </Card>
         <Card style={{ marginTop: 12 }}>
           <Text style={bx.h}>Địa chỉ</Text>
-          <SelectRow label="Phường/Xã (Hà Nội)" icon="🗺️" value={area || 'Chọn phường/xã'} onPress={() => setShowArea(true)} />
+          <SelectRow label="Phường/Xã (Hà Nội)" icon="🗺️" value={area} placeholder="Chọn phường/xã" onPress={() => setShowArea(true)} />
           {err.area ? <Text style={{ color: C.red, fontSize: 12, marginTop: 4 }}>{err.area}</Text> : null}
           <Field
             label="Số nhà, tên đường"

@@ -526,6 +526,7 @@ export const DEFAULT_MATERIALS = [
   { id: 'm-db-18', dbId: 18, name: 'Dây điện + CB', unit: 'bộ', price: 120000, category: 'all' },
 ];
 export const MATERIALS = [...DEFAULT_MATERIALS];
+let materialsSyncedFromServer = false;
 
 // Ánh xạ giữa mã App Mobile ("s<service_id>") và service_id trong PostgreSQL.
 export const resolveDbServiceId = (serviceSlugOrId) => {
@@ -624,14 +625,23 @@ export const syncCatalogFromBackend = ({ categories = null, services = null, mat
     ALL_SERVICES.forEach((x) => { SERVICE_MAP[x.id] = x; SERVICE_BY_DB_ID[String(x.dbId)] = x; });
   }
   if (Array.isArray(materials) && materials.length > 0) {
-    // Giữ lại giá đã nạp từ /customer/materials hoặc bảng mặc định nếu API khác (vd. /technician/jobs/materials) không trả unit_price.
+    // Chỉ giữ giá theo dbId từ danh mục server đã nạp (tránh nhầm giá mẫu DEFAULT_MATERIALS theo ID 1..18 khi API thợ không trả giá).
     const prevById = new Map();
     const prevByName = new Map();
+    if (materialsSyncedFromServer) {
+      MATERIALS.forEach((m) => {
+        const p = Number(m?.price);
+        if (m?.dbId && Number.isFinite(p) && p > 0) prevById.set(Number(m.dbId), p);
+      });
+    }
     [...DEFAULT_MATERIALS, ...MATERIALS].forEach((m) => {
       const p = Number(m?.price);
-      if (!Number.isFinite(p) || p <= 0) return;
-      if (m.dbId) prevById.set(Number(m.dbId), p);
-      if (m.name) prevByName.set(normalize(m.name), p);
+      if (m?.name && Number.isFinite(p) && p > 0) prevByName.set(normalize(m.name), p);
+    });
+    const hasServerPrices = materials.some((dbMat) => {
+      const rp = dbMat?.unit_price ?? dbMat?.price ?? dbMat?.selling_price ?? dbMat?.reference_price ?? dbMat?.default_price;
+      const np = rp == null || rp === '' ? NaN : Number(rp);
+      return Number.isFinite(np) && np > 0;
     });
 
     const list = materials.filter(Boolean).map((dbMat) => {
@@ -661,6 +671,7 @@ export const syncCatalogFromBackend = ({ categories = null, services = null, mat
     }).filter(Boolean);
     if (list.length > 0) {
       replaceAll(MATERIALS, list.sort((x, y) => x.dbId - y.dbId));
+      if (hasServerPrices) materialsSyncedFromServer = true;
     }
   }
 };

@@ -77,6 +77,7 @@ const writeRefresh = (token) => {
   } catch (e) { /* bỏ qua lỗi storage */ }
 };
 let currentRefresh = readRefresh();
+let sessionEpoch = 0;
 // Phiên hết hạn / bị thu hồi (refresh thất bại): app đăng ký hàm này để đưa người dùng về màn đăng nhập.
 let onSessionExpired = null;
 
@@ -92,6 +93,7 @@ export const authTokens = {
     writeRefresh(token || null);
   },
   clear: () => {
+    sessionEpoch += 1;
     currentToken = null;
     setStoredToken(null);
     currentRefresh = null;
@@ -120,8 +122,12 @@ async function refreshSession() {
   const refreshToken = authTokens.getRefresh();
   if (!refreshToken) return { ok: false, status: null, code: 'NO_REFRESH_TOKEN', message: 'Chưa đăng nhập.', data: null };
   if (!refreshing) {
+    const startEpoch = sessionEpoch;
     refreshing = rawRequest('/auth/mobile/refresh', { method: 'POST', body: { refresh_token: refreshToken }, noAuth: true })
       .then((res) => {
+        if (startEpoch !== sessionEpoch) {
+          return { ok: false, status: 401, code: 'SESSION_CHANGED', message: 'Phiên đăng nhập đã thay đổi.', data: null };
+        }
         if (res.ok && res.data?.access_token) {
           authTokens.set(res.data.access_token);
           // Chỉ thay refresh token khi server trả token mới; thiếu thì giữ token cũ (không tự xoá phiên).
@@ -208,6 +214,10 @@ export async function apiRequest(endpoint, options = {}) {
     path.startsWith('/auth/register') ||
     path.startsWith('/auth/forgot-password') ||
     path.startsWith('/auth/reset-password');
+  // Đổi mật khẩu / xoá tài khoản có thể trả 401 khi sai mật khẩu hiện tại → không tự refresh/retry/đá đăng xuất.
+  const isCredentialMutation =
+    path.startsWith('/auth/change-password') ||
+    (path === '/auth/me' && String(options.method || 'GET').toUpperCase() === 'DELETE');
   const isPublicEndpoint =
     path === '/' ||
     path.startsWith('/service-categories') ||
@@ -259,7 +269,7 @@ export async function apiRequest(endpoint, options = {}) {
   }
 
   const res = await rawRequest(endpoint, options);
-  if (res.status === 401 && !isAuthCall) {
+  if (res.status === 401 && !isAuthCall && !isCredentialMutation) {
     if (authTokens.getRefresh()) {
       const refreshed = await refreshSession();
       if (refreshed.ok) return rawRequest(endpoint, { ...options, _retried: true });
@@ -433,6 +443,7 @@ export const hrmssApi = {
     });
 
     if (res.ok && res.data?.access_token) {
+      sessionEpoch += 1;
       authTokens.set(res.data.access_token);
       // Đăng nhập mới: luôn thay refresh token (thiếu thì xoá) để không giữ nhầm token của tài khoản trước.
       authTokens.setRefresh(res.data.refresh_token);
@@ -721,8 +732,11 @@ export const hrmssApi = {
     return apiRequest(`/uploads?job_id=${encodeURIComponent(jobId)}`);
   },
   // Khách gắn ảnh vào đơn của mình (POST /uploads: file + request_id).
-  async uploadRequestPhoto(requestId, uri) {
-    return uploadFile(uri, 'anh-don.jpg', { request_id: String(requestId) });
+  async uploadRequestPhoto(requestId, uri, description = null) {
+    return uploadFile(uri, 'anh-don.jpg', {
+      request_id: String(requestId),
+      ...(description ? { description: String(description).slice(0, 500) } : {}),
+    });
   },
   async listRequestPhotos(requestId) {
     return apiRequest(`/uploads?request_id=${encodeURIComponent(requestId)}`);
@@ -926,6 +940,47 @@ export const hrmssApi = {
       evidence_type: evidenceType,
       ...(description ? { description: String(description).slice(0, 500) } : {}),
     });
+  },
+
+  // 15d. Chấm công thợ (vào ca GPS, bảng công tháng, vi phạm — field camelCase)
+  async getMyShiftOptions() {
+    return apiRequest('/attendance/me/shift-options');
+  },
+  async checkInShift(payload = {}) {
+    const body = {
+      technicianShiftId: Number(payload.technicianShiftId),
+      latitude: Number(payload.latitude),
+      longitude: Number(payload.longitude),
+    };
+    if (
+      payload.accuracyM != null &&
+      payload.accuracyM !== '' &&
+      Number.isFinite(Number(payload.accuracyM)) &&
+      Number(payload.accuracyM) >= 0
+    ) {
+      body.accuracyM = Number(payload.accuracyM);
+    }
+    const cleanNote = typeof payload.note === 'string' ? payload.note.trim() : '';
+    if (cleanNote) body.note = cleanNote;
+    return apiRequest('/attendance/check-in', { method: 'POST', body });
+  },
+  async getMyAttendance(month, year) {
+    const params = [];
+    if (month != null && month !== '') params.push(`month=${encodeURIComponent(month)}`);
+    if (year != null && year !== '') params.push(`year=${encodeURIComponent(year)}`);
+    const qs = params.length ? `?${params.join('&')}` : '';
+    const res = await apiRequest(`/attendance/me${qs}`);
+    if (res.ok && res.data && typeof res.data === 'object' && res.data.data === null && !('days' in res.data)) {
+      return { ...res, data: null };
+    }
+    return res;
+  },
+  async getMyViolations(from, to) {
+    const params = [];
+    if (from) params.push(`from=${encodeURIComponent(from)}`);
+    if (to) params.push(`to=${encodeURIComponent(to)}`);
+    const qs = params.length ? `?${params.join('&')}` : '';
+    return apiRequest(`/violations/me${qs}`);
   },
 
   // 16. Đăng xuất
