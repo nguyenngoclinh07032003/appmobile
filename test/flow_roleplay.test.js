@@ -542,7 +542,7 @@ describe('KB3: vật tư ngoài "Tụ kích" 120–180k → chốt 140k → khá
       assert.equal(o.externalPriceState, 'awaiting_customer_approval');
     }
     assert.equal(customerStatusMeta(s.cust).label, 'Chờ xác nhận chi phí cuối');
-    assert.equal(techStatusMeta(s.tech).label, 'Chờ khách xác nhận Bill');
+    assert.equal(techStatusMeta(s.tech).label, 'Chờ khách xác nhận hoá đơn');
     assert.equal(stepIndexOf(s.cust), STEP('repairing'));
     assert.equal(techStepIndexOf(s.tech), TSTEP('repairing'));
     tl.push(s);

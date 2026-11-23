@@ -35,11 +35,13 @@ function ServiceTile({ service, onPress }) {
 
 function HomeTab({ onTab, onLogin, onRegister, onRetryCatalog }) {
   const featured = (SERVICES.length ? SERVICES : ALL_SERVICES).filter((service) => !service.hidden).slice(0, 4);
+  const warrantyDaysList = ALL_SERVICES.map((x) => x?.warrantyDays).filter((d) => typeof d === 'number' && d > 0);
+  const maxWarrantyDays = warrantyDaysList.length ? Math.max(...warrantyDaysList) : 0;
   return (
     <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
       <View style={styles.topbar}>
         <View style={styles.brandRow}>
-          <Image source={require('../../../assets/app-icon.png')} style={styles.topLogo} resizeMode="cover" accessibilityLabel="Logo Thợ Minh Đức" />
+          <Image source={require('../../../assets/app-icon.png')} style={styles.topLogo} resizeMode="cover" accessibilityLabel="Biểu trưng Thợ Minh Đức" />
           <View><Text style={styles.brandName}>Thợ Minh Đức</Text><Text style={styles.brandCaption}>SỬA CHỮA TẬN TÂM · NÂNG TẦM TỔ ẤM</Text></View>
         </View>
         <Pressable onPress={onLogin} style={styles.topLogin}><Text style={styles.topLoginText}>Đăng nhập</Text></Pressable>
@@ -57,7 +59,7 @@ function HomeTab({ onTab, onLogin, onRegister, onRetryCatalog }) {
       <View style={styles.trustRow}>
         <View style={styles.trustItem}><Text style={styles.trustValue}>Tận nhà</Text><Text style={styles.trustLabel}>Phục vụ linh hoạt</Text></View>
         <View style={styles.trustDivider} />
-        <View style={styles.trustItem}><Text style={styles.trustValue}>60 ngày</Text><Text style={styles.trustLabel}>Bảo hành dịch vụ</Text></View>
+        <View style={styles.trustItem}><Text style={styles.trustValue}>{maxWarrantyDays > 0 ? `Đến ${maxWarrantyDays} ngày` : 'Điện tử'}</Text><Text style={styles.trustLabel}>Bảo hành dịch vụ</Text></View>
         <View style={styles.trustDivider} />
         <View style={styles.trustItem}><Text style={styles.trustValue}>Minh bạch</Text><Text style={styles.trustLabel}>Duyệt giá trước khi làm</Text></View>
       </View>

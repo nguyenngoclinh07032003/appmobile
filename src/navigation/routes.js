@@ -46,7 +46,6 @@ export const SCREENS = {
   help: HelpScreen,
   terms: TermsScreen,
   'tech-job': TechJobScreen,
-  'tech-attendance': TechAttendanceScreen,
   'tech-notifs': TechNotifsScreen,
   'tech-handovers': TechHandoversScreen,
 };

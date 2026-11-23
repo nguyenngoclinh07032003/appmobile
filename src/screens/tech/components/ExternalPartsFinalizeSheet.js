@@ -4,10 +4,11 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { C, R } from '../../../theme';
 import { formatVND, formatNumberInput } from '../../../constants/data';
-import { useApp, bookedValue, tierPartDiscountAmount, lateDiscountAmount } from '../../../context';
+import { useApp, bookedValue, tierPartDiscountAmount, lateDiscountAmount, getPendingExternalEstimates } from '../../../context';
 import { Btn, Field, Sheet, Stepper, Tap, ui, AppIcon, Badge } from '../../../components';
 import { pickCamera, pickImage } from '../../../utils/media';
 import { formatRangeVND, normalizeExternalPartName } from '../../../utils/externalPartsPricing';
+import { toVietnamese } from '../../../utils/viText';
 import { useBusyRunner } from './useBusyRunner';
 
 const parseNum = (text) => parseInt(String(text || '').replace(/[^0-9]/g, ''), 10) || 0;
@@ -47,7 +48,12 @@ export function ExternalPartsFinalizeSheet({
       const baseParts = finLines.map((l, idx) => {
         const draft = sharedByName.get(normalizeExternalPartName(l.name));
         return {
-          id: l.dbItemId || `rev_${idx}`,
+          id: draft?.id || l.dbItemId || `rev_${idx}`,
+          ...(draft?.syncKey ? { syncKey: draft.syncKey } : {}),
+          ...(draft?.qtyTouched ? { qtyTouched: true } : {}),
+          matId: draft?.matId || l.matId || null,
+          dbMaterialId: draft?.dbMaterialId || l.dbMaterialId || null,
+          isWarehouse: Boolean(draft?.isWarehouse || l.isWarehouse),
           name: l.name,
           minPrice: l.minPrice,
           maxPrice: l.maxPrice,
@@ -63,11 +69,16 @@ export function ExternalPartsFinalizeSheet({
       return;
     }
 
-    const pending = o.pendingExternalEstimates || [];
+    const pending = getPendingExternalEstimates(o);
     const baseParts = pending.map((est, idx) => {
       const draft = sharedByName.get(normalizeExternalPartName(est.name));
       return {
-        id: est.itemId || `est_${idx}`,
+        id: draft?.id || est.itemId || `est_${idx}`,
+        ...(draft?.syncKey ? { syncKey: draft.syncKey } : {}),
+        ...(draft?.qtyTouched ? { qtyTouched: true } : {}),
+        matId: draft?.matId || est.matId || null,
+        dbMaterialId: draft?.dbMaterialId || est.dbMaterialId || null,
+        isWarehouse: Boolean(draft?.isWarehouse || est.isWarehouse),
         name: est.name,
         minPrice: est.minPrice,
         maxPrice: est.maxPrice,
@@ -94,25 +105,32 @@ export function ExternalPartsFinalizeSheet({
       if (uri === null && useCamera) uri = await pickImage();
       if (!uri) {
         if (uri === null) {
-          u.alert('Chưa chọn được ảnh', 'Vui lòng cấp quyền truy cập camera/thư viện để tải ảnh hoá đơn.', 'camera');
+          u.alert('Chưa chọn được ảnh', 'Vui lòng cấp quyền truy cập máy ảnh/thư viện để tải ảnh hoá đơn.', 'camera');
         }
         return;
       }
       setParts((prev) => prev.map((p) => (p.id === partId ? { ...p, receiptUri: uri } : p)));
     } catch (e) {
-      u.alert('Không tải được ảnh', (e && e.message) || 'Vui lòng thử lại.', 'camera');
+      u.alert('Không tải được ảnh', toVietnamese(e?.message, 'Vui lòng thử lại.') || 'Vui lòng thử lại.', 'camera');
     }
   };
 
   const isRevision = o.externalPriceState === 'revision_requested' && o.quote?.isExternalFinalization;
+  const currentPartNames = new Set(parts.map((p) => normalizeExternalPartName(p.name)));
   const fixedApprovedExtras = (o.quote?.lines || [])
-    .filter((l) => !l.isOriginal && !l.isEstimatedRange && !l.isFinalizedExternal)
-    .reduce((sum, l) => sum + (Number(l.price) || 0) * Math.max(1, Number(l.qty) || 1), 0);
+    .filter(
+      (l) =>
+        (o.quote?.approved || l.isPriorApproved) &&
+        !l.isOriginal &&
+        !l.isEstimatedRange &&
+        (!l.isFinalizedExternal || !currentPartNames.has(normalizeExternalPartName(l.name))),
+    )
+    .reduce((sum, l) => sum + (Number(l.isFinalizedExternal ? (l.actualPrice ?? l.price) : l.price) || 0) * Math.max(1, Number(l.qty) || 1), 0);
   const billedExternalDeposits = parts.reduce(
     (sum, p) => sum + (Number(p.alreadyBilledUnitPrice) || 0) * Math.max(1, Number(p.origQty ?? p.qty) || 1),
     0,
   );
-  const baseBeforeFinalization = !isRevision && o?.bill && o.bill.quotationTotal != null
+  const baseBeforeFinalization = !isRevision && o?.bill && (o.bill.quotationTotal != null || o.bill.supplementalTotal > 0)
     ? Math.max(0, Number(o.bill.amountDue) || 0)
     : Math.max(
         0,
@@ -132,11 +150,44 @@ export function ExternalPartsFinalizeSheet({
   );
   const projectedTotal = baseBeforeFinalization + addedExternalDelta;
 
-  const close = () => { if (!busy) onClose?.(); };
+  const close = () => {
+    if (busy) return;
+    if (onChangeSharedExtraParts) {
+      const preservedInline = parts.filter((p) => p.isAddedInline);
+      const editedByName = new Map(
+        parts.filter((p) => !p.isAddedInline).map((p) => [normalizeExternalPartName(p.name), p]),
+      );
+      const keptExisting = (Array.isArray(sharedExtraParts) ? sharedExtraParts : [])
+        .filter((p) => !p.isAddedInline)
+        .map((p) => {
+          const key = normalizeExternalPartName(p.name);
+          const edited = editedByName.get(key);
+          editedByName.delete(key);
+          if (!edited) return { ...p };
+          return {
+            ...p,
+            ...edited,
+            id: p.id || edited.id,
+            syncKey: p.syncKey || edited.syncKey,
+            qtyTouched: Boolean(p.qtyTouched || edited.qtyTouched),
+          };
+        });
+      const remainingEdited = [...editedByName.values()].map((p) => ({ ...p }));
+      const byName = new Map();
+      [...keptExisting, ...remainingEdited, ...preservedInline].forEach((p) => {
+        byName.set(normalizeExternalPartName(p.name), p);
+      });
+      onChangeSharedExtraParts([...byName.values()]);
+    }
+    onClose?.();
+  };
 
   const submit = () => run(busyKey, async () => {
     const payloadParts = parts.map((p) => ({
       name: p.name,
+      matId: p.matId || null,
+      dbMaterialId: p.dbMaterialId || null,
+      isWarehouse: Boolean(p.isWarehouse),
       minPrice: p.minPrice,
       maxPrice: p.maxPrice,
       qty: p.qty,
@@ -210,7 +261,7 @@ export function ExternalPartsFinalizeSheet({
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Stepper
                   value={p.qty}
-                  onChange={(q) => setParts((prev) => prev.map((x) => (x.id === p.id ? { ...x, qty: q } : x)))}
+                  onChange={(q) => setParts((prev) => prev.map((x) => (x.id === p.id ? { ...x, qty: q, qtyTouched: true } : x)))}
                 />
                 {p.isAddedInline ? (
                   <Tap
@@ -334,7 +385,7 @@ export function ExternalPartsFinalizeSheet({
                 }}
               />
               <Btn
-                title="Thêm vào Bill"
+                title="Thêm vào hoá đơn"
                 small
                 style={{ flex: 1.5 }}
                 onPress={() => {

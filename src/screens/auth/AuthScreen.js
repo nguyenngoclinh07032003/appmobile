@@ -97,11 +97,11 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
   const submit = async () => {
     if (submittingRef.current || busy) return;
     if (mode === 'login') {
-      if (!identifier.trim()) { setFormErr('Vui lòng nhập Email hoặc Tên đăng nhập.'); return; }
+      if (!identifier.trim()) { setFormErr('Vui lòng nhập thư điện tử hoặc tên đăng nhập.'); return; }
       if (!password) { setFormErr('Vui lòng nhập mật khẩu.'); return; }
     }
     if (mode === 'forgot' && !otpSent && !identifier.trim()) {
-      setFormErr('Vui lòng nhập Email hoặc Tên đăng nhập.');
+      setFormErr('Vui lòng nhập thư điện tử hoặc tên đăng nhập.');
       return;
     }
     if ((mode === 'register' || (mode === 'forgot' && otpSent)) && password !== password2) {
@@ -166,7 +166,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
         setFormErr('');
         setOtp('');
         setResendLeft(30);
-        u.toast('Đã gửi lại mã OTP tới email của bạn', '📧');
+        u.toast('Đã gửi lại mã xác thực tới thư điện tử của bạn', '📧');
       } else {
         setFormErr(authErrorMessage(res, 'forgot'));
       }
@@ -201,7 +201,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
           
           <View style={st.brandRow}>
             <View style={st.brandMark}>
-              <Image source={require('../../../assets/app-icon.png')} style={st.authBrandLogo} resizeMode="cover" accessibilityLabel="Logo Thợ Minh Đức" />
+              <Image source={require('../../../assets/app-icon.png')} style={st.authBrandLogo} resizeMode="cover" accessibilityLabel="Biểu trưng Thợ Minh Đức" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={st.brand}>Thợ Minh Đức</Text>
@@ -219,10 +219,10 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
             </Text>
             <Text style={st.heroSub}>
               {mode === 'login'
-                ? 'Nhập Email hoặc Tên đăng nhập để truy cập đơn dịch vụ và hồ sơ của bạn.'
+                ? 'Nhập thư điện tử hoặc tên đăng nhập để truy cập đơn dịch vụ và hồ sơ của bạn.'
                 : mode === 'register'
-                  ? 'Đăng ký tài khoản để đặt lịch sửa chữa, bảo dưỡng tận nhà và nhận bảo hành đến 120 ngày.'
-                  : 'Nhập Email hoặc Tên đăng nhập đã đăng ký để tạo mật khẩu bảo vệ mới.'}
+                  ? 'Đăng ký tài khoản để đặt lịch sửa chữa, bảo dưỡng tận nhà và theo dõi bảo hành điện tử.'
+                  : 'Nhập thư điện tử hoặc tên đăng nhập đã đăng ký để tạo mật khẩu bảo vệ mới.'}
             </Text>
           </View>
         </View>
@@ -256,8 +256,8 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
               </Tap>
               <Text style={st.forgotNote}>
                 {otpSent
-                  ? 'Nhập mã 6 số đã gửi tới email của tài khoản (hiệu lực 10 phút) và mật khẩu mới'
-                  : 'Nhập email hoặc tên đăng nhập để nhận mã đặt lại mật khẩu qua email'}
+                  ? 'Nhập mã 6 số đã gửi tới thư điện tử của tài khoản (hiệu lực 10 phút) và mật khẩu mới'
+                  : 'Nhập thư điện tử hoặc tên đăng nhập để nhận mã đặt lại mật khẩu qua thư điện tử'}
               </Text>
             </View>
           )}
@@ -276,20 +276,20 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                 />
 
                 <ModernField
-                  label="Tên đăng nhập (Username)"
+                  label="Tên đăng nhập"
                   icon="🆔"
                   value={username}
                   onChangeText={(t) => { setUsername(t); if (formErr) setFormErr(''); }}
-                  placeholder="VD: nguyenan99"
+                  placeholder="VD: nguyenvanan"
                   autoCapitalize="none"
                 />
 
                 <ModernField
-                  label="Địa chỉ Email"
+                  label="Địa chỉ thư điện tử"
                   icon="✉️"
                   value={email}
                   onChangeText={(t) => { setEmail(t); if (formErr) setFormErr(''); }}
-                  placeholder="example@gmail.com (dùng đăng nhập & nhận hóa đơn)"
+                  placeholder="tenban@gmail.com (dùng đăng nhập & nhận hoá đơn)"
                   keyboardType="email-address"
                   autoCapitalize="none"
                 />
@@ -298,7 +298,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
 
             {(mode === 'login' || mode === 'forgot') && (
               <ModernField
-                label="Email hoặc Tên đăng nhập"
+                label="Thư điện tử hoặc Tên đăng nhập"
                 icon="👤"
                 value={identifier}
                 onChangeText={(t) => {
@@ -310,7 +310,7 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                     setResendLeft(0);
                   }
                 }}
-                placeholder="Nhập email hoặc username của bạn"
+                placeholder="Nhập thư điện tử hoặc tên đăng nhập của bạn"
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
@@ -323,12 +323,12 @@ export default function AuthScreen({ initialMode = 'login', onBackHome }) {
                   icon="shield-check"
                   value={otp}
                   onChangeText={(t) => { setOtp(t.replace(/\D/g, '').slice(0, 6)); if (formErr) setFormErr(''); }}
-                  placeholder="Mã gửi trong email"
+                  placeholder="Mã gửi trong thư điện tử"
                   keyboardType="number-pad"
                 />
                 <Tap onPress={resendResetOtp} style={{ alignSelf: 'flex-end', marginTop: -8, marginBottom: 10 }} disabled={busy || resendLeft > 0}>
                   <Text style={[st.forgotLink, (busy || resendLeft > 0) && { color: C.muted }]}>
-                    {resendLeft > 0 ? `Gửi lại mã OTP (${resendLeft}s)` : 'Gửi lại mã OTP'}
+                    {resendLeft > 0 ? `Gửi lại mã xác thực (${resendLeft} giây)` : 'Gửi lại mã xác thực'}
                   </Text>
                 </Tap>
               </View>

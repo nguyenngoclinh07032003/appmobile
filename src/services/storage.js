@@ -67,16 +67,3 @@ export const writeJson = (key, value, scope = 'local') => {
   try { raw = JSON.stringify(value); } catch (e) { return Promise.resolve(); }
   return setItem(key, raw, scope);
 };
-
-export const kvStorage = {
-  isSync: IS_WEB_STORAGE,
-  getItemSync,
-  getItem,
-  setItem,
-  removeItem,
-  readJsonSync,
-  readJson,
-  writeJson,
-};
-
-export default kvStorage;

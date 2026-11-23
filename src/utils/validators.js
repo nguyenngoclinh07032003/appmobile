@@ -59,7 +59,7 @@ export function validateVietnamesePhone(phone) {
     return 'Số điện thoại không hợp lệ (phải thuộc các đầu số di động: 03, 05, 07, 08, 09).';
   }
   // Chặn số rác lặp chữ số: 0000000000, 0999999999, 0888888888...
-  if (/^0(\d)\1{8}$/.test(clean) || clean === '0123456789') {
+  if (/^0(\d)\1{8}$/.test(clean)) {
     return 'Số điện thoại không có thực. Vui lòng nhập số điện thoại thật để thợ liên hệ.';
   }
   return '';
@@ -108,7 +108,7 @@ export function validateStreetAddress(street) {
   // Nếu chỉ có 1 từ duy nhất không có dấu cách và không có số
   const words = clean.split(/\s+/).filter(Boolean);
   if (words.length < 2 && !/\d/.test(clean)) {
-    return 'Vui lòng nhập đầy đủ số nhà và tên đường (ví dụ: 128 Trần Duy Hưng hoặc Toà Golden Park).';
+    return 'Vui lòng nhập đầy đủ số nhà và tên đường (ví dụ: 128 Trần Duy Hưng hoặc Toà nhà CT1).';
   }
 
   return '';
@@ -157,11 +157,4 @@ export function parseDobToIso(dob) {
 export function isValidDob(dob, { allowEmpty = false } = {}) {
   if (!String(dob || '').trim()) return Boolean(allowEmpty);
   return parseDobToIso(dob) !== null;
-}
-
-/** Thông báo lỗi ngày sinh ('' nếu hợp lệ). */
-export function validateDob(dob, { allowEmpty = true } = {}) {
-  if (!String(dob || '').trim()) return allowEmpty ? '' : 'Vui lòng nhập ngày sinh.';
-  if (!/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(String(dob).trim())) return 'Ngày sinh phải có dạng DD/MM/YYYY.';
-  return parseDobToIso(dob) ? '' : 'Ngày sinh không hợp lệ (ngày/tháng không có thật hoặc ở tương lai).';
 }

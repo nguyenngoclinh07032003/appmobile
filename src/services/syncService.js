@@ -2,9 +2,11 @@ import {
   getService,
   TECH_ME,
   MATERIALS,
+  SITE_CONDITIONS,
   resolveServiceSlugFromBackend,
   resolveDbMaterialId,
   ensureServiceFromOrderItem,
+  parseWarrantyDays,
 } from '../constants/data';
 import { toVnParts, vnDateKey } from '../utils/vnTime';
 import { viNotification, toVietnamese } from '../utils/viText';
@@ -25,12 +27,12 @@ const ASSIGNED_TECH_PLACEHOLDER = 'Thợ được phân công';
 const PAYMENT_LABELS = {
   CASH: 'Tiền mặt',
   BANK_TRANSFER: 'Chuyển khoản VietQR',
-  CARD_ATM: 'Thẻ ATM',
+  CARD_ATM: 'Thẻ ngân hàng nội địa',
   VNPAY: 'VNPAY',
   CARD_INTERNATIONAL: 'Thẻ quốc tế',
-  GOOGLE_PAY: 'Google Pay',
-  APPLE_PAY: 'Apple Pay',
-  PAYOS: 'PayOS',
+  GOOGLE_PAY: 'Ví điện tử Google',
+  APPLE_PAY: 'Ví điện tử Apple',
+  PAYOS: 'Cổng thanh toán PayOS',
 };
 export const paymentLabelOf = (method) => PAYMENT_LABELS[String(method || '').toUpperCase()] || 'Tiền mặt';
 const materialPriceOf = (materialId) => MATERIALS.find((m) => m.dbId === Number(materialId))?.price ?? 0;
@@ -110,7 +112,7 @@ const mapKnownStatus = (requestStatus, visitStatus, hasApprovedQuote = false, ha
   if (st === 'RECEIVED') return 'pending';
   if (st === 'ASSIGNED') {
     if (hasPendingQuote) return 'quoted';
-    if (vs === 'IN_PROGRESS') return 'diagnosing';
+    if (vs === 'IN_PROGRESS') return hasApprovedQuote ? 'repairing' : 'diagnosing';
     return 'confirmed';
   }
   if (st === 'IN_PROGRESS') {
@@ -136,6 +138,8 @@ const mapKnownStatus = (requestStatus, visitStatus, hasApprovedQuote = false, ha
     return 'warranty_pending';
   }
   if (st === 'OUT_OF_WARRANTY') {
+    if (hasPendingQuote) return 'quoted';
+    if (hasApprovedQuote) return 'repairing';
     return 'out_of_warranty';
   }
   if (st.startsWith('CANCELLED')) return 'cancelled';
@@ -150,10 +154,17 @@ export const mapBackendStatusToAppStatus = (requestStatus, visitStatus, hasAppro
 
 export const mapBackendItemsToAppItems = (rawItems = []) => {
   if (!Array.isArray(rawItems) || rawItems.length === 0) return [];
+  const hasOwn = (obj, k) => Boolean(obj && typeof obj === 'object' && Object.prototype.hasOwnProperty.call(obj, k));
   return rawItems.map((it) => {
     const slug = resolveServiceSlugFromBackend(it.service_id, it.service_name || it.service_name_snapshot);
     const svc = getService(slug) || ensureServiceFromOrderItem(it);
     const price = it.selected_price != null && it.selected_price !== '' ? Number(it.selected_price) : (svc?.price || 0);
+    let warrantyDays;
+    if (hasOwn(it, 'warranty_days')) warrantyDays = parseWarrantyDays(it.warranty_days);
+    else if (hasOwn(it, 'warrantyDays')) warrantyDays = parseWarrantyDays(it.warrantyDays);
+    else if (hasOwn(it, 'service_warranty_days')) warrantyDays = parseWarrantyDays(it.service_warranty_days);
+    else if (hasOwn(it.service, 'warranty_days')) warrantyDays = parseWarrantyDays(it.service.warranty_days);
+    else if (svc && svc.warrantyDays !== undefined) warrantyDays = svc.warrantyDays;
     return {
       id: slug,
       dbRequestServiceId: it.request_service_id || null,
@@ -161,6 +172,7 @@ export const mapBackendItemsToAppItems = (rawItems = []) => {
       name: it.service_name || it.service_name_snapshot || svc?.name || 'Dịch vụ',
       qty: Math.max(1, Number(it.quantity) || 1),
       price,
+      ...(warrantyDays !== undefined ? { warrantyDays } : {}),
     };
   });
 };
@@ -193,21 +205,21 @@ export const mapBackendQuotationToAppQuote = (
     (bookedItems || []).map((it) => String(it.name || it.service_name || '').trim().toLowerCase()).filter(Boolean),
   );
 
-  const isBookedItem = (qi) => {
+  const isBookedItem = (qi, quoteIsSupplemental = isSupplemental) => {
     if (parseExternalPartDesc(qi.description_snapshot)) return false;
     if (qi.item_type === 'MATERIAL' || qi.material_id || qi.is_external_purchase) return false;
     if (qi.request_service_id) {
       return bookedReqSvcIds.size === 0 || bookedReqSvcIds.has(String(qi.request_service_id));
     }
-    if (isSupplemental) return false;
+    if (quoteIsSupplemental) return false;
     if (qi.service_id && bookedSvcIds.has(String(qi.service_id))) return true;
     const nameClean = String(qi.description_snapshot || '').trim().toLowerCase();
     return Boolean(nameClean && bookedNames.has(nameClean));
   };
 
-  const mapQuoteItem = (qi) => {
+  const mapQuoteItem = (qi, quoteIsSupplemental = isSupplemental) => {
     const extMeta = parseExternalPartDesc(qi.description_snapshot);
-    const booked = isBookedItem(qi);
+    const booked = isBookedItem(qi, quoteIsSupplemental);
     if (extMeta?.kind === 'estimated_external') {
       return {
         type: 'part',
@@ -258,12 +270,14 @@ export const mapBackendQuotationToAppQuote = (
     const fallbackFromLineTotal = rawLineTotal != null && rawLineTotal !== ''
       ? (Number(rawLineTotal) || 0) / qtyNum
       : 0;
+    const catalogPrice = qi.material_id ? materialPriceOf(qi.material_id) : 0;
     const resolvedPrice =
       Number.isFinite(parsedUnit) && parsedUnit > 0
         ? parsedUnit
         : (fallbackFromLineTotal > 0
           ? fallbackFromLineTotal
-          : (qi.material_id ? materialPriceOf(qi.material_id) : (Number.isFinite(parsedUnit) ? parsedUnit : 0)));
+          : (qi.material_id && catalogPrice > 0 ? catalogPrice : (Number.isFinite(parsedUnit) ? parsedUnit : 0)));
+    const needsPriceInput = Boolean(qi.item_type === 'MATERIAL' && qi.material_id && catalogPrice <= 0);
     return {
       type: qi.item_type === 'MATERIAL' ? 'part' : 'service',
       matId: qi.material_id ? `m-db-${qi.material_id}` : undefined,
@@ -275,10 +289,11 @@ export const mapBackendQuotationToAppQuote = (
       isCustom: Boolean(qi.is_external_purchase), // linh kiện thợ mua ngoài
       receiptId: qi.receipt_attachment_id || null,
       isOriginal: booked,
+      ...(needsPriceInput ? { needsPriceInput: true } : {}),
     };
   };
 
-  const rawLines = (latestQuote.items || []).map(mapQuoteItem);
+  const rawLines = (latestQuote.items || []).map((qi) => mapQuoteItem(qi, isSupplemental));
 
   let lines = rawLines;
   if (isSupplemental) {
@@ -300,6 +315,7 @@ export const mapBackendQuotationToAppQuote = (
   const disc = Math.max(0, Number(orderDiscount) || 0);
   const bookedBase = Number(goodsTotal) || 0;
   const isApproved = latestQuote.quotation_status === 'APPROVED' || latestQuote.customer_decision === 'APPROVED';
+  const isRejected = latestQuote.quotation_status === 'REJECTED' || latestQuote.customer_decision === 'REJECTED';
 
   // Tổng các báo giá đã duyệt như backend (shared/pricing/bill.js): báo giá ban đầu thay tiền đặt, phát sinh cộng thêm.
   const approvedList = sortedQuotes.filter((q) => q.quotation_status === 'APPROVED' || q.customer_decision === 'APPROVED');
@@ -329,17 +345,29 @@ export const mapBackendQuotationToAppQuote = (
   // Khi có báo giá đợt trước đã duyệt (vd: vật tư kho đợt 1 + phát sinh/chốt giá đợt 2), gộp dòng phát sinh để hiển thị & cộng tổng đủ mọi hạng mục.
   const earlierApprovedQuotes = approvedList.filter((q) => q !== latestQuote);
   let includesPriorApprovedLines = false;
-  if (
-    earlierApprovedQuotes.length > 0 &&
-    (isApproved || isSupplemental) &&
-    latestQuote.quotation_status !== 'REJECTED'
-  ) {
+  let initialServiceDelta = 0;
+  if (earlierApprovedQuotes.length > 0 && (isApproved || isSupplemental)) {
     const earlierApprovedExtras = earlierApprovedQuotes
-      .flatMap((q) => (q.items || []).map(mapQuoteItem).filter((l) => !l.isOriginal))
+      .flatMap((q) => {
+        const qIsSupp = q.quotation_type === 'SUPPLEMENTAL';
+        return (q.items || []).map((qi) => mapQuoteItem(qi, qIsSupp)).filter((l) => !l.isOriginal);
+      })
       .map((l) => ({ ...l, isPriorApproved: true }));
     if (earlierApprovedExtras.length > 0) includesPriorApprovedLines = true;
-    const origPart = isSupplemental ? lines.filter((l) => l.isOriginal) : rawLines.filter((l) => l.isOriginal);
-    const nonOrigCurrent = rawLines.filter((l) => !l.isOriginal);
+    const latestInitMapped = latestInitialApproved
+      ? (latestInitialApproved.items || []).map((qi) => mapQuoteItem(qi, false))
+      : null;
+    const latestInitOrig = latestInitMapped ? latestInitMapped.filter((l) => l.isOriginal) : [];
+    const origPart = isSupplemental
+      ? (latestInitOrig.length > 0 ? latestInitOrig : lines.filter((l) => l.isOriginal))
+      : rawLines.filter((l) => l.isOriginal);
+    if (latestInitOrig.length > 0 && includesPriorApprovedLines) {
+      const initExtrasSum = latestInitMapped
+        .filter((l) => !l.isOriginal)
+        .reduce((sum, l) => sum + (Number(l.price) || 0) * Math.max(1, Number(l.qty) || 1), 0);
+      initialServiceDelta = Math.max(0, (initialBase - initExtrasSum) - bookedBase);
+    }
+    const nonOrigCurrent = isRejected ? [] : rawLines.filter((l) => !l.isOriginal);
     const merged = [...origPart, ...earlierApprovedExtras, ...nonOrigCurrent];
 
     const finalizedCounts = new Map();
@@ -361,26 +389,34 @@ export const mapBackendQuotationToAppQuote = (
       }
       return true;
     });
+  } else if (isRejected) {
+    // Báo giá đầu bị từ chối và chưa có báo giá nào đã duyệt: chỉ giữ dòng dịch vụ ban đầu.
+    lines = isSupplemental ? lines.filter((l) => l.isOriginal) : [];
   }
 
-  const rawExtraLines = rawLines.filter((l) => !l.isOriginal);
+  const rawExtraLines = isRejected ? [] : rawLines.filter((l) => !l.isOriginal);
   const rawExtraTotal = rawExtraLines.reduce((sum, l) => sum + l.price * l.qty, 0);
-  const priorApprovedExtra = !isApproved && approvedTotal != null ? Math.max(0, approvedTotal - bookedBase) : 0;
-  const extraTotal = isApproved && approvedTotal != null
-    ? Math.max(0, approvedTotal - bookedBase)
-    : isSupplemental
-      ? Math.max(0, priorApprovedExtra + rawExtraTotal)
-      : rawExtraTotal;
+  const approvedExtrasTotal = approvedTotal != null ? Math.max(0, approvedTotal - bookedBase) : 0;
+  const priorApprovedExtra = !isApproved && approvedTotal != null ? approvedExtrasTotal : 0;
+  const extraTotal = isRejected
+    ? approvedExtrasTotal
+    : isApproved && approvedTotal != null
+      ? approvedExtrasTotal
+      : isSupplemental
+        ? Math.max(0, priorApprovedExtra + rawExtraTotal)
+        : rawExtraTotal;
 
-  const qTotal = isApproved && approvedTotal != null
-    ? approvedTotal
-    : isSupplemental
-      ? Math.max(0, (approvedTotal != null ? approvedTotal : bookedBase) + rawExtraTotal)
-      : Math.max(0, (Number(latestQuote.total_amount) || lines.reduce((s, l) => s + l.price * l.qty, 0)) - disc);
+  const qTotal = isRejected
+    ? (approvedTotal != null ? approvedTotal : bookedBase)
+    : isApproved && approvedTotal != null
+      ? approvedTotal
+      : isSupplemental
+        ? Math.max(0, (approvedTotal != null ? approvedTotal : bookedBase) + rawExtraTotal)
+        : Math.max(0, (Number(latestQuote.total_amount) || lines.reduce((s, l) => s + l.price * l.qty, 0)) - disc);
 
   const quoteRange = computeQuoteRangeTotals(lines, {
     bookedBase,
-    priorApprovedExtra: includesPriorApprovedLines ? 0 : priorApprovedExtra,
+    priorApprovedExtra: includesPriorApprovedLines ? initialServiceDelta : priorApprovedExtra,
     prodDisc: disc,
     comboDisc: 0,
     isOnSite: isSupplemental || earlierApprovedQuotes.length > 0,
@@ -392,8 +428,9 @@ export const mapBackendQuotationToAppQuote = (
     quotationType: latestQuote.quotation_type || 'INITIAL',
     status: isQuotationPendingCustomer(latestQuote) ? 'SENT' : latestQuote.quotation_status,
     revisionRequested: latestQuote.quotation_status === 'REVISION_REQUESTED' || latestQuote.customer_decision === 'REVISE',
-    rejectReason: latestQuote.rejection_reason || latestQuote.revision_note || '',
+    rejectReason: toVietnamese(latestQuote.rejection_reason || latestQuote.revision_note, ''),
     approvedTotal,
+    approvedExtrasTotal,
     approvedHasEstimatedRange,
     approvedTotalMin,
     approvedTotalMax,
@@ -449,6 +486,74 @@ export const mapBackendBill = (summary) => {
 const kindOf = (req) => (req?.request_type === 'WARRANTY' && !req?.out_of_warranty ? 'warranty' : 'normal');
 const dateMs = (v) => (v ? new Date(v).getTime() : null);
 const DAY_MS = 24 * 60 * 60 * 1000;
+const resolveSiteCondition = (scId) => (scId ? (SITE_CONDITIONS.find((sc) => sc.id === scId) || null) : null);
+const normalizePayMethod = (m) => {
+  const u = String(m || '').trim().toUpperCase();
+  if (!u) return null;
+  if (u === 'BANK_TRANSFER' || u === 'VIETQR') return 'vietqr';
+  if (u === 'CASH') return 'cash';
+  return u.toLowerCase();
+};
+const resolveOrderPayment = (reqPreferred, bill) => {
+  const billMethod = normalizePayMethod(bill?.paymentMethod);
+  const reqMethod = normalizePayMethod(reqPreferred);
+  const effective = (billMethod === 'vietqr' || billMethod === 'cash')
+    ? billMethod
+    : (reqMethod === 'vietqr' ? 'vietqr' : 'cash');
+  const backendRaw = (billMethod === 'vietqr' || billMethod === 'cash')
+    ? (billMethod === 'vietqr' ? 'BANK_TRANSFER' : 'CASH')
+    : (reqPreferred || 'CASH');
+  return {
+    paymentMethod: effective,
+    payment: paymentLabelOf(backendRaw),
+    qrPaymentRequested: effective === 'vietqr',
+  };
+};
+
+export const extractOrderWarranty = (req, mappedItems = []) => {
+  const w = req?.warranty && typeof req.warranty === 'object' ? req.warranty : null;
+  const warrantyStartAt = dateMs(
+    req?.warranty_start_date ??
+      req?.warrantyStartDate ??
+      req?.warranty_start_at ??
+      w?.start_date ??
+      w?.start_at ??
+      w?.warranty_start_date,
+  );
+  const warrantyEndAt = dateMs(
+    req?.warranty_end_date ??
+      req?.warrantyEndDate ??
+      req?.warranty_end_at ??
+      w?.end_date ??
+      w?.end_at ??
+      w?.warranty_end_date,
+  );
+  const rawDays = req?.warranty_days ?? req?.warrantyDays ?? w?.warranty_days ?? w?.days;
+  const parsedSrvDays = parseWarrantyDays(rawDays);
+  let warrantyDays = null;
+  if (typeof parsedSrvDays === 'number' && parsedSrvDays > 0) {
+    warrantyDays = parsedSrvDays;
+  } else if (parsedSrvDays === 0) {
+    warrantyDays = 0;
+  } else if (warrantyStartAt && warrantyEndAt && warrantyEndAt >= warrantyStartAt) {
+    warrantyDays = Math.max(1, Math.round((warrantyEndAt - warrantyStartAt) / DAY_MS));
+  } else {
+    const itemDays = (mappedItems || []).map((it) => (
+      it?.warrantyDays !== undefined ? it.warrantyDays : getService(it?.id)?.warrantyDays
+    ));
+    const positiveItemDays = itemDays.filter((d) => typeof d === 'number' && d > 0);
+    if (positiveItemDays.length > 0) {
+      warrantyDays = Math.max(...positiveItemDays);
+    } else if (itemDays.length > 0 && itemDays.every((d) => d === 0 || d === null) && !warrantyEndAt) {
+      warrantyDays = 0;
+    }
+  }
+  const warrantyCertificateCode =
+    w?.certificate_code ||
+    req?.warranty_certificate_code ||
+    (req?.request_code ? `BH-${req.request_code}` : null);
+  return { warrantyDays, warrantyStartAt, warrantyEndAt, warrantyCertificateCode };
+};
 
 export const mergeCustomerRequestDetail = (rawReq, detailData) => {
   if (!rawReq || !detailData || typeof detailData !== 'object') return rawReq;
@@ -526,6 +631,18 @@ export const mergeCustomerRequestDetail = (rawReq, detailData) => {
     timeline: mergedTimeline,
     technician: detReq.technician || detailData.technician || rawReq.technician,
     journey: rawReq.journey || detReq.journey || detailData.journey,
+    ...(detReq.warranty || detailData.warranty || rawReq.warranty
+      ? { warranty: detReq.warranty || detailData.warranty || rawReq.warranty }
+      : {}),
+    ...((detReq.warranty_days ?? detailData.warranty_days ?? rawReq.warranty_days) !== undefined
+      ? { warranty_days: detReq.warranty_days ?? detailData.warranty_days ?? rawReq.warranty_days }
+      : {}),
+    ...((detReq.warranty_start_date ?? detailData.warranty_start_date ?? rawReq.warranty_start_date) !== undefined
+      ? { warranty_start_date: detReq.warranty_start_date ?? detailData.warranty_start_date ?? rawReq.warranty_start_date }
+      : {}),
+    ...((detReq.warranty_end_date ?? detailData.warranty_end_date ?? rawReq.warranty_end_date) !== undefined
+      ? { warranty_end_date: detReq.warranty_end_date ?? detailData.warranty_end_date ?? rawReq.warranty_end_date }
+      : {}),
     ...(dedupPhotos.length ? { _detailAttachments: dedupPhotos } : {}),
     ...(rawReq.bill || detailBill ? { bill: rawReq.bill || detailBill } : {}),
   };
@@ -541,8 +658,8 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
   const goods = isWarranty ? 0 : (Number(req.goods_amount) > 0 ? Number(req.goods_amount) : itemsGoods);
   const visits = req.visits || [];
   const latestVisit = visits[visits.length - 1] || null;
-  const productDiscount = isWarranty ? 0 : (Number(req.product_discount_amount) || 0);
-  const comboDiscount = isWarranty ? 0 : (Number(req.combo_discount_amount) || 0);
+  const productDiscount = isWarranty ? 0 : (Number(req.product_discount_amount) || Number(req.bill?.bill?.product_discount_amount) || 0);
+  const comboDiscount = isWarranty ? 0 : (Number(req.combo_discount_amount) || Number(req.bill?.bill?.combo_discount_amount) || 0);
   const booked = isWarranty ? 0 : Math.max(0, goods - productDiscount - comboDiscount);
   const wpDiagMatch = /Tình trạng:\s*(.+?)(?:\.\s*Thiết bị hoạt động ổn định|\.\s*$|$)/i.exec(latestVisit?.work_performed || '');
   const effectiveDiagnoses =
@@ -577,21 +694,37 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
   const anyQuoteApproved = (req.quotations || []).some(
     (q) => q.quotation_status === 'APPROVED' || q.customer_decision === 'APPROVED',
   );
-  const decidedNoQuote = (
+  const sortedReqQuotes = sortQuotationsAsc(req.quotations || []);
+  const latestReqQuote = sortedReqQuotes[sortedReqQuotes.length - 1] || null;
+  const latestQuoteTs = latestReqQuote ? ts(latestReqQuote.updated_at || latestReqQuote.sent_at) : 0;
+  const diagAfterQuote = Boolean(latestDiag && latestDiag.recorded_at && ts(latestDiag.recorded_at) > latestQuoteTs);
+  const noQuoteOverride = Boolean(latestDiag && latestDiag.needs_quotation === false && diagAfterQuote);
+  const decidedNoQuote = noQuoteOverride || ((
     (Boolean(latestDiag) && latestDiag.needs_quotation !== true) ||
     req.needs_quotation === false ||
     latestVisit?.needs_quotation === false
-  ) && !quote?.revisionRequested;
+  ) && !quote?.revisionRequested);
   const statusUnknown = !isKnownBackendStatus(req.request_status);
   let status = mapBackendStatusToAppStatus(
     req.request_status,
     latestVisit?.visit_status,
-    (anyQuoteApproved || decidedNoQuote) && !quote?.revisionRequested,
+    anyQuoteApproved || noQuoteOverride || (decidedNoQuote && !quote?.revisionRequested),
     hasPendingQuote,
   );
   // "Đang đến": hành trình thật từ GET /customer/requests/:id/tracking.
   const journey = req.journey || null;
   if (status === 'confirmed' && journey?.on_the_way) status = 'onway';
+  if (
+    String(req.request_status || '').toUpperCase() === 'DIAGNOSED_PENDING_QUOTATION' &&
+    !hasPendingQuote &&
+    quote?.revisionRequested &&
+    quote?.quotationType === 'INITIAL' &&
+    !journey?.arrived_at &&
+    !journey?.travel_started_at &&
+    !['IN_PROGRESS', 'COMPLETED'].includes(String(latestVisit?.visit_status || '').toUpperCase())
+  ) {
+    status = 'confirmed';
+  }
   const createdAt = req.created_at ? new Date(req.created_at).getTime() : Date.now();
   const preferredIso = req.preferred_time || latestVisit?.scheduled_start || req.created_at;
   const fullAddr = req.address?.address_text || req.service_address_snapshot || 'Hà Nội';
@@ -623,12 +756,8 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     : [{ status, at: createdAt }];
 
   const isDone = status === 'done';
-  const warrantyStartAt = dateMs(req.warranty_start_date);
-  const warrantyEndAt = dateMs(req.warranty_end_date);
-  const warrantyDays = Number(req.warranty_days) > 0
-    ? Number(req.warranty_days)
-    : (warrantyStartAt && warrantyEndAt ? Math.round((warrantyEndAt - warrantyStartAt) / DAY_MS) : null);
-  const doneAt = isDone ? (warrantyStartAt || dateMs(req.updated_at) || createdAt) : null;
+  const { warrantyDays, warrantyStartAt, warrantyEndAt, warrantyCertificateCode } = extractOrderWarranty(req, items);
+  const doneAt = isDone ? (warrantyStartAt || dateMs(req.completed_at) || dateMs(latestVisit?.actual_end) || dateMs(req.updated_at) || createdAt) : null;
   const paid = bill
     ? ['PAID', 'NOTHING_TO_PAY'].includes(bill.paymentStatus)
     : ['COMPLETED', 'READY_FOR_ACCEPTANCE'].includes(String(req.request_status || '').toUpperCase());
@@ -637,21 +766,25 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
   const voucherDiscount = isWarranty
     ? 0
     : (bill?.voucherDiscount != null ? Number(bill.voucherDiscount) : (Number(req.voucher_discount_amount) || 0));
+  const tierPartDiscount = isWarranty ? 0 : (Number(bill?.tierPartDiscount) || 0);
+  const lateDiscount = isWarranty ? 0 : (Number(bill?.lateDiscount) || 0);
+  const inactiveQuoteSt = ['REJECTED', 'EXPIRED', 'CANCELLED', 'SUPERSEDED'];
   const activeQuoteTotal =
-    quote && !quote.rejectReason && !quote.revisionRequested && quote.status !== 'REJECTED'
+    quote && !quote.rejectReason && !quote.revisionRequested && !inactiveQuoteSt.includes(String(quote.status || '').toUpperCase())
       ? (quote.approved && quote.approvedTotal != null ? quote.approvedTotal : quote.total)
       : (quote?.approvedTotal != null ? quote.approvedTotal : null);
   const resolvedTotal = isWarranty
     ? 0
-    : bill && (bill.quotationTotal != null || bill.supplementalTotal > 0) && status !== 'quoted'
+    : bill && (['pending_payment', 'done'].includes(status) ? bill.amountDue != null : (bill.quotationTotal != null || bill.supplementalTotal > 0)) && status !== 'quoted'
       ? bill.amountDue
       : activeQuoteTotal != null
-        ? Math.max(0, activeQuoteTotal - voucherDiscount)
+        ? Math.max(0, activeQuoteTotal - tierPartDiscount - voucherDiscount - lateDiscount)
         : bill
           ? bill.amountDue
           : Number.isFinite(estimated) && estimated > 0
             ? estimated
             : booked;
+  const resolvedPayment = resolveOrderPayment(req.preferred_payment_method, bill);
 
   return {
     code: req.request_code,
@@ -673,7 +806,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     goods,
     productDiscount,
     comboDiscount,
-    comboLabel: req.combo_label || '',
+    comboLabel: toVietnamese(req.combo_label || req.bill?.bill?.combo_label, ''),
     voucher: req.voucher_code ? { code: req.voucher_code } : null,
     voucherDiscount,
     total: resolvedTotal,
@@ -686,8 +819,10 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     slot: formatSlotFromIso(preferredIso),
     preferredTimeAt: dateMs(req.preferred_time),
     preferredTimeEndAt: dateMs(req.preferred_time_end),
-    payment: paymentLabelOf(req.preferred_payment_method),
-    paymentMethod: String(req.preferred_payment_method || '').toUpperCase() === 'BANK_TRANSFER' ? 'vietqr' : 'cash',
+    payment: resolvedPayment.payment,
+    paymentMethod: resolvedPayment.paymentMethod,
+    qrPaymentRequested: resolvedPayment.qrPaymentRequested,
+    siteCondition: resolveSiteCondition(req.site_condition),
     note: req.problem_description || '',
     address: {
       id: `addr-snap-${req.request_id}`,
@@ -753,7 +888,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
       at: doneAt || dateMs(req.updated_at),
       tech: techName,
       techCode: techInfo?.technician_id != null ? String(techInfo.technician_id) : '',
-      warrantyCertificateCode: `BH-${req.request_code}`,
+      warrantyCertificateCode: warrantyCertificateCode || `BH-${req.request_code}`,
       customerSignature: latestVisit?.customer_signature || null,
     } : null,
     followUpRequested: Boolean(latestVisit?.follow_up_reason),
@@ -795,8 +930,22 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
   const isEnded = !LIVE_ASSIGNMENT.includes(assignmentStatus);
   const rs = String(req.request_status || '').toUpperCase();
   const PAYMENT_STAGE = ['PENDING_REVIEW', 'READY_FOR_ACCEPTANCE', 'PENDING_PAYMENT', 'PARTIALLY_PAID_RECEIVABLE'];
+  const latestTechDiag = Array.isArray(job.diagnoses) && job.diagnoses.length > 0
+    ? job.diagnoses[job.diagnoses.length - 1]
+    : null;
+  const diagnosisReport = latestTechDiag
+    ? {
+      symptoms: latestTechDiag.symptoms || '',
+      diagnosis: latestTechDiag.findings || '',
+      recommendation: latestTechDiag.repair_recommendation || '',
+      at: ts(latestTechDiag.recorded_at),
+    }
+    : null;
   let status;
-  if (PAYMENT_STAGE.includes(rs) && (!isEnded || job.completed_at)) {
+  if (
+    PAYMENT_STAGE.includes(rs) &&
+    (!isEnded || job.completed_at || visit.actual_end || String(visit.visit_status || '').toUpperCase() === 'COMPLETED')
+  ) {
     status = mapBackendStatusToAppStatus(rs);
   } else if (isEnded) {
     // Phân công đã kết thúc: chỉ là "xong" khi đơn đã hoàn thành / nghiệm thu (hoặc chính thợ này đã nộp hoàn thành
@@ -808,24 +957,37 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     else return null;
   } else {
     // Đã ghi chẩn đoán (không gắn needs_quotation: true) mà đơn vẫn IN_PROGRESS = thợ xác nhận không có phát sinh, đang sửa.
-    const latestTechDiag = Array.isArray(job.diagnoses) && job.diagnoses.length > 0
-      ? job.diagnoses[job.diagnoses.length - 1]
-      : null;
-    const decidedNoQuote = (
+    const sortedJobQuotes = sortQuotationsAsc(job.quotations || []);
+    const latestJobQuote = sortedJobQuotes[sortedJobQuotes.length - 1] || null;
+    const latestQuoteTs = latestJobQuote ? ts(latestJobQuote.updated_at || latestJobQuote.sent_at) : 0;
+    const diagAfterQuote = Boolean(latestTechDiag && latestTechDiag.recorded_at && ts(latestTechDiag.recorded_at) > latestQuoteTs);
+    const noQuoteOverride = Boolean(latestTechDiag && latestTechDiag.needs_quotation === false && diagAfterQuote);
+    const decidedNoQuote = noQuoteOverride || ((
       (Boolean(latestTechDiag) && latestTechDiag.needs_quotation !== true) ||
       req.needs_quotation === false ||
       visit?.needs_quotation === false
-    ) && !quote?.revisionRequested;
+    ) && !quote?.revisionRequested);
     status = mapBackendStatusToAppStatus(
       rs,
       visit.visit_status,
-      (anyQuoteApproved || decidedNoQuote) && !quote?.revisionRequested,
+      anyQuoteApproved || noQuoteOverride || (decidedNoQuote && !quote?.revisionRequested),
       hasPendingQuote,
     );
   }
   const statusUnknown = !isEnded && !isKnownBackendStatus(rs);
   // "Đang đến": đã bấm xuất phát (travel_started_at) mà chưa check-in (arrived_at) -> giữ đúng sau khi cài lại / đổi máy.
   if (status === 'confirmed' && job.travel_started_at && !job.arrived_at) status = 'onway';
+  if (
+    rs === 'DIAGNOSED_PENDING_QUOTATION' &&
+    !hasPendingQuote &&
+    quote?.revisionRequested &&
+    quote?.quotationType === 'INITIAL' &&
+    !job.arrived_at &&
+    !job.travel_started_at &&
+    !['IN_PROGRESS', 'COMPLETED'].includes(String(visit?.visit_status || '').toUpperCase())
+  ) {
+    status = 'confirmed';
+  }
   const bill = mapBackendBill(job.bill);
   // Khách đã thanh toán đủ -> việc hoàn thành (app không chờ văn phòng nghiệm thu).
   if (status === 'pending_payment' && bill && ['PAID', 'NOTHING_TO_PAY'].includes(bill.paymentStatus)) status = 'done';
@@ -836,6 +998,21 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
   const preferredIso = req.preferred_time || visit.scheduled_start || job.assigned_time;
   const createdAt = job.assigned_time ? new Date(job.assigned_time).getTime() : Date.now();
   const fullAddr = req.address_text || 'Hà Nội';
+  const rawTimeline = Array.isArray(req.timeline || req.status_history || job.timeline)
+    ? (req.timeline || req.status_history || job.timeline).filter((h) => isKnownBackendStatus(h.new_status))
+    : [];
+  const techHistory = rawTimeline.length > 0
+    ? rawTimeline.map((h) => ({
+      status: mapBackendStatusToAppStatus(
+        h.new_status,
+        null,
+        anyQuoteApproved,
+        String(h.new_status || '').toUpperCase() === 'DIAGNOSED_PENDING_QUOTATION',
+      ),
+      at: h.changed_at ? new Date(h.changed_at).getTime() : createdAt,
+      note: toVietnamese(h.reason, ''),
+    }))
+    : [{ status, at: createdAt }];
   const myTech = {
     name: techProfile?.name || TECH_ME.name,
     code: techProfile?.code || TECH_ME.code,
@@ -853,30 +1030,49 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     qty: Number(mu.used_quantity) || 1,
     price: materialPriceOf(mu.material_id),
   }));
+  const quotePartMaterials = (quote?.approved ? (quote.lines || []) : (quote?.lines || []).filter((l) => l.isPriorApproved))
+    .filter((l) => l.type === 'part' && !l.isEstimatedRange)
+    .map((l, idx) => ({
+      id: `qmat-${job.assignment_id}-${idx}`,
+      matId: l.matId || null,
+      name: l.name,
+      unit: l.unit,
+      qty: l.qty,
+      price: l.isFinalizedExternal ? l.actualPrice : l.price,
+      fromQuote: true,
+    }));
+  const mergedTechMaterials = [...materialsFromUsages];
+  quotePartMaterials.forEach((qm) => {
+    const qmNorm = normalizeExternalPartName(qm.name);
+    const exists = mergedTechMaterials.some(
+      (um) => (qm.matId && um.matId === qm.matId) || (qmNorm && normalizeExternalPartName(um.name) === qmNorm),
+    );
+    if (!exists) mergedTechMaterials.push(qm);
+  });
 
   const isDone = status === 'done';
-  const warrantyStartAt = dateMs(req.warranty_start_date);
-  const warrantyEndAt = dateMs(req.warranty_end_date);
-  const warrantyDays = Number(req.warranty_days) > 0
-    ? Number(req.warranty_days)
-    : (warrantyStartAt && warrantyEndAt ? Math.round((warrantyEndAt - warrantyStartAt) / DAY_MS) : null);
+  const { warrantyDays, warrantyStartAt, warrantyEndAt, warrantyCertificateCode } = extractOrderWarranty(req, items);
   const doneAt = isDone ? (dateMs(job.completed_at) || dateMs(visit.actual_end) || dateMs(visit.scheduled_end) || createdAt) : null;
   const voucherDiscount = isWarranty ? 0 : (bill ? bill.voucherDiscount : (Number(req.voucher_discount_amount) || 0));
+  const tierPartDiscount = isWarranty ? 0 : (Number(bill?.tierPartDiscount) || 0);
+  const lateDiscount = isWarranty ? 0 : (Number(bill?.lateDiscount) || 0);
+  const inactiveQuoteSt = ['REJECTED', 'EXPIRED', 'CANCELLED', 'SUPERSEDED'];
   const activeQuoteTotal =
-    quote && !quote.rejectReason && !quote.revisionRequested && quote.status !== 'REJECTED'
+    quote && !quote.rejectReason && !quote.revisionRequested && !inactiveQuoteSt.includes(String(quote.status || '').toUpperCase())
       ? (quote.approved && quote.approvedTotal != null ? quote.approvedTotal : quote.total)
       : (quote?.approvedTotal != null ? quote.approvedTotal : null);
   const resolvedTotal = isWarranty
     ? 0
-    : bill && (bill.quotationTotal != null || bill.supplementalTotal > 0) && status !== 'quoted'
+    : bill && (['pending_payment', 'done'].includes(status) ? bill.amountDue != null : (bill.quotationTotal != null || bill.supplementalTotal > 0)) && status !== 'quoted'
       ? bill.amountDue
       : activeQuoteTotal != null
-        ? Math.max(0, activeQuoteTotal - voucherDiscount)
+        ? Math.max(0, activeQuoteTotal - tierPartDiscount - voucherDiscount - lateDiscount)
         : bill
           ? bill.amountDue
           : Number(req.estimated_total) > 0
             ? Number(req.estimated_total)
             : booked;
+  const resolvedPayment = resolveOrderPayment(req.preferred_payment_method, bill);
 
   return {
     code: req.request_code,
@@ -886,23 +1082,27 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     assignmentActive: assignmentStatus === 'ACTIVE',
     dbVisitNumber: visit.visit_number || 1,
     backendStatus: req.request_status,
+    ...(statusUnknown ? { statusUnknown: true } : {}),
     kind: kindOf(req),
     customerPhone: req.contact_phone || '',
     customerTier: req.customer_tier_code || null,
     customerTierLabel: req.customer_tier_label || req.customer_tier_name || null,
     warrantyDays,
+    warrantyStartAt,
+    warrantyEndAt,
     items,
     goods,
     productDiscount,
     comboDiscount,
-    comboLabel: req.combo_label || job.bill?.bill?.combo_label || '',
+    comboLabel: toVietnamese(req.combo_label || job.bill?.bill?.combo_label, ''),
     voucherDiscount,
     // Tiền thật từ GET /technician/jobs/:id/bill; nếu đang có báo giá chờ duyệt hoặc chưa có bill thì lấy theo tổng báo giá hiện tại.
     total: resolvedTotal,
     finalTotal: resolvedTotal,
     bill,
     cashToCollect: bill?.cashToCollect ?? null,
-    paymentMethod: String(req.preferred_payment_method || '').toUpperCase() === 'BANK_TRANSFER' ? 'vietqr' : 'cash',
+    paymentMethod: resolvedPayment.paymentMethod,
+    qrPaymentRequested: resolvedPayment.qrPaymentRequested,
     travelStartedAt: dateMs(job.travel_started_at),
     arrivedAt: dateMs(job.arrived_at),
     checkIn: job.check_in ? { lat: job.check_in.latitude, lng: job.check_in.longitude, at: dateMs(job.arrived_at) } : null,
@@ -917,7 +1117,8 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     dateLabel: formatDateLabelFromIso(preferredIso),
     dateKey: formatDateKeyFromIso(preferredIso),
     slot: formatSlotFromIso(preferredIso),
-    payment: paymentLabelOf(req.preferred_payment_method),
+    payment: resolvedPayment.payment,
+    siteCondition: resolveSiteCondition(req.site_condition),
     note: req.problem_description || '',
     address: {
       id: `addr-job-${job.assignment_id}`,
@@ -929,11 +1130,12 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
       lng: req.service_location?.longitude != null ? Number(req.service_location.longitude) : null,
     },
     status,
-    history: [{ status, at: createdAt }],
+    history: techHistory,
     createdAt,
     doneAt,
     tech: myTech,
     quote,
+    diagnosisReport,
     ...(job._evidenceFetched ? { _evidenceFetched: true } : {}),
     attachments: extractInitialAttachments(
       job._evidence || [],
@@ -947,18 +1149,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
         externalPriceState: extLifecycle.externalPriceState,
       };
     })(),
-    materials: materialsFromUsages.length > 0
-      ? materialsFromUsages
-      : (quote?.approved ? (quote.lines || []) : (quote?.lines || []).filter((l) => l.isPriorApproved))
-        .filter((l) => l.type === 'part' && !l.isEstimatedRange)
-        .map((l, idx) => ({
-          id: `qmat-${job.assignment_id}-${idx}`,
-          matId: l.matId || null,
-          name: l.name,
-          unit: l.unit,
-          qty: l.qty,
-          price: l.isFinalizedExternal ? l.actualPrice : l.price,
-        })),
+    materials: mergedTechMaterials,
     // Các bước thực hiện (backend: job.procedure; null = đơn không có bước bắt buộc)
     procedure: job.procedure || null,
     // Tiến độ / ghi chú thợ gửi (POST /technician/jobs/:id/progress).
@@ -1009,7 +1200,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
       tech: myTech.name,
       techCode: myTech.code,
       customerSignature: visit.customer_signature || null,
-      warrantyCertificateCode: `BH-${req.request_code}`,
+      warrantyCertificateCode: warrantyCertificateCode || `BH-${req.request_code}`,
     } : null,
   };
 };
@@ -1044,6 +1235,7 @@ export const mapBackendOpenRequestToOrder = (req) => {
     // Hạn tiếp nhận do server trả (nếu có) — dùng để ẩn đơn quá hạn khỏi app thợ.
     offerExpiresAt: dateMs(req.offer_expires_at || req.expires_at || req.accept_deadline),
     payment: paymentLabelOf(req.preferred_payment_method),
+    siteCondition: resolveSiteCondition(req.site_condition),
     note: req.problem_description || '',
     attachments: extractInitialAttachments([], req.attachments || req.initial_attachments || req.photos || []),
     address: {
@@ -1120,11 +1312,11 @@ export const extractInitialAttachments = (evidence = [], rawAttachments = []) =>
     if (!row) return;
     if (row.image_url || row.file_url || row.url) {
       const mapped = mapBackendPhotoToEvidence(row);
-      if (!mapped.stage || mapped.stage === 'diagnosis') {
-        pushOne({ ...mapped, isCustomerInitial: true });
+      if (mapped.isCustomerInitial) {
+        pushOne(mapped);
       }
     } else if (row.uri) {
-      pushOne({ ...row, isCustomerInitial: true });
+      pushOne({ ...row, isCustomerInitial: row.isCustomerInitial !== undefined ? Boolean(row.isCustomerInitial) : true });
     }
   });
   (Array.isArray(evidence) ? evidence : []).forEach((e) => {
@@ -1157,30 +1349,80 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
     if (matchKey) {
       const ro = byKey.get(matchKey);
       // Giữ trạng thái di chuyển ('onway') hoặc chat/ảnh minh chứng trên máy nếu backend đang ở ASSIGNED / IN_PROGRESS
-      const sameTech = !lo.tech?.code || !ro.tech?.code || lo.tech.code === ro.tech.code;
+      const sameTech = (() => {
+        if (ro.status === 'pending') return false;
+        if (!ro.tech) return !lo.tech;
+        if (lo.tech?.code && ro.tech?.code) return String(lo.tech.code) === String(ro.tech.code);
+        const ln = lo.tech?.name;
+        const rn = ro.tech?.name;
+        if (ln && rn && ln !== ASSIGNED_TECH_PLACEHOLDER && rn !== ASSIGNED_TECH_PLACEHOLDER) {
+          return ln === rn;
+        }
+        return true;
+      })();
       const keepOnway = sameTech && lo.status === 'onway' && ro.status === 'confirmed';
-      const keepRepairing = sameTech && lo.status === 'repairing' && ro.status === 'diagnosing' && !ro.quote?.revisionRequested;
-      // Thợ đang sửa lại báo giá (reopenQuote): giữ form mở tới khi server có báo giá mới.
-      const keepEditing = Boolean(lo.quoteEditing) && ['quoted', 'repairing'].includes(ro.status)
-        && (ro.quote?.dbQuotationId || null) === (lo.quoteEditingFrom || null);
+      const keepRepairing = sameTech && lo.status === 'repairing' && ro.status === 'diagnosing'
+        && (!ro.quote?.revisionRequested || Boolean(lo.noQuoteConfirmedAt && lo.noQuoteConfirmedAt > (ro.quote?.at || 0)));
+      // Thợ đang sửa lại báo giá (reopenQuote): giữ form mở tới khi server có báo giá mới hoặc khách duyệt báo giá đang sửa.
+      const localWasApproved = lo.quoteEditingFromApproved !== undefined
+        ? Boolean(lo.quoteEditingFromApproved)
+        : Boolean(lo.quote?.approved);
+      const keepEditing = Boolean(lo.quoteEditing)
+        && ['quoted', 'repairing', 'confirmed', 'diagnosing'].includes(ro.status)
+        && (ro.quote?.dbQuotationId || null) === (lo.quoteEditingFrom || null)
+        && (localWasApproved || !ro.quote?.approved);
+      const roIsPaid = Boolean(ro.report?.paid) || ['PAID', 'NOTHING_TO_PAY'].includes(ro.bill?.paymentStatus);
       // Khách đã đổi CASH ↔ VietQR khi BE còn GD chờ → giữ lựa chọn local tới khi đã trả / BE nhận method mới.
       const keepLockedMethod = Boolean(lo.paymentMethodLocked)
         && (lo.paymentMethod === 'cash' || lo.paymentMethod === 'vietqr')
         && !lo.report?.paid
+        && !roIsPaid
         && ro.paymentMethod !== lo.paymentMethod;
-      // Khách đã báo trả tiền mặt khi BE còn GD VietQR chờ → giữ cashClaimPending local (chỉ khi có bill thật hoặc dữ liệu số tiền từ local).
+      // Khách đã báo trả tiền mặt khi BE còn GD VietQR chờ → giữ cashClaimPending local trong cửa sổ ngắn (hoặc tới khi có xác nhận).
       const hasBillAmounts = Boolean(ro.bill || lo.bill);
+      const cashClaimExpired = Boolean(lo.cashClaimAt && Date.now() - lo.cashClaimAt > 20000);
       const keepCashClaim = Boolean(lo.cashClaimLocked)
         && hasBillAmounts
         && !lo.report?.paid
+        && !roIsPaid
         && !ro.bill?.cashClaimPending
-        && !['PAID', 'NOTHING_TO_PAY'].includes(ro.bill?.paymentStatus);
+        && !cashClaimExpired;
+      const nowMs = Date.now();
+      const cachedEligFresh = Boolean(
+        lo.serverWarrantyEligibility &&
+        (!lo.serverWarrantyEligibility.fetchedAt || (
+          nowMs - lo.serverWarrantyEligibility.fetchedAt <= 10 * 60 * 1000 &&
+          vnDateKey(lo.serverWarrantyEligibility.fetchedAt) === vnDateKey(nowMs)
+        )),
+      );
+      const sameWarrantyEnd = (ro.warrantyEndAt ? vnDateKey(ro.warrantyEndAt) : null) === (lo.warrantyEndAt ? vnDateKey(lo.warrantyEndAt) : null);
+      const keepLocallyFinalized = sameTech
+        && !['done', 'cancelled'].includes(ro.status)
+        && Array.isArray(lo.locallyFinalizedExternalNames)
+        && lo.locallyFinalizedExternalNames.length > 0;
+      const locallyFinNames = keepLocallyFinalized ? lo.locallyFinalizedExternalNames : [];
+      const locallyFinSet = new Set(locallyFinNames.map(normalizeExternalPartName).filter(Boolean));
+      const nextPendingExternalEstimates = locallyFinSet.size > 0
+        ? (ro.pendingExternalEstimates || []).filter((est) => !locallyFinSet.has(normalizeExternalPartName(est.name)))
+        : (ro.pendingExternalEstimates || []);
+      const nextExternalPriceState =
+        ro.externalPriceState === 'needs_final_price' &&
+        nextPendingExternalEstimates.length === 0 &&
+        locallyFinSet.size > 0
+          ? 'finalized'
+          : ro.externalPriceState;
+      const cashClaimBaseBill = ro.bill || lo.bill;
+      const cashClaimAmount = Math.max(0, Number(cashClaimBaseBill?.remainingAmount ?? cashClaimBaseBill?.amountDue ?? 0));
       byKey.set(matchKey, {
         ...lo,
         ...ro,
         code: ro.code || lo.code,
         status: keepEditing ? lo.status : (keepOnway ? 'onway' : (keepRepairing ? 'repairing' : ro.status)),
         quoteEditing: keepEditing,
+        ...(keepEditing ? {} : { quoteEditingFrom: null, quoteEditingFromApproved: undefined }),
+        locallyFinalizedExternalNames: locallyFinNames,
+        pendingExternalEstimates: nextPendingExternalEstimates,
+        externalPriceState: nextExternalPriceState,
         tracking: !sameTech
           ? (ro.tracking || null)
           : (ro.tracking && (!lo.tracking || (ro.tracking.updatedAt || 0) >= (lo.tracking.updatedAt || 0)))
@@ -1189,16 +1431,17 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         checkIn: (ro.checkIn && (!lo.checkIn || (ro.checkIn.at || 0) >= (lo.checkIn.at || 0)))
           ? { ...(lo.checkIn || {}), ...ro.checkIn }
           : (lo.checkIn || ro.checkIn),
-        chat: lo.chat?.length ? lo.chat : (ro.chat || []),
         // Ảnh/tiến độ: ưu tiên server khi đã fetch thành công (kể cả mảng rỗng sau khi xoá ảnh cuối).
         evidence: (ro._evidenceFetched && Array.isArray(ro.evidence))
           ? ro.evidence
           : ((Array.isArray(ro.evidence) && ro.evidence.length)
             ? ro.evidence
             : (lo.evidence || ro.evidence || [])),
-        attachments: (Array.isArray(ro.attachments) && ro.attachments.length)
+        attachments: (ro._evidenceFetched && Array.isArray(ro.attachments))
           ? ro.attachments
-          : (lo.attachments || ro.attachments || []),
+          : ((Array.isArray(ro.attachments) && ro.attachments.length)
+            ? ro.attachments
+            : (lo.attachments || ro.attachments || [])),
         progress: ro.progress !== undefined ? ro.progress : (lo.progress || []),
         repairNotes: ro.repairNotes !== undefined ? ro.repairNotes : (lo.repairNotes || []),
         materials: ro.materials !== undefined ? ro.materials : (lo.materials || []),
@@ -1219,29 +1462,41 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         } : null,
         followUpRequested: ro.followUpRequested != null ? ro.followUpRequested : lo.followUpRequested,
         followUpReason: ro.followUpReason || lo.followUpReason || '',
-        // Bảo toàn cờ đã thông báo quá hạn tiếp nhận để tránh vòng lặp thông báo/refresh
-        expiredNotified: lo.expiredNotified !== undefined ? lo.expiredNotified : ro.expiredNotified,
+        serverWarrantyEligibility:
+          ro.serverWarrantyEligibility ||
+          (ro.status === lo.status && sameWarrantyEnd && cachedEligFresh
+            ? lo.serverWarrantyEligibility
+            : null) ||
+          null,
+        // Bảo toàn cờ đã thông báo quá hạn tiếp nhận, nhưng reset nếu khách vừa đổi giờ hẹn mới.
+        expiredNotified: (ro.preferredTimeAt || null) !== (lo.preferredTimeAt || null)
+          ? false
+          : (lo.expiredNotified !== undefined ? lo.expiredNotified : ro.expiredNotified),
         ...(keepLockedMethod ? {
           payment: lo.paymentMethod === 'vietqr' ? (lo.payment || 'Chuyển khoản VietQR') : (lo.payment || 'Tiền mặt tại nhà'),
           paymentMethod: lo.paymentMethod,
           qrPaymentRequested: lo.paymentMethod === 'vietqr',
           paymentMethodLocked: true,
         } : {
-          paymentMethodLocked: ro.paymentMethod === lo.paymentMethod ? false : Boolean(lo.paymentMethodLocked),
+          qrPaymentRequested: ro.paymentMethod === 'vietqr',
+          paymentMethodLocked: (ro.paymentMethod === lo.paymentMethod || roIsPaid) ? false : Boolean(lo.paymentMethodLocked),
         }),
         ...(keepCashClaim ? {
           cashClaimLocked: true,
+          cashClaimAt: lo.cashClaimAt || nowMs,
           bill: {
-            ...(ro.bill || lo.bill),
+            ...cashClaimBaseBill,
             cashClaimPending: true,
             paymentMethod: 'cash',
+            cashToCollect: cashClaimAmount,
           },
+          cashToCollect: cashClaimAmount,
           payment: 'Tiền mặt tại nhà',
           paymentMethod: 'cash',
           qrPaymentRequested: false,
           paymentMethodLocked: true,
         } : {
-          cashClaimLocked: (ro.bill?.cashClaimPending || ['PAID', 'NOTHING_TO_PAY'].includes(ro.bill?.paymentStatus))
+          cashClaimLocked: (ro.bill?.cashClaimPending || roIsPaid || cashClaimExpired)
             ? false
             : Boolean(lo.cashClaimLocked),
         }),
@@ -1279,16 +1534,16 @@ export const mapBackendNotification = (n, orders = [], linkName = 'order') => {
   };
 };
 
-// Mẫu voucher backend (voucher_id, label, discount_amount, discount_percent, ...) -> dạng voucher app dùng để tính giảm giá.
+// Mẫu mã giảm giá backend (voucher_id, label, discount_amount, discount_percent, ...) -> dạng app dùng để tính giảm giá.
 const voucherFields = (v) => ({
-  label: v?.label || '',
+  label: toVietnamese(v?.label, 'Ưu đãi giảm giá'),
   ...(v?.discount_amount != null ? { discount: Number(v.discount_amount) } : {}),
   ...(v?.discount_percent != null ? { percent: Number(v.discount_percent) } : {}),
   ...(v?.max_discount_amount != null ? { max: Number(v.max_discount_amount) } : {}),
   ...(v?.min_order_amount != null ? { min: Number(v.min_order_amount) } : {}),
 });
 
-// Voucher trong ví của khách (GET /customer/vouchers).
+// Mã giảm giá trong ví của khách (GET /customer/vouchers).
 export const mapWalletVoucher = (w) => (w ? {
   ...voucherFields(w.voucher),
   code: w.code,
@@ -1305,7 +1560,7 @@ export const mapPublicVoucher = (v) => (v?.code ? { ...voucherFields(v), code: v
 export const mapRedeemOption = (v) => (v ? {
   id: String(v.voucher_id),
   cost: Number(v.point_cost) || 0,
-  title: v.label || '',
+  title: toVietnamese(v.label, 'Ưu đãi giảm giá'),
   validDays: v.valid_days ?? null,
   voucher: voucherFields(v),
 } : null);
@@ -1321,7 +1576,7 @@ export const mapPointHistory = (h, orders = []) => {
   const fromTitle = String(h.title || '').match(/(REQ-\d+|HRM[\w-]+|BH-[\w-]+)/)?.[1] || null;
   return {
     id: `pt-db-${h.point_transaction_id}`,
-    title: h.title || '',
+    title: toVietnamese(h.title, 'Cập nhật điểm thưởng'),
     delta: Number(h.points_delta) || 0,
     at: ts(h.created_at),
     type: h.reason_type ? String(h.reason_type).toLowerCase() : null,

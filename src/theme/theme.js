@@ -3,7 +3,7 @@ import { C, CAT_TONE, toneOf, STATUS_META } from './colors';
 
 export { C, CAT_TONE, toneOf, STATUS_META };
 
-export const R = { sm: 12, md: 16, lg: 20, xl: 28 };
+export const R = { sm: 12, md: 16, lg: 20, xl: 28, pill: 999 };
 
 export const shadow = {
   sm: { boxShadow: '0px 1px 3px rgba(15, 23, 42, 0.04), 0px 1px 2px rgba(15, 23, 42, 0.03)' },

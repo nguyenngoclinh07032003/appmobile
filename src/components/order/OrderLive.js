@@ -3,7 +3,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { C } from '../../theme';
 import { useApp, timeAgo } from '../../context';
-import { Card, Progress, ui, AppIcon } from '../common';
+import { Card, ui, AppIcon } from '../common';
 
 const TICK_MS = 15000;
 
@@ -11,10 +11,8 @@ const TICK_MS = 15000;
  * Theo dõi tiến độ di chuyển GPS của kỹ thuật viên.
  * - Phía THỢ (đúng thợ phụ trách đơn): gửi vị trí thật của máy lên server định kỳ.
  * - Phía KHÁCH: chỉ đọc vị trí thợ từ server định kỳ.
- * (a.tickTracking tự rẽ nhánh theo s.auth.role; ở đây chặn để mỗi máy chỉ chạy đúng vai của mình,
- *  vd. tài khoản thợ xem việc của thợ khác thì không gửi vị trí của mình vào đơn đó.)
  */
-export function TrackingCard({ order, compact }) {
+export function TrackingCard({ order, compact, paused = false }) {
   const { s, a } = useApp();
   const o = order;
   const tr = o.tracking;
@@ -23,7 +21,7 @@ export function TrackingCard({ order, compact }) {
   const myTechCode = s?.techProfile?.code;
   const isTechSide = role === 'tech';
   // Thợ chỉ gửi vị trí cho việc của chính mình; khách luôn được đọc.
-  const shouldTick = active && (!isTechSide || !o.tech?.code || !myTechCode || o.tech.code === myTechCode);
+  const shouldTick = active && !paused && (!isTechSide || !o.tech?.code || !myTechCode || o.tech.code === myTechCode);
 
   // Ref tới `a` mới nhất: interval không giữ closure cũ (a.tickTracking đọc s.orders tại thời điểm tạo).
   const aRef = useRef(a);
@@ -31,15 +29,12 @@ export function TrackingCard({ order, compact }) {
 
   useEffect(() => {
     const reqId = o.dbRequestId || o.id;
-    if (reqId) {
-      aRef.current?.joinOrderRoom?.(reqId);
-    }
+    if (!active || !reqId) return undefined;
+    aRef.current?.joinOrderRoom?.(reqId);
     return () => {
-      if (reqId) {
-        aRef.current?.leaveOrderRoom?.(reqId);
-      }
+      aRef.current?.leaveOrderRoom?.(reqId);
     };
-  }, [o.dbRequestId, o.id]);
+  }, [active, o.dbRequestId, o.id]);
 
   useEffect(() => {
     if (!shouldTick) return undefined;
@@ -61,19 +56,7 @@ export function TrackingCard({ order, compact }) {
     return () => { cancelled = true; clearInterval(id); };
   }, [shouldTick, o.code, role]);
 
-  const hasArrived = o.status !== 'cancelled' && (Boolean(o.arrivedAt || o.checkIn) || ['diagnosing', 'quoted', 'repairing', 'pending_payment', 'done'].includes(o.status));
-  if (o.status === 'cancelled' || (!active && (!tr || !hasArrived))) return null;
-  if (!active && tr) {
-    return (
-      <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.green }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <AppIcon name="map-pin" size={16} color={C.green} strokeWidth={2.3} />
-          <Text style={st.h}>Thợ đã đến nơi</Text>
-        </View>
-        <Text style={st.body}>Hành trình kết thúc khi check-in GPS.</Text>
-      </Card>
-    );
-  }
+  if (!active) return null;
 
   // Backend không luôn trả quãng đường / ETA: chỉ vẽ chấm vị trí khi THẬT SỰ có tiến độ, không giả lập giữa đường.
   const hasProgress = tr?.progress != null && Number.isFinite(Number(tr.progress));
@@ -86,20 +69,19 @@ export function TrackingCard({ order, compact }) {
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <AppIcon name="navigation" size={16} color={C.primary} strokeWidth={2.3} />
-          <Text style={st.h}>{isTechSide ? 'Đang chia sẻ vị trí' : 'Theo dõi thợ realtime'}</Text>
+          <Text style={st.h}>{isTechSide ? 'Đang chia sẻ vị trí' : 'Theo dõi thợ trực tiếp'}</Text>
         </View>
         {eta != null ? <Text style={{ color: C.primary, fontWeight: '800', fontSize: 13 }}>~{eta} phút</Text> : null}
       </View>
       <Text style={st.body}>
         {tr?.label || (isTechSide ? 'Vị trí của bạn được gửi cho khách trong lúc di chuyển.' : 'Thợ đang di chuyển tới địa chỉ của bạn.')}
       </Text>
-      {hasProgress ? <Progress value={progress} color={C.primary} style={{ marginTop: 10 }} /> : null}
       <View style={st.trackMap}>
         <View style={st.route}>
           <View style={[st.dot, { backgroundColor: C.primary }]} />
           <View style={st.dash} />
           {hasProgress ? (
-            <View style={[st.dot, { backgroundColor: C.green, left: `${Math.round(progress * 86)}%` }]}>
+            <View style={[st.dot, { backgroundColor: C.green, left: `${Math.round(progress * 80)}%` }]}>
               <AppIcon name="hard-hat" size={11} color="#fff" strokeWidth={2.5} />
             </View>
           ) : null}
@@ -108,21 +90,13 @@ export function TrackingCard({ order, compact }) {
           </View>
         </View>
         <Text style={[ui.meta, { marginTop: 8 }]}>
-          {hasCoords ? `${Number(tr.lat).toFixed(4)}, ${Number(tr.lng).toFixed(4)}` : 'Đang chờ vị trí…'}
+          {hasCoords ? (isTechSide ? `${Number(tr.lat).toFixed(4)}, ${Number(tr.lng).toFixed(4)}` : 'Đã cập nhật vị trí kỹ thuật viên') : 'Đang chờ vị trí…'}
           {hasCoords && tr?.updatedAt ? ` · ${timeAgo(tr.updatedAt)}` : ''}
         </Text>
       </View>
-      {!compact ? (
-        <Text style={[ui.meta, { marginTop: 8, lineHeight: 18 }]}>
-          Vị trí của kỹ thuật viên được cập nhật trực tiếp theo hành trình.
-        </Text>
-      ) : null}
     </Card>
   );
 }
-
-/** Chat giữa thợ và khách đã được hủy theo yêu cầu (giữ export để không vỡ import cũ). */
-export const ChatCard = () => null;
 
 const st = StyleSheet.create({
   h: { fontWeight: '800', color: C.ink, fontSize: 15 },

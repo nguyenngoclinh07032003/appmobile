@@ -9,7 +9,7 @@
       "icon": "./assets/app-icon.png",
       "bundleIdentifier": "com.hrmss.thominhduc",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Thợ Minh Đức dùng vị trí để check-in tại nhà khách và chia sẻ vị trí khi thợ đang di chuyển đến nơi."
+        "NSLocationWhenInUseUsageDescription": "Thợ Minh Đức dùng vị trí để xác nhận đến nơi tại nhà khách và chia sẻ vị trí khi thợ đang di chuyển đến nơi."
       }
     },
     "android": {
@@ -38,14 +38,14 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "HRMSS cần truy cập thư viện ảnh để bạn đính kèm ảnh thiết bị, ảnh minh chứng và biên lai.",
-          "cameraPermission": "HRMSS cần dùng camera để chụp ảnh thiết bị, ảnh minh chứng và biên lai."
+          "photosPermission": "Thợ Minh Đức cần truy cập thư viện ảnh để bạn đính kèm ảnh thiết bị, ảnh minh chứng và biên lai.",
+          "cameraPermission": "Thợ Minh Đức cần dùng máy ảnh để chụp ảnh thiết bị, ảnh minh chứng và biên lai."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Thợ Minh Đức dùng vị trí để check-in tại nhà khách và chia sẻ vị trí khi thợ đang di chuyển đến nơi.",
+          "locationWhenInUsePermission": "Thợ Minh Đức dùng vị trí để xác nhận đến nơi tại nhà khách và chia sẻ vị trí khi thợ đang di chuyển đến nơi.",
           "isAndroidBackgroundLocationEnabled": false,
           "isIosBackgroundLocationEnabled": false
         }

@@ -381,7 +381,11 @@ export const LUCIDE_ICON_MAP = {
   '🖼': ImageIcon,
   '❤️': Heart,
   '❤': Heart,
+  '♥': Heart,
+  '♡': Heart,
   '🤍': Heart,
+  '❌': XCircle,
+  '💸': Banknote,
   '🎂': Cake,
   '🎬': Clapperboard,
   '❓': HelpCircle,
@@ -424,11 +428,11 @@ export function AppIcon({
   const Comp = LUCIDE_ICON_MAP[key] || LUCIDE_ICON_MAP[key.toLowerCase()];
   if (Comp) {
     const isFilledStar = (key === '⭐' || key === '★') && fill === 'none';
-    const isFilledHeart = (key === '❤️' || key === '❤') && fill === 'none';
+    const isFilledHeart = (key === '❤️' || key === '❤' || key === '♥') && fill === 'none';
     return (
       <Comp
         size={size}
-        color={color}
+        color={isFilledHeart ? C.red : color}
         strokeWidth={strokeWidth}
         fill={isFilledStar ? color : isFilledHeart ? C.red : fill}
         style={style}

@@ -62,11 +62,14 @@ const readRefresh = () => {
     return webRefreshStore()?.getItem(APP_CONFIG.refreshTokenStorageKey) || null;
   } catch (e) { return null; }
 };
+let refreshWriteChain = Promise.resolve();
 const writeRefresh = (token) => {
   if (IS_NATIVE) {
-    (token
-      ? SecureStore.setItemAsync(APP_CONFIG.refreshTokenStorageKey, token)
-      : SecureStore.deleteItemAsync(APP_CONFIG.refreshTokenStorageKey)).catch(() => {});
+    refreshWriteChain = refreshWriteChain
+      .then(() => (token
+        ? SecureStore.setItemAsync(APP_CONFIG.refreshTokenStorageKey, token)
+        : SecureStore.deleteItemAsync(APP_CONFIG.refreshTokenStorageKey)))
+      .catch(() => {});
     return;
   }
   try {
@@ -105,10 +108,14 @@ export const authTokens = {
   // Native: nạp refresh token đã lưu trong SecureStore vào bộ nhớ (gọi 1 lần khi mở app). Trả true nếu có.
   restore: async () => {
     if (!IS_NATIVE) return Boolean(authTokens.getRefresh());
+    const startEpoch = sessionEpoch;
     try {
+      await refreshWriteChain;
       const saved = await SecureStore.getItemAsync(APP_CONFIG.refreshTokenStorageKey);
-      if (saved) currentRefresh = saved;
-      return Boolean(saved);
+      if (startEpoch === sessionEpoch && !currentRefresh && saved) {
+        currentRefresh = saved;
+      }
+      return Boolean(currentRefresh);
     } catch (e) { return false; }
   },
 };
@@ -124,7 +131,7 @@ async function refreshSession() {
   if (!refreshToken) return { ok: false, status: null, code: 'NO_REFRESH_TOKEN', message: 'Chưa đăng nhập.', data: null };
   if (!refreshing) {
     const startEpoch = sessionEpoch;
-    refreshing = rawRequest('/auth/mobile/refresh', { method: 'POST', body: { refresh_token: refreshToken }, noAuth: true })
+    const p = rawRequest('/auth/mobile/refresh', { method: 'POST', body: { refresh_token: refreshToken }, noAuth: true })
       .then((res) => {
         if (startEpoch !== sessionEpoch) {
           return { ok: false, status: 401, code: 'SESSION_CHANGED', message: 'Phiên đăng nhập đã thay đổi.', data: null };
@@ -152,7 +159,10 @@ async function refreshSession() {
         console.error('[HRMSS AUTH] Ngoại lệ khi refresh token:', err);
         return { ok: false, status: 0, code: 'NETWORK_ERROR', message: 'Không kết nối được máy chủ. Kiểm tra mạng và thử lại.', data: null };
       })
-      .finally(() => { refreshing = null; });
+      .finally(() => {
+        if (refreshing === p) refreshing = null;
+      });
+    refreshing = p;
   }
   return refreshing;
 }
@@ -239,10 +249,20 @@ export async function apiRequest(endpoint, options = {}) {
     if (curToken && isTokenExpiringSoon(curToken, 30)) {
       if (authTokens.getRefresh()) {
         const refreshed = await refreshSession();
+        if (!refreshed.ok) {
+          if (refreshed.code === 'SESSION_EXPIRED' || refreshed.status === 400 || refreshed.status === 401) {
+            return refreshed;
+          }
+          if (reqEpoch !== sessionEpoch) {
+            return { ok: false, status: 401, code: 'SESSION_CHANGED', message: 'Phiên đăng nhập đã thay đổi.', data: null, errors: [] };
+          }
+          if (refreshed.status === 0 || Number(refreshed.status) >= 500) {
+            return refreshed;
+          }
+        }
         if (reqEpoch !== sessionEpoch) {
           return { ok: false, status: 401, code: 'SESSION_CHANGED', message: 'Phiên đăng nhập đã thay đổi.', data: null, errors: [] };
         }
-        if (!refreshed.ok && refreshed.status === 0) return refreshed;
       } else if (isTokenExpiringSoon(curToken, 0)) {
         authTokens.clear();
         try { onSessionExpired?.(); } catch (e) { /* bỏ qua */ }
@@ -261,10 +281,20 @@ export async function apiRequest(endpoint, options = {}) {
     if (!authTokens.get() && !isPublicEndpoint) {
       if (authTokens.getRefresh()) {
         const refreshed = await refreshSession();
+        if (!refreshed.ok) {
+          if (refreshed.code === 'SESSION_EXPIRED' || refreshed.status === 400 || refreshed.status === 401) {
+            return refreshed;
+          }
+          if (reqEpoch !== sessionEpoch) {
+            return { ok: false, status: 401, code: 'SESSION_CHANGED', message: 'Phiên đăng nhập đã thay đổi.', data: null, errors: [] };
+          }
+          if (refreshed.status === 0 || Number(refreshed.status) >= 500) {
+            return refreshed;
+          }
+        }
         if (reqEpoch !== sessionEpoch) {
           return { ok: false, status: 401, code: 'SESSION_CHANGED', message: 'Phiên đăng nhập đã thay đổi.', data: null, errors: [] };
         }
-        if (!refreshed.ok && refreshed.status === 0) return refreshed;
       }
       if (!authTokens.get()) {
         return {
@@ -279,15 +309,27 @@ export async function apiRequest(endpoint, options = {}) {
     }
   }
 
+  const usedToken = authTokens.get();
   const res = await rawRequest(endpoint, options);
   if (res.status === 401 && !isAuthCall && !isCredentialMutation) {
     // Nếu phiên đã đổi hoặc đăng xuất trong lúc request đang chạy, không dùng token của phiên mới để retry/clear.
     if (reqEpoch !== sessionEpoch) return res;
+    const latestToken = authTokens.get();
+    if (latestToken && latestToken !== usedToken) {
+      return rawRequest(endpoint, { ...options, _retried: true });
+    }
     if (authTokens.getRefresh()) {
       const refreshed = await refreshSession();
-      if (reqEpoch !== sessionEpoch) return res;
-      if (refreshed.ok) return rawRequest(endpoint, { ...options, _retried: true });
-      if (refreshed.status === 0) return refreshed;
+      if (!refreshed.ok) {
+        if (refreshed.code === 'SESSION_EXPIRED' || refreshed.status === 400 || refreshed.status === 401) {
+          return refreshed;
+        }
+        if (reqEpoch !== sessionEpoch) return res;
+        if (refreshed.status === 0 || Number(refreshed.status) >= 500) return refreshed;
+      } else {
+        if (reqEpoch !== sessionEpoch) return res;
+        return rawRequest(endpoint, { ...options, _retried: true });
+      }
     } else if (authTokens.get()) {
       // Có access token nhưng bị server từ chối 401 và không có refresh token để khôi phục -> đăng xuất sạch
       authTokens.clear();
@@ -393,7 +435,9 @@ async function rawRequest(endpoint, options = {}) {
       status: res.status,
       code: resData?.code || 'OK',
       message: toVietnamese(resData?.message, 'Thành công') || 'Thành công',
-      data: resData?.data ?? resData,
+      data: (resData && typeof resData === 'object' && Object.prototype.hasOwnProperty.call(resData, 'data'))
+        ? resData.data
+        : resData,
     };
   } catch (err) {
     if (timer) clearTimeout(timer);
@@ -411,7 +455,7 @@ async function rawRequest(endpoint, options = {}) {
       status: 0,
       code: isTimeout ? 'TIMEOUT' : 'NETWORK_ERROR',
       message: isTimeout
-        ? 'Kết nối máy chủ quá hạn (timeout). Vui lòng thử lại.'
+        ? 'Kết nối máy chủ quá hạn. Vui lòng thử lại.'
         : 'Không kết nối được máy chủ. Kiểm tra mạng và thử lại.',
       data: null,
       errors: [],
@@ -442,12 +486,7 @@ async function uploadFile(uri, fileName, fields = {}) {
 }
 
 export const hrmssApi = {
-  // 1. Kiểm tra kết nối máy chủ
-  async ping() {
-    return apiRequest('/');
-  },
-
-  // 2. Đăng nhập phiên mobile: access token (15 phút) + refresh token (7 ngày) trong body.
+  // 1. Đăng nhập phiên mobile: access token (15 phút) + refresh token (7 ngày) trong body.
   // (/auth/login là của web: refresh token nằm trong cookie, app không dùng được -> bị đăng xuất sau 15 phút.)
   async login({ identifier, password }) {
     const res = await apiRequest('/auth/mobile/login', {
@@ -481,6 +520,7 @@ export const hrmssApi = {
   async register({ username, email, password, confirm_password, full_name, address, phone }) {
     return apiRequest('/auth/register', {
       method: 'POST',
+      noAuth: true,
       body: {
         username,
         email,
@@ -519,11 +559,12 @@ export const hrmssApi = {
     });
   },
   async forgotPassword(identifier) {
-    return apiRequest('/auth/forgot-password', { method: 'POST', body: { identifier } });
+    return apiRequest('/auth/forgot-password', { method: 'POST', body: { identifier }, noAuth: true });
   },
   async resetPassword({ identifier, otp, newPassword }) {
     return apiRequest('/auth/reset-password', {
       method: 'POST',
+      noAuth: true,
       body: { identifier, otp: String(otp || '').trim(), new_password: newPassword, confirm_password: newPassword },
     });
   },
@@ -605,12 +646,16 @@ export const hrmssApi = {
     });
   },
   async decideQuotation(id, { decision, rejection_reason }) {
+    const dec = typeof decision === 'string' ? decision.trim().toUpperCase() : decision;
+    const mappedDecision = (dec === 'REVISE')
+      ? 'REVISE'
+      : (dec === 'APPROVED' || dec === 'APPROVE' || dec === true)
+        ? 'APPROVED'
+        : 'REJECTED';
     return apiRequest(`/customer/requests/${id}/quotation-decision`, {
       method: 'POST',
       body: {
-        decision: ['APPROVED', 'REVISE'].includes(decision) || decision === true || decision === 'approve'
-          ? (decision === 'REVISE' ? 'REVISE' : 'APPROVED')
-          : 'REJECTED',
+        decision: mappedDecision,
         ...(rejection_reason ? { rejection_reason } : {}),
       },
     });
@@ -630,6 +675,10 @@ export const hrmssApi = {
   // Xóa tài khoản của chính mình (cần mật khẩu).
   async deleteMyAccount(password) {
     return apiRequest('/auth/me', { method: 'DELETE', body: { password } });
+  },
+  // Kiểm tra quyền lợi, hạn cuối và ngày/ca bảo hành khả dụng từ server (nếu backend đã bật route).
+  async getWarrantyEligibility(id) {
+    return apiRequest(`/customer/requests/${encodeURIComponent(id)}/warranty-eligibility`);
   },
   // Yêu cầu bảo hành cho đơn đã xong: tạo đơn bảo hành WARRANTY_PENDING (văn phòng thẩm định).
   // mode: 'full' = payload đặt lịch mới; 'legacy' = chỉ { note } (backend cũ).
@@ -818,9 +867,6 @@ export const hrmssApi = {
     if (status) q.set('status', status);
     return apiRequest(`/technician/handovers?${q.toString()}`);
   },
-  async startTechnicianJob(id) {
-    return apiRequest(`/technician/jobs/${id}/start`, { method: 'PATCH' });
-  },
   async submitDiagnosis(id, payload) {
     return apiRequest(`/technician/jobs/${id}/diagnosis`, {
       method: 'POST',
@@ -931,18 +977,8 @@ export const hrmssApi = {
   async getBill(requestId) {
     return apiRequest(`/customer/requests/${encodeURIComponent(requestId)}/bill`);
   },
-  // Tên cũ (giữ để không vỡ chỗ gọi): dùng chung cài đặt với setPaymentMethod / confirmCashPayment.
-  async updateCustomerPaymentMethod(requestId, method) {
-    return hrmssApi.setPaymentMethod(requestId, method);
-  },
-  async confirmCustomerPayment(requestId) {
-    return hrmssApi.confirmCashPayment(requestId);
-  },
 
   // 15c. Các bước thực hiện của việc (thợ) và ảnh của bước.
-  async getJobProcedure(jobId) {
-    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/procedure`);
-  },
   // body: { status: 'DONE'|'SKIPPED'|'PENDING', checked_items?, measurements?, photo_ids?, note? }
   async updateProcedureStep(jobId, stepId, body) {
     return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/procedure/${encodeURIComponent(stepId)}`, { method: 'PATCH', body });

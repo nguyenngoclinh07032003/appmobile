@@ -1,12 +1,12 @@
 // Phiếu nghiệm thu & bảo hành điện tử (khách xem sau khi đơn hoàn thành).
-// Bố cục: thẻ chứng nhận (mã, hiệu lực, thanh ngày còn lại, QR) -> thông tin đơn -> hạng mục đã làm
+// Bố cục: thẻ chứng nhận (mã, hiệu lực, thanh ngày còn lại) -> thông tin đơn -> hạng mục đã làm
 // -> checklist an toàn -> xác nhận của khách -> lưu ý bảo hành. Chỉ hiển thị, không đổi dữ liệu.
 import React from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { C, R, grad } from '../../theme';
 import { catLabel, SAFETY_CHECKLIST_ITEMS, HOTLINE } from '../../constants/data';
 import { fmtDate, fmtDateTime } from '../../context';
-import { PseudoQR, AppIcon } from '../../components';
+import { AppIcon } from '../../components';
 
 function InfoRow({ icon, label, value, last }) {
   if (!value) return null;
@@ -34,13 +34,13 @@ function Section({ icon, title, right, children, style }) {
 
 export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
   const certCode = o.report?.warrantyCertificateCode || `BH-${o.code}`;
-  const totalDays = winfo.totalDays || tierWarrantyDays;
+  const totalDays = winfo.totalDays ?? tierWarrantyDays;
   const isActivePending = Boolean(winfo.pending && winfo.stillValid);
   const daysLeft = (winfo.ok || isActivePending) ? (winfo.daysLeft ?? 0) : 0;
   const ratio = totalDays ? Math.max(0, Math.min(1, daysLeft / totalDays)) : 0;
   const checklist = o.report?.safetyChecklist?.length ? o.report.safetyChecklist : SAFETY_CHECKLIST_ITEMS;
   const device = o.device
-    ? [catLabel(o.device.category), o.device.brand, o.device.room ? `(${o.device.room})` : '', o.device.serial ? `· SN: ${o.device.serial}` : ''].filter(Boolean).join(' ')
+    ? [catLabel(o.device.category), o.device.brand, o.device.room ? `(${o.device.room})` : '', o.device.serial ? `· Số sê-ri: ${o.device.serial}` : ''].filter(Boolean).join(' ')
     : '';
   const techName = o.tech?.name || o.report?.tech || 'Thợ Minh Đức';
   const techCode = o.tech?.code || o.report?.techCode;
@@ -88,8 +88,11 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
             <Text style={st.heroUntil}>{winfo.ok ? `Hiệu lực đến ${fmtDate(winfo.until)}` : (isActivePending && winfo.until ? `${winfo.text} (Còn hiệu lực đến ${fmtDate(winfo.until)})` : winfo.text)}</Text>
           </View>
           <View style={st.qrWrap}>
-            <PseudoQR value={`MINHDUC-WARRANTY|${o.code}|${o.address?.phone || ''}|${totalDays}D`} size={96} />
-            <Text style={st.qrCaption}>Đưa mã cho thợ{'\n'}khi bảo hành</Text>
+            <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
+              <AppIcon name="shield-check" size={22} color={C.primary} strokeWidth={2.2} />
+            </View>
+            <Text style={{ fontSize: 11, fontWeight: '900', color: C.navy, marginTop: 6 }} numberOfLines={1}>{o.code}</Text>
+            <Text style={st.qrCaption}>Mã bảo hành{'\n'}điện tử</Text>
           </View>
         </View>
       </View>
@@ -189,7 +192,7 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
       <View style={st.note}>
         <AppIcon name="info" size={15} color={C.muted} strokeWidth={2.2} />
         <Text style={st.noteText}>
-          Bảo hành miễn phí cho lỗi phát sinh từ hạng mục đã làm. Không áp dụng khi thiết bị bị rơi vỡ, chập điện ngoài hoặc do tác động bên ngoài. Hotline {HOTLINE}.
+          Bảo hành miễn phí cho lỗi phát sinh từ hạng mục đã làm. Không áp dụng khi thiết bị bị rơi vỡ, chập điện ngoài hoặc do tác động bên ngoài. Tổng đài {HOTLINE}.
         </Text>
       </View>
     </View>

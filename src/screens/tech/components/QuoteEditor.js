@@ -4,15 +4,16 @@ import React, { useState } from 'react';
 import { View, Text } from 'react-native';
 import { C, R } from '../../../theme';
 import { formatVND, formatNumberInput } from '../../../constants/data';
-import { useApp, bookedValue } from '../../../context';
+import { useApp, bookedValue, tierPartDiscountAmount, lateDiscountAmount } from '../../../context';
 import { Tap, Btn, Card, Badge, Field, Stepper, ui, AppIcon } from '../../../components';
 import { pickImage, pickCamera } from '../../../utils/media';
 import { computeQuoteRangeTotals, formatRangeVND } from '../../../utils/externalPartsPricing';
+import { toVietnamese } from '../../../utils/viText';
 import { tx } from './techStyles';
 import { isOnSiteQuote, formatSymptomPhotoNote, parseSymptomPhotoTitle } from './useQuoteDraft';
 import { SymptomSection } from './SymptomSection';
 
-export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, evidence }) {
+export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCancelEdit, evidence }) {
   const { a, ui: u } = useApp();
   const [showCustomFee, setShowCustomFee] = useState(false);
   const [customFeeName, setCustomFeeName] = useState('');
@@ -32,17 +33,26 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
   const onSite = isOnSiteQuote(o);
   const prodDisc = Number(o.productDiscount) || 0;
   const comboDisc = Number(o.comboDiscount) || 0;
-  const priorApprovedExtra = Number(o.quote?.priorApprovedExtra) || 0;
+  const partDisc = tierPartDiscountAmount(o);
+  const voucherDisc = Number(o.voucherDiscount) || 0;
+  const lateDisc = lateDiscountAmount(o);
+  const priorApprovedExtra = o.quote?.approved
+    ? (Number(o.quote?.approvedExtrasTotal) || 0)
+    : (Number(o.quote?.priorApprovedExtra) || 0);
   const rangeTotals = computeQuoteRangeTotals(lines, {
     bookedBase: booked,
     priorApprovedExtra,
     prodDisc,
     comboDisc,
+    partDisc,
+    voucherDisc,
+    lateDisc,
     isOnSite: onSite,
   });
   const hasRange = rangeTotals.hasEstimatedRange;
-  const diffMin = onSite ? rangeTotals.extraMin : Math.max(0, rangeTotals.totalMin - booked);
-  const diffMax = onSite ? rangeTotals.extraMax : Math.max(diffMin, rangeTotals.totalMax - booked);
+  const deductTotal = partDisc + voucherDisc + lateDisc;
+  const diffMin = onSite ? rangeTotals.extraMin : Math.max(0, (rangeTotals.totalMin + deductTotal) - booked);
+  const diffMax = onSite ? rangeTotals.extraMax : Math.max(diffMin, (rangeTotals.totalMax + deductTotal) - booked);
   const paysMin = rangeTotals.totalMin;
   const paysMax = rangeTotals.totalMax;
 
@@ -98,7 +108,7 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
       if (source === 'camera' && uri === null) uri = await pickImage();
       if (uri == null) {
         if (uri === null) {
-          u.alert('Chưa hỗ trợ camera', 'Trên web/mobile browser hãy cho phép camera hoặc chọn ảnh thư viện.', 'camera');
+          u.alert('Chưa hỗ trợ máy ảnh', 'Trên trình duyệt hãy cho phép máy ảnh hoặc chọn ảnh từ thư viện.', 'camera');
         }
         return;
       }
@@ -124,7 +134,7 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
       draft.setSymptomItems?.((prev) =>
         (prev || []).map((x) => (x.id === item.id ? { ...x, localPhotoUri: prevLocal } : x)),
       );
-      u.alert('Không thêm được ảnh', (e && e.message) || 'Vui lòng thử lại.', 'camera');
+      u.alert('Không thêm được ảnh', toVietnamese(e?.message, 'Vui lòng thử lại.') || 'Vui lòng thử lại.', 'camera');
     } finally {
       setBusySymptomPhotoId(null);
     }
@@ -260,18 +270,6 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
             </View>
           </View>
         ))}
-        {o.productDiscount ? (
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, paddingHorizontal: 4 }}>
-            <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Giảm giá dịch vụ</Text>
-            <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.green }]}>-{formatVND(o.productDiscount)}</Text>
-          </View>
-        ) : null}
-        {o.comboDiscount ? (
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, paddingHorizontal: 4 }}>
-            <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Ưu đãi {o.comboLabel || 'Combo nhiều máy (-5%)'}</Text>
-            <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.green }]}>-{formatVND(o.comboDiscount)}</Text>
-          </View>
-        ) : null}
 
         {/* 2. Vật tư thay thế (nếu có) */}
         {partLines.length ? (
@@ -446,7 +444,7 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
         ) : null}
         {o.comboDiscount ? (
           <View style={tx.totalRow}>
-            <Text style={{ color: C.green }}>Ưu đãi {o.comboLabel || 'Combo nhiều máy (-5%)'}</Text>
+            <Text style={{ color: C.green }}>Ưu đãi {o.comboLabel || 'gộp nhiều máy (-5%)'}</Text>
             <Text style={{ fontWeight: '700', color: C.green }}>-{formatVND(o.comboDiscount)}</Text>
           </View>
         ) : null}
@@ -481,6 +479,24 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
             {diffMax > 0 ? formatRangeVND(diffMin, diffMax, { prefix: '+' }) : '0 đ'}
           </Text>
         </View>
+        {partDisc > 0 ? (
+          <View style={tx.totalRow}>
+            <Text style={{ color: C.green }}>Ưu đãi hạng thành viên (−{o.bill?.tierPartDiscountPercent || 0}% VT)</Text>
+            <Text style={{ fontWeight: '700', color: C.green }}>-{formatVND(partDisc)}</Text>
+          </View>
+        ) : null}
+        {voucherDisc > 0 ? (
+          <View style={tx.totalRow}>
+            <Text style={{ color: C.green }}>Mã giảm giá {o.voucher?.code || ''}</Text>
+            <Text style={{ fontWeight: '700', color: C.green }}>-{formatVND(voucherDisc)}</Text>
+          </View>
+        ) : null}
+        {lateDisc > 0 ? (
+          <View style={tx.totalRow}>
+            <Text style={{ color: C.green }}>Bồi thường đến muộn</Text>
+            <Text style={{ fontWeight: '700', color: C.green }}>-{formatVND(lateDisc)}</Text>
+          </View>
+        ) : null}
         <View style={tx.totalRow}>
           <Text style={{ fontWeight: '800', color: C.ink, fontSize: 15 }}>
             {hasRange ? 'Tổng cộng khách phải trả (dự kiến)' : (onSite ? 'Tổng cộng khách phải trả' : 'Tổng báo giá')}
@@ -489,12 +505,29 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, eviden
             {formatRangeVND(paysMin, paysMax)}
           </Text>
         </View>
+        {!onSite ? (
+          <Text style={[ui.meta, { color: C.muted, marginTop: 6, lineHeight: 17 }]}>
+            Báo giá trước khi xuất phát — kết quả kiểm tra & chẩn đoán chi tiết sẽ được ghi nhận sau khi xác nhận đến nơi tại nhà khách.
+          </Text>
+        ) : null}
+        {o.quoteEditing ? (
+          <Btn
+            title="Huỷ sửa báo giá"
+            variant="ghost"
+            small
+            style={{ marginTop: 10 }}
+            onPress={() => {
+              a.cancelReopenQuote?.(o.code);
+              onCancelEdit?.();
+            }}
+          />
+        ) : null}
         <View style={[tx.note, { backgroundColor: diffMax > 0 ? C.goldSoft : C.greenSoft }]}>
           <Text style={{ color: diffMax > 0 ? C.goldInk : C.green, fontWeight: '700', lineHeight: 19 }}>
             {hasRange
               ? `Vật tư mua ngoài đang báo theo giá dao động (${formatRangeVND(diffMin, diffMax)}). Khách duyệt khoảng giá này để làm; khi hoàn thành sửa chữa bạn sẽ nhập lại giá mua thực tế + hoá đơn để khách nghiệm thu.`
               : diffMax > 0
-                ? `Phát sinh ${formatVND(diffMax)} → khách cần duyệt báo giá trên app trước khi làm.`
+                ? `Phát sinh ${formatVND(diffMax)} → khách cần duyệt báo giá trên ứng dụng trước khi làm.`
                 : onSite
                   ? 'Không có phát sinh → bấm "Xác nhận & bắt đầu" để sửa theo đúng dịch vụ khách đã đặt (không cần báo giá).'
                   : 'Không phát sinh thêm chi phí → đúng theo giá dịch vụ khách đã đặt ban đầu.'}

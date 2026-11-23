@@ -165,7 +165,7 @@ export function SymptomBreakdownView({
                         <AppIcon name="camera" size={12} color={C.green} strokeWidth={2.4} />
                       </View>
                     ) : null}
-                    {actionLabel ? (
+                    {!isOpen && actionLabel ? (
                       <View style={[st.badge, { backgroundColor: badgeStyle.bg, borderColor: badgeStyle.bd }]}>
                         <Text style={[st.badgeText, { color: badgeStyle.fg }]}>{actionLabel}</Text>
                       </View>

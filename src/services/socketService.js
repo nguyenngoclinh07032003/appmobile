@@ -15,8 +15,12 @@ const joinedRequestCounts = new Map();
 const SERVER_EVENTS = ['notification:new', 'request:status', 'request:updated', 'technician:location', 'session:expired'];
 
 const subscribeRoom = (requestId) => {
-  socket.emit('request:subscribe', { request_id: String(requestId) }, (res) => {
-    if (res && res.ok === false) console.warn(`[Socket.IO] Không vào được phòng đơn ${requestId}: ${res.code}`);
+  if (!socket || !requestId) return;
+  const key = String(requestId);
+  socket.emit('request:subscribe', { request_id: key }, (res) => {
+    if (res && res.ok === false) {
+      console.warn(`[Socket.IO] Không vào được phòng đơn ${key}: ${res.code}`);
+    }
   });
 };
 
@@ -88,13 +92,6 @@ export function isSocketConnected() {
 }
 
 /**
- * Lấy đối tượng Socket instance hiện thời
- */
-export function getSocket() {
-  return socket;
-}
-
-/**
  * Vào phòng của đơn (mở màn chi tiết đơn / việc) để nhận request:status, request:updated, technician:location.
  * Chỉ khách sở hữu đơn / thợ được giao mới vào được. Nhớ lại để tự vào lại sau khi kết nối lại.
  * @param {string|number} requestId request_id trên server (dbRequestId)
@@ -120,6 +117,17 @@ export function leaveOrderRoom(requestId) {
     if (prev === 1 && socket?.connected) socket.emit('request:unsubscribe', { request_id: key });
   } else {
     joinedRequestCounts.set(key, prev - 1);
+  }
+}
+
+/**
+ * Thử vào lại phòng đơn (dùng sau khi thợ vừa nhận việc hoặc khi quyền truy cập vừa được cập nhật).
+ */
+export function resubscribeOrderRoom(requestId) {
+  if (!requestId) return;
+  const key = String(requestId);
+  if ((joinedRequestCounts.get(key) || 0) > 0) {
+    if (socket?.connected) subscribeRoom(key);
   }
 }
 

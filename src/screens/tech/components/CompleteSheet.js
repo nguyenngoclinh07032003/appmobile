@@ -2,13 +2,14 @@
 // - Checklist an toàn: mặc định CHƯA tick, phải tick đủ mới gửi được (đếm số mục động).
 // - Thu tiền mặt: chỉ hiện khi có tiền mặt cần thu (cashToCollect), mặc định CHƯA tick.
 // - Xác nhận nghiệm thu của khách: họ tên người nghiệm thu + tick đồng ý; thời điểm ghi lúc bấm xác nhận.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Image } from 'react-native';
 import { C, R } from '../../../theme';
 import { formatVND, SAFETY_CHECKLIST_ITEMS } from '../../../constants/data';
-import { useApp, orderTotal, cashToCollect, fmtDateTime, isQRPayment, bookedValue, tierPartDiscountAmount, lateDiscountAmount, isPaid } from '../../../context';
+import { useApp, orderTotal, cashToCollect, fmtDateTime, isQRPayment, bookedValue, tierPartDiscountAmount, lateDiscountAmount, isPaid, getPendingExternalEstimates } from '../../../context';
 import { Btn, Field, Sheet, Checkbox, Tap, Badge, ui, AppIcon } from '../../../components';
 import { pickCamera, pickImage } from '../../../utils/media';
+import { toVietnamese } from '../../../utils/viText';
 import { useBusyRunner } from './useBusyRunner';
 import { tx } from './techStyles';
 
@@ -29,7 +30,7 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
   const allEvidence = o ? (Array.isArray(evidence) ? evidence : (o.evidence || [])) : [];
   const serverAfterPhotos = allEvidence.filter((e) => e?.stage === 'after' && e?.uri);
   const [uploadedUris, setUploadedUris] = useState([]);
-  const [baselineServerCount, setBaselineServerCount] = useState(() => serverAfterPhotos.length);
+  const serverCountRef = useRef(serverAfterPhotos.length);
 
   // Mỗi lần mở sheet: làm mới bản nháp (không giữ tick từ lần trước).
   useEffect(() => {
@@ -44,19 +45,17 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
     setAcceptedAt(null);
     setLocalPendingUris([]);
     setUploadedUris([]);
-    setBaselineServerCount(serverAfterPhotos.length);
+    serverCountRef.current = serverAfterPhotos.length;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   // Chỉ xoá ảnh tạm sau khi serverAfterPhotos thực sự tăng lên từ syncFromBackend, tránh nhấp nháy "0 ảnh".
   useEffect(() => {
-    if (uploadedUris.length > 0 && serverAfterPhotos.length > baselineServerCount) {
+    if (uploadedUris.length > 0 && serverAfterPhotos.length > serverCountRef.current) {
       setUploadedUris([]);
-      setBaselineServerCount(serverAfterPhotos.length);
-    } else if (uploadedUris.length === 0 || serverAfterPhotos.length < baselineServerCount) {
-      setBaselineServerCount(serverAfterPhotos.length);
     }
-  }, [serverAfterPhotos.length, uploadedUris.length, baselineServerCount]);
+    serverCountRef.current = serverAfterPhotos.length;
+  }, [serverAfterPhotos.length, uploadedUris.length]);
 
   if (!o) return null;
   const hasInitialPhotos =
@@ -73,7 +72,14 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
   const safetyDone = SAFETY_ITEMS.filter((it) => safetyChecks.includes(it)).length;
   const bookedBase = bookedValue(o);
   const finalTotal = orderTotal(o);
-  const extraAmount = Math.max(0, Number(o.quote?.extraAmount) || 0);
+  const extraAmount = o.bill
+    ? (Number(o.bill.supplementalTotal) || 0) +
+      (o.bill.quotationTotal != null
+        ? Math.max(0, Number(o.bill.quotationTotal) - (Number(o.bill.bookedAmount) || bookedBase))
+        : 0)
+    : o.quote?.approved
+      ? Math.max(0, Number(o.quote.extraAmount) || 0)
+      : Math.max(0, Number(o.quote?.priorApprovedExtra) || 0);
   const deductAmount = tierPartDiscountAmount(o) + (Number(o.voucherDiscount) || 0) + lateDiscountAmount(o);
 
   const handleAddCompletionPhoto = async (source = 'camera') => {
@@ -84,20 +90,21 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
       if (source === 'camera' && uri === null) uri = await pickImage();
       if (!uri) {
         if (uri === null) {
-          u.alert('Chưa hỗ trợ camera', 'Hãy cấp quyền camera hoặc chọn ảnh từ máy.', 'camera');
+          u.alert('Chưa hỗ trợ máy ảnh', 'Hãy cấp quyền máy ảnh hoặc chọn ảnh từ máy.', 'camera');
         }
         return;
       }
       setLocalPendingUris((prev) => (prev.includes(uri) ? prev : [...prev, uri]));
       if (o.dbAssignmentId) {
+        const beforeUploadCount = serverCountRef.current;
         const ok = await Promise.resolve(a.addEvidence(o.code, { uri, stage: 'after', note: AFTER_NOTE }));
         setLocalPendingUris((prev) => prev.filter((x) => x !== uri));
-        if (ok) {
+        if (ok && serverCountRef.current <= beforeUploadCount) {
           setUploadedUris((prev) => (prev.includes(uri) ? prev : [...prev, uri]));
         }
       }
     } catch (e) {
-      u.alert('Không tải được ảnh', (e && e.message) || 'Vui lòng thử lại.', 'camera');
+      u.alert('Không tải được ảnh', toVietnamese(e?.message, 'Vui lòng thử lại.') || 'Vui lòng thử lại.', 'camera');
     } finally {
       setUploadingPhoto(false);
     }
@@ -126,7 +133,7 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
   const close = () => { if (!busy && !uploadingPhoto) onClose?.(); };
 
   const submit = () => run(busyKey, async () => {
-    if ((o.pendingExternalEstimates || []).length > 0) {
+    if (getPendingExternalEstimates(o).length > 0) {
       u.alert(
         'Chưa chốt giá vật tư mua ngoài',
         'Đơn có vật tư mua ngoài báo theo giá dao động. Vui lòng nhập giá mua thực tế + ảnh biên lai để khách nghiệm thu trước khi nộp biên bản hoàn thành.',
@@ -151,12 +158,12 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
       return false;
     }
     if (safetyDone < safetyTotal) {
-      u.alert('Chưa đủ checklist an toàn', `Vui lòng kiểm tra và tick đủ ${safetyTotal} tiêu chuẩn an toàn kỹ thuật (đã tick ${safetyDone}/${safetyTotal}) trước khi bàn giao.`, 'zap');
+      u.alert('Chưa đủ danh mục kiểm tra an toàn', `Vui lòng kiểm tra và đánh dấu đủ ${safetyTotal} tiêu chuẩn an toàn kỹ thuật (đã đánh dấu ${safetyDone}/${safetyTotal}) trước khi bàn giao.`, 'zap');
       return false;
     }
     const name = acceptName.trim();
     if (!name || !accepted || !acceptedAt) {
-      u.alert('Chưa có xác nhận nghiệm thu', 'Nhập họ tên người nghiệm thu và tick “Khách đã kiểm tra và đồng ý nghiệm thu”.', 'pen-tool');
+      u.alert('Chưa có xác nhận nghiệm thu', 'Nhập họ tên người nghiệm thu và đánh dấu “Khách đã kiểm tra và đồng ý nghiệm thu”.', 'pen-tool');
       return false;
     }
     const ok = await Promise.resolve(a.completeJob(o.code, {
@@ -226,23 +233,23 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
         {totalAfterCount > 0 ? (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
             {serverAfterPhotos.map((ph) => (
-              <View key={ph.id} style={tx.photo}>
+              <View key={ph.id} style={tx.thumb}>
                 <Image source={{ uri: ph.uri }} style={{ width: '100%', height: '100%' }} />
-                <Tap style={tx.photoX} disabled={uploadingPhoto} onPress={() => handleRemoveServerPhoto(ph)} hitSlop={6}>
+                <Tap style={tx.thumbX} disabled={uploadingPhoto} onPress={() => handleRemoveServerPhoto(ph)} hitSlop={6}>
                   <AppIcon name="x" size={11} color="#fff" strokeWidth={3} />
                 </Tap>
               </View>
             ))}
             {uploadedUris.map((uri, idx) => (
-              <View key={`up_after_${idx}`} style={tx.photo}>
+              <View key={`up_after_${idx}`} style={tx.thumb}>
                 <Image source={{ uri }} style={{ width: '100%', height: '100%' }} />
               </View>
             ))}
             {localPendingUris.map((uri, idx) => (
-              <View key={`local_after_${idx}`} style={tx.photo}>
+              <View key={`local_after_${idx}`} style={tx.thumb}>
                 <Image source={{ uri }} style={{ width: '100%', height: '100%' }} />
                 <Tap
-                  style={tx.photoX}
+                  style={tx.thumbX}
                   disabled={uploadingPhoto}
                   onPress={() => setLocalPendingUris((prev) => prev.filter((x) => x !== uri))}
                   hitSlop={6}
@@ -278,7 +285,7 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
       </View>
 
       <Text style={[ui.fieldLabel, { marginTop: 10, marginBottom: 6 }]}>
-        Checklist an toàn kỹ thuật & nghiệm thu ({safetyDone}/{safetyTotal})
+        Danh mục kiểm tra an toàn kỹ thuật & nghiệm thu ({safetyDone}/{safetyTotal})
       </Text>
       <View style={{ padding: 10, borderRadius: R.md, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line, marginBottom: 10, gap: 6 }}>
         {SAFETY_ITEMS.map((item) => {
@@ -335,7 +342,7 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
           <Text style={{ fontSize: 12, color: C.ink2, marginTop: 4, lineHeight: 18 }}>
             {orderPaid
               ? 'Hệ thống đã xác nhận thanh toán QR từ khách hàng. Bạn chỉ cần gửi biên bản hoàn thành.'
-              : 'Đơn này khách chọn Chuyển khoản VietQR trên App Khách hàng. Kỹ thuật viên không được thu tiền mặt — sau khi gửi biên bản, mã QR sẽ hiển thị trên máy khách để quét.'}
+              : 'Đơn này khách chọn Chuyển khoản VietQR trên ứng dụng Khách hàng. Kỹ thuật viên không được thu tiền mặt — sau khi gửi biên bản, mã QR sẽ hiển thị trên máy khách để quét.'}
           </Text>
         </View>
       ) : null}

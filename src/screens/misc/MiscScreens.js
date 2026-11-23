@@ -6,13 +6,15 @@ import {
   getService, serviceKind, formatVND, normalize, catLabel, catIcon, tierOf, TIERS, TIME_SLOTS, MATERIALS, SAFETY_CHECKLIST_ITEMS,
 } from '../../constants/data';
 import {
-  useApp, fmtDate, fmtDateTime, timeAgo, warrantyInfo, isActiveOrder, orderTotal, formatOrderTotal, isPaid, isAwaitingPayment, amountRemaining,
+  useApp, fmtDate, fmtDateTime, timeAgo, warrantyInfo, isActiveOrder, orderTotal, formatOrderTotal, isPaid, amountRemaining,
   customerStatusMeta, isOfferExpired, bookedValue, latestNotifPerOrder,
   lateDiscountAmount, tierPartDiscountAmount, normalizeTechRep, getCancellationWindowStatus, isQRPayment,
+  getValidVouchers, getPendingExternalEstimates,
 } from '../../context';
+import { useScreenActive } from '../../navigation/ScreenActiveContext';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Chip, Badge, Stars, Field, Sheet, Radio,
-  EmptyState, ServiceGrid, ServiceRow, Progress, Media, ListRow, PseudoQR, HScroll, ui, AppIcon,
+  EmptyState, ServiceGrid, ServiceRow, Progress, Media, ListRow, HScroll, ui, AppIcon,
   TimeRangeSlider, minutesToSlotStr, minutesToTimeStr, resolveSemanticTone,
 } from '../../components';
 import {
@@ -117,7 +119,7 @@ export function SearchScreen() {
         ) : isDebouncing ? (
           <Text style={[ui.meta, { textAlign: 'center', marginTop: 24 }]}>Đang tìm kiếm…</Text>
         ) : results.length === 0 ? (
-          <EmptyState icon="search" title="Không tìm thấy dịch vụ" body={`Không có kết quả cho "${q}". Thử từ khoá khác hoặc gọi hotline ${HOTLINE} để được tư vấn.`} />
+          <EmptyState icon="search" title="Không tìm thấy dịch vụ" body={`Không có kết quả cho "${q}". Thử từ khoá khác hoặc gọi tổng đài ${HOTLINE} để được tư vấn.`} />
         ) : (
           <View>
             <Text style={[ui.meta, { marginBottom: 10 }]}>{results.length} kết quả cho "{q}"</Text>
@@ -149,7 +151,7 @@ export function NotificationsScreen() {
   const hasRead = (s.notifications || []).some((n) => Boolean(n.read));
   const filtered = list.filter((n) => {
     if (filter === 'unread') return !n.read;
-    if (filter === 'orders') return /đơn|báo giá|bảo hành|thợ|thanh toán|huỷ|hoàn thành/i.test(`${n.title} ${n.body || ''}`);
+    if (filter === 'orders') return /đơn|báo giá|hoá đơn|đến nơi|bảo hành|thợ|thanh toán|huỷ|hoàn thành/i.test(`${n.title} ${n.body || ''}`);
     return true;
   });
   return (
@@ -250,6 +252,7 @@ export function OrderScreen({ params }) {
   // Hook phải khai báo TRƯỚC mọi lệnh return sớm (nếu không: "Rendered fewer hooks" → crash toàn app).
   const [showWarrantyBooking, setShowWarrantyBooking] = useState(false);
   const [previewOrderPhoto, setPreviewOrderPhoto] = useState(null);
+  const screenActive = useScreenActive();
   const aRef = useRef(a);
   aRef.current = a;
   const o = (s.orders || []).find((x) => x.code === params?.code);
@@ -273,15 +276,21 @@ export function OrderScreen({ params }) {
     aRef.current?.ensureOrderHydrated?.(orderCode);
   }, [orderCode]);
 
+  // Kiểm tra quyền lợi, hạn cuối và khung giờ bảo hành thật từ server khi xem chi tiết đơn đã hoàn thành.
+  useEffect(() => {
+    if (!o || o.status !== 'done' || o.kind === 'warranty' || !o.dbRequestId || o.serverWarrantyEligibility) return;
+    aRef.current?.checkWarrantyEligibility?.(o.code)?.catch?.(() => {});
+  }, [o?.code, o?.status, o?.kind, o?.dbRequestId, o?.serverWarrantyEligibility]);
+
   // Đồng bộ ngay khi mở màn & mỗi 5s trong lúc đơn đang hoạt động (trường hợp mở 2 cửa sổ song song hoặc socket trễ).
   useEffect(() => {
-    if (!orderCode || !orderActive) return undefined;
+    if (!orderCode || !orderActive || !screenActive) return undefined;
     aRef.current?.syncFromBackend?.(null, true);
     const timer = setInterval(() => {
       aRef.current?.syncFromBackend?.(null, true);
     }, 5000);
     return () => clearInterval(timer);
-  }, [orderCode, orderStatus, orderActive]);
+  }, [orderCode, orderStatus, orderActive, screenActive]);
 
   const editDays = nextDays(7);
   const minAvailEdit = minSelectableMinute(editDayIdx);
@@ -322,10 +331,10 @@ export function OrderScreen({ params }) {
       u.dialog({
         icon: '⚠️',
         title: 'Không thể huỷ đơn',
-        message: withHotline(status.reason) || `Quý khách không thể tự huỷ đơn khi còn dưới ${FREE_CANCEL_TEXT} trước giờ hẹn với thợ. Để huỷ hoặc dời lịch gấp, vui lòng gọi Hotline ${HOTLINE}.`,
+        message: withHotline(status.reason) || `Quý khách không thể tự huỷ đơn khi còn dưới ${FREE_CANCEL_TEXT} trước giờ hẹn với thợ. Để huỷ hoặc dời lịch gấp, vui lòng gọi tổng đài ${HOTLINE}.`,
         actions: [
           { label: 'Đóng', variant: 'ghost' },
-          { label: `Gọi Hotline ${HOTLINE}`, onPress: u.call },
+          { label: `Gọi tổng đài ${HOTLINE}`, onPress: u.call },
         ],
       });
       return;
@@ -421,9 +430,11 @@ export function OrderScreen({ params }) {
 
   const respondQuote = (decision, why) => runQuote(async () => {
     try {
-      await callAction(a.respondQuote, o.code, decision, why);
+      const ok = await callAction(a.respondQuote, o.code, decision, why);
+      return isOk(ok);
     } catch (e) {
       u.alert('Chưa gửi được phản hồi', errorText(e, 'Không gửi được phản hồi báo giá. Vui lòng thử lại.'), '⚠️');
+      return false;
     }
   });
 
@@ -434,10 +445,11 @@ export function OrderScreen({ params }) {
       return;
     }
     try {
-      await callAction(a.cancelOrder, o.code, finalReason);
-      // Thành công hoặc bị từ chối (context đã báo lý do) đều đóng sheet; chỉ giữ lại khi lỗi bất ngờ để thử lại.
-      setShowCancel(false);
-      setReasonCustom('');
+      const ok = await callAction(a.cancelOrder, o.code, finalReason);
+      if (isOk(ok)) {
+        setShowCancel(false);
+        setReasonCustom('');
+      }
     } catch (e) {
       u.alert('Không huỷ được', errorText(e, 'Không gửi được yêu cầu huỷ. Vui lòng thử lại.'), '⚠️');
     }
@@ -487,7 +499,7 @@ export function OrderScreen({ params }) {
               : (o.status === 'pending' && o.dispatchNote) || meta.desc || STATUS_DESC[o.status]}
           </Text>
         </View>
-        <TrackingCard order={o} />
+        <TrackingCard order={o} paused={!screenActive} />
 
         {/* ===== Khối thanh toán nổi bật ngay đầu màn hình khi chờ thanh toán ===== */}
         {o.status === 'pending_payment' && !isPaid(o) && o.kind !== 'warranty' && o.kind !== 'followup' ? (
@@ -507,7 +519,7 @@ export function OrderScreen({ params }) {
                 <Text style={{ fontSize: 12.5, color: C.ink2, marginBottom: 10, lineHeight: 18, textAlign: 'center' }}>
                   Quét mã VietQR dưới đây để chuyển khoản trực tiếp vào hệ thống Minh Đức (thợ KHÔNG thu tiền mặt). Khi nhận đủ tiền, đơn sẽ tự chuyển sang Hoàn thành & kích hoạt Bảo hành điện tử.
                 </Text>
-                <VietQRPay requestId={o.dbRequestId} onPaid={() => a.confirmPayment(o.code, 'webhook')} />
+                <VietQRPay requestId={o.dbRequestId} paused={!screenActive} onPaid={() => a.confirmPayment(o.code, 'webhook')} />
                 {!o.bill?.cashClaimPending ? (
                   <View style={{ width: '100%', marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                     <Text style={{ flex: 1, fontSize: 12, color: C.muted }}>Không chuyển khoản được?</Text>
@@ -556,16 +568,16 @@ export function OrderScreen({ params }) {
           <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.gold }}>
             <Text style={[mx.tlTitle, { color: C.goldInk }]}>Đang chờ thợ cập nhật lại mức giá vật tư</Text>
             <Text style={{ color: C.ink2, marginTop: 4, fontSize: 13, lineHeight: 19 }}>
-              Bạn đã yêu cầu kiểm tra lại giá{o.quote.rejectReason ? `: “${o.quote.rejectReason}”` : '.'} Thợ sẽ gửi lại Bill chi phí cuối để bạn xác nhận trước khi bàn giao.
+              Bạn đã yêu cầu kiểm tra lại giá{o.quote.rejectReason ? `: “${o.quote.rejectReason}”` : '.'} Thợ sẽ gửi lại hoá đơn chi phí cuối để bạn xác nhận trước khi bàn giao.
             </Text>
           </Card>
         ) : null}
 
         {o.checkIn ? (
           <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary }}>
-            <Text style={mx.tlTitle}>Check-in tại nhà bạn</Text>
+            <Text style={mx.tlTitle}>Xác nhận đến nơi tại nhà bạn</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-              {o.checkIn.label || 'Đã xác thực vị trí GPS'}
+              {o.checkIn.label || 'Đã xác thực vị trí'}
               {o.checkIn.at ? ` · ${fmtDateTime(o.checkIn.at)}` : ''}
               {o.checkIn.lat != null ? ` · ${Number(o.checkIn.lat).toFixed(5)}, ${Number(o.checkIn.lng).toFixed(5)}` : ''}
             </Text>
@@ -576,8 +588,8 @@ export function OrderScreen({ params }) {
             <Text style={[mx.tlTitle, { color: C.goldInk }]}>Bồi thường đến muộn</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
               {o.lateCompensation.minutesLate
-                ? `Thợ check-in trễ ${o.lateCompensation.minutesLate} phút.`
-                : 'Thợ check-in trễ so với giờ hẹn.'}
+                ? `Thợ đến trễ ${o.lateCompensation.minutesLate} phút.`
+                : 'Thợ đến trễ so với giờ hẹn.'}
               {lateDiscountAmount(o)
                 ? ` Đã trừ ${formatVND(lateDiscountAmount(o))} vào tổng thanh toán${o.lateCompensation.percent ? ` (${o.lateCompensation.percent}% phí nhân công)` : ''}.`
                 : ' Hệ thống đã ghi nhận (mức cảnh báo, chưa trừ tiền).'}
@@ -589,11 +601,11 @@ export function OrderScreen({ params }) {
           <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.red }}>
             <Text style={[mx.tlTitle, { color: C.redInk }]}>Đơn quá hạn tiếp nhận</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-              Chưa có thợ nhận đơn trong khung giờ {o.slot} ngày {o.dateLabel}. Vui lòng đổi giờ hẹn để hệ thống điều phối lại, hoặc gọi hotline {HOTLINE} để được hỗ trợ.
+              Chưa có thợ nhận đơn trong khung giờ {o.slot} ngày {o.dateLabel}. Vui lòng đổi giờ hẹn để hệ thống điều phối lại, hoặc gọi tổng đài {HOTLINE} để được hỗ trợ.
             </Text>
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
               {canEdit ? <Btn title="Đổi giờ hẹn" icon="calendar" small variant="primary" style={{ flex: 1 }} onPress={openEdit} /> : null}
-              <Btn title="Gọi hotline" icon="phone" small variant="soft" style={{ flex: 1 }} onPress={u.call} />
+              <Btn title="Gọi tổng đài" icon="phone" small variant="soft" style={{ flex: 1 }} onPress={u.call} />
             </View>
           </Card>
         ) : null}
@@ -601,7 +613,7 @@ export function OrderScreen({ params }) {
           <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary }}>
             <Text style={mx.tlTitle}>Đang điều phối lại thợ</Text>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-              Thợ trước không thể tiếp tục (đã trả việc hoặc quá hạn xác nhận). Hệ thống đang điều phối thợ khác; kiểm tra thông báo để nhận voucher xin lỗi (nếu có).
+              Thợ trước không thể tiếp tục (đã trả việc hoặc quá hạn xác nhận). Hệ thống đang điều phối thợ khác; kiểm tra thông báo để nhận mã giảm giá xin lỗi (nếu có).
             </Text>
           </Card>
         ) : null}
@@ -613,7 +625,7 @@ export function OrderScreen({ params }) {
               <Text style={[mx.tlTitle, { color: C.goldInk }]}>Văn phòng đang thẩm định bảo hành</Text>
             </View>
             <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-              Yêu cầu bảo hành đã được gửi. Văn phòng Minh Đức đang đối chiếu lỗi với nhật ký sửa chữa gốc và thời hạn bảo hành theo hạng thành viên (từ {BASE_WARRANTY_DAYS} ngày).
+              Yêu cầu bảo hành đã được gửi. Văn phòng Minh Đức đang đối chiếu lỗi với nhật ký sửa chữa gốc và thời hạn bảo hành theo chính sách từng dịch vụ.
             </Text>
           </Card>
         ) : null}
@@ -671,9 +683,15 @@ export function OrderScreen({ params }) {
             lateDisc,
             isOnSite: isOnSite || o.quote.quotationType === 'SUPPLEMENTAL' || Boolean(o.quote.includesPriorApprovedLines),
           });
+          const isSupplementalQuote = o.quote.quotationType === 'SUPPLEMENTAL';
           const hasRange = rangeTotals.hasEstimatedRange;
-          const extraMin = rangeTotals.extraMin;
-          const extraMax = rangeTotals.extraMax;
+          const totalDeduct = (partDisc || 0) + (o.voucherDiscount || 0) + lateDisc;
+          const extraMin = isSupplementalQuote
+            ? rangeTotals.extraMin
+            : Math.max(rangeTotals.extraMin, Math.max(0, (rangeTotals.totalMin + totalDeduct) - bookedBase));
+          const extraMax = isSupplementalQuote
+            ? rangeTotals.extraMax
+            : Math.max(rangeTotals.extraMax, Math.max(0, (rangeTotals.totalMax + totalDeduct) - bookedBase));
           const finalAfterQuote = rangeTotals.totalMax;
 
           return (
@@ -682,9 +700,11 @@ export function OrderScreen({ params }) {
                 <Text style={{ fontSize: 12.5, fontWeight: '600', color: C.ink2, lineHeight: 18 }}>
                   {isExternalFinalization
                     ? 'Thợ đã cập nhật mức giá cuối cùng của vật tư thực tế. Vui lòng đối chiếu và bấm xác nhận để chốt tổng hoá đơn trước khi bàn giao thiết bị.'
-                    : isOnSite
-                      ? 'Thợ đã đến kiểm tra thực tế tại nhà bạn. Bạn có thể đồng ý để thợ sửa hoặc từ chối & huỷ đơn hoàn toàn MIỄN PHÍ (0đ).'
-                      : 'Báo giá trước khi thợ xuất phát. Bạn đồng ý thì thợ mới đi. Huỷ lúc này hoàn toàn MIỄN PHÍ (0đ).'}
+                    : isOnSite && isSupplementalQuote
+                      ? 'Thợ đã kiểm tra thực tế và gửi báo giá phát sinh. Bạn có thể đồng ý để thực hiện thêm hoặc chỉ từ chối phần phát sinh này (đơn hàng vẫn tiếp tục phần đã đặt).'
+                      : isOnSite
+                        ? 'Thợ đã đến kiểm tra thực tế tại nhà bạn. Bạn có thể đồng ý để thợ sửa, yêu cầu báo giá lại hoặc từ chối (huỷ sau khi kiểm tra tại nhà có thể áp dụng phí kiểm tra theo chính sách hiện hành).'
+                        : 'Báo giá trước khi thợ xuất phát. Bạn đồng ý thì thợ mới đi. Huỷ lúc này hoàn toàn MIỄN PHÍ (0đ).'}
                 </Text>
               </View>
 
@@ -740,7 +760,7 @@ export function OrderScreen({ params }) {
                 ) : null}
                 {o.comboDiscount ? (
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-                    <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Ưu đãi {o.comboLabel || 'Combo nhiều máy (-5%)'}</Text>
+                    <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Ưu đãi {o.comboLabel || 'gộp nhiều máy (-5%)'}</Text>
                     <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.green }]}>-{formatVND(o.comboDiscount)}</Text>
                   </View>
                 ) : null}
@@ -856,7 +876,7 @@ export function OrderScreen({ params }) {
                   <Bill l="Giảm giá dịch vụ" v={`-${formatVND(prodDisc)}`} green />
                 ) : null}
                 {comboDisc > 0 ? (
-                  <Bill l={`Ưu đãi ${o.comboLabel || 'Combo nhiều máy (-5%)'}`} v={`-${formatVND(comboDisc)}`} green />
+                  <Bill l={`Ưu đãi ${o.comboLabel || 'gộp nhiều máy (-5%)'}`} v={`-${formatVND(comboDisc)}`} green />
                 ) : null}
                 <Bill l="Giá dịch vụ đã đặt" v={formatVND(bookedBase)} />
                 {effectivePriorExtra > 0 ? (
@@ -880,7 +900,7 @@ export function OrderScreen({ params }) {
                   <Bill l="Chi phí phát sinh" v="0 đ (Đúng giá gốc, không phát sinh)" green />
                 )}
                 {partDisc ? <Bill l={`Ưu đãi hạng thành viên (−${o.bill?.tierPartDiscountPercent || 0}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
-                {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
+                {o.voucherDiscount ? <Bill l={`Mã giảm giá ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
                 {lateDisc > 0 ? <Bill l="Bồi thường thợ đến muộn" v={`−${formatVND(lateDisc)}`} green /> : null}
                 <View style={mx.totalRow}>
                   <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>
@@ -924,14 +944,14 @@ export function OrderScreen({ params }) {
               Đã chốt tổng hoá đơn {formatVND(orderTotal(o))}
             </Text>
             <Text style={{ color: C.ink2, marginTop: 4, lineHeight: 20, fontSize: 13 }}>
-              Kỹ thuật viên đang hoàn tất checklist an toàn & bàn giao thiết bị để mở cổng thanh toán.
+              Kỹ thuật viên đang hoàn tất danh mục kiểm tra an toàn & bàn giao thiết bị để mở cổng thanh toán.
             </Text>
           </Card>
         ) : null}
-        {o.status === 'repairing' && (o.pendingExternalEstimates || []).length > 0 ? (
+        {o.status === 'repairing' && getPendingExternalEstimates(o).length > 0 ? (
           <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.gold }}>
             <Text style={{ fontWeight: '800', color: C.goldInk, fontSize: 13.5 }}>
-              Có {o.pendingExternalEstimates.length} vật tư báo giá dao động đang chờ chốt
+              Có {getPendingExternalEstimates(o).length} vật tư báo giá dao động đang chờ chốt
             </Text>
             <Text style={{ color: C.ink2, marginTop: 4, lineHeight: 19, fontSize: 12.5 }}>
               Khi lắp đặt xong, thợ sẽ cập nhật mức giá cuối cùng của vật tư để bạn xác nhận tổng hoá đơn trước khi bàn giao & thanh toán.
@@ -999,10 +1019,10 @@ export function OrderScreen({ params }) {
               </Text>
               {o.lateCompensation && (o.lateCompensation.minutesLate || o.lateCompensation.amount) && o.lateCompensation.tier !== 'ok' ? (
                 <Text style={[ui.meta, { color: C.goldInk, fontWeight: '700', marginTop: 2 }]}>
-                  {o.lateCompensation.minutesLate ? `Check-in muộn ${o.lateCompensation.minutesLate} phút` : 'Check-in muộn so với giờ hẹn'}
+                  {o.lateCompensation.minutesLate ? `Đến nơi muộn ${o.lateCompensation.minutesLate} phút` : 'Đến nơi muộn so với giờ hẹn'}
                 </Text>
               ) : o.arrivedAt ? (
-                <Text style={[ui.meta, { color: C.green, fontWeight: '700', marginTop: 2 }]}>Đã check-in đúng chính sách giờ hẹn</Text>
+                <Text style={[ui.meta, { color: C.green, fontWeight: '700', marginTop: 2 }]}>Đã đến đúng chính sách giờ hẹn</Text>
               ) : null}
             </View>
             <IconBtn
@@ -1031,7 +1051,9 @@ export function OrderScreen({ params }) {
             <View style={{ marginTop: 8, gap: 4 }}>
               <Text style={{ color: C.ink2, fontSize: 12, fontWeight: '600' }}>✓ Đúng chuyên môn kỹ thuật thiết bị</Text>
               <Text style={{ color: C.ink2, fontSize: 12, fontWeight: '600' }}>✓ Phân bổ thợ khu vực {o.address?.district || 'của bạn'}</Text>
-              <Text style={{ color: C.ink2, fontSize: 12, fontWeight: '600' }}>✓ Cam kết bảo hành {tierWarrantyDays} ngày sau dịch vụ</Text>
+              {winfo.totalDays > 0 ? (
+                <Text style={{ color: C.ink2, fontSize: 12, fontWeight: '600' }}>✓ Cam kết bảo hành {winfo.totalDays} ngày sau dịch vụ</Text>
+              ) : null}
             </View>
           </Card>
         ) : null}
@@ -1057,7 +1079,7 @@ export function OrderScreen({ params }) {
             <InfoLine
               icon={catIcon(o.device.category)}
               label="Thiết bị tại nhà"
-              value={`${catLabel(o.device.category)}${o.device.brand ? ` · ${o.device.brand}` : ''}${o.device.room ? ` (${o.device.room})` : ''}${o.device.serial ? ` · SN: ${o.device.serial}` : ''}`}
+              value={`${catLabel(o.device.category)}${o.device.brand ? ` · ${o.device.brand}` : ''}${o.device.room ? ` (${o.device.room})` : ''}${o.device.serial ? ` · Số sê-ri: ${o.device.serial}` : ''}`}
             />
           ) : null}
           {o.siteCondition ? (
@@ -1095,11 +1117,19 @@ export function OrderScreen({ params }) {
 
         {/* ===== Thông tin thợ gửi lên & ảnh triệu chứng ban đầu ===== */}
         {(() => {
-          const hasDiagData = Boolean(o.quote || o.diagnosisReport);
+          const quoteRejected = o.quote?.status === 'REJECTED';
+          const rawQuoteLines = o.quote?.lines || [];
+          const activeDisplayLines = quoteRejected
+            ? rawQuoteLines.filter((l) => l.isOriginal || l.isPriorApproved)
+            : rawQuoteLines;
+          const hasDiagData = Boolean(
+            (o.quote && (!quoteRejected || activeDisplayLines.length > 0)) ||
+            o.diagnosisReport,
+          );
           const hasDiagPhotos = (o.attachments || []).length > 0 || evidence.some((e) => e.stage === 'diagnosis');
           if ((!hasDiagData && !hasDiagPhotos) || o.status === 'quoted') return null;
-          const diagSource = o.quote || o.diagnosisReport || {};
-          const lines = o.quote?.lines || [];
+          const diagSource = (!quoteRejected ? o.quote : null) || o.diagnosisReport || o.quote || {};
+          const lines = activeDisplayLines;
           const bookedIds = new Set((o.items || []).map((it) => it.id));
           const bookedNames = new Set((o.items || []).map((it) => String(it.name || '').trim().toLowerCase()));
           const isBooked = (l) => l.isOriginal || (!l.matId && !l.isCustom && l.type !== 'part' && (bookedIds.has(l.key) || bookedNames.has(String(l.name || '').trim().toLowerCase())));
@@ -1158,7 +1188,7 @@ export function OrderScreen({ params }) {
                   ) : null}
                   {o.comboDiscount ? (
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 3 }}>
-                      <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Ưu đãi {o.comboLabel || 'Combo nhiều máy (-5%)'}</Text>
+                      <Text style={[ui.meta, { fontSize: 13, color: C.green, flex: 1, paddingRight: 6 }]}>Ưu đãi {o.comboLabel || 'gộp nhiều máy (-5%)'}</Text>
                       <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: C.green }]}>-{formatVND(o.comboDiscount)}</Text>
                     </View>
                   ) : null}
@@ -1319,7 +1349,7 @@ export function OrderScreen({ params }) {
               ) : null}
               {(o.materials || []).length ? <Text style={[ui.meta, { marginTop: 6 }]}>Vật tư: {o.materials.map((m) => `${m.name} (${m.qty} ${m.unit})`).join(', ')}</Text> : null}
               <Text style={[ui.meta, { marginTop: 6 }]}>{fmtDateTime(o.report.at)} · Thợ {o.report.tech}</Text>
-              {o.status === 'done' && isPaid(o) && o.kind !== 'warranty' && o.kind !== 'followup' && orderItems.some((it) => ['clean', 'gas', 'repair', 'install'].includes(serviceKind(getService(it.id) || { id: it.id, kind: it.kind }))) ? (
+              {o.status === 'done' && isPaid(o) && o.kind !== 'warranty' && o.kind !== 'followup' && winfo.totalDays > 0 && !winfo.noWarranty ? (
                 <Btn
                   title="Xem Phiếu Nghiệm Thu & Bảo Hành Điện Tử"
                   icon="file-text"
@@ -1356,8 +1386,7 @@ export function OrderScreen({ params }) {
                   o.quote.status !== 'REJECTED';
                 const hasApprovedEst = Boolean(
                   o.quote?.approvedHasEstimatedRange &&
-                  !o.bill?.quotationTotal &&
-                  ((o.pendingExternalEstimates || []).length > 0 || o.quote?.revisionRequested),
+                  (getPendingExternalEstimates(o).length > 0 || o.quote?.revisionRequested),
                 );
                 const isEstQuote = Boolean(
                   (hasActiveQuote && o.quote.hasEstimatedRange) || hasApprovedEst,
@@ -1368,16 +1397,21 @@ export function OrderScreen({ params }) {
                 const estExtraMax = hasActiveQuote && o.quote.hasEstimatedRange
                   ? (Number(o.quote.extraMax) || 0)
                   : Math.max(estExtraMin, (Number(o.quote?.approvedTotalMax) || 0) - bookedValue(o));
+                const billExtra =
+                  (Number(o.bill?.supplementalTotal) || 0) +
+                  (o.bill?.quotationTotal != null
+                    ? Math.max(0, Number(o.bill.quotationTotal) - (Number(o.bill?.bookedAmount) || bookedValue(o)))
+                    : 0);
                 const quoteExtra = hasActiveQuote
-                  ? Number(o.quote.extraAmount) ||
-                    Math.max(0, (Number(o.quote.total) || 0) - bookedValue(o))
-                  : Number(o.bill?.supplementalTotal) ||
-                    Math.max(0, (Number(o.bill?.quotationTotal) || 0) - (Number(o.bill?.bookedAmount) || bookedValue(o)));
+                  ? (o.quote.approved && o.bill && (o.bill.quotationTotal != null || o.bill.supplementalTotal > 0)
+                      ? billExtra
+                      : (Number(o.quote.extraAmount) || Math.max(0, (Number(o.quote.total) || 0) - bookedValue(o))))
+                  : billExtra;
                 return (
                   <>
                     <Bill l="Tổng tiền dịch vụ" v={formatVND(o.goods)} />
                     {o.productDiscount ? <Bill l="Giảm giá dịch vụ" v={`-${formatVND(o.productDiscount)}`} green /> : null}
-                    {o.comboDiscount ? <Bill l={`Ưu đãi ${o.comboLabel || 'Combo nhiều máy'}`} v={`-${formatVND(o.comboDiscount)}`} green /> : null}
+                    {o.comboDiscount ? <Bill l={`Ưu đãi ${o.comboLabel || 'gộp nhiều máy'}`} v={`-${formatVND(o.comboDiscount)}`} green /> : null}
                     {isEstQuote && estExtraMax > 0 ? (
                       <Bill
                         l="Vật tư & phát sinh (dự kiến)"
@@ -1390,7 +1424,7 @@ export function OrderScreen({ params }) {
                       />
                     ) : null}
                     {partDisc ? <Bill l={`Ưu đãi hạng thành viên (−${o.bill?.tierPartDiscountPercent || 0}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
-                    {o.voucherDiscount ? <Bill l={`Voucher ${o.voucher?.code || ''}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
+                    {o.voucherDiscount ? <Bill l={`Mã giảm giá ${o.voucher?.code || ''}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
                     {lateDiscountAmount(o) ? <Bill l="Bồi thường thợ đến muộn" v={`−${formatVND(lateDiscountAmount(o))}`} green /> : null}
                     {o.bill?.paidAmount ? <Bill l="Đã thanh toán" v={formatVND(o.bill.paidAmount)} green /> : null}
                   </>
@@ -1424,8 +1458,7 @@ export function OrderScreen({ params }) {
                   o.quote.status !== 'REJECTED' &&
                   o.quote.hasEstimatedRange) ||
                   (o.quote?.approvedHasEstimatedRange &&
-                    !o.bill?.quotationTotal &&
-                    ((o.pendingExternalEstimates || []).length > 0 || o.quote?.revisionRequested)))
+                    (getPendingExternalEstimates(o).length > 0 || o.quote?.revisionRequested)))
                   ? 'Tổng thanh toán (dự kiến)'
                   : 'Tổng thanh toán'}
               </Text>
@@ -1460,11 +1493,11 @@ export function OrderScreen({ params }) {
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13 }}>Muốn chuyển khoản bằng mã QR?</Text>
                     <Text style={{ fontSize: 12, color: C.muted, marginTop: 2, lineHeight: 17 }}>
-                      Đổi sang VietQR để quét mã trên App — thợ sẽ không thu tiền mặt.
+                      Đổi sang VietQR để quét mã trên ứng dụng — thợ sẽ không thu tiền mặt.
                     </Text>
                   </View>
                   <Btn
-                    title="Đổi sang QR"
+                    title="Đổi sang chuyển khoản QR"
                     small
                     variant="primary"
                     onPress={() => u.confirm(
@@ -1482,7 +1515,7 @@ export function OrderScreen({ params }) {
                 <Text style={[ui.meta, { marginBottom: 8, color: C.ink2, textAlign: 'center' }]}>
                   Thanh toán phí dịch vụ kiểm tra thiết bị tại nhà {formatVND(o.inspectionFee)} cho thợ.
                 </Text>
-                <VietQRPay requestId={o.dbRequestId} onPaid={() => a.confirmPayment(o.code, 'webhook')} size={180} />
+                <VietQRPay requestId={o.dbRequestId} paused={!screenActive} onPaid={() => a.confirmPayment(o.code, 'webhook')} size={180} />
               </View>
             ) : null}
             {/* Nút "Xác nhận đã trả tiền" chỉ đặt ở thanh dưới (dock) để tránh hai nút trùng chức năng. */}
@@ -1503,7 +1536,9 @@ export function OrderScreen({ params }) {
               <IconBox icon="shield-check" size={40} bg={winfo.ok ? C.greenSoft : C.primarySoft} radius={13} />
               <View style={{ flex: 1 }}>
                 <Text style={mx.tlTitle}>
-                  Bảo hành {winfo.totalDays || tierWarrantyDays} ngày{o.customerTierLabel ? ` · Hạng ${o.customerTierLabel}` : ''}
+                  {winfo.totalDays > 0
+                    ? `Bảo hành ${winfo.totalDays} ngày${o.customerTierLabel ? ` · Hạng ${o.customerTierLabel}` : ''}`
+                    : 'Chính sách bảo hành'}
                 </Text>
                 <Text style={[ui.meta, winfo.ok && { color: C.green, fontWeight: '700' }]}>{winfo.text}</Text>
               </View>
@@ -1640,106 +1675,123 @@ export function OrderScreen({ params }) {
           />
         ) : null}
       </Sheet>
-      <Sheet
-        visible={showReject}
-        onClose={() => setShowReject(false)}
-        title={o.quote?.isExternalFinalization ? 'Yêu cầu kiểm tra lại giá vật tư' : 'Phản hồi báo giá'}
-        footer={(
-          <Btn
-            title={
-              quoteBusy
-                ? 'Đang gửi…'
-                : o.quote?.isExternalFinalization
-                  ? 'Gửi yêu cầu nhập lại giá'
-                  : rejectMode === 'revise'
-                    ? 'Gửi yêu cầu báo giá lại'
-                    : 'Xác nhận từ chối & huỷ đơn'
-            }
-            variant={o.quote?.isExternalFinalization || rejectMode === 'revise' ? 'primary' : 'danger'}
-            disabled={quoteBusy}
-            onPress={() => {
-              const reasonList = o.quote?.isExternalFinalization ? FINALIZE_REVISION_REASONS : REJECT_REASONS;
-              const chosen = reasonList.includes(rejectReason) ? rejectReason : reasonList[0];
-              const finalWhy = chosen === 'Lý do khác' ? rejectCustom.trim() : chosen;
-              if (chosen === 'Lý do khác' && finalWhy.length < 3) {
-                u.alert('Thiếu lý do', 'Vui lòng nhập ngắn gọn lý do phản hồi (tối thiểu 3 ký tự).', '✏️');
-                return;
-              }
-              setShowReject(false);
-              setRejectCustom('');
-              const sendRevise = o.quote?.isExternalFinalization || rejectMode === 'revise';
-              respondQuote(sendRevise ? 'revise' : false, finalWhy);
-            }}
-          />
-        )}
-      >
-        {!o.quote?.isExternalFinalization ? (
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-            <Tap
-              onPress={() => setRejectMode('revise')}
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-                paddingVertical: 12,
-                paddingHorizontal: 10,
-                borderWidth: 1.5,
-                borderRadius: R.md,
-                borderColor: rejectMode === 'revise' ? C.primary : C.line,
-                backgroundColor: rejectMode === 'revise' ? C.primarySoft : '#fff',
-              }}
-            >
-              <Radio on={rejectMode === 'revise'} />
-              <Text style={{ fontSize: 13, fontWeight: '800', color: rejectMode === 'revise' ? C.primary : C.ink, flex: 1 }}>Yêu cầu báo giá lại</Text>
-            </Tap>
-            <Tap
-              onPress={() => setRejectMode('cancel')}
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-                paddingVertical: 12,
-                paddingHorizontal: 10,
-                borderWidth: 1.5,
-                borderRadius: R.md,
-                borderColor: rejectMode === 'cancel' ? C.red : C.line,
-                backgroundColor: rejectMode === 'cancel' ? C.redSoft : '#fff',
-              }}
-            >
-              <Radio on={rejectMode === 'cancel'} />
-              <Text style={{ fontSize: 13, fontWeight: '800', color: rejectMode === 'cancel' ? C.red : C.ink, flex: 1 }}>Từ chối & Huỷ đơn</Text>
-            </Tap>
-          </View>
-        ) : null}
-        <Text style={[ui.meta, { fontSize: 13, marginBottom: 8 }]}>
-          {o.quote?.isExternalFinalization
-            ? 'Thợ đã hoàn thành sửa chữa và sẽ kiểm tra lại giá / hoá đơn mua ngoài rồi gửi lại để bạn nghiệm thu.'
-            : rejectMode === 'revise'
-              ? 'Thợ sẽ nhận được yêu cầu và điều chỉnh lại phương án / chi phí cho bạn.'
-              : 'Đơn hàng sẽ được huỷ ngay lập tức. Chính sách Minh Đức miễn phí 100% kiểm tra tại nhà (0đ), bạn không phải trả bất kỳ khoản phí nào.'}
-        </Text>
-        {(o.quote?.isExternalFinalization ? FINALIZE_REVISION_REASONS : REJECT_REASONS).map((r) => {
-          const reasonList = o.quote?.isExternalFinalization ? FINALIZE_REVISION_REASONS : REJECT_REASONS;
-          const active = (reasonList.includes(rejectReason) ? rejectReason : reasonList[0]) === r;
-          return (
-            <Tap key={r} style={mx.option} onPress={() => setRejectReason(r)}>
-              <Radio on={active} />
-              <Text style={{ fontSize: 15, color: C.ink, flex: 1 }}>{r}</Text>
-            </Tap>
-          );
-        })}
-        {rejectReason === 'Lý do khác' ? (
-          <Field
-            label="Nhập lý do chi tiết"
-            value={rejectCustom}
-            onChangeText={setRejectCustom}
-            placeholder="Nhập ngắn gọn điều bạn muốn thợ kiểm tra lại…"
-            style={{ marginTop: 6 }}
-          />
-        ) : null}
-      </Sheet>
+      {(() => {
+        const isRejectOnSite = Boolean(o.arrivedAt || o.checkIn || o.history?.some((h) => h.status === 'diagnosing'));
+        const isRejectSupplemental = o.quote?.quotationType === 'SUPPLEMENTAL';
+        const isExtFin = Boolean(o.quote?.isExternalFinalization);
+        return (
+          <Sheet
+            visible={showReject}
+            onClose={() => { if (!quoteBusy) setShowReject(false); }}
+            title={isExtFin ? 'Yêu cầu kiểm tra lại giá vật tư' : 'Phản hồi báo giá'}
+            footer={(
+              <Btn
+                title={
+                  quoteBusy
+                    ? 'Đang gửi…'
+                    : isExtFin
+                      ? 'Gửi yêu cầu nhập lại giá'
+                      : rejectMode === 'revise'
+                        ? 'Gửi yêu cầu báo giá lại'
+                        : isRejectSupplemental
+                          ? 'Xác nhận từ chối phát sinh'
+                          : 'Xác nhận từ chối & huỷ đơn'
+                }
+                variant={isExtFin || rejectMode === 'revise' ? 'primary' : 'danger'}
+                disabled={quoteBusy}
+                onPress={async () => {
+                  const reasonList = isExtFin ? FINALIZE_REVISION_REASONS : REJECT_REASONS;
+                  const chosen = reasonList.includes(rejectReason) ? rejectReason : reasonList[0];
+                  const finalWhy = chosen === 'Lý do khác' ? rejectCustom.trim() : chosen;
+                  if (chosen === 'Lý do khác' && finalWhy.length < 3) {
+                    u.alert('Thiếu lý do', 'Vui lòng nhập ngắn gọn lý do phản hồi (tối thiểu 3 ký tự).', '✏️');
+                    return;
+                  }
+                  const sendRevise = isExtFin || rejectMode === 'revise';
+                  const ok = await respondQuote(sendRevise ? 'revise' : false, finalWhy);
+                  if (ok) {
+                    setShowReject(false);
+                    setRejectCustom('');
+                  }
+                }}
+              />
+            )}
+          >
+            {!isExtFin ? (
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                <Tap
+                  onPress={() => setRejectMode('revise')}
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                    paddingVertical: 12,
+                    paddingHorizontal: 10,
+                    borderWidth: 1.5,
+                    borderRadius: R.md,
+                    borderColor: rejectMode === 'revise' ? C.primary : C.line,
+                    backgroundColor: rejectMode === 'revise' ? C.primarySoft : '#fff',
+                  }}
+                >
+                  <Radio on={rejectMode === 'revise'} />
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: rejectMode === 'revise' ? C.primary : C.ink, flex: 1 }}>Yêu cầu báo giá lại</Text>
+                </Tap>
+                <Tap
+                  onPress={() => setRejectMode('cancel')}
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 8,
+                    paddingVertical: 12,
+                    paddingHorizontal: 10,
+                    borderWidth: 1.5,
+                    borderRadius: R.md,
+                    borderColor: rejectMode === 'cancel' ? C.red : C.line,
+                    backgroundColor: rejectMode === 'cancel' ? C.redSoft : '#fff',
+                  }}
+                >
+                  <Radio on={rejectMode === 'cancel'} />
+                  <Text style={{ fontSize: 13, fontWeight: '800', color: rejectMode === 'cancel' ? C.red : C.ink, flex: 1 }}>
+                    {isRejectSupplemental ? 'Từ chối phát sinh' : 'Từ chối & Huỷ đơn'}
+                  </Text>
+                </Tap>
+              </View>
+            ) : null}
+            <Text style={[ui.meta, { fontSize: 13, marginBottom: 8 }]}>
+              {isExtFin
+                ? 'Thợ đã hoàn thành sửa chữa và sẽ kiểm tra lại giá / hoá đơn mua ngoài rồi gửi lại để bạn nghiệm thu.'
+                : rejectMode === 'revise'
+                  ? 'Thợ sẽ nhận được yêu cầu và điều chỉnh lại phương án / chi phí cho bạn.'
+                  : isRejectSupplemental
+                    ? 'Chỉ từ chối phần phát sinh mới, đơn hàng vẫn tiếp tục thực hiện các hạng mục đã đặt/đã duyệt.'
+                    : isRejectOnSite
+                      ? 'Huỷ sau khi thợ đã kiểm tra tại nhà có thể áp dụng phí kiểm tra theo chính sách hiện hành.'
+                      : 'Đơn hàng sẽ được huỷ miễn phí (0đ) trước khi thợ xuất phát.'}
+            </Text>
+            {(isExtFin ? FINALIZE_REVISION_REASONS : REJECT_REASONS).map((r) => {
+              const reasonList = isExtFin ? FINALIZE_REVISION_REASONS : REJECT_REASONS;
+              const active = (reasonList.includes(rejectReason) ? rejectReason : reasonList[0]) === r;
+              return (
+                <Tap key={r} style={mx.option} onPress={() => setRejectReason(r)}>
+                  <Radio on={active} />
+                  <Text style={{ fontSize: 15, color: C.ink, flex: 1 }}>{r}</Text>
+                </Tap>
+              );
+            })}
+            {rejectReason === 'Lý do khác' ? (
+              <Field
+                label="Nhập lý do chi tiết"
+                value={rejectCustom}
+                onChangeText={setRejectCustom}
+                placeholder="Nhập ngắn gọn điều bạn muốn thợ kiểm tra lại…"
+                style={{ marginTop: 6 }}
+              />
+            ) : null}
+          </Sheet>
+        );
+      })()}
       <Sheet
         visible={showEdit}
         onClose={() => setShowEdit(false)}
@@ -1998,7 +2050,7 @@ export function RewardsScreen({ params }) {
         <View style={mx.pointsHero}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <View>
-              <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '600' }}>Điểm khả dụng (Đổi voucher)</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: '600' }}>Điểm khả dụng (Đổi mã giảm giá)</Text>
               <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
                 <Text style={{ color: '#FFFFFF', fontSize: 38, fontWeight: '900' }}>{s.points}</Text>
                 <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14, fontWeight: '700' }}>điểm tiêu dùng</Text>
@@ -2041,7 +2093,7 @@ export function RewardsScreen({ params }) {
               {next ? `Cần thêm ${next.min - lp} điểm để lên hạng ${next.label}` : 'Bạn đã đạt thứ hạng cao nhất (Kim cương)!'}
             </Text>
             <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>
-              Đổi voucher không trừ điểm hạng
+              Đổi mã giảm giá không trừ điểm hạng
             </Text>
           </View>
         </View>
@@ -2108,8 +2160,8 @@ export function RewardsScreen({ params }) {
           </Text>
         </Card>
 
-        {/* 1. ĐỔI ĐIỂM LẤY VOUCHER (Ưu tiên đưa lên trên để khách dễ dàng sử dụng điểm) */}
-        <SectionTitle title="Đổi điểm lấy voucher" />
+        {/* 1. ĐỔI ĐIỂM LẤY MÃ GIẢM GIÁ (Ưu tiên đưa lên trên để khách dễ dàng sử dụng điểm) */}
+        <SectionTitle title="Đổi điểm lấy mã giảm giá" />
         {(s.redeemOptions || []).length === 0 ? <Text style={ui.meta}>Hiện chưa có ưu đãi đổi điểm.</Text> : null}
         {(s.redeemOptions || []).map((r) => {
           const enough = s.points >= r.cost;
@@ -2125,24 +2177,22 @@ export function RewardsScreen({ params }) {
                 small
                 variant={enough ? 'primary' : 'ghost'}
                 disabled={!enough}
-                onPress={() => u.confirm('Đổi voucher?', `Dùng ${r.cost} điểm để đổi ${String(r.title || '').toLowerCase()}.`, () => {
-                  callAction(a.redeem, r.id).catch((e) => u.alert('Chưa đổi được', errorText(e, 'Không đổi được voucher. Vui lòng thử lại.'), '⚠️'));
+                onPress={() => u.confirm('Đổi mã giảm giá?', `Dùng ${r.cost} điểm để đổi ${String(r.title || '').toLowerCase()}.`, () => {
+                  callAction(a.redeem, r.id).catch((e) => u.alert('Chưa đổi được', errorText(e, 'Không đổi được mã giảm giá. Vui lòng thử lại.'), '⚠️'));
                 }, 'Đổi ngay')}
               />
             </Card>
           );
         })}
 
-        {/* 2. VÍ VOUCHER */}
+        {/* 2. VÍ MÃ GIẢM GIÁ */}
         {(() => {
-          const nowTs = Date.now();
-          const validWallet = [...(s.myVouchers || []), ...(s.publicVouchers || [])]
-            .filter((v) => !v.expiresAt || v.expiresAt > nowTs);
+          const validWallet = getValidVouchers(s.myVouchers, s.publicVouchers);
           return (
             <>
-              <SectionTitle title={`Ví voucher (${validWallet.length})`} />
-              {validWallet.map((v) => (
-                <View key={v.code} style={mx.ticket}>
+              <SectionTitle title={`Ví mã giảm giá (${validWallet.length})`} />
+              {validWallet.map((v, idx) => (
+                <View key={`${v.customerVoucherId || v.code}-${idx}`} style={mx.ticket}>
                   <View style={[mx.ticketLeft, v.wallet && { backgroundColor: C.primary }]}>
                     <AppIcon icon={v.wallet ? 'gift' : 'ticket'} size={22} color={v.wallet ? '#fff' : C.primary} strokeWidth={2.1} />
                   </View>
@@ -2216,7 +2266,7 @@ export function RewardsScreen({ params }) {
             >
               <IconBox icon="gift" size={30} bg={C.primarySoft} color={C.primary} radius={8} />
               <View>
-                <Text style={{ fontSize: 10.5, color: C.muted, fontWeight: '600' }}>Đã đổi voucher</Text>
+                <Text style={{ fontSize: 10.5, color: C.muted, fontWeight: '600' }}>Đã đổi mã giảm giá</Text>
                 <Text style={{ fontSize: 14, fontWeight: '900', color: C.ink }}>-{totalSpent} điểm</Text>
               </View>
             </View>
@@ -2465,17 +2515,17 @@ export function ProfileScreen() {
         if (res.alreadyVerified) setShowOtp(false);
         else setOtpSent(true);
       } else {
-        setOtpErr(errorText(res, 'Không thể gửi mã OTP.'));
+        setOtpErr(errorText(res, 'Không thể gửi mã xác thực.'));
       }
     } catch (e) {
-      setOtpErr(errorText(e, 'Không thể gửi mã OTP. Vui lòng thử lại.'));
+      setOtpErr(errorText(e, 'Không thể gửi mã xác thực. Vui lòng thử lại.'));
     } finally {
       setOtpSending(false);
     }
   };
 
   const verifyOtp = () => runVerify(async () => {
-    if (otpInput.length !== 6) { setOtpErr('Vui lòng nhập đủ 6 chữ số của mã OTP.'); return; }
+    if (otpInput.length !== 6) { setOtpErr('Vui lòng nhập đủ 6 chữ số của mã xác thực.'); return; }
     setOtpErr('');
     try {
       const res = (await callAction(a.verifyEmailOtp, otpInput)) || {};
@@ -2484,10 +2534,10 @@ export function ProfileScreen() {
         setOtpInput('');
         setOtpSent(false);
       } else {
-        setOtpErr(errorText(res, 'Mã OTP không chính xác.'));
+        setOtpErr(errorText(res, 'Mã xác thực không chính xác.'));
       }
     } catch (e) {
-      setOtpErr(errorText(e, 'Không xác thực được mã OTP. Vui lòng thử lại.'));
+      setOtpErr(errorText(e, 'Không xác thực được mã xác thực. Vui lòng thử lại.'));
     }
   });
 
@@ -2595,18 +2645,18 @@ export function ProfileScreen() {
             placeholder="Ngày/tháng/năm (VD: 15/08/1995)"
             error={err.dob}
           />
-          <Field label="Email (tài khoản đăng nhập, không sửa ở đây)" value={email} editable={false} />
+          <Field label="Thư điện tử (tài khoản đăng nhập, không sửa ở đây)" value={email} editable={false} />
           <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.line, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
             {s.auth?.emailVerified ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Badge text="✓ Đã xác thực Email" fg={C.green} bg={C.greenSoft} />
+                <Badge text="✓ Đã xác thực thư điện tử" fg={C.green} bg={C.greenSoft} />
                 <Text style={ui.meta}>Đủ điều kiện đặt lịch dịch vụ</Text>
               </View>
             ) : (
               <>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '800', color: C.goldInk, fontSize: 13 }}>Email chưa xác thực</Text>
-                  <Text style={ui.meta}>Bắt buộc xác thực OTP để đặt dịch vụ</Text>
+                  <Text style={{ fontWeight: '800', color: C.goldInk, fontSize: 13 }}>Thư điện tử chưa xác thực</Text>
+                  <Text style={ui.meta}>Bắt buộc xác thực mã 6 số để đặt dịch vụ</Text>
                 </View>
                 <Tap
                   onPress={() => {
@@ -2626,9 +2676,9 @@ export function ProfileScreen() {
         </Card>
       </ScrollView>
       <View style={mx.dock}><Btn title={saving ? 'Đang lưu…' : 'Lưu thay đổi'} disabled={saving} style={{ flex: 1 }} onPress={save} /></View>
-      <Sheet visible={showOtp} onClose={() => setShowOtp(false)} title="Xác thực Email (OTP 6 số)" footer={<Btn title={otpVerifying ? 'Đang kiểm tra…' : 'Xác nhận mã OTP'} disabled={otpVerifying} onPress={verifyOtp} />}>
+      <Sheet visible={showOtp} onClose={() => setShowOtp(false)} title="Xác thực thư điện tử (6 số)" footer={<Btn title={otpVerifying ? 'Đang kiểm tra…' : 'Xác nhận mã'} disabled={otpVerifying} onPress={verifyOtp} />}>
         <Text style={{ color: C.ink2, lineHeight: 20, marginBottom: 12 }}>
-          Nhập mã xác thực 6 chữ số được gửi tới địa chỉ Email:{' '}
+          Nhập mã xác thực 6 chữ số được gửi tới địa chỉ thư điện tử:{' '}
           <Text style={{ fontWeight: '800', color: C.ink }}>{email || s.auth?.email}</Text>
         </Text>
         <View
@@ -2646,14 +2696,14 @@ export function ProfileScreen() {
         >
           <AppIcon name="mail-open" size={20} color={C.navy} strokeWidth={2.2} />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 12.5, color: C.navy, fontWeight: '700' }}>Kiểm tra hộp thư Email</Text>
+            <Text style={{ fontSize: 12.5, color: C.navy, fontWeight: '700' }}>Kiểm tra hộp thư điện tử</Text>
             <Text style={{ fontSize: 12, color: C.primary, marginTop: 2 }}>
-              Mã OTP 6 chữ số đã được gửi tới {email || s.auth?.email} (hiệu lực {OTP_TTL_MINUTES} phút).
+              Mã xác thực 6 chữ số đã được gửi tới {email || s.auth?.email} (hiệu lực {OTP_TTL_MINUTES} phút).
             </Text>
           </View>
         </View>
         <Field
-          label="Mã OTP (6 chữ số)"
+          label="Mã xác thực (6 chữ số)"
           value={otpInput}
           onChangeText={(t) => { setOtpInput(t.replace(/\D/g, '').slice(0, 6)); setOtpErr(''); }}
           keyboardType="number-pad"
@@ -2663,7 +2713,7 @@ export function ProfileScreen() {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
           <Text style={ui.meta}>Hiệu lực trong {OTP_TTL_MINUTES} phút</Text>
           <Tap onPress={sendOtp} disabled={otpSending}>
-            <Text style={ui.link}>{otpSending ? 'Đang gửi...' : 'Gửi lại mã OTP'}</Text>
+            <Text style={ui.link}>{otpSending ? 'Đang gửi...' : 'Gửi lại mã xác thực'}</Text>
           </Tap>
         </View>
       </Sheet>
@@ -2687,7 +2737,7 @@ export function ProfileScreen() {
         <View style={{ padding: 12, borderRadius: R.md, backgroundColor: C.redSoft, borderWidth: 1, borderColor: C.redBorder, marginBottom: 12 }}>
           <Text style={{ fontWeight: '800', color: C.redInk, fontSize: 13.5 }}>Lưu ý quan trọng</Text>
           <Text style={{ color: C.redInk, fontSize: 12.5, marginTop: 4, lineHeight: 18 }}>
-            Tài khoản và toàn bộ lịch sử, voucher, điểm thưởng sẽ bị xoá vĩnh viễn và không thể khôi phục. Nếu còn đơn đang xử lý, vui lòng hoàn thành hoặc huỷ đơn trước.
+            Tài khoản và toàn bộ lịch sử, mã giảm giá, điểm thưởng sẽ bị xoá vĩnh viễn và không thể khôi phục. Nếu còn đơn đang xử lý, vui lòng hoàn thành hoặc huỷ đơn trước.
           </Text>
         </View>
         <Field
@@ -2713,7 +2763,7 @@ export function HelpScreen() {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }}>
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {[
-            { i: 'phone-call', t: 'Gọi hotline', onPress: u.call },
+            { i: 'phone-call', t: 'Gọi tổng đài', onPress: u.call },
             { i: 'shield-check', t: 'Bảo hành', onPress: () => nav.warranty() },
             { i: 'clipboard-list', t: 'Đơn của tôi', onPress: () => nav.activity() },
           ].map((x) => (
@@ -2743,7 +2793,7 @@ export function TermsScreen() {
     ['1. Phạm vi áp dụng', 'Điều khoản áp dụng cho mọi khách hàng đặt dịch vụ kỹ thuật tại nhà qua ứng dụng Thợ Minh Đức.'],
     ['2. Đặt lịch & huỷ lịch', `Khách hàng có thể huỷ đơn miễn phí khi thợ chưa bắt đầu di chuyển và còn tối thiểu ${FREE_CANCEL_MIN_BEFORE} phút trước giờ hẹn. Lịch hẹn được xác nhận trực tiếp trên ứng dụng.`],
     ['3. Giá & thanh toán', 'Giá hiển thị gồm nhân công. Vật tư, linh kiện phát sinh được báo giá và chỉ thực hiện khi khách đồng ý.'],
-    ['4. Bảo hành', 'Dịch vụ vệ sinh, nạp gas được bảo hành 60 ngày kể từ ngày hoàn thành.'],
+    ['4. Bảo hành', 'Thời hạn bảo hành áp dụng theo từng dịch vụ và hiển thị chi tiết trên phiếu bảo hành điện tử kể từ ngày hoàn thành.'],
     ['5. Điểm thưởng', 'Điểm được cộng khi đơn hoàn thành, không quy đổi thành tiền mặt và không chuyển nhượng.'],
     ['6. Bảo mật', 'Thông tin cá nhân chỉ dùng để phục vụ đơn hàng và chăm sóc khách hàng.'],
   ];
@@ -2772,7 +2822,6 @@ const mx = StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   addSq: { width: 34, height: 34, borderRadius: 11, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center' },
   notif: { flexDirection: 'row', gap: 12, padding: 14, backgroundColor: '#fff', borderRadius: R.lg, marginBottom: 10, borderWidth: 1, borderColor: C.line },
-  notifUnread: { backgroundColor: C.card, borderColor: C.primaryBorder },
   notifTitle: { fontSize: 14, fontWeight: '800', color: C.ink2, lineHeight: 19 },
   notifBody: { fontSize: 13, color: C.muted, lineHeight: 18, marginTop: 2 },
   dot: { width: 9, height: 9, borderRadius: 5, backgroundColor: C.primary, marginTop: 6 },
@@ -2789,7 +2838,6 @@ const mx = StyleSheet.create({
   option: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.line },
   bonus: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: R.md, padding: 14, marginTop: 16 },
   pointsHero: { backgroundColor: C.navy, ...grad.navyHero, borderRadius: 22, padding: 20, overflow: 'hidden', ...shadow.md },
-  blob: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.07)' },
   tiers: { flexDirection: 'row', gap: 8, marginTop: 12 },
   tierItem: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, backgroundColor: C.card },
   ticket: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: R.md, marginBottom: 10, overflow: 'hidden', borderWidth: 1, borderColor: C.line, ...shadow.sm },
@@ -2801,12 +2849,6 @@ const mx = StyleSheet.create({
   dayOn: { backgroundColor: C.primary, borderColor: C.primary },
   dayLabel: { fontSize: 12, color: C.muted, fontWeight: '600' },
   dayDate: { fontSize: 14, color: C.ink, fontWeight: '800', marginTop: 2 },
-  slot: { paddingHorizontal: 10, height: 36, borderRadius: 11, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  slotOn: { backgroundColor: C.navy, borderColor: C.navy },
-  slotText: { fontSize: 12, color: C.ink, fontWeight: '700' },
   bigAvatar: { width: 92, height: 92, borderRadius: 32, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
-  qrCard: { width: '100%', maxWidth: 340, backgroundColor: '#fff', borderRadius: 26, padding: 22, alignItems: 'center', ...shadow.lg },
-  devGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  devType: { width: '31%', height: 92, borderRadius: R.lg, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
   fl: { fontSize: 13, fontWeight: '700', color: C.ink2, marginTop: 18, marginBottom: 8 },
 });

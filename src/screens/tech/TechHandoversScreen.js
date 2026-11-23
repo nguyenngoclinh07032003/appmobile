@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { C, R, shadow } from '../../theme';
 import { formatVND } from '../../constants/data';
 import { toVnParts } from '../../utils/vnTime';
 import { useApp } from '../../context/AppContext';
 import { hrmssApi } from '../../services/api';
 import { subscribeSocketEvent } from '../../services/socketService';
+import { toVietnamese } from '../../utils/viText';
 import {
   AppIcon, Badge, Btn, Card, EmptyState, Field, Segmented, Tap, TopBar, ui,
 } from '../../components';
@@ -35,13 +36,14 @@ const fmtDt = (iso) => {
 };
 
 export function TechHandoversScreen({ params }) {
-  const { ui: u } = useApp();
+  const { s, ui: u } = useApp();
   const [tab, setTab] = useState(params?.tab === 'history' ? 'history' : 'pending');
   const [pendingItems, setPendingItems] = useState([]);
   const [pendingTotal, setPendingTotal] = useState(0);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [notes, setNotes] = useState('');
   const [historyItems, setHistoryItems] = useState([]);
+  const [historyTotalCount, setHistoryTotalCount] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -57,6 +59,9 @@ export function TechHandoversScreen({ params }) {
   statusFilterRef.current = statusFilter;
   const submittingRef = useRef(false);
   const historyReqSeqRef = useRef(0);
+  const hasLoadedPendingRef = useRef(false);
+  const prevPendingIdsRef = useRef(new Set());
+  const lastAutoRefreshRef = useRef(0);
 
   const loadPending = useCallback(async () => {
     const res = await hrmssApi.getTechnicianPendingHandovers();
@@ -74,17 +79,39 @@ export function TechHandoversScreen({ params }) {
     const items = Array.isArray(res.data?.items) ? res.data.items : [];
     setPendingItems(items);
     setPendingTotal(Number(res.data?.total_amount) || 0);
-    // Mặc định chọn toàn bộ khoản tiền mặt chưa nộp (theo tài liệu FE_CASH_HANDOVER_RECORDS_BILL).
-    setSelectedIds(new Set(items.map((it) => String(it.payment_id))));
+    // Mặc định chọn toàn bộ ở lần tải đầu; các lần làm mới sau giữ nguyên lựa chọn bỏ tick của thợ và chỉ tự chọn khoản mới.
+    const nextIds = items.map((it) => String(it.payment_id));
+    const nextSet = new Set(nextIds);
+    if (!hasLoadedPendingRef.current) {
+      hasLoadedPendingRef.current = true;
+      setSelectedIds(nextSet);
+    } else {
+      const prevKnown = prevPendingIdsRef.current;
+      setSelectedIds((prevSelected) => {
+        const nextSelected = new Set();
+        nextIds.forEach((id) => {
+          if (prevSelected.has(id) || !prevKnown.has(id)) {
+            nextSelected.add(id);
+          }
+        });
+        return nextSelected;
+      });
+    }
+    prevPendingIdsRef.current = nextSet;
   }, []);
 
-  const loadHistory = useCallback(async (st = statusFilterRef.current) => {
+  const loadHistory = useCallback(async (st = statusFilterRef.current, { clearOnStart = false } = {}) => {
     const reqId = ++historyReqSeqRef.current;
     setHistoryLoading(true);
+    if (clearOnStart) {
+      setHistoryItems([]);
+      setHistoryError('');
+    }
     try {
       const res = await hrmssApi.getTechnicianHandovers({ status: st, page: 1, limit: 30 });
       if (reqId !== historyReqSeqRef.current) return;
       if (!res.ok) {
+        if (clearOnStart) setHistoryItems([]);
         if (res.status === 404) {
           setHistoryApiUnavailable(true);
           setHistoryError('');
@@ -95,7 +122,12 @@ export function TechHandoversScreen({ params }) {
       }
       setHistoryApiUnavailable(false);
       setHistoryError('');
-      setHistoryItems(Array.isArray(res.data?.items) ? res.data.items : []);
+      const items = Array.isArray(res.data?.items) ? res.data.items : [];
+      setHistoryItems(items);
+      if (!st) {
+        const totalCnt = res.data?.pagination?.total ?? res.data?.total;
+        setHistoryTotalCount(totalCnt != null ? Number(totalCnt) : items.length);
+      }
     } finally {
       if (reqId === historyReqSeqRef.current) setHistoryLoading(false);
     }
@@ -120,16 +152,39 @@ export function TechHandoversScreen({ params }) {
     if (params?.tab === 'history') setTab('history');
   }, [params?.tab]);
 
-  // Tự tải lại khi có thông báo HANDOVER_CONFIRMED / HANDOVER_REJECTED qua socket.
+  const triggerAutoRefresh = useCallback(() => {
+    const now = Date.now();
+    if (now - lastAutoRefreshRef.current < 1500) return;
+    lastAutoRefreshRef.current = now;
+    loadAll(false);
+  }, [loadAll]);
+
+  // Tự tải lại khi có thông báo HANDOVER_CONFIRMED / HANDOVER_REJECTED qua socket hoặc đồng bộ thông báo.
   useEffect(() => {
     const off = subscribeSocketEvent('notification:new', (n) => {
       const nType = n?.notification_type || n?.type;
       if (nType === 'HANDOVER_CONFIRMED' || nType === 'HANDOVER_REJECTED') {
-        loadAll(false);
+        triggerAutoRefresh();
       }
     });
     return off;
-  }, [loadAll]);
+  }, [triggerAutoRefresh]);
+
+  const handoverNotifSig = useMemo(
+    () =>
+      (s?.techNotifs || [])
+        .filter((n) => ['HANDOVER_CONFIRMED', 'HANDOVER_REJECTED'].includes(String(n?.type || '').toUpperCase()))
+        .map((n) => `${n.at || 0}:${n.id || ''}`)
+        .join('|'),
+    [s?.techNotifs],
+  );
+  const prevHandoverNotifSigRef = useRef(handoverNotifSig);
+  useEffect(() => {
+    if (handoverNotifSig !== prevHandoverNotifSigRef.current) {
+      prevHandoverNotifSigRef.current = handoverNotifSig;
+      triggerAutoRefresh();
+    }
+  }, [handoverNotifSig, triggerAutoRefresh]);
 
   const selectedAmount = useMemo(
     () => pendingItems
@@ -203,7 +258,7 @@ export function TechHandoversScreen({ params }) {
           onChange={setTab}
           items={[
             { id: 'pending', label: `Nộp tiền (${pendingItems.length})` },
-            { id: 'history', label: `Lịch sử (${historyItems.length})` },
+            { id: 'history', label: `Lịch sử (${historyTotalCount != null ? historyTotalCount : historyItems.length})` },
           ]}
         />
       </View>
@@ -215,9 +270,9 @@ export function TechHandoversScreen({ params }) {
       >
         {apiUnavailable ? (
           <Card style={{ backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.gold }}>
-            <Text style={{ fontWeight: '800', color: C.goldInk }}>Máy chủ chưa cập nhật API bàn giao tiền</Text>
+            <Text style={{ fontWeight: '800', color: C.goldInk }}>Hệ thống chưa hỗ trợ tính năng bàn giao tiền mặt</Text>
             <Text style={{ color: C.ink2, marginTop: 4, lineHeight: 20 }}>
-              Tính năng bàn giao tiền mặt cần backend bản mới trên VPS. Kéo làm mới lại sau khi backend deploy xong.
+              Tính năng bàn giao tiền mặt đang chờ máy chủ cập nhật phiên bản mới. Vui lòng kéo làm mới lại sau.
             </Text>
           </Card>
         ) : loadError ? (
@@ -229,7 +284,12 @@ export function TechHandoversScreen({ params }) {
         ) : null}
 
         {tab === 'pending' ? (
-          pendingApiUnavailable || (pendingError && pendingItems.length === 0) ? null : (
+          pendingApiUnavailable || (pendingError && pendingItems.length === 0) ? null : loading && pendingItems.length === 0 ? (
+            <Card style={{ alignItems: 'center', paddingVertical: 28, gap: 10 }}>
+              <ActivityIndicator color={C.primary} />
+              <Text style={ui.meta}>Đang tải danh sách tiền mặt chờ nộp…</Text>
+            </Card>
+          ) : (
           <>
             <Card style={{ backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary, ...shadow.sm }}>
               <Text style={{ color: C.ink2, fontSize: 12.5, fontWeight: '600' }}>Tổng tiền mặt đang giữ chưa nộp</Text>
@@ -240,7 +300,7 @@ export function TechHandoversScreen({ params }) {
             {pendingItems.length === 0 ? (
               <EmptyState
                 icon="check-circle"
-                title={loading ? 'Đang tải…' : 'Không còn tiền mặt chờ nộp'}
+                title="Không còn tiền mặt chờ nộp"
                 body="Mọi khoản tiền mặt bạn thu đã được lập đợt nộp hoặc chưa có khoản mới."
               />
             ) : (
@@ -303,7 +363,7 @@ export function TechHandoversScreen({ params }) {
                     style={[hs.chip, active && hs.chipActive]}
                     onPress={() => {
                       setStatusFilter(f.id);
-                      loadHistory(f.id);
+                      loadHistory(f.id, { clearOnStart: true });
                     }}
                   >
                     <Text style={[hs.chipText, active && hs.chipTextActive]}>{f.label}</Text>
@@ -312,17 +372,22 @@ export function TechHandoversScreen({ params }) {
               })}
             </ScrollView>
 
-            {historyItems.length === 0 ? (
-              historyError ? null : (
+            {historyError ? null : historyLoading && historyItems.length === 0 ? (
+              <Card style={{ alignItems: 'center', paddingVertical: 28, gap: 10 }}>
+                <ActivityIndicator color={C.primary} />
+                <Text style={ui.meta}>Đang tải lịch sử bàn giao…</Text>
+              </Card>
+            ) : historyItems.length === 0 ? (
               <EmptyState
                 icon="receipt-text"
-                title={loading || historyLoading ? 'Đang tải…' : 'Chưa có đợt nộp tiền nào'}
+                title="Chưa có đợt nộp tiền nào"
                 body="Các đợt bàn giao tiền mặt bạn gửi về văn phòng sẽ hiển thị tại đây."
               />
-              )
             ) : (
               historyItems.map((h) => {
-                const meta = HANDOVER_STATUS_META[h.handover_status] || { label: h.handover_status, fg: C.ink2, bg: C.surface };
+                const statusUpper = String(h.handover_status || '').toUpperCase();
+                const isRejected = statusUpper === 'REJECTED';
+                const meta = HANDOVER_STATUS_META[statusUpper] || { label: toVietnamese(h.handover_status, 'Đang cập nhật'), fg: C.ink2, bg: C.surface };
                 const items = Array.isArray(h.items) ? h.items : [];
                 return (
                   <Card key={h.handover_id} style={{ marginBottom: 12 }}>
@@ -348,9 +413,9 @@ export function TechHandoversScreen({ params }) {
                     ) : null}
 
                     {h.notes ? (
-                      <View style={[hs.noteBox, h.handover_status === 'REJECTED' && { backgroundColor: C.redSoft, borderColor: C.redBorder }]}>
-                        <Text style={{ color: h.handover_status === 'REJECTED' ? C.redInk : C.ink2, fontSize: 13, lineHeight: 19 }}>
-                          {h.notes}
+                      <View style={[hs.noteBox, isRejected && { backgroundColor: C.redSoft, borderColor: C.redBorder }]}>
+                        <Text style={{ color: isRejected ? C.redInk : C.ink2, fontSize: 13, lineHeight: 19 }}>
+                          {toVietnamese(h.notes, 'Ghi chú đối soát')}
                         </Text>
                       </View>
                     ) : null}

@@ -3,6 +3,13 @@ import { getItem, setItem } from './storage';
 
 // Trạng thái bật/tắt âm thanh (lưu qua localStorage trên Web & AsyncStorage trên Native để giữ qua các lần mở lại)
 const SOUND_MUTE_KEY = 'tho-hrmss-sound-muted-v1';
+let muteTouched = false;
+const muteListeners = new Set();
+const notifyMuteListeners = (val) => {
+  muteListeners.forEach((fn) => {
+    try { fn(val); } catch (_e) {}
+  });
+};
 let soundMuted = (() => {
   try {
     return typeof localStorage !== 'undefined' && localStorage.getItem(SOUND_MUTE_KEY) === '1';
@@ -13,14 +20,14 @@ let soundMuted = (() => {
 if (Platform.OS !== 'web') {
   Promise.resolve(getItem(SOUND_MUTE_KEY, 'local'))
     .then((saved) => {
-      if (saved != null) soundMuted = saved === '1';
+      if (!muteTouched && saved != null) {
+        soundMuted = saved === '1';
+        notifyMuteListeners(soundMuted);
+      }
     })
     .catch(() => {});
 }
 const persistMuted = (v) => {
-  try {
-    if (typeof localStorage !== 'undefined') localStorage.setItem(SOUND_MUTE_KEY, v ? '1' : '0');
-  } catch (e) { /* bỏ qua */ }
   setItem(SOUND_MUTE_KEY, v ? '1' : '0', 'local').catch(() => {});
 };
 
@@ -47,7 +54,7 @@ if (Platform.OS === 'web' && typeof window !== 'undefined') {
     try {
       const ctx = getAudioContext();
       if (ctx && ctx.state === 'suspended') {
-        ctx.resume();
+        ctx.resume().catch(() => {});
       }
     } catch (e) {}
     window.removeEventListener('click', unlockAudio);
@@ -139,14 +146,17 @@ export function isSoundMuted() {
   return soundMuted;
 }
 
-export function setSoundMuted(muted) {
-  soundMuted = Boolean(muted);
-  persistMuted(soundMuted);
+export function subscribeSoundMuted(fn) {
+  if (typeof fn !== 'function') return () => {};
+  muteListeners.add(fn);
+  return () => muteListeners.delete(fn);
 }
 
 export function toggleSoundMuted() {
+  muteTouched = true;
   soundMuted = !soundMuted;
   persistMuted(soundMuted);
+  notifyMuteListeners(soundMuted);
   if (!soundMuted) {
     playNotificationSound('success');
   }

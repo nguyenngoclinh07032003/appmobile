@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Animated, Easing, Image } from 'react-native';
 import { C, R, shadow, toneOf, grad } from '../../theme';
 import {
-  CATEGORIES, SERVICES, REPAIR_SERVICES, ALL_SERVICES, COMMITMENTS, SERVICE_TYPES, TIPS, PARTNERS, CAT_SHORT, HOTLINE, catLabel, catIcon, getService, formatVND, normalize, tierOf,
+  CATEGORIES, SERVICES, REPAIR_SERVICES, ALL_SERVICES, COMMITMENTS, SERVICE_TYPES, TIPS, CAT_SHORT, HOTLINE, catLabel, catIcon, getService, formatVND, normalize, tierOf,
 } from '../../constants/data';
-import { useApp, customerStatusMeta, formatOrderTotal, amountRemaining } from '../../context';
+import { useApp, customerStatusMeta, formatOrderTotal, amountRemaining, countValidVouchers } from '../../context';
+import { useScreenActive } from '../../navigation/ScreenActiveContext';
 import {
   Tap, IconBtn, IconBox, Card, SectionTitle, ServiceCard, Sheet, Btn, StatusChip, Media, Badge, ui, HScroll, AppIcon,
 } from '../../components';
@@ -15,7 +16,7 @@ const COMMIT_ICON = ['clock', 'award', 'handshake', 'smile'];
 
 const PARTNER_ROWS = [
   [
-    { name: 'NANOMAX', sub: 'Pro Audio', weight: '900' },
+    { name: 'NANOMAX', sub: 'Âm thanh chuyên nghiệp', weight: '900' },
     { name: 'Panasonic', weight: '900' },
     { name: 'SONY', weight: '900', letterSpacing: 1.5 },
     { name: 'Teka', weight: '900', italic: true },
@@ -77,9 +78,11 @@ function PartnerBrandItem({ item }) {
 
 function PartnerMarqueeRow({ items, direction = 'right', duration = 22000 }) {
   const anim = useRef(new Animated.Value(0)).current;
+  const screenActive = useScreenActive();
   const ROW_WIDTH = items.length * 132;
 
   useEffect(() => {
+    if (!screenActive) return undefined;
     anim.setValue(0);
     const loop = Animated.loop(
       Animated.timing(anim, {
@@ -91,7 +94,7 @@ function PartnerMarqueeRow({ items, direction = 'right', duration = 22000 }) {
     );
     loop.start();
     return () => loop.stop();
-  }, [anim, duration]);
+  }, [anim, duration, screenActive]);
 
   const translateX = anim.interpolate({
     inputRange: [0, 1],
@@ -129,7 +132,7 @@ export default function HomeScreen() {
       <View style={st.header}>
         <View style={st.headRow}>
           <View style={{ flex: 1, marginRight: 8, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Image source={require('../../../assets/app-icon.png')} style={st.homeBrandLogo} resizeMode="cover" accessibilityLabel="Logo Thợ Minh Đức" />
+            <Image source={require('../../../assets/app-icon.png')} style={st.homeBrandLogo} resizeMode="cover" accessibilityLabel="Biểu trưng Thợ Minh Đức" />
             <View style={{ flex: 1 }}>
               <Text style={st.hello} numberOfLines={1}>
                 {firstName ? `Xin chào, ${firstName}` : 'Xin chào Quý khách'}
@@ -170,8 +173,8 @@ export default function HomeScreen() {
           { value: s.points, label: 'Điểm tích luỹ', onPress: () => nav.push('rewards') },
           { value: d.activeOrders.length, label: 'Đang xử lý', onPress: () => nav.activity('active') },
           {
-            value: (s.myVouchers || []).filter((v) => !v.expiresAt || v.expiresAt > Date.now()).length,
-            label: 'Voucher',
+            value: countValidVouchers(s.myVouchers, s.publicVouchers),
+            label: 'Mã giảm giá',
             onPress: () => nav.push('rewards'),
           },
         ].map((x, i) => (
@@ -198,7 +201,7 @@ export default function HomeScreen() {
                 <Text style={ui.meta}>
                   {active.status === 'quoted'
                     ? (active.quote?.isExternalFinalization ? 'Thợ đã gửi chi phí cuối chờ xác nhận' : 'Có báo giá chờ bạn duyệt')
-                    : active.status === 'pending_payment'
+                    : active.status === 'pending_payment' && active.kind !== 'warranty' && active.kind !== 'followup' && amountRemaining(active) > 0
                       ? `Cần thanh toán ${formatVND(amountRemaining(active))}`
                       : `${active.dateLabel} · ${active.slot}`}
                 </Text>
@@ -210,7 +213,7 @@ export default function HomeScreen() {
                   variant="primary"
                   onPress={() => nav.push('order', { code: active.code })}
                 />
-              ) : active.status === 'pending_payment' ? (
+              ) : active.status === 'pending_payment' && active.kind !== 'warranty' && active.kind !== 'followup' && amountRemaining(active) > 0 ? (
                 <Btn
                   title="Thanh toán"
                   small
@@ -262,7 +265,7 @@ export default function HomeScreen() {
         {[
           // Mã ưu đãi công khai thật từ backend (GET /customer/vouchers/catalog); chưa có thì không hiện thẻ mã.
           ...(s.publicVouchers || []).slice(0, 2).map((v) => ({ bg: C.navy, gradStyle: grad.navyCard, fg: '#fff', tag: `MÃ ${v.code}`, title: v.label, body: v.min ? `Cho đơn từ ${formatVND(v.min)}` : 'Nhập mã ở bước đặt lịch', icon: 'ticket', onPress: () => nav.push('rewards') })),
-          ...(SERVICES[0] ? [{ bg: C.primary, gradStyle: grad.primaryBtn, fg: '#fff', tag: 'NỔI BẬT', title: `${SERVICES[0].name} ${formatVND(SERVICES[0].price)}`, body: `Bảo hành ${tierOf(s.lifetimePoints || 0).cur.warrantyDays || 60} ngày`, icon: SERVICES[0].icon || 'wrench', onPress: () => nav.push('detail', { id: SERVICES[0].id }) }] : []),
+          ...(SERVICES[0] ? [{ bg: C.primary, gradStyle: grad.primaryBtn, fg: '#fff', tag: 'NỔI BẬT', title: `${SERVICES[0].name} ${formatVND(SERVICES[0].price)}`, body: SERVICES[0].warrantyDays > 0 ? `Bảo hành ${SERVICES[0].warrantyDays} ngày` : (SERVICES[0].warrantyDays === 0 || SERVICES[0].warrantyDays === null ? 'Đặt lịch tận nhà · Báo giá minh bạch' : `Bảo hành ${tierOf(s.lifetimePoints || 0).cur.warrantyDays || 60} ngày`), icon: SERVICES[0].icon || 'wrench', onPress: () => nav.push('detail', { id: SERVICES[0].id }) }] : []),
           { bg: C.navy2, gradStyle: grad.navyCard, fg: '#fff', tag: 'TIẾT KIỆM', title: 'Bảo dưỡng định kỳ', body: 'Nhắc lịch tự động, ưu đãi dài lâu', icon: 'infinity', onPress: () => nav.services('tron-doi') },
         ].map((b) => (
           <Tap key={b.tag} style={[st.promo, { backgroundColor: b.bg }, b.gradStyle]} onPress={b.onPress}>
@@ -322,7 +325,7 @@ export default function HomeScreen() {
           <PartnerMarqueeRow items={PARTNER_ROWS[2]} direction="right" duration={25000} />
         </View>
 
-        {/* ---------------- Hotline ---------------- */}
+        {/* ---------------- Tổng đài ---------------- */}
         <Tap style={st.hotline} onPress={u.call}>
           <IconBox icon="headphones" color="#fff" size={46} bg="rgba(255,255,255,0.15)" radius={14} />
           <View style={{ flex: 1, marginLeft: 12 }}>
@@ -357,7 +360,6 @@ export default function HomeScreen() {
 
 export const st = StyleSheet.create({
   header: { backgroundColor: C.navy, ...grad.navyHero, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 46, borderBottomLeftRadius: 28, borderBottomRightRadius: 28, overflow: 'hidden' },
-  blob: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.06)' },
   headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   homeBrandLogo: { width: 44, height: 44, borderRadius: 13, backgroundColor: '#fff' },
   hello: { color: 'rgba(255,255,255,0.78)', fontSize: 12.5, fontWeight: '500' },
@@ -397,8 +399,6 @@ export const st = StyleSheet.create({
   catLabel: { fontSize: 12, color: C.ink2, marginTop: 6, fontWeight: '600' },
   cardTitle: { fontSize: 15, fontWeight: '800', color: C.ink },
   body: { fontSize: 13, color: C.ink2, lineHeight: 19 },
-  dueRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.line },
-  dueName: { fontSize: 14, fontWeight: '700', color: C.ink },
   promo: { width: 250, height: 138, borderRadius: 20, padding: 16, overflow: 'hidden', justifyContent: 'flex-end' },
   promoIcon: { position: 'absolute', right: 14, top: 12 },
   promoTag: { alignSelf: 'flex-start', fontSize: 10, fontWeight: '800', borderWidth: 1, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, marginBottom: 8, opacity: 0.9 },
@@ -411,9 +411,6 @@ export const st = StyleSheet.create({
   tip: { width: 220, backgroundColor: C.card, borderRadius: R.lg, overflow: 'hidden', ...shadow.sm, borderWidth: 1, borderColor: C.line },
   tipMedia: { height: 92, alignItems: 'center', justifyContent: 'center' },
   tipTitle: { fontSize: 14, fontWeight: '700', color: C.ink, lineHeight: 19 },
-  partners: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  partner: { backgroundColor: C.card, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, borderWidth: 1, borderColor: C.line },
-  partnerText: { fontSize: 12, fontWeight: '800', color: C.ink2 },
   partnerHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 24, marginBottom: 12 },
   partnerAccentBar: { width: 4, height: 20, borderRadius: 2, backgroundColor: C.primary },
   partnerHeadTitle: { fontSize: 18, fontWeight: '800', color: C.ink, letterSpacing: -0.3 },

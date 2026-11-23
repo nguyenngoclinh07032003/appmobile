@@ -1,7 +1,7 @@
 // Cấu hình kết nối Backend HRMSS
 // Mặc định kết nối trực tiếp tới VPS Cloud (https://server.hrmss.cyou/api/v1)
 
-export const API_ENDPOINTS = {
+const API_ENDPOINTS = {
   // Server Cloud VPS chính thức
   cloud: "https://server.hrmss.cyou/api/v1",
 
@@ -17,10 +17,8 @@ export const API_ENDPOINTS = {
 // Đổi .env.local xong phải chạy lại: npx expo start -c (xóa cache để nhận biến mới).
 const ENV_API_URL = process.env.EXPO_PUBLIC_API_URL || '';
 // true = đang trỏ tới backend tự chọn: không tự chuyển sang server thật khi lỗi mạng.
-export const API_URL_OVERRIDDEN = Boolean(ENV_API_URL);
+const API_URL_OVERRIDDEN = Boolean(ENV_API_URL);
 export const API_BASE_URL = ENV_API_URL || API_ENDPOINTS.cloud;
-// Môi trường hiển thị cho người phát triển: "production" khi đang trỏ server thật.
-export const API_ENV = API_URL_OVERRIDDEN ? 'custom' : 'production';
 
 // Cấu hình Socket.IO kết nối realtime
 export const SOCKET_BASE_URL = API_BASE_URL.replace(/\/api\/v1\/?$/, '');

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { viNotification, viServerMessage, toVietnamese, viFieldError } from '../src/utils/viText.js';
+import { applyServerWarrantyEligibility } from '../src/utils/warrantyPolicy.js';
 
 const VI = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i;
 
@@ -49,4 +50,40 @@ test('viText: thông báo và mã lỗi chấm công ra tiếng Việt chuẩn',
   assert.equal(viNotification({ type: 'ATTENDANCE_REJECTED' }).title, 'Chấm công bị từ chối');
   assert.equal(viNotification({ type: 'VIOLATION_RECORDED' }).title, 'Ghi nhận vi phạm mới');
   assert.equal(viNotification({ type: 'ATTENDANCE_PERIOD_LOCKED' }).title, 'Đã chốt kỳ công');
+});
+
+test('viText: dịch chuỗi tiếng Anh 1 từ, chuỗi hỗn hợp, bảo toàn mã đơn & thư điện tử, và các mã lỗi mới', () => {
+  for (const w of ['Failed', 'Pending', 'Timeout', 'Error', 'Cancelled']) {
+    const res = toVietnamese(w, 'Có lỗi xảy ra');
+    assert.ok(VI.test(res), `expected Vietnamese for ${w}, got: ${res}`);
+    assert.ok(!new RegExp(`\\b${w}\\b`, 'i').test(res), `leaked English word ${w}: ${res}`);
+  }
+
+  const stMixed = toVietnamese('Đơn REQ-1602621059 đang ở trạng thái PENDING_PAYMENT', 'Đơn có cập nhật');
+  assert.ok(stMixed.includes('REQ-1602621059'));
+  assert.ok(stMixed.includes('Chờ thanh toán'));
+  assert.ok(!/PENDING_PAYMENT/.test(stMixed));
+
+  const checkInMixed = toVietnamese('Bạn chưa check-in tại nhà khách', '');
+  assert.ok(!/check-?in/i.test(checkInMixed), `leaked check-in: ${checkInMixed}`);
+
+  const timeoutMixed = toVietnamese('Lỗi timeout khi gọi server', '');
+  assert.ok(!/timeout|server/i.test(timeoutMixed), `leaked timeout/server: ${timeoutMixed}`);
+
+  const mailPreserved = toVietnamese('Đã gửi mã OTP tới email khachhang@gmail.com', '');
+  assert.ok(mailPreserved.includes('khachhang@gmail.com'), `email address altered: ${mailPreserved}`);
+  assert.ok(!/\botp\b|\bemail\b/i.test(mailPreserved.replace('khachhang@gmail.com', '')));
+
+  for (const code of ['CHECK_IN_REQUIRED', 'RECEIPT_REQUIRED', 'PROCEDURE_INCOMPLETE', 'WARRANTY_FINAL_DAY_CUTOFF', 'NOT_PAYABLE_YET', 'CUSTOMER_PAYS_BY_QR']) {
+    const msg = viServerMessage('Error', code, 400);
+    assert.ok(VI.test(msg), `missing Vietnamese for ${code}: ${msg}`);
+    assert.ok(!/voucher|check-?in|timeout|bill|hotline/i.test(msg), `loanword in ${code}: ${msg}`);
+  }
+
+  const vNotif = viNotification({ type: 'VOUCHER_RECEIVED' });
+  assert.ok(!/voucher/i.test(`${vNotif.title} ${vNotif.body}`), `voucher leaked: ${JSON.stringify(vNotif)}`);
+
+  const wSrv = applyServerWarrantyEligibility({ totalDays: 60, text: 'Hết bảo hành' }, { eligible: false, warranty_days: 60, message: 'Warranty has expired on server' });
+  assert.ok(VI.test(wSrv.text));
+  assert.ok(!/warranty|expired|server/i.test(wSrv.text), `warranty English leaked: ${wSrv.text}`);
 });

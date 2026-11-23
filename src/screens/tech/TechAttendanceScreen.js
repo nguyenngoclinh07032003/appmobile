@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { C, R, shadow } from '../../theme';
 import { formatVND } from '../../constants/data';
 import { useApp } from '../../context';
 import { hrmssApi } from '../../services/api';
 import { subscribeSocketEvent } from '../../services/socketService';
 import { getCheckInLocation } from '../../utils/geo';
+import { toVietnamese } from '../../utils/viText';
 import {
   buildAttendanceNotifSignature,
   buildCheckInPayload,
@@ -67,6 +68,7 @@ export function TechAttendanceScreen() {
   const submittingRef = useRef(false);
   const monthReqSeqRef = useRef(0);
   const todayReqSeqRef = useRef(0);
+  const lastAutoRefreshRef = useRef(0);
   const selMonthRef = useRef(selMonth);
   const selYearRef = useRef(selYear);
   selMonthRef.current = selMonth;
@@ -168,15 +170,22 @@ export function TechAttendanceScreen() {
     loadAll({ silent: false });
   }, [loadAll]);
 
+  const triggerAutoRefresh = useCallback(() => {
+    const now = Date.now();
+    if (now - lastAutoRefreshRef.current < 1500) return;
+    lastAutoRefreshRef.current = now;
+    loadAll({ silent: true });
+  }, [loadAll]);
+
   useEffect(() => {
     const off = subscribeSocketEvent('notification:new', (n) => {
       const nType = n?.notification_type || n?.type;
       if (isAttendanceNotifType(nType)) {
-        loadAll({ silent: true });
+        triggerAutoRefresh();
       }
     });
     return off;
-  }, [loadAll]);
+  }, [triggerAutoRefresh]);
 
   // Dự phòng khi danh sách thông báo đồng bộ về từ polling (không qua socket) có thông báo chấm công/ca mới.
   const latestAttNotifStamp = useMemo(
@@ -188,11 +197,11 @@ export function TechAttendanceScreen() {
   useEffect(() => {
     if (latestAttNotifStamp && latestAttNotifStamp !== seenAttNotifRef.current) {
       seenAttNotifRef.current = latestAttNotifStamp;
-      loadAll({ silent: true });
+      triggerAutoRefresh();
     } else {
       seenAttNotifRef.current = latestAttNotifStamp;
     }
-  }, [latestAttNotifStamp, loadAll]);
+  }, [latestAttNotifStamp, triggerAutoRefresh]);
 
   const handleChangeMonth = (delta) => {
     const next = shiftMonth(selMonth, selYear, delta);
@@ -217,7 +226,7 @@ export function TechAttendanceScreen() {
       if (!loc) {
         u.alert(
           'Chưa lấy được vị trí',
-          'Không lấy được vị trí. Bật định vị và cấp quyền vị trí cho app rồi thử lại.',
+          'Không lấy được vị trí. Bật định vị và cấp quyền vị trí cho ứng dụng rồi thử lại.',
           'map-pin',
         );
         return;
@@ -281,7 +290,7 @@ export function TechAttendanceScreen() {
   const monthDays = Array.isArray(monthAttendance?.days) ? monthAttendance.days : [];
   const summary = monthAttendance?.summary || null;
 
-  const refreshBtn = (
+  const refreshBtn = Platform.OS === 'web' ? (
     <IconBtn
       icon="refresh-cw"
       size={36}
@@ -289,7 +298,8 @@ export function TechAttendanceScreen() {
       label="Làm mới chấm công"
       style={{ backgroundColor: C.surface }}
     />
-  );
+  ) : null;
+  const initialTodayLoading = todayLoading && !shiftOptions;
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -338,7 +348,7 @@ export function TechAttendanceScreen() {
               onPress={() => loadTodayShifts({ silent: false })}
             />
           </Card>
-        ) : todayLoading && !shiftOptions ? (
+        ) : initialTodayLoading ? (
           <Card style={st.loadingCard}>
             <ActivityIndicator color={C.primary} />
             <Text style={ui.meta}>Đang tải danh sách ca hôm nay…</Text>
@@ -358,13 +368,14 @@ export function TechAttendanceScreen() {
             const rec = item.alreadyRecorded
               ? findTodayShiftRecord(todayAttendance, workDate, item.technicianShiftId)
               : null;
-            const statusMeta = rec?.status ? ATT_STATUS_META[rec.status] : null;
+            const statusKey = String(rec?.status || '').toLowerCase();
+            const statusMeta = statusKey ? ATT_STATUS_META[statusKey] : null;
             const timeStr = `${item.startTime || '—'} – ${item.endTime || '—'}${item.crossesMidnight ? ' (qua đêm)' : ''}`;
             const isLocatingThis = locatingShiftId === item.technicianShiftId;
             const matchedShift = identifyTechWorkShift(item);
             const displayName = item.name || 'Ca làm việc';
             const showShiftBadge = Boolean(
-              matchedShift && !new RegExp(`\\b${matchedShift.label}\\b`, 'i').test(displayName),
+              matchedShift && !new RegExp(matchedShift.label.replace(/\s+/g, '\\s*'), 'i').test(displayName),
             );
 
             return (
@@ -379,7 +390,9 @@ export function TechAttendanceScreen() {
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     {showShiftBadge ? <Badge text={matchedShift.label} fg={C.primary} bg={C.primarySoft} /> : null}
-                    {item.code ? <Badge text={item.code} fg={C.ink2} bg={C.surface} /> : null}
+                    {item.code && !new RegExp(String(item.code).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(displayName)
+                      ? <Badge text={item.code} fg={C.ink2} bg={C.surface} />
+                      : null}
                   </View>
                 </View>
 
@@ -394,15 +407,15 @@ export function TechAttendanceScreen() {
                         </Text>
                       ) : null}
                     </View>
-                    {rec?.status === 'rejected' ? (
+                    {statusKey === 'rejected' ? (
                       <Text style={st.rejectText}>
-                        Bị từ chối: {rec.rejectReason || 'Không có lý do'}
+                        Bị từ chối: {toVietnamese(rec.rejectReason, 'Không có lý do') || 'Không có lý do'}
                       </Text>
                     ) : null}
                   </View>
                 ) : (
                   <Btn
-                    title={isLocatingThis ? 'Đang lấy vị trí GPS…' : 'Vào ca'}
+                    title={isLocatingThis ? 'Đang lấy vị trí định vị…' : 'Vào ca'}
                     icon="map-pin"
                     style={{ marginTop: 14 }}
                     disabled={locatingShiftId != null || submitting}
@@ -436,10 +449,7 @@ export function TechAttendanceScreen() {
             style={{ backgroundColor: C.surface }}
           />
           <View style={{ alignItems: 'center', flex: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={st.monthTitle}>Tháng {pad2(selMonth)}/{selYear}</Text>
-              {monthLoading ? <ActivityIndicator size="small" color={C.primary} style={{ marginLeft: 6 }} /> : null}
-            </View>
+            <Text style={st.monthTitle}>Tháng {pad2(selMonth)}/{selYear}</Text>
             {monthAttendance?.user?.employeeCode ? (
               <Text style={[ui.meta, { marginTop: 1 }]}>
                 {monthAttendance.user.fullName} · {monthAttendance.user.employeeCode}
@@ -470,12 +480,12 @@ export function TechAttendanceScreen() {
               onPress={() => loadMonthData(selMonth, selYear, { silent: false })}
             />
           </Card>
-        ) : monthLoading && !refreshing ? (
+        ) : monthLoading && !refreshing && !initialTodayLoading ? (
           <Card style={st.loadingCard}>
             <ActivityIndicator color={C.primary} />
             <Text style={ui.meta}>Đang tải bảng công tháng {pad2(selMonth)}/{selYear}…</Text>
           </Card>
-        ) : (
+        ) : monthLoading && !refreshing && initialTodayLoading ? null : (
           <>
             {summary ? (
               <Card style={st.summaryCard}>
@@ -534,7 +544,7 @@ export function TechAttendanceScreen() {
                       </View>
                     </View>
 
-                    {day.note ? <Text style={[ui.meta, { marginTop: 6 }]}>Ghi chú ngày: {day.note}</Text> : null}
+                    {day.note ? <Text style={[ui.meta, { marginTop: 6 }]}>Ghi chú ngày: {toVietnamese(day.note, 'Không có ghi chú thêm')}</Text> : null}
 
                     {dayShifts.length === 0 ? (
                       <Text style={[ui.meta, { marginTop: 8 }]}>
@@ -542,13 +552,14 @@ export function TechAttendanceScreen() {
                       </Text>
                     ) : (
                       dayShifts.map((sh, sIdx) => {
-                        const sMeta = ATT_STATUS_META[sh.status] || { label: sh.status || '—', fg: C.ink2, bg: C.surface };
+                        const shStatusKey = String(sh.status || '').toLowerCase();
+                        const sMeta = ATT_STATUS_META[shStatusKey] || { label: toVietnamese(sh.status, 'Đang cập nhật') || '—', fg: C.ink2, bg: C.surface };
                         const checkHm = formatVnTimeHm(sh.checkedInAt);
                         const isByManager = sh.source && sh.source !== 'self';
                         const matchedShift = identifyTechWorkShift(sh);
                         const shName = sh.shiftName || sh.shiftCode || 'Ca làm việc';
                         const showShiftBadge = Boolean(
-                          matchedShift && !new RegExp(`\\b${matchedShift.label}\\b`, 'i').test(shName),
+                          matchedShift && !new RegExp(matchedShift.label.replace(/\s+/g, '\\s*'), 'i').test(shName),
                         );
                         return (
                           <View
@@ -577,11 +588,11 @@ export function TechAttendanceScreen() {
                               ) : null}
                             </View>
 
-                            {sh.status === 'rejected' && sh.rejectReason ? (
-                              <Text style={st.rejectText}>Lý do từ chối: {sh.rejectReason}</Text>
+                            {shStatusKey === 'rejected' && sh.rejectReason ? (
+                              <Text style={st.rejectText}>Lý do từ chối: {toVietnamese(sh.rejectReason, 'Không có lý do cụ thể')}</Text>
                             ) : null}
                             {sh.checkIn?.note ? (
-                              <Text style={[ui.meta, { marginTop: 4 }]}>Ghi chú: {sh.checkIn.note}</Text>
+                              <Text style={[ui.meta, { marginTop: 4 }]}>Ghi chú: {toVietnamese(sh.checkIn.note, sh.checkIn.note)}</Text>
                             ) : null}
                           </View>
                         );
@@ -617,12 +628,12 @@ export function TechAttendanceScreen() {
               onPress={() => loadMonthData(selMonth, selYear, { silent: false })}
             />
           </Card>
-        ) : violationsLoading && !refreshing ? (
+        ) : violationsLoading && !refreshing && !initialTodayLoading ? (
           <Card style={st.loadingCard}>
             <ActivityIndicator color={C.primary} />
             <Text style={ui.meta}>Đang tải danh sách vi phạm…</Text>
           </Card>
-        ) : (
+        ) : violationsLoading && !refreshing && initialTodayLoading ? null : (
           <Card style={st.vioSummaryCard}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <View>
@@ -648,7 +659,7 @@ export function TechAttendanceScreen() {
                     <Text style={st.vioDate}>{formatVnDateDmy(v.date)}</Text>
                     <Text style={st.vioFine}>-{formatVND(v.fineAmount)}</Text>
                   </View>
-                  <Text style={st.vioDesc}>{v.description || 'Vi phạm quy định'}</Text>
+                  <Text style={st.vioDesc}>{toVietnamese(v.description, 'Vi phạm quy định') || 'Vi phạm quy định'}</Text>
                   {v.recordedBy?.fullName ? (
                     <Text style={[ui.meta, { marginTop: 3 }]}>Người ghi: {v.recordedBy.fullName}</Text>
                   ) : null}
@@ -703,7 +714,7 @@ export function TechAttendanceScreen() {
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
                 <AppIcon name="map-pin" size={15} color={C.primary} />
-                <Text style={st.gpsLine}>Vị trí GPS ±{confirmLoc.accuracy}m</Text>
+                <Text style={st.gpsLine}>Độ chính xác vị trí ±{confirmLoc.accuracy}m</Text>
               </View>
             </View>
 

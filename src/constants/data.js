@@ -9,7 +9,7 @@ export const SERVICES = [];
 export const COMMITMENTS = [
   {
     title: 'Đúng giờ',
-    sub: 'Thợ đúng khung giờ đã hẹn trên app',
+    sub: 'Thợ đúng khung giờ đã hẹn trên ứng dụng',
     detail: 'Thợ cam kết đến đúng khung giờ. Trễ 21–45 phút: giảm 20% phí nhân công (tối đa 100.000đ). Trễ trên 45 phút: giảm 50% phí nhân công (tối đa 200.000đ). Dưới 10 phút được coi là đúng giờ.',
   },
   {
@@ -19,7 +19,7 @@ export const COMMITMENTS = [
   },
   {
     title: 'Trung thực',
-    sub: 'Báo giá rõ ràng trên app trước khi thực hiện',
+    sub: 'Báo giá rõ ràng trên ứng dụng trước khi thực hiện',
     detail: 'Thợ Minh Đức cam kết thợ trung thực và nghiêm túc. Nếu Minh Đức phát hiện bất kỳ gian lận nào của kỹ thuật viên chung, Thợ Minh Đức sẽ bồi thường 2 lần giá trị gian lận của Quý Khách.',
   },
   {
@@ -27,15 +27,6 @@ export const COMMITMENTS = [
     sub: 'Không tư vấn thêm dịch vụ hay linh kiện không cần thiết',
     detail: 'Được phục vụ Quý Khách là một vinh dự lớn với Thợ Minh Đức và Thợ Minh Đức luôn trân trọng. Thợ Minh Đức cam kết mang đến cho Quý Khách dịch vụ thân thiện và vui vẻ. Nhân viên chỉ nhận thanh toán đúng số tiền trên đơn hàng. Nhân viên sẽ không được xin hoặc gợi ý tiền bồi dưỡng của Quý Khách. Nếu Quý Khách cảm thấy không hài lòng với thái độ, hành vi xin tiền bồi dưỡng của nhân viên, xin vui lòng phản ánh cho Thợ Minh Đức để chúng tôi chấn chỉnh.',
   },
-];
-
-export const PROCESS_STEPS = [
-  { title: 'Bước 1: Kiểm tra trước vệ sinh', items: ['Ghi nhận tình trạng', 'Chỉ số tốc độ gió', 'Chỉ số nhiệt độ'] },
-  { title: 'Bước 2: Vệ sinh dàn lạnh', items: ['Bật nắp trước máy và chụp hình'] },
-  { title: 'Bước 3: Vệ sinh dàn nóng', items: ['Xịt rửa cánh quạt, các góc cạnh, mặt sau'] },
-  { title: 'Bước 4: Kiểm tra sau vệ sinh', items: ['Khối lượng ga nạp', 'Kết nối đồng hồ đo gas và chụp hình', 'Đo dòng điện của máy', 'Chỉ số tốc độ gió', 'Chỉ số nhiệt độ'] },
-  { title: 'Bước 5: Vệ sinh khu vực', items: ['Dọn dẹp toàn bộ khu vực vệ sinh cho khách hàng'] },
-  { title: 'Bước 6: Nghiệm thu và bàn giao cho khách', items: ['Điểm sao đúng hẹn', 'Điểm sao sạch sẽ', 'Điểm sao thân thiện vui vẻ', 'Điểm sao chất lượng'] },
 ];
 
 export const formatVND = (n) => Number(n || 0).toLocaleString('vi-VN') + 'đ';
@@ -117,12 +108,12 @@ export const featureFor = (item) => {
   const kind = serviceKind(item);
   const name = item?.name || 'Dịch vụ';
   const slug = categorySlugOf(item?.category, item?.name);
-  if (kind === 'install') return `${name}.\n\nThợ khảo sát tại nhà trước khi lắp. Giá trên app là giá tham khảo cho nhân công cơ bản, chưa gồm vật tư phát sinh như ống đồng, giá đỡ hay khoan tường. Thợ báo giá cuối và chỉ làm khi bạn đồng ý.`;
+  if (kind === 'install') return `${name}.\n\nThợ khảo sát tại nhà trước khi lắp. Giá trên ứng dụng là giá tham khảo cho nhân công cơ bản, chưa gồm vật tư phát sinh như ống đồng, giá đỡ hay khoan tường. Thợ báo giá cuối và chỉ làm khi bạn đồng ý.`;
   if (kind === 'repair') return `${name}.\n\nPhí hiển thị là phí kiểm tra. Linh kiện hỏng được báo riêng trước khi thay. Thợ không sửa nếu bạn chưa xác nhận giá.`;
   if (kind === 'lifetime') return `${name}.\n\nGiá gói là mức tham khảo cho một chu kỳ bảo dưỡng định kỳ. Lịch các lần sau được hẹn sau lần đầu. Vật tư thay thế tính riêng.`;
   if (kind === 'gas') return `${name}.\n\nGiá gồm công nạp gas đúng chủng loại máy. Nếu hệ thống thủng hoặc hết gas do rò rỉ, thợ báo phát sinh trước khi xử lý. Sau khi nạp, thợ đo nhiệt độ gió và dòng điện.`;
   if (slug === 'may-giat') return `${name}.\n\nVệ sinh lồng giặt, gioăng cửa, khay bột và lưới lọc. Giá gồm nhân công, chưa gồm hóa chất đặc biệt nếu máy bám cặn nặng. Thợ chạy thử không tải trước khi bàn giao.`;
-  if (slug === 'tu-lanh') return `${name}.\n\nVệ sinh ngăn mát, ngăn đá, gioăng và dàn nóng. Giá gồm nhân công. Nếu máy không lạnh do hết gas hoặc hỏng block, đó là việc sửa chữa và được báo giá riêng.`;
+  if (slug === 'tu-lanh') return `${name}.\n\nVệ sinh ngăn mát, ngăn đá, gioăng và dàn nóng. Giá gồm nhân công. Nếu máy không lạnh do hết gas hoặc hỏng lốc máy, đó là việc sửa chữa và được báo giá riêng.`;
   if (slug === 'may-lanh') return `${name}.\n\nGiúp máy lạnh sạch sâu, mát nhanh và vận hành ổn định hơn. Phù hợp với gia đình, căn hộ, văn phòng và cửa hàng.\n\nVệ sinh đúng kỹ thuật: dàn lạnh, lưới lọc và dàn nóng theo điều kiện thực tế. Kiểm tra máy trước và sau khi làm, rồi bàn giao.\n\nGiá gồm nhân công vệ sinh, chưa gồm vật tư hoặc gas phát sinh. Thợ kiểm tra thực tế tại nhà.`;
   return `${name}.\n\nGiá gồm nhân công thực hiện tại nhà. Vật tư hoặc lỗi phát sinh được báo trước khi làm thêm. Thợ dọn khu vực và nghiệm thu trước khi kết thúc.`;
 };
@@ -148,16 +139,18 @@ export const videoFor = (item) => {
     };
   }
   if (kind === 'gas') {
+    const bhText = item?.warrantyDays > 0 ? ` · Bảo hành ${item.warrantyDays} ngày` : '';
     return {
       title: 'Quy trình kiểm tra rò rỉ & nạp gas máy lạnh',
-      sub: 'Đo áp suất chuẩn hãng · Bảo hành 60 ngày',
+      sub: `Đo áp suất chuẩn hãng${bhText || ' · Kiểm tra an toàn'}`,
       duration: '30 – 45 phút',
       tools: ['Đồng hồ đo áp suất gas đôi', 'Máy hút chân không chuyên dụng', 'Bình gas chính hãng R32/R410A/R22', 'Ampe kìm & máy đo nhiệt độ gió'],
     };
   }
+  const bhText = item?.warrantyDays > 0 ? ` · BH ${item.warrantyDays} ngày` : '';
   return {
     title: `Quy trình vệ sinh & bảo dưỡng ${cat} tại nhà`,
-    sub: 'Sạch sâu đúng kỹ thuật · Dọn dẹp gọn gàng · BH 60 ngày',
+    sub: `Sạch sâu đúng kỹ thuật · Dọn dẹp gọn gàng${bhText}`,
     duration: durationText(item.id),
     tools: ['Máy xịt rửa áp lực có chỉnh áp', 'Áo trùm hứng nước bẩn chuyên dụng', 'Dung dịch khử khuẩn an toàn', 'Đồng hồ đo dòng điện & nhiệt độ gió'],
   };
@@ -174,7 +167,6 @@ export const noteFor = (items) => {
 };
 
 // Bảng giá dịch vụ sửa chữa & bảo dưỡng định kỳ chính hãng Thợ Minh Đức (Hệ thống không cung cấp lắp đặt mới).
-export const INSTALL_SERVICES = [];
 export const REPAIR_SERVICES = [];
 export const LIFETIME_SERVICES = [];
 export const TIME_SLOTS = ['08h00 - 10h00', '10h00 - 12h00', '12h00 - 14h00', '14h00 - 16h00', '16h00 - 18h00', '18h00 - 20h00'];
@@ -203,7 +195,6 @@ export const TECH_WORK_SHIFTS = [
     endMinutes: 17 * 60 + 30,
   },
 ];
-export const imgFor = (id) => `https://picsum.photos/seed/${id}/400/300`;
 
 // ---------------------------------------------------------------------------
 // Dữ liệu dùng chung cho bản giao diện mới (liên kết giữa các chức năng)
@@ -222,15 +213,10 @@ export const CAT_SHORT = {};
 export const catLabel = (id) => CATEGORIES.find((c) => c.id === id)?.label || CAT_SHORT[id] || 'Thiết bị';
 export const catIcon = (id) => CATEGORIES.find((c) => c.id === id)?.icon || 'wrench';
 
-// Chu kỳ bảo dưỡng khuyến nghị (tháng) theo loại thiết bị — dùng để nhắc lịch ở tab Thiết bị / Trang chủ
-export const MAINT_MONTHS = {
-  'may-lanh': 6, 'may-giat': 6, 'tu-lanh': 6, 'nuoc-nong': 12, 'hut-mui': 6, quat: 12, 'loc-khong-khi': 6,
-};
-
 export const SERVICE_TYPES = [
   { id: 'bao-duong', label: 'Bảo dưỡng', icon: 'spray-can', desc: 'Vệ sinh định kỳ' },
   { id: 'sua-chua', label: 'Sửa chữa', icon: 'wrench', desc: 'Báo giá trước' },
-  { id: 'bao-hanh', label: 'Bảo hành', icon: 'shield-check', desc: 'Tra cứu 60 ngày' },
+  { id: 'bao-hanh', label: 'Bảo hành', icon: 'shield-check', desc: 'Tra cứu bảo hành' },
   { id: 'tron-doi', label: 'Trọn đời', icon: 'infinity', desc: 'Gói định kỳ' },
 ];
 
@@ -251,9 +237,9 @@ export const TIPS = [
 
 export const FAQ = [
   { q: 'Thợ có đến đúng giờ không?', a: 'Cam kết đúng khung giờ. Trễ 21–45 phút: giảm 20% phí nhân công (tối đa 100.000đ). Trễ trên 45 phút: giảm 50% (tối đa 200.000đ). Trễ ≤10 phút không bị trừ. Thợ đến muộn còn bị trừ điểm uy tín.' },
-  { q: 'Tôi có thể huỷ hoặc đổi lịch không?', a: 'Khi đơn còn chờ thợ nhận, vào Chi tiết đơn → "Sửa yêu cầu" để đổi ngày/giờ, mô tả và ảnh. Bạn được huỷ miễn phí khi đơn chưa có thợ nhận hoặc trước giờ hẹn ít nhất 1 tiếng (khi thợ chưa di chuyển). Trong vòng 1 tiếng trước giờ hẹn hoặc khi thợ đang đến thì vui lòng liên hệ hotline.' },
-  { q: 'Bảo hành 60 ngày được tính thế nào?', a: 'Bảo hành bắt đầu từ lúc đơn hoàn thành. Vào Dịch vụ › Bảo hành hoặc Chi tiết đơn hàng để tra cứu và gửi yêu cầu bảo hành miễn phí.' },
-  { q: 'Điểm tích luỹ dùng để làm gì?', a: 'Mỗi 10.000đ thanh toán = 1 điểm, đánh giá đơn hàng được thêm 20 điểm. Dùng điểm để đổi voucher ở mục Quyền lợi của tôi.' },
+  { q: 'Tôi có thể huỷ hoặc đổi lịch không?', a: 'Khi đơn còn chờ thợ nhận, vào Chi tiết đơn → "Sửa yêu cầu" để đổi ngày/giờ, mô tả và ảnh. Bạn được huỷ miễn phí khi đơn chưa có thợ nhận hoặc trước giờ hẹn ít nhất 1 tiếng (khi thợ chưa di chuyển). Trong vòng 1 tiếng trước giờ hẹn hoặc khi thợ đang đến thì vui lòng liên hệ tổng đài.' },
+  { q: 'Chính sách bảo hành được tính thế nào?', a: 'Thời hạn bảo hành áp dụng theo từng dịch vụ (hiển thị chi tiết trên từng dịch vụ và đơn hàng) và tính từ lúc đơn hoàn thành. Vào Dịch vụ › Bảo hành hoặc Chi tiết đơn hàng để tra cứu và gửi yêu cầu bảo hành miễn phí.' },
+  { q: 'Điểm tích luỹ dùng để làm gì?', a: 'Mỗi 10.000đ thanh toán = 1 điểm, đánh giá đơn hàng được thêm 20 điểm. Dùng điểm để đổi mã giảm giá ở mục Quyền lợi của tôi.' },
   { q: 'Phương thức thanh toán nào được hỗ trợ?', a: 'Quý khách có thể thanh toán bằng Chuyển khoản VietQR (MBBank) hoặc Tiền mặt trực tiếp cho thợ sau khi hoàn thành nghiệm thu.' },
 ];
 
@@ -272,14 +258,14 @@ export const TIERS = [
     benefits: [
       '🎁 Dùng mã ưu đãi công khai đang mở (mục Ưu đãi) cho đơn đặt lịch',
       '💰 Tích luỹ 1 điểm cho mỗi 10.000đ thanh toán dịch vụ hoàn tất',
-      '⭐ Thưởng thêm +20 điểm mỗi khi gửi đánh giá chất lượng thợ sau nghiệm thu',
-      '🛡️ Bảo hành tiêu chuẩn 60 ngày cho dịch vụ vệ sinh, nạp gas & sửa chữa',
+      '⭐ Thưởng thêm điểm mỗi khi gửi đánh giá chất lượng thợ sau nghiệm thu',
+      '🛡️ Bảo hành điện tử theo đúng thời hạn từng dịch vụ hiển thị trên đơn',
       '🔍 Khảo sát & báo giá minh bạch tại nhà — từ chối báo giá hoàn toàn miễn phí',
     ],
     terms: [
-      'Cam kết đúng giờ: Tự động giảm 20%–50% phí nhân công (tối đa 200.000đ) nếu thợ check-in trễ giờ hẹn.',
+      'Cam kết đúng giờ: Tự động giảm 20%–50% phí nhân công (tối đa 200.000đ) nếu thợ đến trễ giờ hẹn.',
       'Linh hoạt đổi lịch & huỷ đơn: Miễn phí 100% khi sửa yêu cầu (lúc chờ thợ nhận) hoặc huỷ đơn trước giờ hẹn ít nhất 1 tiếng khi thợ chưa di chuyển.',
-      'Chu kỳ xét hạng: Điểm tích luỹ được tính trong chu kỳ 12 tháng. Đổi điểm lấy voucher KHÔNG làm giảm điểm xét hạng.',
+      'Chu kỳ xét hạng: Điểm tích luỹ được tính trong chu kỳ 12 tháng. Đổi điểm lấy mã giảm giá KHÔNG làm giảm điểm xét hạng.',
     ],
   },
   {
@@ -288,22 +274,22 @@ export const TIERS = [
     min: 200,
     color: '#475569',
     bg: '#E2E8F0',
-    summary: 'Ưu tiên điều phối thợ giỏi & cộng thêm thời hạn bảo hành tận nhà',
+    summary: 'Ưu tiên điều phối thợ giỏi & ưu tiên tiếp nhận bảo hành tận nhà',
     condition: 'Đạt từ 200 điểm tích luỹ trong 12 tháng (tương đương ~2.000.000đ chi tiêu hoặc hoàn thành đơn kèm đánh giá).',
-    pointRule: 'Duy trì hạng 12 tháng · Đổi voucher không ảnh hưởng hạng',
+    pointRule: 'Duy trì hạng 12 tháng · Đổi mã giảm giá không ảnh hưởng hạng',
     warrantyDays: 75,
     partDiscountPercent: 0,
     benefits: [
       '⚡ Ưu tiên điều phối thợ tay nghề cao (★ 4.8+) trong khu vực gần nhà bạn nhất',
-      '🛡️ Cộng thêm +15 ngày bảo hành miễn phí (nâng tổng bảo hành lên 75 ngày)',
-      '🎟️ Mở khoá đổi điểm lấy Voucher giảm trực tiếp 20.000đ – 50.000đ không giới hạn dịch vụ',
+      '🛡️ Ưu tiên tiếp nhận yêu cầu bảo hành theo đúng thời hạn của từng dịch vụ',
+      '🎟️ Mở khoá đổi điểm lấy Mã giảm giá trực tiếp 20.000đ – 50.000đ không giới hạn dịch vụ',
       '🔔 Nhắc lịch bảo dưỡng thiết bị định kỳ kèm mã ưu đãi riêng theo mùa',
       '🔄 Miễn phí 100% chi phí kiểm tra lại tận nơi nếu thiết bị phát sinh lỗi trong thời gian bảo hành',
     ],
     terms: [
-      'Bảo toàn thứ hạng 12 tháng: Thứ hạng Bạc được duy trì trọn vẹn trong 12 tháng kể từ ngày đạt hạng. Khách hàng dùng điểm đổi voucher thoải mái mà không bị tụt hạng.',
+      'Bảo toàn thứ hạng 12 tháng: Thứ hạng Bạc được duy trì trọn vẹn trong 12 tháng kể từ ngày đạt hạng. Khách hàng dùng điểm đổi mã giảm giá thoải mái mà không bị tụt hạng.',
       'Gia hạn thứ hạng: Chỉ cần tích luỹ đủ 200 điểm trong chu kỳ 12 tháng tiếp theo để tự động gia hạn hạng Bạc.',
-      'Quyền yêu cầu báo giá lại: Khách có quyền yêu cầu thợ điều chỉnh phương án/vật tư ngay trên app mà không mất phí.',
+      'Quyền yêu cầu báo giá lại: Khách có quyền yêu cầu thợ điều chỉnh phương án/vật tư ngay trên ứng dụng mà không mất phí.',
     ],
   },
   {
@@ -312,20 +298,20 @@ export const TIERS = [
     min: 500,
     color: '#92400E',
     bg: '#FEF3C7',
-    summary: 'Đặc quyền giảm giá linh kiện chính hãng & bảo hành mở rộng 90 ngày',
+    summary: 'Đặc quyền giảm giá linh kiện chính hãng & ưu tiên giữ khung giờ hẹn',
     condition: 'Đạt từ 500 điểm tích luỹ trong 12 tháng trên hệ thống Thợ Minh Đức.',
-    pointRule: 'Duy trì hạng 12 tháng · Ưu tiên giờ cao điểm · Bảo hành 90 ngày',
+    pointRule: 'Duy trì hạng 12 tháng · Ưu tiên giờ cao điểm · Giảm 5% linh kiện',
     warrantyDays: 90,
     partDiscountPercent: 5,
     benefits: [
-      '💎 Mở khoá đổi Voucher VIP giảm 15% (tối đa 100.000đ) áp dụng cho mọi đơn hàng',
+      '💎 Mở khoá đổi Mã giảm giá đặc quyền giảm 15% (tối đa 100.000đ) áp dụng cho mọi đơn hàng',
       '🔩 Ưu đãi giảm 5% chi phí vật tư & linh kiện thay thế chính hãng trên bảng báo giá',
-      '🛡️ Nâng thời hạn bảo hành tận nhà lên 90 ngày (3 tháng) cho toàn bộ hạng mục thực hiện',
+      '🛡️ Ưu tiên sắp xếp kỹ thuật viên kiểm tra bảo hành nhanh theo thời hạn từng dịch vụ',
       '🚀 Ưu tiên giữ chỗ khung giờ cao điểm (cuối tuần, ngày lễ, mùa nắng nóng cao điểm)',
       '🧰 Miễn phí kiểm tra tổng quát thêm 01 thiết bị điện máy khác trong cùng lần thợ đến nhà',
     ],
     terms: [
-      'Bảo toàn thứ hạng 12 tháng: Đổi điểm lấy voucher không làm trừ điểm xét hạng Vàng.',
+      'Bảo toàn thứ hạng 12 tháng: Đổi điểm lấy mã giảm giá không làm trừ điểm xét hạng Vàng.',
       'Bảo vệ giá 100%: Tuyệt đối không phát sinh bất kỳ phụ phí nào ngoài bảng báo giá điện tử đã được bạn phê duyệt trên ứng dụng.',
       'Gia hạn thứ hạng: Tích luỹ đủ 500 điểm trong 12 tháng tiếp theo để tiếp tục duy trì đặc quyền hạng Vàng.',
     ],
@@ -336,22 +322,22 @@ export const TIERS = [
     min: 1000,
     color: '#0062E0',
     bg: '#EFF6FF',
-    summary: 'Chăm sóc đặc quyền VIP, bảo hành 120 ngày & Thợ Trưởng phụ trách',
+    summary: 'Chăm sóc đặc quyền cao cấp, giảm 10% linh kiện & Thợ Trưởng phụ trách',
     condition: 'Đạt từ 1.000 điểm tích luỹ trong 12 tháng — Hạng thành viên danh giá nhất của Thợ Minh Đức.',
-    pointRule: 'Duy trì hạng 12 tháng · Thợ Trưởng ★ 4.9+ · Bảo hành 120 ngày',
+    pointRule: 'Duy trì hạng 12 tháng · Thợ Trưởng ★ 4.9+ · Giảm 10% linh kiện',
     warrantyDays: 120,
     partDiscountPercent: 10,
     benefits: [
-      '👑 Chỉ định ưu tiên Thợ Trưởng (Master Technician ★ 4.9–5.0) cho mọi đơn đặt lịch',
-      '🛡️ Đặc quyền Bảo hành Kim Cương lên tới 120 ngày (4 tháng) — xử lý bảo hành khẩn cấp trong 2 giờ',
+      '👑 Chỉ định ưu tiên Thợ Trưởng (Kỹ thuật viên cao cấp ★ 4.9–5.0) cho mọi đơn đặt lịch',
+      '🛡️ Đặc quyền xử lý bảo hành khẩn cấp trong 2 giờ đối với các dịch vụ còn hạn bảo hành',
       '🔩 Giảm 10% chi phí vật tư, linh kiện chính hãng & miễn phí 100% công khảo sát mọi hạng mục',
       '🧹 Tặng 01 suất kiểm tra an toàn điện & vệ sinh lưới lọc máy lạnh định kỳ mỗi năm',
-      '📞 Đường dây nóng CSKH VIP ưu tiên hỗ trợ 24/7 và giải quyết yêu cầu tức thì',
+      '📞 Đường dây nóng chăm sóc khách hàng đặc quyền ưu tiên hỗ trợ 24/7 và giải quyết yêu cầu tức thì',
     ],
     terms: [
-      'Chu kỳ duy trì hạng VIP: Quyền lợi Kim Cương được bảo lưu trọn vẹn trong chu kỳ 12 tháng.',
+      'Chu kỳ duy trì hạng Kim Cương: Quyền lợi Kim Cương được bảo lưu trọn vẹn trong chu kỳ 12 tháng.',
       'Cam kết hài lòng 100%: Hỗ trợ cử Thợ Trưởng kiểm tra và xử lý lại hoàn toàn miễn phí trong 48 giờ nếu bạn chưa hài lòng khi nghiệm thu.',
-      'Ưu tiên bồi thường cao nhất: Nhân đôi giá trị Voucher đền bù nếu xảy ra bất kỳ sự cố trễ hẹn hoặc đổi lịch nào từ phía kỹ thuật.',
+      'Ưu tiên bồi thường cao nhất: Nhân đôi giá trị Mã giảm giá đền bù nếu xảy ra bất kỳ sự cố trễ hẹn hoặc đổi lịch nào từ phía kỹ thuật.',
     ],
   },
 ];
@@ -421,7 +407,7 @@ export const PAYMENT_METHODS = [
     label: 'Chuyển khoản VietQR (MBBank)',
     shortLabel: 'VietQR (MBBank)',
     icon: 'qr-code',
-    desc: 'Quét mã QR thanh toán sau nghiệm thu · Kích hoạt bảo hành điện tử 60 ngày tự động',
+    desc: 'Quét mã QR thanh toán sau nghiệm thu · Kích hoạt bảo hành điện tử tự động (với dịch vụ có bảo hành)',
     badge: 'Khuyên dùng',
     badgeBg: '#EFF6FF',
     badgeFg: '#0062E0',
@@ -442,7 +428,6 @@ export const PAYMENT_METHODS = [
 ];
 
 export const PAYMENTS = PAYMENT_METHODS.map((p) => p.label);
-export const PARTNERS = ['Panasonic', 'SONY', 'LG', 'Samsung', 'Coway', 'SKYWORTH', 'Nagakawa', 'Sumico', 'Electrolux'];
 export const HOTLINE = '1900 232 461';
 export const POPULAR_SEARCHES = ['Vệ sinh máy lạnh', 'Sạc gas', 'Máy giặt', 'Tủ lạnh', 'Sửa chữa', 'Bình nước nóng'];
 
@@ -518,9 +503,9 @@ export const STATUS_DESC = {
 export const TECH_STATUS_DESC = {
   pending: 'Việc mới — xác nhận lịch rồi nhận hoặc từ chối.',
   confirmed: 'Đã nhận. Gọi khách nếu cần, rồi bắt đầu di chuyển đúng giờ hẹn.',
-  onway: 'Đang trên đường. Check-in khi tới địa chỉ khách.',
+  onway: 'Đang trên đường. Xác nhận đến nơi khi tới địa chỉ khách.',
   diagnosing: 'Kiểm tra thiết bị, ghi chẩn đoán và gửi báo giá trước khi làm.',
-  quoted: 'Đã gửi báo giá. Chờ khách duyệt trên app để tiếp tục.',
+  quoted: 'Đã gửi báo giá. Chờ khách duyệt trên ứng dụng để tiếp tục.',
   repairing: 'Đang làm việc — ghi chú sửa chữa, vật tư và ảnh minh chứng.',
   pending_payment: 'Đã hoàn thành. Chờ khách kiểm tra số tiền và thanh toán.',
   warranty_pending: 'Đơn bảo hành mới — chờ Văn phòng thẩm định hồ sơ gốc.',
@@ -534,7 +519,7 @@ export const DEFAULT_MATERIALS = [
   { id: 'm-db-1', dbId: 1, name: 'Gas R32', unit: 'kg', price: 250000, category: 'all' },
   { id: 'm-db-2', dbId: 2, name: 'Gas R410A', unit: 'kg', price: 280000, category: 'all' },
   { id: 'm-db-3', dbId: 3, name: 'Gas R22', unit: 'kg', price: 220000, category: 'all' },
-  { id: 'm-db-4', dbId: 4, name: 'Tụ điện block máy lạnh', unit: 'cái', price: 350000, category: 'all' },
+  { id: 'm-db-4', dbId: 4, name: 'Tụ điện lốc máy lạnh', unit: 'cái', price: 350000, category: 'all' },
   { id: 'm-db-5', dbId: 5, name: 'Ống đồng + bảo ôn', unit: 'm', price: 180000, category: 'all' },
   { id: 'm-db-6', dbId: 6, name: 'Ống thoát nước', unit: 'm', price: 20000, category: 'all' },
   { id: 'm-db-7', dbId: 7, name: 'Van xả máy giặt', unit: 'cái', price: 220000, category: 'all' },
@@ -605,14 +590,70 @@ const categoryKey = (categoryId) => `c${categoryId}`;
 const serviceKey = (serviceId) => `s${serviceId}`;
 const replaceAll = (arr, items) => { arr.splice(0, arr.length, ...items); };
 
+export const parseWarrantyDays = (raw) => {
+  if (raw === undefined) return undefined;
+  if (raw === null || raw === '') return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+};
+
+export const formatWarrantyTag = (days) => (
+  typeof days === 'number' && days > 0 ? `BH ${days} ngày` : ''
+);
+
+export const resolveServiceWarrantyDays = (service, detail = null) => {
+  if (detail && detail.warrantyDays !== undefined) return detail.warrantyDays;
+  if (service && service.warrantyDays !== undefined) return service.warrantyDays;
+  return undefined;
+};
+
+export const setServiceWarrantyDays = (dbId, rawWarrantyDays) => {
+  if (rawWarrantyDays === undefined || dbId == null) return false;
+  const svc = SERVICE_BY_DB_ID[String(dbId)];
+  if (!svc) return false;
+  const parsed = parseWarrantyDays(rawWarrantyDays);
+  const nextTag = formatWarrantyTag(parsed);
+  const changed = svc.warrantyDays !== parsed || svc.warranty !== nextTag;
+  svc.warrantyDays = parsed;
+  svc.warranty = nextTag;
+  if (svc.id && SERVICE_MAP[svc.id]) {
+    SERVICE_MAP[svc.id].warrantyDays = parsed;
+    SERVICE_MAP[svc.id].warranty = nextTag;
+  }
+  return changed;
+};
+
+const hasOwn = (obj, k) => Boolean(obj && typeof obj === 'object' && Object.prototype.hasOwnProperty.call(obj, k));
+
 // Dịch vụ có trong đơn cũ nhưng không còn trong danh mục đang mở (đã ẩn): thêm vào bảng tra cứu, không hiện trên danh sách.
 export const ensureServiceFromOrderItem = (it) => {
   const id = Number(it?.service_id);
   if (!id) return null;
   const key = serviceKey(id);
-  if (SERVICE_MAP[key]) return SERVICE_MAP[key];
+  let warrantyDays;
+  if (hasOwn(it, 'warranty_days')) warrantyDays = parseWarrantyDays(it.warranty_days);
+  else if (hasOwn(it, 'warrantyDays')) warrantyDays = parseWarrantyDays(it.warrantyDays);
+  else if (hasOwn(it, 'service_warranty_days')) warrantyDays = parseWarrantyDays(it.service_warranty_days);
+  if (SERVICE_MAP[key]) {
+    if (SERVICE_MAP[key].warrantyDays === undefined && warrantyDays !== undefined) {
+      SERVICE_MAP[key].warrantyDays = warrantyDays;
+      SERVICE_MAP[key].warranty = formatWarrantyTag(warrantyDays);
+    }
+    return SERVICE_MAP[key];
+  }
   const name = it.service_name || it.service_name_snapshot || 'Dịch vụ';
-  const svc = { id: key, dbId: id, category: it.category_id ? categoryKey(it.category_id) : 'all', name, price: Number(it.selected_price) || 0, kind: kindFromName(name), icon: 'wrench', warranty: 'BH 60 ngày', hidden: true };
+  const svc = {
+    id: key,
+    dbId: id,
+    category: it.category_id ? categoryKey(it.category_id) : 'all',
+    name,
+    price: Number(it.selected_price) || 0,
+    kind: kindFromName(name),
+    icon: 'wrench',
+    warrantyDays,
+    warranty: formatWarrantyTag(warrantyDays),
+    hidden: true,
+  };
   SERVICE_MAP[key] = svc;
   SERVICE_BY_DB_ID[String(id)] = svc;
   return svc;
@@ -630,6 +671,9 @@ export const syncCatalogFromBackend = ({ categories = null, services = null, mat
   if (Array.isArray(services)) {
     const items = services.filter(Boolean).map((r) => {
       const name = r.service_name || 'Dịch vụ';
+      let warrantyDays;
+      if (hasOwn(r, 'warranty_days')) warrantyDays = parseWarrantyDays(r.warranty_days);
+      else if (hasOwn(r, 'warrantyDays')) warrantyDays = parseWarrantyDays(r.warrantyDays);
       return {
         id: serviceKey(r.service_id),
         dbId: Number(r.service_id),
@@ -638,7 +682,8 @@ export const syncCatalogFromBackend = ({ categories = null, services = null, mat
         price: Number(r.base_price) || 0,
         kind: kindFromName(name),
         icon: r.category_icon || r.category_type_icon || 'wrench',
-        warranty: 'BH 60 ngày',
+        warrantyDays,
+        warranty: formatWarrantyTag(warrantyDays),
       };
     });
     replaceAll(SERVICES, items.filter((x) => x.kind === 'clean' || x.kind === 'gas'));
@@ -708,8 +753,8 @@ export const DIAG_TAGS = {
   'tu-lanh': ['Gioăng cửa hở', 'Dàn nóng bám bụi', 'Hỏng rơ-le', 'Đóng tuyết ngăn đá'],
   'nuoc-nong': ['Bám cặn thanh nhiệt', 'Thanh magie mòn', 'Rò rỉ nước'],
   'loc-khong-khi': ['Màng lọc HEPA bẩn', 'Màng than hoạt tính hết hạn', 'Quạt hút yếu', 'Có mùi khi hoạt động'],
-  quat: ['Bình nước bám cặn', 'Tấm làm mát bẩn', 'Không phun hơi nước', 'Motor quay yếu'],
-  'hut-mui': ['Lưới lọc bám dầu mỡ', 'Motor hút yếu', 'Đèn không sáng'],
+  quat: ['Bình nước bám cặn', 'Tấm làm mát bẩn', 'Không phun hơi nước', 'Động cơ quay yếu'],
+  'hut-mui': ['Lưới lọc bám dầu mỡ', 'Động cơ hút yếu', 'Đèn không sáng'],
   all: ['Thiết bị hoạt động bình thường', 'Cần vệ sinh định kỳ', 'Nguồn điện không ổn định', 'Kêu to / rung bất thường', 'Không lên nguồn'],
 };
 // Cụm từ gợi ý cho "Kết luận chẩn đoán" và "Đề xuất xử lý" (thợ chạm để chèn, đỡ phải gõ).
@@ -792,9 +837,9 @@ export const comboDiscountFor = (items = []) => {
   }, 0);
   if (totalQty === 2) {
     const amount = Math.min(50000, Math.round(sub * 0.05));
-    return { qty: totalQty, percent: 5, amount, label: 'Combo 2 thiết bị (-5%)' };
+    return { qty: totalQty, percent: 5, amount, label: 'Gói gộp 2 thiết bị (-5%)' };
   }
   const amount = Math.min(120000, Math.round(sub * 0.1));
-  return { qty: totalQty, percent: 10, amount, label: `Combo ${totalQty} thiết bị (-10%)` };
+  return { qty: totalQty, percent: 10, amount, label: `Gói gộp ${totalQty} thiết bị (-10%)` };
 };
 

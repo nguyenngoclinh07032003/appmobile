@@ -2,7 +2,7 @@
 // và thanh hành động ở màn chi tiết.
 import { useCallback } from 'react';
 import { Platform } from 'react-native';
-import { useApp, isQRPayment, isPaid } from '../../../context';
+import { useApp, isQRPayment, isPaid, getPendingExternalEstimates } from '../../../context';
 import { distanceKm, getCheckInLocation } from '../../../utils/geo';
 import { useBusyRunner } from './useBusyRunner';
 
@@ -26,7 +26,7 @@ const destLocOf = (o) => {
     lat,
     lng,
     accuracy: 15,
-    label: 'Check-in theo địa chỉ khách (web/demo)',
+    label: 'Xác nhận đến nơi theo địa chỉ khách (trình duyệt)',
     at: Date.now(),
   };
 };
@@ -43,11 +43,11 @@ export async function checkInWithGps(o, a, u) {
 
   if (!loc || loc.lat == null || loc.lng == null) {
     if (Platform.OS === 'web' && dest) {
-      u.toast('GPS web không có · dùng địa chỉ khách để check-in', '📍');
+      u.toast('Trình duyệt không có định vị · dùng địa chỉ khách để xác nhận đến nơi', '📍');
       return Promise.resolve(a.arrive(o.code, dest));
     }
     u.alert(
-      'Không lấy được GPS',
+      'Không thể lấy vị trí định vị',
       'Bật định vị rồi thử lại khi đã đến gần nhà khách.',
       '📍',
     );
@@ -59,7 +59,7 @@ export async function checkInWithGps(o, a, u) {
     dest &&
     (distanceKm(loc, { lat: dest.lat, lng: dest.lng }) ?? 0) > 0.3
   ) {
-    u.toast('GPS web lệch điểm hẹn · dùng địa chỉ khách', '📍');
+    u.toast('Định vị trình duyệt lệch điểm hẹn · dùng địa chỉ khách', '📍');
     return Promise.resolve(a.arrive(o.code, dest));
   }
 
@@ -113,7 +113,7 @@ export function useNextAction({ inDetail = false } = {}) {
         const key = `arrive:${o.code}`;
         const busy = isBusy(key);
         return {
-          label: busy ? 'Đang lấy vị trí…' : (inDetail ? 'Đã đến nơi (check-in GPS)' : 'Check-in GPS'),
+          label: busy ? 'Đang lấy vị trí…' : (inDetail ? 'Đã đến nơi (xác nhận vị trí)' : 'Xác nhận đến nơi'),
           icon: 'map-pin',
           busy,
           disabled: busy,
@@ -122,7 +122,7 @@ export function useNextAction({ inDetail = false } = {}) {
       }
       case 'diagnosing': {
         if (inDetail) return null;
-        if (o.quote?.isExternalFinalization && o.quote?.revisionRequested) {
+        if (o.externalPriceState === 'revision_requested' || (o.quote?.isExternalFinalization && o.quote?.revisionRequested)) {
           return { label: 'Chỉnh lại giá vật tư', icon: 'receipt-text', variant: 'primary', run: open };
         }
         return { label: 'Chẩn đoán & báo giá', icon: 'receipt-text', run: open };
@@ -136,15 +136,18 @@ export function useNextAction({ inDetail = false } = {}) {
         return inDetail
           ? null
           : {
-              label: o.quote?.isExternalFinalization ? 'Chờ khách xác nhận Bill' : 'Chờ khách duyệt',
+              label: o.quote?.isExternalFinalization ? 'Chờ khách xác nhận hoá đơn' : 'Chờ khách duyệt',
               icon: 'clock',
               variant: 'ghost',
               run: open,
             };
       case 'repairing': {
         if (inDetail) return null;
-        if ((o.pendingExternalEstimates || []).length > 0) {
-          return { label: 'Chốt giá & Gửi Bill', icon: 'receipt-text', variant: 'primary', run: open };
+        if (o.externalPriceState === 'revision_requested') {
+          return { label: 'Chỉnh lại giá vật tư', icon: 'receipt-text', variant: 'primary', run: open };
+        }
+        if (getPendingExternalEstimates(o).length > 0) {
+          return { label: 'Chốt giá & Gửi hoá đơn', icon: 'receipt-text', variant: 'primary', run: open };
         }
         if (o.externalPriceState === 'finalized') {
           return { label: 'Ký bàn giao & Mở TT', icon: 'check-circle-2', variant: 'primary', run: open };
@@ -154,7 +157,7 @@ export function useNextAction({ inDetail = false } = {}) {
       case 'pending_payment': {
         if (inDetail || isPaid(o)) return null;
         if (isQRPayment(o)) {
-          return { label: 'Chờ khách CK QR', icon: 'qr-code', variant: 'ghost', run: open };
+          return { label: 'Chờ khách chuyển khoản QR', icon: 'qr-code', variant: 'ghost', run: open };
         }
         return {
           label: o.bill?.cashClaimPending ? 'Xác nhận đã thu TM' : 'Thu tiền mặt',

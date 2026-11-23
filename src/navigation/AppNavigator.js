@@ -8,6 +8,9 @@ import { DialogHost, ToastHost, FrameCtx, AppIcon } from '../components';
 import BottomNav from './BottomNav';
 import { CUSTOMER_TABS, TECH_TABS, SCREENS, DARK_TOP, PHONE_W, BEZEL, AuthScreen } from './routes';
 import GuestHomeScreen from '../screens/auth/GuestHomeScreen';
+import { ScreenActiveCtx, useScreenActive } from './ScreenActiveContext';
+
+export { ScreenActiveCtx, useScreenActive };
 
 export function AnimatedScreen({ children, mode = 'stack' }) {
   const anim = useRef(new Animated.Value(0)).current;
@@ -32,6 +35,7 @@ export function AnimatedScreen({ children, mode = 'stack' }) {
 
 export function Shell() {
   const { s, nav } = useApp();
+  const { height: winHeight } = useWindowDimensions();
   const loggedIn = !!s.auth;
   const [authMode, setAuthMode] = React.useState(null);
   const previousLoggedIn = useRef(loggedIn);
@@ -62,7 +66,8 @@ export function Shell() {
     : [];
   const topName = allowedStack[allowedStack.length - 1]?.name;
   const darkTop = !loggedIn ? Boolean(effectiveAuthMode) : (topName ? false : DARK_TOP.includes(activeTab));
-  const topInset = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : Platform.OS === 'ios' ? 47 : 0;
+  const iosInset = winHeight >= 852 ? 54 : winHeight >= 812 ? 47 : 20;
+  const topInset = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : Platform.OS === 'ios' ? iosInset : 0;
 
   return (
     <View style={[st.fill, { backgroundColor: C.bg }]}>
@@ -81,18 +86,22 @@ export function Shell() {
       ) : (
         <>
           <View style={st.fill}>
-            <AnimatedScreen key={`tab-${role}-${activeTab}`} mode="tab">
-              <Tab />
-            </AnimatedScreen>
+            <ScreenActiveCtx.Provider value={allowedStack.length === 0}>
+              <AnimatedScreen key={`tab-${role}-${activeTab}`} mode="tab">
+                <Tab />
+              </AnimatedScreen>
+            </ScreenActiveCtx.Provider>
             {allowedStack.map((entry, i) => {
               const Screen = SCREENS[entry.name];
               if (!Screen) return null;
               const isTop = i === allowedStack.length - 1;
               return (
                 <View key={entry.key} style={[StyleSheet.absoluteFill, { backgroundColor: C.bg, display: isTop ? 'flex' : 'none' }]}>
-                  <AnimatedScreen mode="stack">
-                    <Screen params={entry.params} />
-                  </AnimatedScreen>
+                  <ScreenActiveCtx.Provider value={isTop}>
+                    <AnimatedScreen mode="stack">
+                      <Screen params={entry.params} />
+                    </AnimatedScreen>
+                  </ScreenActiveCtx.Provider>
                 </View>
               );
             })}
@@ -107,24 +116,36 @@ export function Shell() {
 }
 
 export function DesktopShowcase({ style }) {
+  const { s } = useApp();
+  const isTech = Boolean(s?.auth) && (s.auth?.role === 'tech' || s.role === 'tech');
+  const features = isTech
+    ? [
+        { icon: 'briefcase', title: 'Nhận việc nhanh chóng', sub: 'Xem yêu cầu theo khu vực và chuyên môn phù hợp' },
+        { icon: 'receipt-text', title: 'Chẩn đoán & báo giá', sub: 'Ghi nhận tình trạng thiết bị và chi phí minh bạch' },
+        { icon: 'clipboard-check', title: 'Chấm công & lịch làm', sub: 'Theo dõi ca làm việc, bảng công và lịch hẹn' },
+        { icon: 'banknote', title: 'Bàn giao tiền mặt', sub: 'Đối soát phiếu thu và lịch sử nộp tiền rõ ràng' },
+      ]
+    : [
+        { icon: 'zap', title: 'Đặt lịch nhanh chóng', sub: 'Chọn dịch vụ và khung giờ linh hoạt tại nhà' },
+        { icon: 'receipt-text', title: 'Báo giá minh bạch', sub: 'Khảo sát thực tế, chỉ thực hiện khi khách duyệt' },
+        { icon: 'map-pin', title: 'Theo dõi trực tuyến', sub: 'Cập nhật vị trí và tiến độ công việc' },
+        { icon: 'shield-check', title: 'Bảo hành điện tử', sub: 'Hỗ trợ kiểm tra lại miễn phí sau dịch vụ' },
+      ];
   return (
     <View style={[st.side, style]}>
       <View style={st.sidePill}>
         <View style={st.sidePillDot} />
-        <Text style={st.sidePillText}>Dịch vụ Kỹ thuật Tại nhà Chính hãng</Text>
+        <Text style={st.sidePillText}>{isTech ? 'Ứng dụng Kỹ thuật viên Minh Đức' : 'Dịch vụ Kỹ thuật Tại nhà Chính hãng'}</Text>
       </View>
       <Text style={st.sideBrand}><Text style={{ color: C.primary }}>Thợ</Text> Minh Đức</Text>
       <Text style={st.sideText}>
-        Đặt lịch vệ sinh, bảo dưỡng, sửa chữa và lắp đặt thiết bị điện máy tận nhà. Báo giá minh bạch, theo dõi hành trình trực tiếp và bảo hành 60 ngày.
+        {isTech
+          ? 'Tiếp nhận công việc, chẩn đoán báo giá, cập nhật tiến độ và chấm công ca làm việc trực tiếp trên ứng dụng.'
+          : 'Đặt lịch vệ sinh, bảo dưỡng và sửa chữa thiết bị điện máy tận nhà. Báo giá minh bạch, theo dõi hành trình trực tiếp và bảo hành điện tử rõ ràng.'}
       </Text>
 
       <View style={st.sideCard}>
-        {[
-          { icon: 'zap', title: 'Đặt lịch nhanh chóng', sub: 'Chọn dịch vụ và khung giờ linh hoạt tại nhà' },
-          { icon: 'receipt-text', title: 'Báo giá minh bạch', sub: 'Khảo sát thực tế, chỉ thực hiện khi khách duyệt' },
-          { icon: 'map-pin', title: 'Theo dõi trực tuyến', sub: 'Cập nhật vị trí GPS và tiến độ công việc' },
-          { icon: 'shield-check', title: 'Bảo hành 60 ngày', sub: 'Hỗ trợ kiểm tra lại miễn phí sau dịch vụ' },
-        ].map((item, idx) => (
+        {features.map((item, idx) => (
           <View key={item.title} style={[st.sideFeature, idx > 0 && st.sideFeatureBorder]}>
             <View style={st.sideFeatureIcon}>
               <AppIcon icon={item.icon} size={18} color={C.primary} strokeWidth={2.2} />

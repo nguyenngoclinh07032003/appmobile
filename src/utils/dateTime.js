@@ -57,6 +57,14 @@ export const parseSlotToMinutes = (slotStr, fallback = DEFAULT_SLOT_MINUTE) => {
   return h * 60 + m;
 };
 
+/** Phút tính từ 00:00 → khung 2 giờ "HHhMM - HHhMM" (VD: 480 → "08h00 - 10h00"). */
+export const formatMinutesToSlotStr = (mins) => {
+  const raw = mins != null && mins !== '' ? Number(mins) : NaN;
+  const m = Number.isFinite(raw) ? Math.max(0, Math.min(24 * 60, Math.round(raw))) : DEFAULT_SLOT_MINUTE;
+  const endM = Math.min(m + 120, m <= 20 * 60 ? 22 * 60 : 24 * 60);
+  return `${pad2(Math.floor(m / 60))}h${pad2(m % 60)} - ${pad2(Math.floor(endM / 60))}h${pad2(endM % 60)}`;
+};
+
 /** Chỉ số ngày (trong nextDays(n)) khớp dateKey; không có thì trả fallback (mặc định 1 = Ngày mai). */
 export const dayIndexOfKey = (days, dateKey, fallback = 1) => {
   const idx = (days || []).findIndex((d) => d.key === dateKey);
@@ -79,7 +87,7 @@ export const dobError = (value, { minYear = 1920, minAge = 5, now = new Date() }
   const raw = String(value || '').trim();
   if (!raw) return '';
   const match = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (!match) return 'Ngày sinh theo định dạng DD/MM/YYYY (VD: 15/08/1995).';
+  if (!match) return 'Ngày sinh theo định dạng ngày/tháng/năm (VD: 15/08/1995).';
   const d = parseInt(match[1], 10);
   const m = parseInt(match[2], 10);
   const y = parseInt(match[3], 10);

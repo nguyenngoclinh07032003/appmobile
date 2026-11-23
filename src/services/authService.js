@@ -34,8 +34,6 @@ export async function hydrateAuthStore() {
   cache.hydrated = true;
 }
 
-export const isAuthStoreHydrated = () => cache.hydrated;
-
 // Chỉ cho phép lưu các trường hiển thị công khai, loại bỏ hoàn toàn token/password/permissions
 const sanitizeStoredAccount = (acc) => {
   // Chỉ giữ tài khoản đăng nhập qua backend (id "be-<user_id>"); tài khoản mẫu offline của bản cũ bị bỏ.
@@ -100,10 +98,6 @@ export function upsertBackendAccount(account) {
   return { ...safeRecord };
 }
 
-export function listAccounts() {
-  return loadAccounts().map(({ password, ...rest }) => rest);
-}
-
 export function deleteAccountById(id) {
   if (!id) return false;
   const accounts = loadAccounts();
@@ -116,38 +110,6 @@ export function deleteAccountById(id) {
   return true;
 }
 
-// Chuẩn hoá SĐT để so sánh: chỉ giữ chữ số, đầu số quốc tế +84 / 84 -> 0 (vd. "+84 912-345-678" -> "0912345678").
-const normalizePhoneDigits = (value) => {
-  const d = String(value || '').replace(/\D/g, '');
-  if (!d) return '';
-  if (d.startsWith('84') && d.length >= 11) return `0${d.slice(2)}`;
-  return d;
-};
-
-export function findAccountByPhone(phone, role) {
-  const p = normalizePhoneDigits(phone);
-  if (!p) return null;
-  return loadAccounts().find((a) => normalizePhoneDigits(a.phone) === p && (!role || a.role === role)) || null;
-}
-
-export function findAccountByIdentifier(identifier, role) {
-  const raw = String(identifier || '').trim();
-  const isEmail = raw.includes('@');
-  const accounts = loadAccounts();
-
-  if (isEmail) {
-    const e = raw.toLowerCase();
-    return accounts.find((a) => a.email && a.email.toLowerCase() === e && (!role || a.role === role)) || null;
-  }
-  const byUsername = accounts.find(
-    (a) => a.username && a.username.toLowerCase() === raw.toLowerCase() && (!role || a.role === role),
-  );
-  if (byUsername) return byUsername;
-  const digits = normalizePhoneDigits(raw);
-  if (!digits) return null;
-  return accounts.find((a) => normalizePhoneDigits(a.phone) === digits && (!role || a.role === role)) || null;
-}
-
 export function getSession() {
   const session = readSessionData();
   if (!session?.accountId) return null;
@@ -156,8 +118,7 @@ export function getSession() {
     clearSession();
     return null;
   }
-  const { password, ...safe } = account;
-  return { ...safe, loggedAt: session.loggedAt };
+  return { ...account, loggedAt: session.loggedAt };
 }
 
 export function clearSession() {
@@ -170,12 +131,4 @@ export function setSession(accountId) {
 
 export function clearAccounts() {
   saveAccounts([]);
-}
-
-export function urlRoleHint() {
-  try {
-    if (typeof window === 'undefined' || !window.location?.search) return null;
-    const r = new URLSearchParams(window.location.search).get('role');
-    return r === 'tech' || r === 'customer' ? r : null;
-  } catch (e) { return null; }
 }

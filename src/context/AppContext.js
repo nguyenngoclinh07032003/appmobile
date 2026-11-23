@@ -24,6 +24,8 @@ import {
   syncCatalogFromBackend,
   syncPolicyFromBackend,
   resolveDbServiceId,
+  parseWarrantyDays,
+  setServiceWarrantyDays,
   PAYMENT_METHODS,
   STATUS_DESC,
   TECH_STATUS_DESC,
@@ -33,7 +35,6 @@ export { matchJobForTech, comboDiscountFor } from "../constants/data";
 import {
   getSession,
   clearSession,
-  urlRoleHint,
   setSession,
   upsertBackendAccount,
   deleteAccountById,
@@ -51,6 +52,7 @@ import { hrmssApi, authTokens, apiEvents, ensureAccessToken } from "../services/
 import {
   playNotificationSound,
   isSoundMuted,
+  subscribeSoundMuted,
   toggleSoundMuted,
 } from "../services/soundService";
 import {
@@ -59,15 +61,17 @@ import {
   subscribeSocketEvent,
   joinOrderRoom,
   leaveOrderRoom,
+  resubscribeOrderRoom,
   reconnectSocket,
-  isSocketConnected,
 } from "../services/socketService";
 import { API_BASE_URL } from "../constants/config";
 import { authErrorMessage } from "../utils/authErrorMessages";
 import { readTechnicianSpecialties } from "../utils/techProfile";
 import {
   analyzeWarrantyEligibility,
+  applyServerWarrantyEligibility,
   isWarrantySlotBookable,
+  normalizeWarrantyEndYmd,
 } from "../utils/warrantyPolicy";
 import { toVnParts, vnDateKey } from "../utils/vnTime";
 import {
@@ -88,39 +92,8 @@ import {
   shouldKeepNotificationAfterClear,
 } from "../utils/notifications";
 import { WARRANTY_ALERT_MILESTONES, OTP_TTL_MINUTES } from "../constants/appPolicy";
-
-// Ngày sinh: server lưu 'YYYY-MM-DD', app hiển thị 'DD/MM/YYYY'.
-const isoToDob = (iso) => {
-  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
-};
-const dobToIso = (dob) => {
-  const m = String(dob || "")
-    .trim()
-    .match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (!m) return null;
-  const day = Number(m[1]);
-  const month = Number(m[2]);
-  const year = Number(m[3]);
-  if (
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31 ||
-    year < 1900 ||
-    year > new Date().getFullYear()
-  ) {
-    return null;
-  }
-  const maxDays = new Date(year, month, 0).getDate();
-  if (day > maxDays) return null;
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-};
-// Lỗi mạng: ghi rõ địa chỉ server app đang gọi (sai địa chỉ / server tắt thì nhìn là thấy).
-const networkError = (res) =>
-  res?.code === "TIMEOUT"
-    ? `Máy chủ ${API_BASE_URL} phản hồi quá lâu. Kiểm tra mạng rồi thử lại.`
-    : `Không kết nối được máy chủ ${API_BASE_URL}. Kiểm tra mạng rồi thử lại.`;
+import { toVietnamese } from "../utils/viText";
+import { parseDobToIso } from "../utils/validators";
 import {
   mapBackendAddressToApp,
   mapBackendCustomerRequestToOrder,
@@ -141,10 +114,7 @@ import {
 import {
   TECH_POLICY,
   normalizeTechRep,
-  isTechLocked,
-  techLockReason,
   assessCancelAfterAccept,
-  assessLateness,
   slotStartTs,
   getCancellationWindowStatus,
   isOfferExpired,
@@ -154,16 +124,24 @@ import { viNotification } from "../utils/viText";
 import { isAttendanceNotifType } from "../utils/attendance";
 export {
   TECH_POLICY,
-  isTechLocked,
-  techLockReason,
   assessCancelAfterAccept,
-  assessLateness,
-  reputationTone,
   normalizeTechRep,
   slotStartTs,
   getCancellationWindowStatus,
   isOfferExpired,
 } from "../constants/techPolicy";
+
+// Ngày sinh: server lưu 'YYYY-MM-DD', app hiển thị 'DD/MM/YYYY'.
+const isoToDob = (iso) => {
+  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+};
+const dobToIso = (dob) => parseDobToIso(dob);
+// Lỗi mạng: ghi rõ địa chỉ server app đang gọi (sai địa chỉ / server tắt thì nhìn là thấy).
+const networkError = (res) =>
+  res?.code === "TIMEOUT"
+    ? `Máy chủ ${API_BASE_URL} phản hồi quá lâu. Kiểm tra mạng rồi thử lại.`
+    : `Không kết nối được máy chủ ${API_BASE_URL}. Kiểm tra mạng rồi thử lại.`;
 
 // ---------------------------------------------------------------------------
 // Tiện ích thời gian
@@ -188,13 +166,18 @@ export const timeAgo = (ts) => {
   if (s < 86400) return `${Math.floor(s / 3600)} giờ trước`;
   return fmtDate(ts);
 };
-const addMonths = (ts, m) => {
-  const d = new Date(ts);
-  d.setMonth(d.getMonth() + m);
-  return d.getTime();
-};
 const uid = () =>
   `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+export const getPendingExternalEstimates = (o) => {
+  const list = Array.isArray(o?.pendingExternalEstimates) ? o.pendingExternalEstimates : [];
+  if (!list.length) return [];
+  const locallyFin = new Set(
+    (o?.locallyFinalizedExternalNames || []).map(normalizeExternalPartName).filter(Boolean),
+  );
+  if (!locallyFin.size) return list;
+  return list.filter((est) => !locallyFin.has(normalizeExternalPartName(est?.name)));
+};
 
 export const cartTotal = (items) =>
   items.reduce((sum, it) => sum + (getService(it.id)?.price || 0) * it.qty, 0);
@@ -219,7 +202,7 @@ const QUOTE_BLOCK_MESSAGES = {
 export const isActiveOrder = (o) => ACTIVE_STATUSES.includes(o.status);
 // Giá trị dịch vụ khách đã đặt (sau giảm giá dịch vụ + combo, trước voucher)
 export const bookedValue = (o) =>
-  o.kind === "warranty"
+  !o || o.kind === "warranty" || o.kind === "followup"
     ? 0
     : Math.max(
         0,
@@ -232,10 +215,14 @@ export const tierPartDiscountAmount = (o) =>
 export const lateDiscountAmount = (o) => Number(o?.bill?.lateDiscount) || 0;
 // Số tiền khách phải trả = bill.amount_due của server (đã gồm báo giá, phát sinh, giảm hạng, voucher, đến muộn, phí kiểm tra).
 // Chưa tải được hoá đơn thì tạm dùng tổng server trả cùng đơn (estimated_total / tổng báo giá đã duyệt).
+const INACTIVE_QUOTE_STATUSES = ["REJECTED", "EXPIRED", "CANCELLED", "SUPERSEDED"];
 export const orderTotal = (o) => {
   if (!o) return 0;
   if (o.kind === "warranty" || o.kind === "followup") return 0;
   if (o.status === "cancelled") return o.inspectionFee || 0;
+  if (["pending_payment", "done"].includes(o.status) && o?.bill && o.bill.amountDue != null) {
+    return Math.max(0, Number(o.bill.amountDue) || 0);
+  }
   const deduct =
     tierPartDiscountAmount(o) +
     (Number(o.voucherDiscount) || 0) +
@@ -248,7 +235,7 @@ export const orderTotal = (o) => {
     o.quote &&
     !o.quote.rejectReason &&
     !o.quote.revisionRequested &&
-    o.quote.status !== "REJECTED";
+    !INACTIVE_QUOTE_STATUSES.includes(String(o.quote.status || "").toUpperCase());
   if (
     o?.bill &&
     (o.bill.quotationTotal != null || o.bill.supplementalTotal > 0) &&
@@ -302,7 +289,7 @@ export const orderTotalRange = (o) => {
       o.quote &&
       !o.quote.rejectReason &&
       !o.quote.revisionRequested &&
-      o.quote.status !== "REJECTED";
+      !INACTIVE_QUOTE_STATUSES.includes(String(o.quote.status || "").toUpperCase());
     if (hasActiveQuote) {
       if (o.quote.hasEstimatedRange) {
         const rawMin = Number(o.quote.totalMin ?? o.quote.total) || 0;
@@ -336,9 +323,10 @@ export const formatOrderTotal = (o) => {
 };
 // Tiền mặt thợ cần thu: bill.cash_to_collect của server (0 nếu khách trả VietQR).
 export const cashToCollect = (o) => {
-  if (o?.bill?.cashToCollect != null) return o.bill.cashToCollect;
-  if (o?.cashToCollect != null) return o.cashToCollect;
-  return isQRPayment(o) ? 0 : amountRemaining(o);
+  if (isQRPayment(o)) return 0;
+  if (o?.bill?.cashToCollect != null) return Math.max(0, Number(o.bill.cashToCollect) || 0);
+  if (o?.cashToCollect != null) return Math.max(0, Number(o.cashToCollect) || 0);
+  return amountRemaining(o);
 };
 // Còn phải trả (đã trừ tiền đã thanh toán) và trạng thái thanh toán theo server.
 export const amountRemaining = (o) =>
@@ -349,15 +337,16 @@ export const isPaid = (o) =>
   o?.bill
     ? ["PAID", "NOTHING_TO_PAY"].includes(o.bill.paymentStatus)
     : Boolean(o?.report?.paid);
-// Đơn đã sửa xong, đang chờ khách trả tiền (PENDING_PAYMENT / trả thiếu).
-export const isAwaitingPayment = (o) =>
-  ["PENDING_PAYMENT", "PARTIALLY_PAID_RECEIVABLE"].includes(o?.backendStatus) &&
-  !isPaid(o);
 
 // Kiểm tra đơn hàng thanh toán bằng Chuyển khoản QR (VietQR) -> Thợ tuyệt đối KHÔNG được thu tiền mặt
 export const isQRPayment = (o) => {
   if (!o) return false;
-  if (o.qrPaymentRequested || o.paymentMethod === "vietqr") return true;
+  const bm = String(o.bill?.paymentMethod || "").trim().toUpperCase();
+  if (bm === "BANK_TRANSFER" || bm === "VIETQR") return true;
+  if (bm === "CASH") return false;
+  if (o.paymentMethod === "vietqr") return true;
+  if (o.paymentMethod === "cash" && !o.qrPaymentRequested) return false;
+  if (o.qrPaymentRequested) return true;
   return /vietqr|qr|chuyển khoản|chuyen khoan|ngân hàng|mbbank/i.test(
     String(o.payment || ""),
   );
@@ -405,11 +394,75 @@ export const dateKeyOf = (o) => {
   return vnDateKey(o.createdAt || Date.now());
 };
 export const todayKey = (offset = 0) => vnDateKey(Date.now() + offset * DAY);
+
+// Lọc & gộp voucher còn hạn sử dụng (ví cá nhân ưu tiên; mã công khai không đếm trùng nếu đã nằm trong ví).
+export const getValidVouchers = (
+  myVouchers = [],
+  publicVouchers = [],
+  nowTs = Date.now(),
+) => {
+  const activeWallet = (Array.isArray(myVouchers) ? myVouchers : []).filter(
+    (v) => v && (!v.expiresAt || v.expiresAt > nowTs),
+  );
+  const walletCodes = new Set(
+    activeWallet
+      .map((v) => String(v.code || "").trim().toUpperCase())
+      .filter(Boolean),
+  );
+  const seenPublicCodes = new Set();
+  const activePublic = (
+    Array.isArray(publicVouchers) ? publicVouchers : []
+  ).filter((v) => {
+    if (!v || (v.expiresAt && v.expiresAt <= nowTs)) return false;
+    const code = String(v.code || "").trim().toUpperCase();
+    if (!code || walletCodes.has(code) || seenPublicCodes.has(code)) {
+      return false;
+    }
+    seenPublicCodes.add(code);
+    return true;
+  });
+  return [...activeWallet, ...activePublic];
+};
+
+export const countValidVouchers = (
+  myVouchers = [],
+  publicVouchers = [],
+  nowTs = Date.now(),
+) => getValidVouchers(myVouchers, publicVouchers, nowTs).length;
 // orders: danh sách tất cả đơn — dùng để chặn gửi trùng yêu cầu bảo hành khi đã có đơn bảo hành đang xử lý
 export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
-  // Hạn bảo hành do server tính theo hạng khách lúc đặt (warranty_days / warranty_end_date).
-  const totalDays =
-    o?.warrantyDays || tierOf(lifetimePoints || 0).cur.warrantyDays || 60;
+  // Hạn bảo hành ưu tiên lấy từ đơn hàng / dịch vụ trên server (warranty_days / warranty_end_date),
+  // chỉ dùng hạn theo hạng thành viên khi dữ liệu đơn chưa có thông tin bảo hành dịch vụ.
+  const explicitZero = o?.warrantyDays === 0;
+  const resolvedOrderDays =
+    typeof o?.warrantyDays === "number" && o.warrantyDays > 0
+      ? o.warrantyDays
+      : null;
+  const items = o?.items || [];
+  const itemDays = items.map((it) =>
+    it?.warrantyDays !== undefined
+      ? it.warrantyDays
+      : getService(it?.id)?.warrantyDays,
+  );
+  const positiveItemDays = itemDays.filter(
+    (d) => typeof d === "number" && d > 0,
+  );
+  const allItemsExplicitlyNoWarranty =
+    items.length > 0 && itemDays.every((d) => d === 0 || d === null);
+
+  let totalDays;
+  if (explicitZero) {
+    totalDays = 0;
+  } else if (resolvedOrderDays != null) {
+    totalDays = resolvedOrderDays;
+  } else if (positiveItemDays.length > 0) {
+    totalDays = Math.max(...positiveItemDays);
+  } else if (allItemsExplicitlyNoWarranty && !o?.warrantyEndAt) {
+    totalDays = 0;
+  } else {
+    totalDays = tierOf(lifetimePoints || 0).cur.warrantyDays || 60;
+  }
+
   if (o.status === "cancelled")
     return {
       ok: false,
@@ -427,12 +480,15 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
           String(x.originalRequestId) === String(o.dbRequestId))),
   );
   if (open) {
-    const openSched = analyzeWarrantyEligibility({
-      completedAt: o.warrantyStartAt || o.doneAt,
-      warrantyDays: totalDays,
-      serverNow: Date.now(),
-      warrantyEndAt: o.warrantyEndAt || null,
-    });
+    const openSched =
+      totalDays > 0
+        ? analyzeWarrantyEligibility({
+            completedAt: o.warrantyStartAt || o.doneAt,
+            warrantyDays: totalDays,
+            serverNow: Date.now(),
+            warrantyEndAt: o.warrantyEndAt || null,
+          })
+        : { daysLeft: 0, eligible: false, until: null };
     return {
       ok: false,
       pending: true,
@@ -444,26 +500,39 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
       text: `Đã có yêu cầu bảo hành ${open.code} đang xử lý.`,
     };
   }
-  const items = o.items || [];
-  if (items.length > 0) {
-    const covered = items.filter((it) => {
-      const svc = getService(it.id);
-      const kind = svc ? serviceKind(svc) : (it.kind || serviceKind({ id: it.id }));
-      return ["clean", "gas", "repair", "install"].includes(kind);
-    });
-    if (!covered.length) {
+  if (totalDays === 0) {
+    return applyServerWarrantyEligibility(
+      {
+        ok: false,
+        totalDays: 0,
+        noWarranty: true,
+        text: "Dịch vụ này không áp dụng bảo hành.",
+      },
+      o?.serverWarrantyEligibility,
+      fmtDate,
+    );
+  }
+  if (resolvedOrderDays == null && positiveItemDays.length === 0 && !o?.warrantyEndAt) {
+    if (items.length > 0) {
+      const covered = items.filter((it) => {
+        const svc = getService(it.id);
+        const kind = svc ? serviceKind(svc) : (it.kind || serviceKind({ id: it.id }));
+        return ["clean", "gas", "repair", "install"].includes(kind);
+      });
+      if (!covered.length) {
+        return {
+          ok: false,
+          totalDays,
+          text: `Đơn này là gói dịch vụ định kỳ riêng, không thuộc diện bảo hành ${totalDays} ngày.`,
+        };
+      }
+    } else if (o.kind === "lifetime") {
       return {
         ok: false,
         totalDays,
         text: `Đơn này là gói dịch vụ định kỳ riêng, không thuộc diện bảo hành ${totalDays} ngày.`,
       };
     }
-  } else if (o.kind === "lifetime") {
-    return {
-      ok: false,
-      totalDays,
-      text: `Đơn này là gói dịch vụ định kỳ riêng, không thuộc diện bảo hành ${totalDays} ngày.`,
-    };
   }
   if (o.status !== "done")
     return {
@@ -480,31 +549,38 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
     warrantyEndAt: o.warrantyEndAt || null,
   });
 
-  if (!schedule.eligible) {
-    return {
-      ok: false,
-      totalDays,
-      daysLeft: schedule.daysLeft || 0,
-      isCutoff: schedule.reason === 'WARRANTY_FINAL_DAY_CUTOFF',
-      isFinalDay: schedule.isFinalDay,
-      reason: schedule.reason,
-      text: schedule.message || `Đơn đã hết thời hạn bảo hành ${totalDays} ngày.`,
-      until: schedule.until,
-      endYmd: schedule.endYmd,
-    };
-  }
+  const baseInfo = !schedule.eligible
+    ? {
+        ok: false,
+        totalDays,
+        daysLeft: schedule.daysLeft || 0,
+        isCutoff: schedule.reason === "WARRANTY_FINAL_DAY_CUTOFF",
+        isFinalDay: schedule.isFinalDay,
+        reason: schedule.reason,
+        text:
+          schedule.message || `Đơn đã hết thời hạn bảo hành ${totalDays} ngày.`,
+        until: schedule.until,
+        endYmd: schedule.endYmd,
+      }
+    : {
+        ok: true,
+        totalDays,
+        daysLeft: schedule.daysLeft,
+        isFinalDay: schedule.isFinalDay,
+        availableDates: schedule.availableDates,
+        availableSlots: schedule.availableSlots,
+        until: schedule.until,
+        endYmd: schedule.endYmd,
+        text:
+          schedule.notice ||
+          `Còn ${schedule.daysLeft}/${totalDays} ngày bảo hành (đến ${fmtDate(schedule.until)}).`,
+      };
 
-  return {
-    ok: true,
-    totalDays,
-    daysLeft: schedule.daysLeft,
-    isFinalDay: schedule.isFinalDay,
-    availableDates: schedule.availableDates,
-    availableSlots: schedule.availableSlots,
-    until: schedule.until,
-    endYmd: schedule.endYmd,
-    text: schedule.notice || `Còn ${schedule.daysLeft}/${totalDays} ngày bảo hành (đến ${fmtDate(schedule.until)}).`,
-  };
+  return applyServerWarrantyEligibility(
+    baseInfo,
+    o?.serverWarrantyEligibility,
+    fmtDate,
+  );
 };
 
 // ---------------------------------------------------------------------------
@@ -512,10 +588,10 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
 // ---------------------------------------------------------------------------
 const KEY = "tho-hrmss-state-v2";
 // Hồ sơ thợ: giữ khu vực/chuyên môn đã lưu, cập nhật tên/SĐT từ tài khoản đăng nhập
-const mergeTechProfile = (prev, account) => {
+export const mergeTechProfile = (prev, account) => {
   const code = account.techCode || prev?.code || TECH_ME.code;
   const same = prev?.code === code ? prev : null;
-  const rep = normalizeTechRep(same || prev || {});
+  const rep = normalizeTechRep(same || {});
   return {
     name: account.name || same?.name || TECH_ME.name,
     phone: account.phone || same?.phone || TECH_ME.phone,
@@ -539,7 +615,6 @@ const CUSTOMER_SLICE_KEYS = [
   "selectedAddressId",
   "addressGenderMap",
   "cart",
-  "favorites",
   "notifications",
   "notifClearedAt",
   "notifKeptIds",
@@ -554,7 +629,6 @@ const makeCustomerSlice = () => ({
   selectedAddressId: null,
   addressGenderMap: {},
   cart: [],
-  favorites: [],
   notifications: [],
   notifClearedAt: 0,
   notifKeptIds: [],
@@ -610,7 +684,7 @@ const switchCustomerSlice = (prev, nextAccount) => {
     profiles[nextKey] = loaded;
     return { ...loaded, customerProfiles: profiles };
   }
-  return { customerProfiles: profiles };
+  return { ...makeCustomerSlice(), customerProfiles: profiles };
 };
 // Đăng xuất / xoá tài khoản / phiên hết hạn: xoá khỏi state (và localStorage) mọi dữ liệu của tài khoản vừa thoát
 // (địa chỉ, SĐT, đơn, thông báo, điểm, voucher). Chỉ giữ giỏ hàng, yêu thích, lịch sử tìm kiếm (dữ liệu riêng trên máy)
@@ -623,7 +697,6 @@ const signedOutState = (p) => {
     profiles[key] = {
       ...makeCustomerSlice(),
       cart: cur.cart || [],
-      favorites: cur.favorites || [],
       searches: cur.searches || [],
     };
   }
@@ -631,6 +704,7 @@ const signedOutState = (p) => {
     ...makeCustomerSlice(),
     customerProfiles: profiles,
     orders: [],
+    declinedByTech: {},
     techNotifs: [],
     notifClearedAt: 0,
     notifKeptIds: [],
@@ -647,7 +721,6 @@ const makeInitial = () => ({
   user: { name: "", phone: "", email: "" },
   ...makeCustomerSlice(),
   orders: [],
-  userReviews: {},
   customerProfiles: {},
   // Phía thợ
   role: "customer", // 'customer' | 'tech'
@@ -659,12 +732,8 @@ const makeInitial = () => ({
   redeemOptions: [],
   policy: null,
   serviceReviews: {},
-  declined: [], // legacy — dùng declinedByTech theo mã thợ
   declinedByTech: {}, // { [techCode]: string[] }
-  declineLog: [],
   techProfile: null,
-  payoutHistory: [],
-  tips: { customerHome: true, techJobs: true }, // gợi ý lần đầu
 });
 
 const storage = {
@@ -678,19 +747,12 @@ const storage = {
       return null;
     }
   },
-  save(s) {
-    try {
-      if (IS_WEB_STORAGE) {
-        writeJson(KEY, s, "session");
-      }
-    } catch (e) {
-      /* bỏ qua */
-    }
-  },
   clear() {
     try {
       if (IS_WEB_STORAGE) {
         removeStorageItem(KEY, "session");
+        removeStorageItem(KEY, "local");
+      } else {
         removeStorageItem(KEY, "local");
       }
     } catch (e) {
@@ -725,6 +787,7 @@ export const latestNotifPerOrder = (list = []) => {
         g.groupIds.push(n.id);
         g.olderCount += 1;
         if (!n.read) g.read = false;
+        if (!g.link && n.link) g.link = n.link;
         return;
       }
       const item = { ...n, groupIds: [n.id], olderCount: 0 };
@@ -756,9 +819,9 @@ export const customerStatusMeta = (o, now = Date.now()) => {
     };
   }
   if (
-    o?.status === "diagnosing" &&
-    o?.quote?.isExternalFinalization &&
-    o?.quote?.revisionRequested
+    (o?.externalPriceState === "revision_requested" ||
+      (o?.quote?.isExternalFinalization && o?.quote?.revisionRequested)) &&
+    ["diagnosing", "repairing", "quoted"].includes(o?.status)
   ) {
     return {
       label: "Đang chỉnh lại chi phí cuối",
@@ -782,22 +845,22 @@ export const customerStatusMeta = (o, now = Date.now()) => {
 export const techStatusMeta = (o) => {
   if (o?.status === "quoted" && o?.quote?.isExternalFinalization) {
     return {
-      label: "Chờ khách xác nhận Bill",
+      label: "Chờ khách xác nhận hoá đơn",
       fg: C.goldInk,
       bg: C.goldSoft,
       desc: "Đã gửi chi phí vật tư cuối cùng. Khi khách xác nhận, hãy ký bàn giao để mở thanh toán.",
     };
   }
   if (
-    o?.status === "diagnosing" &&
-    o?.quote?.isExternalFinalization &&
-    o?.quote?.revisionRequested
+    (o?.externalPriceState === "revision_requested" ||
+      (o?.quote?.isExternalFinalization && o?.quote?.revisionRequested)) &&
+    ["diagnosing", "repairing", "quoted"].includes(o?.status)
   ) {
     return {
       label: "Cần chỉnh lại giá vật tư",
       fg: C.goldInk,
       bg: C.goldSoft,
-      desc: "Khách yêu cầu kiểm tra lại mức giá vật tư cuối cùng. Hãy cập nhật và gửi lại Bill.",
+      desc: "Khách yêu cầu kiểm tra lại mức giá vật tư cuối cùng. Hãy cập nhật và gửi lại hoá đơn.",
     };
   }
   if (o?.status === "repairing" && o?.externalPriceState === "finalized") {
@@ -805,18 +868,18 @@ export const techStatusMeta = (o) => {
       label: "Chờ ký bàn giao & Mở TT",
       fg: C.greenInk,
       bg: C.greenSoft,
-      desc: "Khách đã xác nhận tổng Bill. Hãy bấm Ký bàn giao & Mở thanh toán để hoàn tất.",
+      desc: "Khách đã xác nhận tổng hoá đơn. Hãy bấm Ký bàn giao & Mở thanh toán để hoàn tất.",
     };
   }
   if (
     o?.status === "repairing" &&
-    (o?.pendingExternalEstimates || []).length > 0
+    getPendingExternalEstimates(o).length > 0
   ) {
     return {
       label: "Đang thực hiện · Chờ chốt VT",
       fg: C.primary,
       bg: C.primarySoft,
-      desc: "Khi lắp đặt xong, hãy nhập mức giá cuối của vật tư phát sinh bên dưới để gửi Bill cho khách.",
+      desc: "Khi lắp đặt xong, hãy nhập mức giá cuối của vật tư phát sinh bên dưới để gửi hoá đơn cho khách.",
     };
   }
   const base = STATUS_META[o?.status] || STATUS_META.pending;
@@ -987,7 +1050,7 @@ export function AppProvider({ children }) {
   useEffect(() => {
     if (!storageHydratedRef.current) return;
     const { auth, ...rest } = s;
-    const payload = { ...rest, role: auth?.role || rest.role };
+    const payload = { ...rest, role: auth?.role || rest.role, savedAccountId: auth?.id || null };
     let raw;
     try {
       raw = JSON.stringify(payload);
@@ -1020,9 +1083,12 @@ export function AppProvider({ children }) {
     kindCat: "all",
     sort: "popular",
   });
+  // Đồng bộ trạng thái bật/tắt âm thanh (đặc biệt sau khi hydrate async trên Native)
+  const [soundMutedState, setSoundMutedState] = useState(() => isSoundMuted());
+  useEffect(() => subscribeSoundMuted(setSoundMutedState), []);
+
   // Mã voucher được chọn ở "Quyền lợi" → tự áp dụng khi mở màn Xác nhận đặt lịch
   const [pendingVoucher, setPendingVoucher] = useState(null);
-  // Thiết bị được chọn từ màn "Thiết bị của tôi" → tự gắn vào đơn khi đặt lịch
   const [actFilter, setActFilter] = useState("active");
   const [warrantyQuery, setWarrantyQuery] = useState("");
   const [warrantyNonce, setWarrantyNonce] = useState(0);
@@ -1065,13 +1131,14 @@ export function AppProvider({ children }) {
             {
               icon: "⏰",
               title: `Đơn ${o.code} quá hạn tiếp nhận`,
-              body: "Chưa có thợ nhận đơn trong khung giờ bạn chọn. Vui lòng đổi giờ hẹn hoặc gọi hotline để được hỗ trợ.",
+              body: "Chưa có thợ nhận đơn trong khung giờ bạn chọn. Vui lòng đổi giờ hẹn hoặc gọi tổng đài để được hỗ trợ.",
               link: { name: "order", params: { code: o.code } },
             },
           ),
         p.notifications,
       ),
     }));
+    playNotificationSound("notification");
     uiRef.current?.toast(`Đơn ${expired[0].code} quá hạn tiếp nhận`, "⏰");
   }, [isCustomerRole, nowTick, s.orders]);
 
@@ -1126,6 +1193,7 @@ export function AppProvider({ children }) {
         notifications: currentNotifs,
       };
     });
+    playNotificationSound("notification");
   }, [isCustomerRole, nowTick, s.orders]);
 
   const nav = {
@@ -1171,10 +1239,21 @@ export function AppProvider({ children }) {
     },
     open: (link) => {
       if (!link) return;
+      const curRole = stateRef.current?.auth?.role || stateRef.current?.role || "customer";
+      const validCustomerTabs = ["home", "services", "activity", "personal"];
+      const validTechTabs = ["tech-jobs", "tech-attendance", "tech-schedule", "tech-account"];
+      const validCustomerScreens = [
+        "detail", "cart", "checkout", "success", "addresses", "address-form",
+        "search", "notifications", "order", "rate", "rewards", "profile", "help", "terms",
+      ];
+      const validTechScreens = ["tech-job", "tech-attendance", "tech-notifs", "tech-handovers"];
       if (link.tab) {
-        nav.go(link.tab);
+        const okTabs = curRole === "tech" ? validTechTabs : validCustomerTabs;
+        if (okTabs.includes(link.tab)) nav.go(link.tab);
         return;
       }
+      const okScreens = curRole === "tech" ? validTechScreens : validCustomerScreens;
+      if (!link.name || !okScreens.includes(link.name)) return;
       setStack((st) => [
         ...st,
         { name: link.name, params: link.params || {}, key: uid() },
@@ -1251,7 +1330,7 @@ export function AppProvider({ children }) {
         icon: "📞",
         tone: "info",
         fallbackTone: "info",
-        title: `Hotline ${HOTLINE}`,
+        title: `Tổng đài ${HOTLINE}`,
         message:
           "Tổng đài hỗ trợ Thợ Minh Đức hoạt động 7:30 – 22:00 mỗi ngày (miễn phí).",
         actions: [
@@ -1269,20 +1348,14 @@ export function AppProvider({ children }) {
   };
 
   // ------------------------- Nghiệp vụ -------------------------
-  const pushNotif = (prev, n) => {
-    playNotificationSound("notification");
-    return [
-      { id: uid(), at: Date.now(), read: false, ...n },
-      ...prev.notifications,
-    ].slice(0, 50);
-  };
-  const pushTech = (prev, n) => {
-    playNotificationSound("notification");
-    return [
-      { id: uid(), at: Date.now(), read: false, ...n },
-      ...(prev.techNotifs || []),
-    ].slice(0, 50);
-  };
+  const pushNotif = (prev, n) => [
+    { id: uid(), at: Date.now(), read: false, ...n },
+    ...prev.notifications,
+  ].slice(0, 50);
+  const pushTech = (prev, n) => [
+    { id: uid(), at: Date.now(), read: false, ...n },
+    ...(prev.techNotifs || []),
+  ].slice(0, 50);
   const withStatus = (o, status, now, extra = {}) => ({
     ...o,
     ...extra,
@@ -1290,14 +1363,19 @@ export function AppProvider({ children }) {
     history: [...o.history, { status, at: now }],
   });
   // Cập nhật 1 đơn + đẩy thông báo cho khách (đúng tài khoản đặt đơn) và/hoặc thợ
-  const updateOrder = (code, fn) =>
+  const updateOrder = (code, fn) => {
+    let shouldNotifySound = false;
     up((p) => {
       const o = p.orders.find((x) => x.code === code);
       if (!o) return {};
       const r = fn(o, p) || {};
+      const ownerAccountKey = o.customerAccountId || null;
       const ownerPhone = o.customerPhone || o.address?.phone || null;
+      const activeCustKey = customerProfileKey(p.auth);
       const activeCustPhone = p.auth?.role === "customer" ? p.auth.phone : null;
-      const isActiveOwner = !ownerPhone || ownerPhone === activeCustPhone;
+      const isActiveOwner = ownerAccountKey
+        ? ownerAccountKey === activeCustKey
+        : !ownerPhone || !activeCustPhone || ownerPhone === activeCustPhone;
       const custNotif = r.customer
         ? {
             id: uid(),
@@ -1307,10 +1385,15 @@ export function AppProvider({ children }) {
             ...r.customer,
           }
         : null;
+      if ((custNotif && isActiveOwner) || r.tech) shouldNotifySound = true;
 
       let nextProfiles = p.customerProfiles || {};
-      if (ownerPhone && nextProfiles[ownerPhone]) {
-        const curProf = nextProfiles[ownerPhone];
+      let profilesChanged = false;
+      const profileTargetKey =
+        (ownerAccountKey && nextProfiles[ownerAccountKey] ? ownerAccountKey : null) ||
+        (ownerPhone && nextProfiles[ownerPhone] ? ownerPhone : null);
+      if (profileTargetKey) {
+        const curProf = nextProfiles[profileTargetKey];
         const profPatch = {};
         if (custNotif) {
           profPatch.notifications = [
@@ -1324,8 +1407,9 @@ export function AppProvider({ children }) {
         if (Object.keys(profPatch).length) {
           nextProfiles = {
             ...nextProfiles,
-            [ownerPhone]: { ...curProf, ...profPatch },
+            [profileTargetKey]: { ...curProf, ...profPatch },
           };
+          profilesChanged = true;
         }
       }
 
@@ -1346,9 +1430,11 @@ export function AppProvider({ children }) {
         ...(!isActiveOwner && r.extra?.techProfile
           ? { techProfile: r.extra.techProfile }
           : {}),
-        customerProfiles: nextProfiles,
+        ...(profilesChanged ? { customerProfiles: nextProfiles } : {}),
       };
     });
+    if (shouldNotifySound) playNotificationSound("notification");
+  };
   const address =
     s.addresses.find((a) => a.id === s.selectedAddressId) ||
     s.addresses.find((a) => a.isDefault) ||
@@ -1365,9 +1451,11 @@ export function AppProvider({ children }) {
   const catalogFetchedAt = useRef(0);
   const catalogSyncPromiseRef = useRef(null);
   const finishedOrderCache = useRef(new Map()); // request_id -> { status, technician, journey, bill }
+  const warrantyEligibilitySupportedRef = useRef(true);
   const statusToastRef = useRef(null); // thông báo đổi trạng thái đơn vừa phát hiện khi đồng bộ (hiện toast sau khi cập nhật)
   const syncingRef = useRef(false);
   const lastSyncAt = useRef(0);
+  const syncSeqRef = useRef(0);
   // Sync bắt buộc (sau thao tác: hoàn thành đơn, thanh toán, đổi điểm...) gọi lúc đang có sync khác chạy:
   // không bỏ đi mà xếp hàng chạy ngay khi sync hiện tại xong (nếu không sẽ thấy điểm / trạng thái cũ).
   const pendingForceSyncRef = useRef(null);
@@ -1408,13 +1496,10 @@ export function AppProvider({ children }) {
         }
         if (svcRes.ok && Array.isArray(svcRes.items)) {
           syncCatalogFromBackend({ services: svcRes.items });
-          // Giỏ hàng / yêu thích của bản cũ có mã dịch vụ mẫu: bỏ những món không còn trong danh mục.
+          // Giỏ hàng của bản cũ có mã dịch vụ mẫu: bỏ những món không còn trong danh mục.
           up((p) => ({
             cart: (p.cart || []).filter(
               (it) => getService(it.id) && !getService(it.id).hidden,
-            ),
-            favorites: (p.favorites || []).filter(
-              (id) => getService(id) && !getService(id).hidden,
             ),
             catalogVersion: Date.now(),
           }));
@@ -1533,7 +1618,7 @@ export function AppProvider({ children }) {
               const c = isFinished(r)
                 ? finishedOrderCache.current.get(String(r.request_id))
                 : null;
-              return c && c.cacheVer === 3 && c.status === r.request_status && (c.updatedAt || null) === (r.updated_at || null) ? c : null;
+              return c && c.cacheVer === 4 && c.status === r.request_status && (c.updatedAt || null) === (r.updated_at || null) ? c : null;
             };
             rawRequests.forEach((r) => {
               const c = cached(r);
@@ -1545,11 +1630,20 @@ export function AppProvider({ children }) {
                   ...(c.visits ? { visits: c.visits } : {}),
                   ...(c.timeline ? { timeline: c.timeline } : {}),
                   ...(c._detailAttachments ? { _detailAttachments: c._detailAttachments } : {}),
+                  ...(c.review ? { review: c.review } : {}),
+                  ...(c.warranty ? { warranty: c.warranty } : {}),
+                  ...(c.warranty_days !== undefined ? { warranty_days: c.warranty_days } : {}),
+                  ...(c.warranty_start_date !== undefined ? { warranty_start_date: c.warranty_start_date } : {}),
+                  ...(c.warranty_end_date !== undefined ? { warranty_end_date: c.warranty_end_date } : {}),
+                  ...(c.customer_tier_code !== undefined ? { customer_tier_code: c.customer_tier_code } : {}),
+                  ...(c.customer_tier_label !== undefined ? { customer_tier_label: c.customer_tier_label } : {}),
+                  ...(c.customer_tier_name !== undefined ? { customer_tier_name: c.customer_tier_name } : {}),
                   technician: c.technician,
                   journey: c.journey,
                   bill: c.bill,
                   ...(c._evidence ? { _evidence: c._evidence } : {}),
-                  _detailLoaded: true,
+                  ...(c._evidenceFetched ? { _evidenceFetched: true } : {}),
+                  ...(c._detailLoaded ? { _detailLoaded: true } : {}),
                 });
             });
             // Ưu tiên đơn đang hoạt động lên trước để không bị trôi khỏi giới hạn tải chi tiết khi khách có nhiều đơn cũ.
@@ -1568,7 +1662,6 @@ export function AppProvider({ children }) {
                 (r) =>
                   r.request_id &&
                   r.request_status !== "RECEIVED" &&
-                  !String(r.request_status || "").startsWith("CANCELLED") &&
                   !cached(r),
               )
               .slice(0, 25);
@@ -1660,18 +1753,23 @@ export function AppProvider({ children }) {
                 r._evidence = r._detailAttachments.map(mapBackendPhotoToEvidence);
               }
             });
-            // Ghi nhớ đơn đã xong / huỷ khi đã có hoá đơn & chi tiết (lần sau không gọi lại).
+            // Ghi nhớ đơn đã xong / huỷ khi đã có hoá đơn & chi tiết (không cache đơn huỷ còn nợ phí kiểm tra).
             rawRequests
               .filter(
-                (r) =>
-                  isFinished(r) &&
-                  r.bill &&
-                  (r._detailLoaded || r.request_status !== "COMPLETED") &&
-                  !cached(r),
+                (r) => {
+                  if (!isFinished(r) || !r.bill || !r._detailLoaded || cached(r)) return false;
+                  const isCancelled = String(r.request_status || "").toUpperCase().startsWith("CANCELLED");
+                  if (isCancelled) {
+                    const due = Number(r.bill?.bill?.amount_due) || 0;
+                    const ps = String(r.bill?.payment_status || "").toUpperCase();
+                    if (due > 0 && !["PAID", "NOTHING_TO_PAY"].includes(ps)) return false;
+                  }
+                  return true;
+                },
               )
               .forEach((r) => {
                 finishedOrderCache.current.set(String(r.request_id), {
-                  cacheVer: 3,
+                  cacheVer: 4,
                   status: r.request_status,
                   updatedAt: r.updated_at || null,
                   items: r.items,
@@ -1680,11 +1778,20 @@ export function AppProvider({ children }) {
                   visits: r.visits,
                   timeline: r.timeline,
                   _detailAttachments: r._detailAttachments,
+                  review: r.review,
+                  warranty: r.warranty,
+                  warranty_days: r.warranty_days,
+                  warranty_start_date: r.warranty_start_date,
+                  warranty_end_date: r.warranty_end_date,
+                  customer_tier_code: r.customer_tier_code,
+                  customer_tier_label: r.customer_tier_label,
+                  customer_tier_name: r.customer_tier_name,
                   technician: r.technician,
                   journey: r.journey,
                   bill: r.bill,
                   _evidence: r._evidence,
                   _evidenceFetched: Boolean(r._evidenceFetched),
+                  _detailLoaded: Boolean(r._detailLoaded),
                 });
               });
           }
@@ -1715,8 +1822,25 @@ export function AppProvider({ children }) {
           const wallet = okItems(walletRes);
           const catalog = catalogRes.ok ? catalogRes.data : null;
 
+          const curAuthBeforeUp = stateRef.current?.auth;
+          const syncedAuth =
+            curAuthBeforeUp &&
+            (!acc?.id || String(curAuthBeforeUp.id) === String(acc.id))
+              ? upsertBackendAccount({
+                  ...curAuthBeforeUp,
+                  name: serverName,
+                  phone: meRes.ok ? serverPhone : curAuthBeforeUp.phone ?? acc.phone,
+                  email: serverEmail,
+                  emailVerified:
+                    remoteEmailVerified !== null
+                      ? remoteEmailVerified
+                      : curAuthBeforeUp.emailVerified,
+                })
+              : null;
+
           up((p) => {
             if (!isSameAccount(p)) return {};
+            syncSeqRef.current += 1;
             const prevAddrById = new Map((p.addresses || []).map((ad) => [ad.id, ad]));
             const genderMap = p.addressGenderMap || {};
             const nextAddresses =
@@ -1786,18 +1910,7 @@ export function AppProvider({ children }) {
                 p.notifKeptIds,
               ),
             );
-            const nextAuth = p.auth
-              ? upsertBackendAccount({
-                  ...p.auth,
-                  name: serverName,
-                  phone: meRes.ok ? serverPhone : p.auth.phone ?? acc.phone,
-                  email: serverEmail,
-                  emailVerified:
-                    remoteEmailVerified !== null
-                      ? remoteEmailVerified
-                      : p.auth.emailVerified,
-                })
-              : p.auth;
+            const nextAuth = syncedAuth || p.auth;
             return {
               user: {
                 ...(p.user || {}),
@@ -1911,7 +2024,18 @@ export function AppProvider({ children }) {
               : [];
           const activeJobsList = [
             ...allJobsRaw.filter((j) => j.assignment_status === "ACTIVE" && j.assignment_id),
-            ...allJobsRaw.filter((j) => j.assignment_status !== "ACTIVE" && j.assignment_id),
+            ...allJobsRaw.filter(
+              (j) =>
+                j.assignment_status !== "ACTIVE" &&
+                j.assignment_id &&
+                PAYMENT_STATUSES.includes(j.request?.request_status),
+            ),
+            ...allJobsRaw.filter(
+              (j) =>
+                j.assignment_status !== "ACTIVE" &&
+                j.assignment_id &&
+                !PAYMENT_STATUSES.includes(j.request?.request_status),
+            ),
           ].slice(0, 15);
           const activeJobIds = activeJobsList.map((j) => String(j.assignment_id));
           const paymentJobIds = allJobsRaw
@@ -1923,8 +2047,8 @@ export function AppProvider({ children }) {
             .map((j) => String(j.assignment_id));
           const billJobIds = [
             ...new Set([
-              ...paymentJobIds,
               ...activeJobIds,
+              ...paymentJobIds,
             ]),
           ].slice(0, 20);
           const [photoLists, reqPhotoLists, jobBills] = await Promise.all([
@@ -1985,6 +2109,7 @@ export function AppProvider({ children }) {
           });
           up((p) => {
             if (!isSameAccount(p)) return {};
+            syncSeqRef.current += 1;
             const base = p.techProfile || mergeTechProfile(null, acc);
             const techProf = {
               ...base,
@@ -2075,7 +2200,12 @@ export function AppProvider({ children }) {
                         !assignedCodes.has(o.code) &&
                         !isOfferExpired(o, syncNow),
                     )
-                : (p.orders || []).filter((o) => o.status === "pending");
+                : (p.orders || []).filter(
+                    (o) =>
+                      o.status === "pending" &&
+                      !assignedCodes.has(o.code) &&
+                      !isOfferExpired(o, syncNow),
+                  );
             const remoteOrders = [
               ...assignedOrders.filter((o) => !isOfferExpired(o, syncNow)),
               ...openOrders,
@@ -2139,17 +2269,25 @@ export function AppProvider({ children }) {
     ]);
     if (!det?.ok && !proc?.ok) return null;
     const svcDetail = det?.ok ? det.data?.service : null;
+    const warrantyDays =
+      svcDetail && Object.prototype.hasOwnProperty.call(svcDetail, "warranty_days")
+        ? parseWarrantyDays(svcDetail.warranty_days)
+        : undefined;
+    const catalogChanged =
+      warrantyDays !== undefined ? setServiceWarrantyDays(serviceDbId, warrantyDays) : false;
     const info = {
       description: svcDetail?.description || "",
       bookingCount: svcDetail?.booking_count ?? null,
       ratingAverage: svcDetail?.rating?.average ?? null,
       ratingCount: svcDetail?.rating?.count ?? null,
+      warrantyDays,
       images: Array.isArray(svcDetail?.images) ? svcDetail.images : [],
       steps: proc?.ok ? proc.data?.steps || [] : null,
       at: Date.now(),
     };
     up((p) => ({
       serviceDetails: { ...(p.serviceDetails || {}), [serviceDbId]: info },
+      ...(catalogChanged ? { catalogVersion: Date.now() } : {}),
     }));
     return info;
   };
@@ -2199,7 +2337,11 @@ export function AppProvider({ children }) {
       }
       // Ngày sinh: GET /users/me -> profile.dateOfBirth (YYYY-MM-DD).
       const info = infoRes?.ok ? infoRes.data?.user || infoRes.data : null;
-      account.dob = isoToDob(info?.profile?.dateOfBirth);
+      if (info?.profile?.dateOfBirth) {
+        account.dob = isoToDob(info.profile.dateOfBirth);
+      } else if (infoRes?.ok) {
+        account.dob = "";
+      }
       if (verRes.ok && verRes.data)
         account.emailVerified = Boolean(verRes.data.email_verified);
     } catch (meErr) {
@@ -2219,9 +2361,13 @@ export function AppProvider({ children }) {
           const hydratedSession = getSession();
           if (!authIdRef.current && !stateRef.current?.auth && (savedNative || hydratedSession)) {
             const rawSaved = savedNative || {};
+            const savedAccId = rawSaved.savedAccountId || rawSaved.auth?.id || null;
+            const sameSavedAcc =
+              Boolean(savedAccId && hydratedSession?.id && String(savedAccId) === String(hydratedSession.id)) ||
+              (!hydratedSession && !savedAccId);
             const fromBackend = (list, idKey) =>
               Array.isArray(list) ? list.filter((x) => x && x[idKey] != null) : [];
-            const { devices: _legacyDevices, ...savedRest } = rawSaved;
+            const { devices: _legacyDevices, savedAccountId: _ignoredSavedAccId, ...savedRest } = rawSaved;
             const role = hydratedSession?.role || rawSaved.role || "customer";
             const cleanUser = hydratedSession
               ? {
@@ -2231,25 +2377,50 @@ export function AppProvider({ children }) {
                 }
               : rawSaved.user;
             if (hydratedSession?.id) authIdRef.current = hydratedSession.id;
+            const sessKey = customerProfileKey(hydratedSession);
+            const rawProfiles = rawSaved.customerProfiles || {};
+            const savedProfileSlice = sessKey
+              ? (rawProfiles[sessKey] || (hydratedSession?.phone ? rawProfiles[hydratedSession.phone] : null))
+              : null;
+            const sliceSource = savedProfileSlice || (sameSavedAcc ? rawSaved : null);
+            const customerHydrated = role === "tech"
+              ? makeCustomerSlice()
+              : sliceSource
+                ? {
+                    ...makeCustomerSlice(),
+                    ...sliceSource,
+                    addresses: fromBackend(sliceSource.addresses, "dbAddressId"),
+                    notifications: fromBackend(sliceSource.notifications, "dbNotificationId"),
+                    pointHistory: (sliceSource.pointHistory || []).filter((h) =>
+                      String(h?.id || "").startsWith("pt-db-"),
+                    ),
+                    myVouchers: (sliceSource.myVouchers || []).filter(
+                      (v) => v?.customerVoucherId != null,
+                    ),
+                    points: sliceSource.points ?? 0,
+                    lifetimePoints: sliceSource.lifetimePoints ?? 0,
+                  }
+                : makeCustomerSlice();
+            delete customerHydrated.devices;
+            delete customerHydrated.favorites;
             up((p) => ({
-              ...savedRest,
-              orders: (rawSaved.orders || []).filter(
-                (o) => o && (o.dbRequestId != null || o.dbAssignmentId != null),
-              ),
-              addresses: fromBackend(rawSaved.addresses, "dbAddressId"),
-              notifications: fromBackend(rawSaved.notifications, "dbNotificationId"),
-              techNotifs: fromBackend(rawSaved.techNotifs, "dbNotificationId"),
-              pointHistory: (rawSaved.pointHistory || []).filter((h) =>
-                String(h?.id || "").startsWith("pt-db-"),
-              ),
-              myVouchers: (rawSaved.myVouchers || []).filter(
-                (v) => v?.customerVoucherId != null,
-              ),
+              ...(sameSavedAcc ? savedRest : {}),
+              orders: sameSavedAcc
+                ? (rawSaved.orders || []).filter(
+                    (o) => o && (o.dbRequestId != null || o.dbAssignmentId != null),
+                  )
+                : [],
+              ...customerHydrated,
+              ...(sessKey ? { customerProfiles: { ...rawProfiles, [sessKey]: customerHydrated } } : {}),
+              techNotifs:
+                role === "tech" && sameSavedAcc
+                  ? fromBackend(rawSaved.techNotifs, "dbNotificationId")
+                  : [],
               user: cleanUser || p.user,
               techProfile:
-                hydratedSession?.role === "tech"
-                  ? mergeTechProfile(rawSaved.techProfile || p.techProfile, hydratedSession)
-                  : (rawSaved.techProfile ?? p.techProfile),
+                role === "tech"
+                  ? mergeTechProfile(sameSavedAcc ? (rawSaved.techProfile || p.techProfile) : null, hydratedSession || { role: "tech" })
+                  : null,
               auth: hydratedSession || p.auth,
               role: role || p.role,
               catalogVersion: p.catalogVersion || rawSaved.catalogVersion,
@@ -2400,7 +2571,7 @@ export function AppProvider({ children }) {
               updatedAt: data.updated_at
                 ? new Date(data.updated_at).getTime()
                 : Date.now(),
-              label: "Vị trí trực tiếp của thợ (Realtime)",
+              label: "Vị trí trực tiếp của thợ",
             },
           };
           return { ...prev, orders: next };
@@ -2430,14 +2601,15 @@ export function AppProvider({ children }) {
   }, [s.auth?.id]);
 
   const inFlight = useRef(new Set()); // thao tác ghi đang chạy (chống bấm đúp)
-  // Mã đơn của thao tác thợ đang chạy: server báo "việc không còn được giao / hết hạn" thì gỡ đúng đơn này.
+  // Stack mã đơn của thao tác thợ đang chạy (chống ghi đè sai khi 2 thao tác chạy song song).
   const actionCodeRef = useRef(null);
+  const actionCodeStackRef = useRef([]);
   useEffect(() => {
     apiEvents.onJobGone((_code, endpoint) => {
       if (s.auth?.role !== "tech") return;
       const ep = String(endpoint || "");
       const jobMatch = /\/technician\/jobs\/(\d+)/i.exec(ep);
-      const openMatch = /\/technician\/open-requests\/(\d+)/i.exec(ep);
+      const openMatch = /\/technician\/(?:jobs\/)?open-requests\/(\d+)/i.exec(ep);
       const orders = stateRef.current?.orders || [];
       let targetCode = null;
       if (jobMatch) {
@@ -2458,7 +2630,7 @@ export function AppProvider({ children }) {
         orders: p.orders.filter((o) => o.code !== targetCode),
       }));
       setStack((st) => st.filter((x) => x.params?.code !== targetCode));
-      setTimeout(() => syncRef.current?.(), 300);
+      setTimeout(() => syncRef.current?.(null, true), 300);
     });
     return () => apiEvents.onJobGone(null);
   }, [s.auth?.role]);
@@ -2485,7 +2657,7 @@ export function AppProvider({ children }) {
 
   // Thao tác ghi: gọi server trước. Lỗi -> báo (mã lỗi tiếng Việt nếu có) + tải lại dữ liệu thật, trả false.
   // Thành công -> báo toast + tải lại dữ liệu thật, trả true. Không tự sửa dữ liệu trên máy.
-  const serverDone = (
+  const serverDone = async (
     res,
     { title = "Không thực hiện được", codes = {}, toast, icon = "✓" } = {},
   ) => {
@@ -2503,11 +2675,11 @@ export function AppProvider({ children }) {
         codes[res?.code] || (res?.status > 0 ? res.message : networkError(res)),
         "⚠️",
       );
-      syncFromBackend(null, true);
+      await syncFromBackend(null, true);
       return false;
     }
     if (toast) ui.toast(toast, icon);
-    syncFromBackend(null, true);
+    await syncFromBackend(null, true);
     return true;
   };
   // Ghi chẩn đoán của lần đến hiện tại. Gửi lại cùng nội dung (báo giá lỗi rồi bấm gửi lại) thì không ghi thêm bản
@@ -2541,7 +2713,7 @@ export function AppProvider({ children }) {
         ok: false,
         status: 409,
         code: "CHECK_IN_REQUIRED",
-        message: 'Bạn chưa check-in tại nhà khách. Hãy bấm "Đã đến nơi (check-in)" trước khi chẩn đoán.',
+        message: 'Bạn chưa xác nhận đến nơi tại nhà khách. Hãy bấm "Đã đến nơi" trước khi chẩn đoán.',
       };
     }
     const res = await hrmssApi.submitDiagnosis(o.dbAssignmentId, payload);
@@ -2620,19 +2792,18 @@ export function AppProvider({ children }) {
         const d = normalizeExternalPartName(r.description || "");
         return d.includes(normName) || (d && normName.includes(d));
       };
-      const nonSymptomUploads = sortedUploads.filter(
-        (r) =>
-          String(r.evidence_type || "").toUpperCase() !== "PROBLEM_PHOTO" &&
-          !parseSymptomPhotoMeta(r.description || ""),
-      );
+      const isReceiptDoc = (r) =>
+        String(r.evidence_type || "").toUpperCase() === "DOCUMENT" ||
+        /biên lai|hóa đơn|hoá đơn|receipt/i.test(String(r.description || r.note || ""));
+      const receiptUploads = sortedUploads.filter(isReceiptDoc);
       const candidate =
         docUploads.find((r) => !usedAttIds.has(String(r.attachment_id)) && matchesDesc(r)) ||
         docUploads.find(matchesDesc) ||
         (unlinkedItems.length === 1
           ? docUploads.find((r) => !usedAttIds.has(String(r.attachment_id)))
           : null) ||
-        nonSymptomUploads.find((r) => !usedAttIds.has(String(r.attachment_id)) && matchesDesc(r)) ||
-        nonSymptomUploads.find(matchesDesc);
+        receiptUploads.find((r) => !usedAttIds.has(String(r.attachment_id)) && matchesDesc(r)) ||
+        receiptUploads.find(matchesDesc);
       if (!candidate) continue;
       const res = await hrmssApi
         .attachPartReceipt(assignmentId, it.quotation_item_id, candidate.attachment_id)
@@ -2652,23 +2823,26 @@ export function AppProvider({ children }) {
       if (!code || s.auth?.role !== "customer" || !authTokens.get()) return false;
       const o = s.orders.find((x) => x.code === code);
       if (!o?.dbRequestId || o._detailHydrated) return false;
+      const seqBefore = syncSeqRef.current;
       const [detRes, photoRes, billRes] = await Promise.all([
         hrmssApi.getCustomerRequestDetail(o.dbRequestId).catch(() => null),
         hrmssApi.listRequestPhotos(o.dbRequestId).catch(() => null),
         o.bill ? Promise.resolve(null) : hrmssApi.getBill(o.dbRequestId).catch(() => null),
       ]);
       if (!detRes?.ok && !photoRes?.ok && !billRes?.ok) return false;
+      if (syncSeqRef.current !== seqBefore) return false;
       const baseReq = {
         request_id: o.dbRequestId,
         request_code: o.code,
         request_status: o.backendStatus || "COMPLETED",
+        request_type: o.kind === "warranty" ? "WARRANTY" : "NORMAL",
+        out_of_warranty: Boolean(o.outOfWarranty),
         problem_description: o.note || "",
         goods_amount: o.goods ?? null,
         product_discount_amount: o.productDiscount ?? 0,
         combo_discount_amount: o.comboDiscount ?? 0,
         voucher_discount_amount: o.voucherDiscount ?? 0,
         estimated_total: o.total ?? o.finalTotal ?? null,
-        ...(o.bill ? { bill: o.bill } : {}),
         created_at: new Date(o.createdAt || Date.now()).toISOString(),
         updated_at: new Date(o.doneAt || o.createdAt || Date.now()).toISOString(),
       };
@@ -2706,17 +2880,36 @@ export function AppProvider({ children }) {
         : null;
       const mergedAtts = extractInitialAttachments(ev, remapped?.attachments || o.attachments);
       updateOrder(code, (cur) => {
-        const keepBill = remapped?.bill || cur.bill || null;
-        const resolvedInspFee = cur.status === "cancelled"
+        const keepBill = (billRes?.ok || detRes?.data?.bill || detRes?.data?.request?.bill)
+          ? (remapped?.bill || cur.bill || null)
+          : (cur.bill || null);
+        const nextStatus = detRes?.ok && remapped?.status && !remapped?.statusUnknown
+          ? remapped.status
+          : cur.status;
+        const resolvedInspFee = nextStatus === "cancelled"
           ? ((billRes?.ok && remapped?.inspectionFee != null)
               ? remapped.inspectionFee
               : (Number(cur.inspectionFee) || Number(remapped?.inspectionFee) || 0))
           : (remapped?.inspectionFee ?? cur.inspectionFee);
+        const nextTotal =
+          keepBill && nextStatus !== "quoted" && (["pending_payment", "done"].includes(nextStatus) || keepBill.quotationTotal != null || keepBill.supplementalTotal > 0)
+            ? keepBill.amountDue
+            : (detRes?.ok && remapped?.total != null ? remapped.total : cur.total);
+        const nextPaid = isPaid({ bill: keepBill, report: remapped?.report || cur.report });
+        const nextReport = (detRes?.ok && remapped?.report) || cur.report
+          ? {
+              ...(cur.report || {}),
+              ...(detRes?.ok && remapped?.report ? remapped.report : {}),
+              paid: nextPaid,
+            }
+          : null;
         return {
           order: {
             ...cur,
+            ...(detRes?.ok && remapped?.backendStatus ? { backendStatus: remapped.backendStatus } : {}),
+            ...(nextStatus ? { status: nextStatus } : {}),
             ...(keepBill ? { bill: keepBill } : {}),
-            ...(detRes?.ok && remapped?.total != null ? { total: remapped.total, finalTotal: remapped.finalTotal } : {}),
+            ...(nextTotal != null ? { total: nextTotal, finalTotal: nextTotal } : {}),
             ...(resolvedInspFee != null ? { inspectionFee: resolvedInspFee } : {}),
             ...(detRes?.ok && remapped?.materials ? { materials: remapped.materials } : {}),
             ...(detRes?.ok && remapped?.pendingExternalEstimates ? { pendingExternalEstimates: remapped.pendingExternalEstimates } : {}),
@@ -2726,7 +2919,7 @@ export function AppProvider({ children }) {
             ...(remapped?.tech?.code ? { tech: remapped.tech } : {}),
             ...(detRes?.ok && remapped?.quote ? { quote: remapped.quote } : {}),
             ...(detRes?.ok && remapped?.diagnosisReport ? { diagnosisReport: remapped.diagnosisReport } : {}),
-            ...(detRes?.ok && remapped?.report ? { report: { ...(cur.report || {}), ...remapped.report } } : {}),
+            ...(nextReport ? { report: nextReport } : {}),
             ...(photoRes?.ok ? { evidence: ev, _evidenceFetched: true } : (ev.length ? { evidence: ev } : {})),
             ...(mergedAtts.length ? { attachments: mergedAtts } : {}),
             ...(detRes?.ok ? { _detailHydrated: true } : {}),
@@ -2788,7 +2981,7 @@ export function AppProvider({ children }) {
       if (!res.ok) {
         const msg = {
           INVALID_VISIT_STATE:
-            'Bấm "Đã đến nơi" (check-in) trước khi làm các bước.',
+            'Bấm "Đã đến nơi" trước khi làm các bước.',
           PHOTO_REQUIRED: "Bước này cần ít nhất 1 ảnh.",
           MEASUREMENTS_REQUIRED: "Nhập đủ các chỉ số đo của bước.",
           INVALID_PHOTO: "Ảnh không thuộc việc này. Chụp lại ảnh.",
@@ -2837,20 +3030,6 @@ export function AppProvider({ children }) {
     removeFromCart: (id) =>
       up((p) => ({ cart: p.cart.filter((it) => it.id !== id) })),
     clearCart: () => up(() => ({ cart: [] })),
-
-    // Yêu thích
-    toggleFav: (id) => {
-      const on = s.favorites.includes(id);
-      up((p) => ({
-        favorites: on
-          ? p.favorites.filter((x) => x !== id)
-          : [id, ...p.favorites],
-      }));
-      ui.toast(
-        on ? "Đã bỏ khỏi yêu thích" : "Đã thêm vào yêu thích",
-        on ? "♡" : "♥",
-      );
-    },
 
     // Địa chỉ + hồ sơ (Ghi trực tiếp vào bảng hrmss.service_address trên PostgreSQL)
     // Lưu địa chỉ: gửi backend TRƯỚC (POST/PATCH /customer/addresses). address_text = số nhà + đường; ward_code = phường/xã
@@ -2958,7 +3137,23 @@ export function AppProvider({ children }) {
           ? { phone: u.phone ? String(u.phone) : null }
           : {}),
       };
+      const committed = {};
+      const commitLocal = () => {
+        if (!Object.keys(committed).length) return;
+        const curP = stateRef.current;
+        const nextUser = { ...curP.user, ...committed };
+        const nextAuth = curP.auth
+          ? upsertBackendAccount({
+              ...curP.auth,
+              ...(committed.name !== undefined ? { name: committed.name } : {}),
+              ...(committed.phone !== undefined ? { phone: committed.phone } : {}),
+              ...(committed.dob !== undefined ? { dob: committed.dob } : {}),
+            })
+          : null;
+        up(() => ({ user: nextUser, ...(nextAuth ? { auth: nextAuth } : {}) }));
+      };
       const fail = (res) => {
+        commitLocal();
         ui.alert(
           "Không lưu được",
           res.status > 0 ? res.message : networkError(res),
@@ -2969,30 +3164,26 @@ export function AppProvider({ children }) {
       if (authTokens.get() && Object.keys(body).length) {
         const res = await hrmssApi.updateProfile(body);
         if (!res.ok) return fail(res);
+        if (u.name) committed.name = body.full_name;
+        if (u.phone !== undefined) committed.phone = u.phone;
+      } else {
+        if (u.name !== undefined) committed.name = u.name;
+        if (u.phone !== undefined) committed.phone = u.phone;
       }
       if (authTokens.get() && u.dob !== undefined) {
-        const res = await hrmssApi.updateMyInfo({
-          dateOfBirth: dobToIso(u.dob),
-        });
+        const isoDob = dobToIso(u.dob);
+        if (String(u.dob || "").trim() && !isoDob) {
+          commitLocal();
+          ui.alert("Ngày sinh chưa hợp lệ", "Vui lòng nhập ngày sinh đúng định dạng ngày/tháng/năm.", "⚠️");
+          return false;
+        }
+        const res = await hrmssApi.updateMyInfo({ dateOfBirth: isoDob });
         if (!res.ok) return fail(res);
+        committed.dob = isoDob ? u.dob : "";
+      } else if (u.dob !== undefined) {
+        committed.dob = u.dob;
       }
-      up((p) => {
-        const nextUser = {
-          ...p.user,
-          name: u.name ?? p.user.name,
-          phone: u.phone ?? p.user.phone,
-          dob: u.dob ?? p.user.dob,
-        };
-        const nextAuth = p.auth
-          ? upsertBackendAccount({
-              ...p.auth,
-              name: nextUser.name ?? p.auth.name,
-              phone: nextUser.phone ?? p.auth.phone,
-              dob: nextUser.dob,
-            })
-          : null;
-        return { user: nextUser, ...(nextAuth ? { auth: nextAuth } : {}) };
-      });
+      commitLocal();
       ui.toast("Đã cập nhật thông tin");
       return true;
     },
@@ -3002,8 +3193,8 @@ export function AppProvider({ children }) {
     placeOrder: async (payload) => {
       if (s.auth?.role === "customer" && !s.auth.emailVerified) {
         ui.alert(
-          "Chưa xác thực Email",
-          `Vui lòng xác thực địa chỉ Email (${s.user?.email || s.auth?.email || ""}) bằng mã OTP 6 chữ số trước khi đặt lịch dịch vụ.`,
+          "Chưa xác thực thư điện tử",
+          `Vui lòng xác thực địa chỉ thư điện tử (${s.user?.email || s.auth?.email || ""}) bằng mã xác thực 6 chữ số trước khi đặt lịch dịch vụ.`,
           "📧",
         );
         return null;
@@ -3204,7 +3395,8 @@ export function AppProvider({ children }) {
         };
       });
       ui.toast("Đã nhận việc", "👍");
-      syncFromBackend(null, true);
+      resubscribeOrderRoom(o0.dbRequestId);
+      await syncFromBackend(null, true);
       return true;
     },
     // Từ chối việc chưa nhận → không phạt uy tín (chỉ ẩn với đúng thợ này)
@@ -3311,7 +3503,36 @@ export function AppProvider({ children }) {
         ...patch
       } = input || {};
       if (!authTokens.get()) return notSynced("Hồ sơ");
+      const committed = {};
+      const commitLocal = () => {
+        if (!Object.keys(committed).length) return;
+        const curP = stateRef.current;
+        const base = curP.techProfile || TECH_ME;
+        const nextAuth = curP.auth
+          ? upsertBackendAccount({
+              ...curP.auth,
+              ...(committed.name !== undefined ? { name: committed.name } : {}),
+              ...(committed.phone !== undefined ? { phone: committed.phone } : {}),
+              ...(committed.dob !== undefined ? { dob: committed.dob } : {}),
+            })
+          : curP.auth;
+        up((p) => ({
+          ...(nextAuth ? { auth: nextAuth } : {}),
+          techProfile: {
+            ...base,
+            ...committed,
+            ...normalizeTechRep({ ...base, ...committed }),
+          },
+          user: {
+            ...p.user,
+            name: committed.name !== undefined ? committed.name : p.user.name,
+            phone: committed.phone !== undefined ? committed.phone : p.user.phone,
+            dob: committed.dob !== undefined ? committed.dob : p.user.dob,
+          },
+        }));
+      };
       const fail = (res) => {
+        commitLocal();
         ui.alert(
           "Không lưu được hồ sơ",
           res.status > 0 ? res.message : networkError(res),
@@ -3325,43 +3546,26 @@ export function AppProvider({ children }) {
           ...(patch.phone !== undefined ? { phone: patch.phone || null } : {}),
         });
         if (!res.ok) return fail(res);
+        if (patch.name) committed.name = patch.name;
+        if (patch.phone !== undefined) committed.phone = patch.phone;
       }
       if (patch.area !== undefined) {
         const res = await hrmssApi.updateTechnicianWorkArea(patch.area || null);
         if (!res.ok) return fail(res);
+        committed.area = patch.area;
       }
       if (patch.dob !== undefined) {
-        const res = await hrmssApi.updateMyInfo({
-          dateOfBirth: dobToIso(patch.dob),
-        });
+        const isoDob = dobToIso(patch.dob);
+        if (String(patch.dob || "").trim() && !isoDob) {
+          commitLocal();
+          ui.alert("Ngày sinh chưa hợp lệ", "Vui lòng nhập ngày sinh đúng định dạng ngày/tháng/năm.", "⚠️");
+          return false;
+        }
+        const res = await hrmssApi.updateMyInfo({ dateOfBirth: isoDob });
         if (!res.ok) return fail(res);
+        committed.dob = isoDob ? patch.dob : "";
       }
-      up((p) => {
-        const base = p.techProfile || TECH_ME;
-        const nextAuth = p.auth
-          ? {
-              ...p.auth,
-              ...(patch.name != null ? { name: patch.name } : {}),
-              ...(patch.phone != null ? { phone: patch.phone } : {}),
-              ...(patch.dob !== undefined ? { dob: patch.dob } : {}),
-            }
-          : p.auth;
-        if (nextAuth) upsertBackendAccount(nextAuth);
-        return {
-          ...(nextAuth ? { auth: nextAuth } : {}),
-          techProfile: {
-            ...base,
-            ...patch,
-            ...normalizeTechRep({ ...base, ...patch }),
-          },
-          user: {
-            ...p.user,
-            name: patch.name != null ? patch.name : p.user.name,
-            phone: patch.phone != null ? patch.phone : p.user.phone,
-            dob: patch.dob != null ? patch.dob : p.user.dob,
-          },
-        };
-      });
+      commitLocal();
       ui.toast("Đã cập nhật hồ sơ thợ");
       return true;
     },
@@ -3376,7 +3580,11 @@ export function AppProvider({ children }) {
         );
         return false;
       }
-      if (o.quote && !o.quote.approved) {
+      if (
+        o.quote &&
+        !o.quote.approved &&
+        (o.quote.status === "SENT" || o.quote.revisionRequested)
+      ) {
         ui.alert(
           o.quote.revisionRequested
             ? "Khách yêu cầu báo giá lại"
@@ -3426,6 +3634,7 @@ export function AppProvider({ children }) {
             .catch(() => {});
       });
       ui.toast("Đã báo khách: đang di chuyển", "🛵");
+      await syncFromBackend(null, true);
       return true;
     },
     // Đang đến: thợ gửi vị trí GPS thật lên server; khách đọc vị trí thật từ GET /customer/requests/:id/tracking.
@@ -3490,15 +3699,15 @@ export function AppProvider({ children }) {
       const o = s.orders.find((x) => x.code === code);
       if (!o || o.status !== "onway") {
         ui.alert(
-          "Không check-in được",
-          "Chỉ check-in khi đang ở trạng thái “Đang đến”.",
+          "Không thể xác nhận đến nơi",
+          "Chỉ xác nhận đến nơi khi đang ở trạng thái “Đang đến”.",
           "ℹ️",
         );
         return false;
       }
       if (!checkIn || checkIn.lat == null || checkIn.lng == null) {
         ui.alert(
-          "Không lấy được GPS",
+          "Không thể lấy vị trí định vị",
           "Bật định vị và thử lại khi đã đến gần nhà khách.",
           "📍",
         );
@@ -3508,12 +3717,12 @@ export function AppProvider({ children }) {
         lat: Number(checkIn.lat),
         lng: Number(checkIn.lng),
         accuracy: checkIn.accuracy != null ? Number(checkIn.accuracy) : 15,
-        label: checkIn.label || "Đã xác thực vị trí GPS tại điểm hẹn",
+        label: checkIn.label || "Đã xác thực vị trí tại điểm hẹn",
         at: checkIn.at || Date.now(),
       };
       if (!authTokens.get() || !o.dbAssignmentId) {
         ui.alert(
-          "Không check-in được",
+          "Không thể xác nhận đến nơi",
           "Việc này chưa đồng bộ với hệ thống. Kéo làm mới rồi thử lại.",
           "ℹ️",
         );
@@ -3528,13 +3737,13 @@ export function AppProvider({ children }) {
         const msg = {
           TOO_FAR_FROM_CUSTOMER:
             res.message ||
-            "Bạn đang ở quá xa địa chỉ khách. Đến đúng địa chỉ rồi check-in lại.",
-          TRAVEL_NOT_STARTED: "Bấm “Bắt đầu di chuyển” trước khi check-in.",
-          ALREADY_ARRIVED: "Việc này đã check-in rồi.",
+            "Bạn đang ở quá xa địa chỉ khách. Đến đúng địa chỉ rồi xác nhận đến nơi lại.",
+          TRAVEL_NOT_STARTED: "Bấm “Bắt đầu di chuyển” trước khi xác nhận đến nơi.",
+          ALREADY_ARRIVED: "Việc này đã xác nhận đến nơi rồi.",
           ...QUOTE_BLOCK_MESSAGES,
         }[res.code];
         ui.alert(
-          "Không check-in được",
+          "Không thể xác nhận đến nơi",
           msg || (res.status > 0 ? res.message : networkError(res)),
           "📍",
         );
@@ -3566,7 +3775,7 @@ export function AppProvider({ children }) {
           tracking: {
             ...(ord.tracking || {}),
             updatedAt: now,
-            label: "Đã check-in tại nhà khách",
+            label: "Đã xác nhận đến nơi tại nhà khách",
             lat: effectiveCheckIn.lat,
             lng: effectiveCheckIn.lng,
           },
@@ -3575,13 +3784,13 @@ export function AppProvider({ children }) {
       syncFromBackend(null, true);
       if (lateness.tier && lateness.tier !== "ok") {
         ui.alert(
-          `Check-in muộn ${lateness.minutes_late} phút`,
+          `Đến nơi muộn ${lateness.minutes_late} phút`,
           lateness.compensation_voucher_issued
-            ? "Hệ thống đã phát voucher bồi thường cho khách theo chính sách đúng giờ."
+            ? "Hệ thống đã phát mã giảm giá bồi thường cho khách theo chính sách đúng giờ."
             : "Lần sau vui lòng đến đúng khung giờ hẹn.",
           "⏰",
         );
-      } else ui.toast("Đã check-in GPS tại nhà khách", "📍");
+      } else ui.toast("Đã xác nhận vị trí tại nhà khách", "📍");
       return true;
     },
     // Khách đổi hình thức thanh toán qua lại: CASH ↔ BANK_TRANSFER (VietQR).
@@ -3602,24 +3811,29 @@ export function AppProvider({ children }) {
         : "Đã chuyển sang tiền mặt · Có thể trả trực tiếp cho thợ";
       const iconOk = toQr ? "🏦" : "💵";
       const applyLocal = (opts = {}) => {
-        updateOrder(code, (x) => ({
-          order: {
-            ...x,
-            payment: toQr ? "Chuyển khoản VietQR" : "Tiền mặt tại nhà",
-            paymentMethod: toQr ? "vietqr" : "cash",
-            qrPaymentRequested: toQr,
-            cashClaimLocked: false,
-            bill: x.bill
-              ? {
-                  ...x.bill,
-                  cashClaimPending: false,
-                  paymentMethod: toQr ? "vietqr" : "cash",
-                }
-              : x.bill,
-            // Giữ lựa chọn local khi sync nếu BE chưa nhận method mới.
-            paymentMethodLocked: Boolean(opts.lock),
-          },
-        }));
+        updateOrder(code, (x) => {
+          const nextBill = x.bill
+            ? {
+                ...x.bill,
+                cashClaimPending: false,
+                paymentMethod: toQr ? "vietqr" : "cash",
+                cashToCollect: toQr ? 0 : Math.max(0, Number(x.bill.remainingAmount ?? x.bill.amountDue ?? 0)),
+              }
+            : x.bill;
+          return {
+            order: {
+              ...x,
+              payment: toQr ? "Chuyển khoản VietQR" : "Tiền mặt tại nhà",
+              paymentMethod: toQr ? "vietqr" : "cash",
+              qrPaymentRequested: toQr,
+              cashClaimLocked: false,
+              cashToCollect: toQr ? 0 : Math.max(0, Number(nextBill?.remainingAmount ?? nextBill?.amountDue ?? orderTotal(x))),
+              bill: nextBill,
+              // Giữ lựa chọn local khi sync nếu BE chưa nhận method mới.
+              paymentMethodLocked: Boolean(opts.lock),
+            },
+          };
+        });
       };
       const res = await hrmssApi.setPaymentMethod(o.dbRequestId, apiMethod);
       // Chỉ đổi trên máy khi SERVER đồng ý. Trước đây lỗi VALIDATION_ERROR/CONFLICT/ERROR... vẫn đổi local
@@ -3639,15 +3853,14 @@ export function AppProvider({ children }) {
         icon: iconOk,
       });
     },
-    // Alias cũ: đổi sang VietQR.
-    switchToQRPayment: async (code) => a.switchPaymentMethod(code, "BANK_TRANSFER"),
-    // Thanh toán:
+      // Mở lại form báo giá để sửa / thêm phát sinh: chỉ là chế độ màn hình trên máy (không đổi dữ liệu server).
     //  - 'webhook': VietQRPay đã thấy hóa đơn PAID trên server (SePay báo) -> chỉ tải lại dữ liệu thật.
     //  - 'manual': khách xác nhận đã trả TIỀN MẶT -> POST /customer/requests/:id/payments/confirm { method: CASH }.
     //    Nếu BE còn GD VietQR chờ (PAYMENT_IN_PROGRESS) → bỏ qua, đánh dấu đã báo trả tiền mặt trên app.
     confirmPayment: async (code, mode = "manual") => {
       const o = s.orders.find((x) => x.code === code);
       if (!o?.dbRequestId || !authTokens.get()) return notSynced("Đơn này");
+      finishedOrderCache.current.delete(String(o.dbRequestId));
       if (mode === "webhook" || isQRPayment(o)) {
         if (mode === "webhook")
           ui.toast("Đã nhận thanh toán chuyển khoản", "✅");
@@ -3657,10 +3870,11 @@ export function AppProvider({ children }) {
             "Chuyển khoản được hệ thống tự xác nhận khi tiền về. Vui lòng đợi ít phút.",
             "🏦",
           );
-        syncFromBackend(null, true);
+        await syncFromBackend(null, true);
         return mode === "webhook";
       }
       const applyCashClaimLocal = () => {
+        const nowClaim = Date.now();
         updateOrder(code, (x) => ({
           order: {
             ...x,
@@ -3669,6 +3883,7 @@ export function AppProvider({ children }) {
             qrPaymentRequested: false,
             paymentMethodLocked: true,
             cashClaimLocked: true,
+            cashClaimAt: nowClaim,
             bill: {
               ...(x.bill || {}),
               cashClaimPending: true,
@@ -3700,8 +3915,6 @@ export function AppProvider({ children }) {
         icon: "✅",
       });
     },
-    dismissTip: (key) =>
-      up((p) => ({ tips: { ...(p.tips || {}), [key]: false } })),
     // Mở lại form báo giá để sửa / thêm phát sinh: chỉ là chế độ màn hình trên máy (không đổi dữ liệu server).
     // Đồng bộ giữ chế độ này tới khi thợ gửi báo giá mới (POST /technician/jobs/:id/quotation qua submitQuote).
     reopenQuote: (code) => {
@@ -3739,10 +3952,22 @@ export function AppProvider({ children }) {
             quote: o.quote ? { ...o.quote, revisionRequested: true } : null,
             quoteEditing: true,
             quoteEditingFrom: o.quote?.dbQuotationId || null,
+            quoteEditingFromApproved: Boolean(o.quote?.approved),
           }),
         };
       });
       ui.toast("Mở lại báo giá để điều chỉnh phát sinh", "✏️");
+    },
+    cancelReopenQuote: async (code) => {
+      updateOrder(code, (o) => ({
+        order: {
+          ...o,
+          quoteEditing: false,
+          quoteEditingFrom: null,
+          quoteEditingFromApproved: undefined,
+        },
+      }));
+      await syncFromBackend(null, true);
     },
     // Lập chẩn đoán / báo giá:
     //  - Trước khi xuất phát (confirmed): gửi báo giá trên app, khách đồng ý thì thợ mới đi. Khách huỷ -> 0đ.
@@ -3812,9 +4037,12 @@ export function AppProvider({ children }) {
           !o.arrivedAt &&
           !o.checkIn &&
           Boolean(o.quote?.revisionRequested) &&
-          !o.quote?.isSupplemental);
+          !(o.quote?.quotationType === "SUPPLEMENTAL" || o.quote?.isSupplemental === true));
       const isSupplemental = Boolean(
-        o.quote && (o.quote.approved || o.status === "repairing"),
+        o.quote &&
+          (o.quote.approved ||
+            o.status === "repairing" ||
+            o.quote.quotationType === "SUPPLEMENTAL"),
       );
       const hasExtra = lines.some((l) => !l.isOriginal);
       // Tại nhà khách: nếu không có phát sinh thêm, chuyển sang xác nhận chẩn đoán và bắt đầu làm (không gửi báo giá trùng)
@@ -3842,7 +4070,7 @@ export function AppProvider({ children }) {
             title: "Không lưu được chẩn đoán",
             codes: {
               CHECK_IN_REQUIRED:
-                'Bạn chưa check-in tại nhà khách. Hãy bấm "Đã đến nơi (check-in)" trước khi chẩn đoán.',
+                'Bạn chưa xác nhận đến nơi tại nhà khách. Hãy bấm "Đã đến nơi" trước khi chẩn đoán.',
             },
           });
       }
@@ -3984,7 +4212,7 @@ export function AppProvider({ children }) {
         if (!name) {
           ui.alert(
             "Thiếu tên vật tư",
-            "Vui lòng nhập tên vật tư phát sinh trước khi gửi Bill.",
+            "Vui lòng nhập tên vật tư phát sinh trước khi gửi hoá đơn.",
             "⚠️",
           );
           return false;
@@ -4051,6 +4279,18 @@ export function AppProvider({ children }) {
         const actualPrice = Math.round(Number(part.actualPrice) || 0);
         const qty = Math.max(1, Number(part.qty) || 1);
         const origQty = Math.max(1, Number(part.origQty ?? part.qty) || 1);
+        if (part.isWarehouse && (part.matId || part.dbMaterialId)) {
+          const dbMatId = part.dbMaterialId || resolveDbMaterialId(part.matId, part.name);
+          if (dbMatId) {
+            return {
+              item_type: "MATERIAL",
+              material_id: dbMatId,
+              description_snapshot: part.name,
+              quantity: qty,
+              unit_price: actualPrice,
+            };
+          }
+        }
         const totalDelta =
           priorDeposit > 0
             ? Math.max(0, actualPrice * qty - priorDeposit * origQty)
@@ -4080,13 +4320,62 @@ export function AppProvider({ children }) {
         };
       });
       const qRes = await hrmssApi.submitQuotation(o.dbAssignmentId, { items });
+      const allZeroDeltaCovered =
+        resolved.length > 0 &&
+        items.every((it) => Number(it.unit_price) === 0) &&
+        resolved.every((r) => r.priorDeposit > 0);
       if (!qRes.ok) {
+        if (allZeroDeltaCovered && [400, 422].includes(Number(qRes.status))) {
+          const uploadedAtts = resolved.filter((r) => Boolean(r.attachmentId));
+          if (uploadedAtts.length) {
+            const detailRes = await hrmssApi
+              .getTechnicianJobDetail(o.dbAssignmentId)
+              .catch(() => null);
+            const quotes =
+              detailRes?.data?.job?.quotations ||
+              detailRes?.data?.quotations ||
+              [];
+            const approvedExtItems = sortQuotationsAsc(Array.isArray(quotes) ? quotes : [])
+              .filter((q) => q.quotation_status === "APPROVED" || q.customer_decision === "APPROVED")
+              .flatMap((q) => (Array.isArray(q.items) ? q.items : []))
+              .filter(isExternalQuoteItem);
+            for (const { part, attachmentId } of uploadedAtts) {
+              const norm = normalizeExternalPartName(part.name);
+              const target = approvedExtItems.find(
+                (it) =>
+                  normalizeExternalPartName(
+                    parseExternalPartDesc(it.description_snapshot)?.cleanName ||
+                      it.description_snapshot,
+                  ) === norm,
+              );
+              if (target?.quotation_item_id) {
+                await hrmssApi
+                  .attachPartReceipt(o.dbAssignmentId, target.quotation_item_id, attachmentId)
+                  .catch(() => null);
+              }
+            }
+          }
+          const finalizedNames = resolved
+            .map((r) => normalizeExternalPartName(r.part.name))
+            .filter(Boolean);
+          updateOrder(code, (ord) => ({
+            order: {
+              ...ord,
+              locallyFinalizedExternalNames: [
+                ...new Set([...(ord.locallyFinalizedExternalNames || []), ...finalizedNames]),
+              ],
+            },
+          }));
+          ui.toast("Giá thực tế khớp tiền tạm tính ban đầu (0đ phát sinh thêm)", "✅");
+          await syncFromBackend(null, true);
+          return true;
+        }
         return serverDone(qRes, {
           title: "Không gửi được giá cuối",
           codes: {
             QUOTATION_PENDING:
               "Đang có báo giá chờ khách nghiệm thu. Nhắc khách xác nhận hoặc chờ khách phản hồi.",
-            INVALID_VISIT_STATE: "Việc chưa ở trạng thái cho phép gửi Bill chi phí cuối.",
+            INVALID_VISIT_STATE: "Việc chưa ở trạng thái cho phép gửi hoá đơn chi phí cuối.",
             JOB_NOT_ACTIVE:
               "Việc không còn được giao cho bạn.",
             VALIDATION_ERROR:
@@ -4130,7 +4419,6 @@ export function AppProvider({ children }) {
       const extItems = (createdItems || []).filter(isExternalQuoteItem);
       const usedItemIds = new Set();
       const failedReceipts = [];
-      let deferredUntilApproval = false;
       for (let i = 0; i < resolved.length; i += 1) {
         const { part, attachmentId } = resolved[i];
         if (!attachmentId) continue;
@@ -4161,8 +4449,7 @@ export function AppProvider({ children }) {
           const isPendingLock =
             Number(attRes?.status) === 409 ||
             /APPROV|PENDING|STATUS|QUOTATION/i.test(String(attRes?.code || ""));
-          if (isPendingLock) deferredUntilApproval = true;
-          else failedReceipts.push(part.name);
+          if (!isPendingLock) failedReceipts.push(part.name);
         }
       }
       if (failedReceipts.length) {
@@ -4186,7 +4473,7 @@ export function AppProvider({ children }) {
       }
 
       if (!failedReceipts.length)
-        ui.toast("Đã gửi chi phí vật tư cuối cùng · Chờ khách xác nhận Bill", "🧾");
+        ui.toast("Đã gửi chi phí vật tư cuối cùng · Chờ khách xác nhận hoá đơn", "🧾");
       syncFromBackend(null, true);
       return true;
     },
@@ -4217,7 +4504,7 @@ export function AppProvider({ children }) {
           title: "Không lưu được chẩn đoán",
           codes: {
             CHECK_IN_REQUIRED:
-              'Bạn chưa check-in tại nhà khách. Hãy bấm "Đã đến nơi (check-in)" trước khi chẩn đoán.',
+              'Bạn chưa xác nhận đến nơi tại nhà khách. Hãy bấm "Đã đến nơi" trước khi chẩn đoán.',
           },
         });
       updateOrder(code, (ord) => ({
@@ -4226,6 +4513,8 @@ export function AppProvider({ children }) {
             ...ord,
             quoteEditing: false,
             quoteEditingFrom: null,
+            quoteEditingFromApproved: undefined,
+            noQuoteConfirmedAt: Date.now(),
             ...(ord.quote ? { quote: { ...ord.quote, revisionRequested: false } } : {}),
           },
           "repairing",
@@ -4280,24 +4569,8 @@ export function AppProvider({ children }) {
         icon: approve ? "✅" : "🔄",
       });
     },
-    // Thợ quét / xác thực mã QR của khách hàng tại nhà
-    // Tiến độ: POST /technician/jobs/:id/progress (server lưu + báo khách).
-    addProgress: async (code, { note, percent }) => {
-      const o = s.orders.find((x) => x.code === code);
-      if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
-      const res = await hrmssApi.addJobProgress(o.dbAssignmentId, {
-        progress_percent:
-          percent != null && percent !== ""
-            ? Math.max(0, Math.min(100, Math.round(Number(percent))))
-            : undefined,
-        note: note ? String(note).trim() : undefined,
-      });
-      return serverDone(res, {
-        title: "Không cập nhật được tiến độ",
-        toast: "Đã cập nhật tiến độ",
-        icon: "📈",
-      });
-    },
+
+    // Hủy đơn: gửi backend TRƯỚC (PATCH /customer/requests/:id/cancel); backend từ chối thì giữ nguyên đơn và báo lý do.
     // Vật tư: sửa số lượng / xoá theo usage_id trên server (PATCH / DELETE /technician/jobs/:id/materials/:usageId).
     setMaterialQty: async (code, id, qty) => {
       const o = s.orders.find((x) => x.code === code);
@@ -4422,7 +4695,7 @@ export function AppProvider({ children }) {
       return serverDone(res, {
         title: "Không gắn được biên lai",
         codes: {
-          INVALID_VISIT_STATE: "Check-in tại nhà khách trước khi gắn biên lai.",
+          INVALID_VISIT_STATE: "Xác nhận đến nơi tại nhà khách trước khi gắn biên lai.",
           NOT_EXTERNAL_PURCHASE: "Dòng này không phải linh kiện mua ngoài.",
         },
         toast: "Đã gắn biên lai",
@@ -4552,6 +4825,11 @@ export function AppProvider({ children }) {
       };
       const res = await hrmssApi.updateCustomerRequest(o.dbRequestId, body);
       if (res.ok) {
+        if (patch.dateKey && patch.slot) {
+          updateOrder(code, (ord) => ({
+            order: { ...ord, expiredNotified: false },
+          }));
+        }
         if (Array.isArray(patch.attachments)) {
           const keptIds = new Set(
             patch.attachments
@@ -4636,7 +4914,7 @@ export function AppProvider({ children }) {
     requestPasswordReset: async ({ identifier }) => {
       const id = String(identifier || "").trim();
       if (!id)
-        return { ok: false, error: "Vui lòng nhập email hoặc tên đăng nhập." };
+        return { ok: false, error: "Vui lòng nhập thư điện tử hoặc tên đăng nhập." };
       const res = await hrmssApi.forgotPassword(id);
       if (!res.ok)
         return {
@@ -4766,7 +5044,7 @@ export function AppProvider({ children }) {
       if (!res.ok) {
         if (res.code === "PROCEDURE_INCOMPLETE") {
           const missing = (res.errors || [])
-            .map((e) => `• ${e.message}`)
+            .map((e) => `• ${toVietnamese(e?.message, "Chưa hoàn thành bước bắt buộc")}`)
             .join("\n");
           ui.alert(
             "Chưa xong các bước thực hiện",
@@ -4775,7 +5053,7 @@ export function AppProvider({ children }) {
           );
         } else if (res.code === "RECEIPT_REQUIRED") {
           const missing = (res.errors || [])
-            .map((e) => `• ${e.message}`)
+            .map((e) => `• ${toVietnamese(e?.message, "Thiếu ảnh biên lai vật tư")}`)
             .join("\n");
           ui.alert(
             "Thiếu biên lai linh kiện",
@@ -4796,6 +5074,7 @@ export function AppProvider({ children }) {
             "⚠️",
           );
         }
+        await syncFromBackend(null, true);
         return false;
       }
       // Trạng thái, điểm thưởng, bảo hành do server xử lý; app chỉ lưu chữ ký / checklist vừa nhập rồi tải lại.
@@ -4811,15 +5090,16 @@ export function AppProvider({ children }) {
           },
         },
       }));
+      const stillDue = amountRemaining(o0);
       ui.toast(
         collectedCash
           ? "Đã hoàn thành · Đã thu tiền"
-          : cashDue === 0
-            ? "Đã hoàn thành công việc"
-            : "Đã hoàn thành · Chờ khách thanh toán",
+          : stillDue > 0 && o0.kind !== "warranty" && o0.kind !== "followup"
+            ? "Đã hoàn thành · Chờ khách thanh toán"
+            : "Đã hoàn thành công việc",
         "✅",
       );
-      syncFromBackend(null, true);
+      await syncFromBackend(null, true);
       return true;
     },
     // Thợ kết luận ngoài bảo hành: POST /technician/jobs/:id/out-of-warranty (đơn chuyển sang sửa có phí).
@@ -4901,21 +5181,27 @@ export function AppProvider({ children }) {
     applyAuth: (account, link) => {
       authIdRef.current = account?.id || null;
       clearSessionCaches();
-      up((p) => ({
-        ...switchCustomerSlice(p, account),
-        auth: account,
-        role: account.role,
-        orders: [],
-        user: {
-          name: account.name || "",
-          phone: account.phone || "",
-          email: account.email || "",
-        },
-        techProfile:
-          account.role === "tech"
-            ? mergeTechProfile(p.techProfile, account)
-            : p.techProfile,
-      }));
+      up((p) => {
+        const diffAccount = !p.auth?.id || !account?.id || String(p.auth.id) !== String(account.id);
+        return {
+          ...switchCustomerSlice(p, account),
+          auth: account,
+          role: account.role,
+          orders: [],
+          user: {
+            name: account.name || "",
+            phone: account.phone || "",
+            email: account.email || "",
+          },
+          techProfile:
+            account.role === "tech"
+              ? mergeTechProfile(diffAccount ? null : p.techProfile, account)
+              : null,
+          ...(account.role !== "tech" || diffAccount
+            ? { techNotifs: [], techNotifClearedAt: 0, techNotifKeptIds: [] }
+            : {}),
+        };
+      });
       setStack(
         link
           ? [{ name: link.name, params: link.params || {}, key: uid() }]
@@ -4946,28 +5232,34 @@ export function AppProvider({ children }) {
       const res = { ok: true, account: backendAccount };
       authIdRef.current = res.account?.id || null;
       clearSessionCaches();
-      up((p) => ({
-        ...switchCustomerSlice(p, res.account),
-        auth: res.account,
-        role: res.account.role,
-        orders: [],
-        user: {
-          name: res.account.name || "",
-          username: res.account.username || "",
-          email: res.account.email || "",
-          phone: res.account.phone || "",
-        },
-        techProfile:
-          res.account.role === "tech"
-            ? mergeTechProfile(p.techProfile, res.account)
-            : p.techProfile,
-      }));
+      up((p) => {
+        const diffAccount = !p.auth?.id || !res.account?.id || String(p.auth.id) !== String(res.account.id);
+        return {
+          ...switchCustomerSlice(p, res.account),
+          auth: res.account,
+          role: res.account.role,
+          orders: [],
+          user: {
+            name: res.account.name || "",
+            username: res.account.username || "",
+            email: res.account.email || "",
+            phone: res.account.phone || "",
+          },
+          techProfile:
+            res.account.role === "tech"
+              ? mergeTechProfile(diffAccount ? null : p.techProfile, res.account)
+              : null,
+          ...(res.account.role !== "tech" || diffAccount
+            ? { techNotifs: [], techNotifClearedAt: 0, techNotifKeptIds: [] }
+            : {}),
+        };
+      });
       setStack([]);
       setTab(res.account.role === "tech" ? "tech-jobs" : "home");
       await syncFromBackend(res.account, true);
       ui.toast(
         res.account.role === "tech"
-          ? "Đăng nhập app Thợ thành công"
+          ? "Đăng nhập ứng dụng Thợ thành công"
           : "Đăng nhập thành công",
         "👋",
       );
@@ -4993,10 +5285,10 @@ export function AppProvider({ children }) {
         };
       }
       if (!cleanUsername) {
-        return { ok: false, error: "Vui lòng nhập Tên đăng nhập (Username)." };
+        return { ok: false, error: "Vui lòng nhập tên đăng nhập." };
       }
       if (!cleanEmail || !cleanEmail.includes("@")) {
-        return { ok: false, error: "Vui lòng nhập địa chỉ Email hợp lệ." };
+        return { ok: false, error: "Vui lòng nhập địa chỉ thư điện tử hợp lệ." };
       }
       if (pw.length < 8) {
         return {
@@ -5069,22 +5361,28 @@ export function AppProvider({ children }) {
       const res = { ok: true, account: backendAccount };
       authIdRef.current = res.account?.id || null;
       clearSessionCaches();
-      up((p) => ({
-        ...switchCustomerSlice(p, res.account),
-        auth: res.account,
-        role: res.account.role,
-        orders: [],
-        user: {
-          name: res.account.name || "",
-          username: res.account.username || "",
-          email: res.account.email || "",
-          phone: res.account.phone || "",
-        },
-        techProfile:
-          res.account.role === "tech"
-            ? mergeTechProfile(p.techProfile, res.account)
-            : p.techProfile,
-      }));
+      up((p) => {
+        const diffAccount = !p.auth?.id || !res.account?.id || String(p.auth.id) !== String(res.account.id);
+        return {
+          ...switchCustomerSlice(p, res.account),
+          auth: res.account,
+          role: res.account.role,
+          orders: [],
+          user: {
+            name: res.account.name || "",
+            username: res.account.username || "",
+            email: res.account.email || "",
+            phone: res.account.phone || "",
+          },
+          techProfile:
+            res.account.role === "tech"
+              ? mergeTechProfile(diffAccount ? null : p.techProfile, res.account)
+              : null,
+          ...(res.account.role !== "tech" || diffAccount
+            ? { techNotifs: [], techNotifClearedAt: 0, techNotifKeptIds: [] }
+            : {}),
+        };
+      });
       setStack([]);
       setTab(res.account.role === "tech" ? "tech-jobs" : "home");
       await syncFromBackend(res.account, true);
@@ -5102,28 +5400,29 @@ export function AppProvider({ children }) {
         return {
           ok: false,
           error:
-            "Tài khoản chưa có địa chỉ Email. Vui lòng cập nhật Email trong Thông tin cá nhân.",
+            "Tài khoản chưa có địa chỉ thư điện tử. Vui lòng cập nhật thư điện tử trong Thông tin cá nhân.",
         };
       }
       if (authTokens.get()) {
         const res = await hrmssApi.sendEmailVerificationOtp();
         if (res.ok && res.data) {
           if (res.data.email_verified) {
-            up((p) => ({
-              auth: p.auth
-                ? upsertBackendAccount({ ...p.auth, emailVerified: true })
-                : p.auth,
-            }));
-            ui.toast("Email của bạn đã được xác thực!", "✅");
+            const curAuth = stateRef.current?.auth;
+            const nextAuth = curAuth
+              ? upsertBackendAccount({ ...curAuth, emailVerified: true })
+              : curAuth;
+            up(() => ({ auth: nextAuth }));
+            ui.toast("Thư điện tử của bạn đã được xác thực!", "✅");
             return { ok: true, alreadyVerified: true };
           }
           up((p) => ({
             notifications: pushNotif(p, {
               icon: "📧",
-              title: "Mã xác thực Email đã được gửi",
+              title: "Mã xác thực thư điện tử đã được gửi",
               body: `Hệ thống vừa gửi mã xác thực 6 chữ số tới ${res.data.email || targetEmail} (hiệu lực ${OTP_TTL_MINUTES} phút). Vui lòng kiểm tra hộp thư.`,
             }),
           }));
+          playNotificationSound("notification");
           ui.toast(
             `Đã gửi mã xác thực tới ${res.data.email || targetEmail}`,
             "📧",
@@ -5132,12 +5431,12 @@ export function AppProvider({ children }) {
         }
         return {
           ok: false,
-          error: res.message || "Không thể gửi mã OTP. Vui lòng thử lại.",
+          error: res.message || "Không thể gửi mã xác thực. Vui lòng thử lại.",
         };
       }
       return {
         ok: false,
-        error: "Vui lòng đăng nhập lại để nhận mã xác thực email.",
+        error: "Vui lòng đăng nhập lại để nhận mã xác thực thư điện tử.",
       };
     },
     verifyEmailOtp: async (otpInput) => {
@@ -5147,64 +5446,36 @@ export function AppProvider({ children }) {
       if (cleanOtp.length !== 6) {
         return {
           ok: false,
-          error: "Vui lòng nhập đủ 6 chữ số của mã xác thực OTP.",
+          error: "Vui lòng nhập đủ 6 chữ số của mã xác thực.",
         };
       }
       if (!authTokens.get())
         return {
           ok: false,
-          error: "Vui lòng đăng nhập lại để xác thực email.",
+          error: "Vui lòng đăng nhập lại để xác thực thư điện tử.",
         };
       const res = await hrmssApi.verifyEmailOtp(cleanOtp);
       if (!res.ok) {
         return {
           ok: false,
-          error: res.message || "Mã xác thực OTP không chính xác.",
+          error: res.message || "Mã xác thực không chính xác.",
         };
       }
-      up((p) => {
-        const nextAuth = p.auth
-          ? upsertBackendAccount({ ...p.auth, emailVerified: true })
-          : p.auth;
-        return {
-          ...(nextAuth ? { auth: nextAuth } : {}),
-          pendingEmailOtp: null,
-          notifications: pushNotif(p, {
-            icon: "✅",
-            title: "Đã xác thực Email thành công",
-            body: `Địa chỉ ${p.user?.email || p.auth?.email || ""} đã được xác thực. Bạn có thể đặt lịch dịch vụ ngay!`,
-          }),
-        };
-      });
-      ui.toast("Xác thực Email thành công!", "✅");
+      const curAuth = stateRef.current?.auth;
+      const nextAuth = curAuth
+        ? upsertBackendAccount({ ...curAuth, emailVerified: true })
+        : curAuth;
+      up((p) => ({
+        ...(nextAuth ? { auth: nextAuth } : {}),
+        notifications: pushNotif(p, {
+          icon: "✅",
+          title: "Đã xác thực thư điện tử thành công",
+          body: `Địa chỉ ${p.user?.email || p.auth?.email || ""} đã được xác thực. Bạn có thể đặt lịch dịch vụ ngay!`,
+        }),
+      }));
+      playNotificationSound("notification");
+      ui.toast("Xác thực thư điện tử thành công!", "✅");
       return { ok: true };
-    },
-    // Chuyển màn hình theo phân quyền tài khoản đang đăng nhập
-    setRole: (role, link) => {
-      if (!s.auth) {
-        ui.alert(
-          "Cần đăng nhập",
-          "Hãy đăng nhập bằng tài khoản Khách hàng hoặc Thợ để tiếp tục.",
-          "🔐",
-        );
-        return;
-      }
-      if (s.auth.role !== role) {
-        ui.alert(
-          "Sai phân quyền",
-          role === "tech"
-            ? "Tài khoản hiện tại là Khách hàng. Đăng xuất rồi đăng nhập bằng tài khoản Kỹ thuật viên."
-            : "Tài khoản hiện tại là Thợ. Đăng xuất rồi đăng nhập bằng tài khoản Khách hàng.",
-          "🚫",
-        );
-        return;
-      }
-      setStack(
-        link
-          ? [{ name: link.name, params: link.params || {}, key: uid() }]
-          : [],
-      );
-      setTab(role === "tech" ? "tech-jobs" : "home");
     },
 
     // Hủy đơn: gửi backend TRƯỚC (PATCH /customer/requests/:id/cancel); backend từ chối thì giữ nguyên đơn và báo lý do.
@@ -5214,7 +5485,7 @@ export function AppProvider({ children }) {
       if (!cur || !["pending", "confirmed"].includes(cur.status)) {
         ui.alert(
           "Không huỷ được",
-          "Chỉ huỷ khi thợ chưa bắt đầu di chuyển. Sau đó vui lòng gọi hotline.",
+          "Chỉ huỷ khi thợ chưa bắt đầu di chuyển. Sau đó vui lòng gọi tổng đài.",
           "ℹ️",
         );
         return false;
@@ -5224,7 +5495,7 @@ export function AppProvider({ children }) {
         ui.alert(
           "Không thể huỷ đơn",
           cancelCheck.reason ||
-            `Không thể huỷ đơn khi còn dưới 1 tiếng trước giờ hẹn với thợ. Vui lòng gọi Hotline ${HOTLINE}.`,
+            `Không thể huỷ đơn khi còn dưới 1 tiếng trước giờ hẹn với thợ. Vui lòng gọi tổng đài ${HOTLINE}.`,
           "⚠️",
         );
         return false;
@@ -5244,9 +5515,9 @@ export function AppProvider({ children }) {
       if (!res.ok) {
         const msg = {
           CANCEL_TOO_LATE:
-            "Còn dưới 1 giờ tới giờ hẹn nên không tự huỷ được. Vui lòng gọi hotline.",
+            "Còn dưới 1 giờ tới giờ hẹn nên không tự huỷ được. Vui lòng gọi tổng đài.",
           CANNOT_CANCEL:
-            "Thợ đã bắt đầu di chuyển / đang làm, không tự huỷ được nữa. Vui lòng gọi hotline.",
+            "Thợ đã bắt đầu di chuyển / đang làm, không tự huỷ được nữa. Vui lòng gọi tổng đài.",
         }[res.code];
         ui.alert(
           "Không huỷ được",
@@ -5259,9 +5530,6 @@ export function AppProvider({ children }) {
       up((p) => {
         const o = p.orders.find((x) => x.code === code);
         if (!o || !["pending", "confirmed"].includes(o.status)) return {};
-        const refund = o?.voucher?.wallet
-          ? [o.voucher, ...p.myVouchers]
-          : p.myVouchers;
         return {
           orders: p.orders.map((x) =>
             x.code === code
@@ -5273,7 +5541,6 @@ export function AppProvider({ children }) {
                 }
               : x,
           ),
-          myVouchers: refund,
           notifications: pushNotif(p, {
             icon: "✖️",
             title: `Đã huỷ đơn ${code}`,
@@ -5324,7 +5591,7 @@ export function AppProvider({ children }) {
         if (info.isCutoff) {
           ui.alert(
             "Đã hết giờ tiếp nhận bảo hành",
-            `Hôm nay là ngày cuối cùng trong thời hạn bảo hành và đã quá giờ làm việc của kỹ thuật viên (sau 18h00). Vui lòng liên hệ Hotline ${HOTLINE} để được hỗ trợ.`,
+            `Hôm nay là ngày cuối cùng trong thời hạn bảo hành và đã quá giờ làm việc của kỹ thuật viên (sau 18h00). Vui lòng liên hệ tổng đài ${HOTLINE} để được hỗ trợ.`,
             "🛡️"
           );
           return null;
@@ -5342,12 +5609,18 @@ export function AppProvider({ children }) {
       }
       // Kiểm tra lại ca đã chọn ngay trước khi gửi (form có thể mở từ trước, giờ đã trôi qua ca / qua 18h ngày cuối).
       if (payloadOrNote && typeof payloadOrNote === "object" && payloadOrNote.scheduled_date && payloadOrNote.time_slot) {
-        const stillOk = isWarrantySlotBookable({
+        const slotCheck = isWarrantySlotBookable({
           ymd: payloadOrNote.scheduled_date,
           slot: payloadOrNote.time_slot,
           now: new Date(),
           endYmd: info.endYmd || null,
         });
+        const todayYmd = vnDateKey(Date.now());
+        const serverOk =
+          payloadOrNote.scheduled_date === todayYmd && Array.isArray(info.serverAvailableSlotsToday)
+            ? info.serverAvailableSlotsToday.includes(payloadOrNote.time_slot)
+            : true;
+        const stillOk = slotCheck && serverOk;
         if (!stillOk) {
           ui.alert(
             "Khung giờ không còn khả dụng",
@@ -5456,6 +5729,41 @@ export function AppProvider({ children }) {
       syncFromBackend(null, true);
       return newCode;
     },
+    checkWarrantyEligibility: async (code) => {
+      if (!warrantyEligibilitySupportedRef.current || !authTokens.get()) return null;
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbRequestId || o.status !== "done" || o.kind === "warranty") return null;
+      const res = await hrmssApi.getWarrantyEligibility(o.dbRequestId).catch(() => null);
+      if (!res) return null;
+      if (!res.ok) {
+        if ([404, 405, 501].includes(Number(res.status))) {
+          warrantyEligibilitySupportedRef.current = false;
+        }
+        return null;
+      }
+      if (res.data && typeof res.data === "object") {
+        const eligData = { ...res.data, fetchedAt: Date.now() };
+        const srvDays = parseWarrantyDays(res.data.warranty_days ?? res.data.warrantyDays);
+        const endYmdStr = normalizeWarrantyEndYmd(
+          res.data.warranty_end_date ?? res.data.warrantyEndDate,
+        );
+        const srvEndMs = endYmdStr ? new Date(`${endYmdStr}T23:59:59+07:00`).getTime() : null;
+        up((p) => ({
+          orders: p.orders.map((ord) =>
+            ord.code === code
+              ? {
+                  ...ord,
+                  serverWarrantyEligibility: eligData,
+                  ...(typeof srvDays === "number" ? { warrantyDays: srvDays } : {}),
+                  ...(srvEndMs && Number.isFinite(srvEndMs) ? { warrantyEndAt: srvEndMs } : {}),
+                }
+              : ord,
+          ),
+        }));
+        return res.data;
+      }
+      return null;
+    },
 
     // Điểm thưởng
     redeem: async (optId) => {
@@ -5487,7 +5795,7 @@ export function AppProvider({ children }) {
           ? [v, ...p.myVouchers.filter((x) => x.code !== v.code)]
           : p.myVouchers,
       }));
-      ui.toast(v ? `Đã nhận voucher ${v.code}` : "Đổi điểm thành công", "🎁");
+      ui.toast(v ? `Đã nhận mã giảm giá ${v.code}` : "Đổi điểm thành công", "🎁");
       syncFromBackend(null, true);
       return true;
     },
@@ -5602,37 +5910,23 @@ export function AppProvider({ children }) {
       ui.toast("Đã xoá tài khoản", "🗑️");
       return true;
     },
-    wipeLocalData: () => {
-      authIdRef.current = null;
-      clearSessionCaches();
-      disconnectSocket();
-      hrmssApi.logout();
-      clearSession();
-      clearAccounts();
-      storage.clear();
-      setS({ ...makeInitial(), auth: null });
-      setStack([]);
-      setTab("home");
-      ui.toast("Đã xoá dữ liệu trên thiết bị");
-    },
-    playNotificationSound,
     toggleSound: () => {
       const next = toggleSoundMuted();
+      setSoundMutedState(next);
       ui.toast(
         next ? "Đã tắt âm thanh thông báo" : "Đã bật âm thanh thông báo",
         next ? "bell-off" : "bell",
       );
       return !next;
     },
-    isSoundMuted,
+    isSoundMuted: () => soundMutedState,
     // Socket.IO helpers
     joinOrderRoom,
     leaveOrderRoom,
-    isSocketConnected,
-    subscribeSocketEvent,
   };
   // Chống bấm đúp: cùng một thao tác ghi trên cùng một đơn đang chạy thì lần bấm sau bị bỏ qua
   // (tránh đặt 2 đơn, nhận việc 2 lần, xác nhận trả tiền 2 lần...). Dùng ref nên chặn được cả 2 lần bấm trong cùng 1 nhịp.
+  const NULL_DUPE_ACTIONS = new Set(["placeOrder", "requestWarranty", "checkWarrantyEligibility"]);
   [
     "placeOrder",
     "acceptJob",
@@ -5640,7 +5934,6 @@ export function AppProvider({ children }) {
     "releaseJob",
     "confirmPayment",
     "switchPaymentMethod",
-    "switchToQRPayment",
     "respondQuote",
     "submitQuote",
     "submitExternalPartsActualPrice",
@@ -5649,6 +5942,7 @@ export function AppProvider({ children }) {
     "cancelOrder",
     "rateOrder",
     "requestWarranty",
+    "checkWarrantyEligibility",
     "redeem",
     "remindQuote",
     "startTravel",
@@ -5662,33 +5956,49 @@ export function AppProvider({ children }) {
     if (typeof fn !== "function") return;
     a[name] = async (...args) => {
       const key = `${name}:${typeof args[0] === "object" ? "new" : args[0]}`;
-      if (inFlight.current.has(key)) return false;
+      if (inFlight.current.has(key)) {
+        if (name === "releaseJob") return { ok: false };
+        if (NULL_DUPE_ACTIONS.has(name)) return null;
+        return false;
+      }
       inFlight.current.add(key);
-      const prevCode = actionCodeRef.current;
-      if (typeof args[0] === "string") actionCodeRef.current = args[0];
+      const token = typeof args[0] === "string" ? { code: args[0] } : null;
+      if (token) {
+        actionCodeStackRef.current.push(token);
+        actionCodeRef.current = token.code;
+      }
       try {
         return await fn(...args);
       } finally {
         inFlight.current.delete(key);
-        actionCodeRef.current = prevCode;
+        if (token) {
+          const stack = actionCodeStackRef.current;
+          const idx = stack.lastIndexOf(token);
+          if (idx >= 0) stack.splice(idx, 1);
+          actionCodeRef.current = stack.length ? stack[stack.length - 1].code : null;
+        }
       }
     };
   });
 
   const myCode = s.techProfile?.code || TECH_ME.code;
-  const techRep = normalizeTechRep(s.techProfile || {});
-  const techLocked = isTechLocked(s.techProfile);
   const custPhone = s.auth?.role === "customer" ? s.auth.phone : null;
   const custAccId = s.auth?.role === "customer" ? s.auth.id : null;
-  const visibleCustomerOrders =
-    s.auth?.role === "customer"
+  const visibleCustomerOrders = useMemo(
+    () => (s.auth?.role === "customer"
       ? s.orders.filter((o) => isOrderOfCustomer(o, custPhone, custAccId))
-      : s.orders;
-  const viewS =
-    s.auth?.role === "customer" ? { ...s, orders: visibleCustomerOrders } : s;
+      : s.orders),
+    [s.auth?.role, s.orders, custPhone, custAccId],
+  );
+  const viewS = useMemo(
+    () => (s.auth?.role === "customer"
+      ? { ...s, orders: visibleCustomerOrders, soundMuted: soundMutedState }
+      : { ...s, soundMuted: soundMutedState }),
+    [s, visibleCustomerOrders, soundMutedState],
+  );
   const meTech = s.techProfile || TECH_ME;
 
-  const derived = {
+  const derived = useMemo(() => ({
     address,
     cartCount: s.cart.reduce((sum, it) => sum + it.qty, 0),
     // Số chưa đọc đếm theo nhóm (mỗi đơn 1 thông báo) cho khớp danh sách hiển thị.
@@ -5719,20 +6029,16 @@ export function AppProvider({ children }) {
     ),
     workingJobs: s.orders.filter(
       (o) =>
+        o.status !== "pending" &&
         (Boolean(o.dbAssignmentId) ||
           Boolean(o.assignmentActive) ||
           (Boolean(myCode) && o.tech?.code === myCode)) &&
         isActiveOrder(o),
     ),
     declinedCodes: declinedFor(s, myCode),
-    roleHint: urlRoleHint(),
-    techReputation: techRep.reputation,
-    techLocked,
-    techLockReason: techLocked ? techLockReason(s.techProfile) : "",
-    techViolations: techRep.violations,
-  };
+  }), [address, s, visibleCustomerOrders, myCode, meTech, nowTick]);
 
-  const value = {
+  const value = useMemo(() => ({
     s: viewS,
     a,
     nav,
@@ -5747,6 +6053,6 @@ export function AppProvider({ children }) {
     warrantyNonce,
     pendingVoucher,
     setPendingVoucher,
-  };
+  }), [viewS, derived, svc, actFilter, warrantyQuery, warrantyNonce, pendingVoucher, tab, stack, toastMsg, dialogCfg]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

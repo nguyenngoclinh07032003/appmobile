@@ -1,12 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
+import { RefreshControl, View, Text, ScrollView, StyleSheet } from 'react-native';
 import { C, R, shadow, toneOf, STATUS_META, grad } from '../../theme';
 import {
-  CATEGORIES, SERVICES, REPAIR_SERVICES, LIFETIME_SERVICES, SERVICE_TYPES, CAT_SHORT,
+  CATEGORIES, SERVICES, REPAIR_SERVICES, LIFETIME_SERVICES, ALL_SERVICES, SERVICE_TYPES, CAT_SHORT,
   formatVND, getService, catLabel, catIcon, tierOf, HOTLINE,
 } from '../../constants/data';
-import { APP_VERSION } from '../../constants';
-import { useApp, warrantyInfo, fmtDate, isActiveOrder, orderTotal, formatOrderTotal, customerStatusMeta, isPaid } from '../../context';
+import { useApp, warrantyInfo, fmtDate, isActiveOrder, orderTotal, formatOrderTotal, customerStatusMeta, isPaid, countValidVouchers } from '../../context';
 import {
   Tap, Btn, IconBtn, IconBox, Card, PageHead, Pills, Chip, Segmented, ServiceGrid, EmptyState, Field, Badge,
   StatusChip, Progress, Media, ListRow, Sheet, ui, HScroll, AppIcon, WarrantyBookingSheet, ActivityTimeFilterSheet,
@@ -106,8 +105,31 @@ export function ServicesScreen() {
 function WarrantyView() {
   const { s, a, nav, ui: u, warrantyQuery, setWarrantyQuery, warrantyNonce } = useApp();
   const [result, setResult] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   // Đơn còn hạn bảo hành (kể cả đã gửi yêu cầu hoặc đã chốt ca ngày cuối 18h)
   const eligible = s.orders.filter((o) => { const w = warrantyInfo(o, s.orders, s.lifetimePoints); return w.ok || w.openCode || w.isCutoff; });
+
+  const { minWarrantyDays, maxWarrantyDays } = useMemo(() => {
+    const days = ALL_SERVICES
+      .map((x) => x?.warrantyDays)
+      .filter((d) => typeof d === 'number' && d > 0);
+    if (!days.length) return { minWarrantyDays: null, maxWarrantyDays: null };
+    return {
+      minWarrantyDays: Math.min(...days),
+      maxWarrantyDays: Math.max(...days),
+    };
+  }, [s.catalogVersion]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.resolve(a.syncFromBackend?.(null, true));
+    } catch (_e) {
+      // giữ dữ liệu hiện có
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const lookup = (q = warrantyQuery) => {
     const raw = String(q || '').replace(/\s/g, '');
@@ -124,15 +146,22 @@ function WarrantyView() {
       o.kind !== 'warranty' &&
       (isMine || o.code === t || (isPhoneQuery && o.address?.phone && normalizeVnPhone(o.address.phone) === normQueryPhone))
     ));
-    if (!found.length) { setResult({ error: 'Không tìm thấy đơn khớp. Kiểm tra lại số điện thoại hoặc mã đơn ở tab Hoạt động.' }); return; }
+    if (!found.length) { setResult({ error: 'Không tìm thấy đơn khớp. Kiểm tra lại số điện thoại hoặc mã đơn ở mục Hoạt động.' }); return; }
     setResult({ codes: found.map((o) => o.code) });
   };
   React.useEffect(() => {
     if (warrantyQuery) lookup(warrantyQuery); else setResult(null);
   }, [warrantyNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [bookingOrder, setBookingOrder] = useState(null);
-  const request = (o) => setBookingOrder(o);
+  const [bookingOrderCode, setBookingOrderCode] = useState(null);
+  const bookingOrder = bookingOrderCode
+    ? s.orders.find((o) => o.code === bookingOrderCode) || null
+    : null;
+  const request = (o) => {
+    if (!o) return;
+    setBookingOrderCode(o.code);
+    a.checkWarrantyEligibility?.(o.code).catch(() => {});
+  };
 
   const liveResultOrders = result?.codes
     ? result.codes.map((c) => s.orders.find((o) => o.code === c)).filter(Boolean)
@@ -165,14 +194,22 @@ function WarrantyView() {
   };
 
   const curTier = tierOf(s.lifetimePoints || 0).cur;
+  const heroPolicyText = minWarrantyDays && maxWarrantyDays
+    ? `Áp dụng theo từng dịch vụ (${minWarrantyDays === maxWarrantyDays ? `${minWarrantyDays} ngày` : `${minWarrantyDays} – ${maxWarrantyDays} ngày`}), tính từ ngày nghiệm thu hoàn thành.`
+    : 'Áp dụng theo chính sách từng dịch vụ đặt trên ứng dụng, tính từ ngày nghiệm thu hoàn thành.';
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 28 }} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: 28 }}
+      keyboardShouldPersistTaps="handled"
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
+    >
       <View style={sx.wHero}>
         <View style={{ flex: 1 }}>
-          <Text style={{ color: 'rgba(255,255,255,0.85)', fontWeight: '800', fontSize: 12 }}>BẢO HÀNH {curTier.warrantyDays || 60} NGÀY · HẠNG {curTier.label.toUpperCase()}</Text>
+          <Text style={{ color: 'rgba(255,255,255,0.85)', fontWeight: '800', fontSize: 12 }}>BẢO HÀNH ĐIỆN TỬ · HẠNG {curTier.label.toUpperCase()}</Text>
           <Text style={{ color: '#fff', fontWeight: '800', fontSize: 19, marginTop: 4 }}>Tra cứu & yêu cầu bảo hành điện tử</Text>
           <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, marginTop: 6, lineHeight: 18 }}>
-            Áp dụng cho dịch vụ vệ sinh, nạp gas & sửa chữa đặt trên app, tính từ ngày nghiệm thu hoàn thành.
+            {heroPolicyText}
           </Text>
         </View>
         <View style={{ marginLeft: 10 }}>
@@ -201,27 +238,27 @@ function WarrantyView() {
           {liveResultOrders.map((o) => <OrderLine key={o.code} o={o} />)}
         </View>
       ) : null}
-      {!result?.orders && eligible.length ? (
+      {!liveResultOrders && eligible.length ? (
         <View>
           <Text style={sx.groupTitle}>Đơn còn bảo hành của bạn</Text>
           {eligible.map((o) => <OrderLine key={o.code} o={o} />)}
         </View>
       ) : null}
-      {!result?.orders && !eligible.length ? (
+      {!liveResultOrders && !eligible.length ? (
         <Text style={[ui.meta, { textAlign: 'center', marginTop: 18, lineHeight: 18 }]}>
           Chưa có đơn nào đang trong thời gian bảo hành.{'\n'}Đơn hoàn thành sẽ tự động xuất hiện ở đây.
         </Text>
       ) : null}
       <WarrantyBookingSheet
         visible={!!bookingOrder}
-        onClose={() => setBookingOrder(null)}
+        onClose={() => setBookingOrderCode(null)}
         order={bookingOrder}
         winfo={bookingOrder ? warrantyInfo(bookingOrder, s.orders, s.lifetimePoints) : null}
         onSubmit={async (payload) => {
           try {
             const newCode = await a.requestWarranty(bookingOrder.code, payload);
             if (newCode) {
-              setBookingOrder(null);
+              setBookingOrderCode(null);
               nav.push('order', { code: newCode });
             }
             return newCode;
@@ -237,7 +274,7 @@ function WarrantyView() {
 
 // =========================================================== HOẠT ĐỘNG
 export function ActivityScreen() {
-  const { s, d, nav, actFilter, setActFilter } = useApp();
+  const { s, d, nav, ui: u, actFilter, setActFilter } = useApp();
   const [timeFilter, setTimeFilter] = useState(DEFAULT_ACTIVITY_TIME_FILTER);
   const [showTimeSheet, setShowTimeSheet] = useState(false);
 
@@ -418,7 +455,7 @@ export function ActivityScreen() {
                   <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', flex: 1 }}>
                     {o.status === 'quoted' ? (
                       <Btn
-                        title={o.quote?.isExternalFinalization ? 'Xác nhận Bill' : 'Duyệt báo giá'}
+                        title={o.quote?.isExternalFinalization ? 'Xác nhận hoá đơn' : 'Duyệt báo giá'}
                         icon="receipt-text"
                         small
                         variant="primary"
@@ -477,7 +514,6 @@ export function PersonalScreen() {
               <Text style={sx.tierText}>{cur.label} ›</Text>
             </Tap>
           </View>
-          <IconBtn icon="pencil" dark onPress={() => nav.push('profile')} label="Sửa thông tin" />
         </View>
         <Tap style={sx.tierBox} onPress={() => nav.push('rewards')}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -504,7 +540,11 @@ export function PersonalScreen() {
             ),
           },
           { v: s.points, l: 'Điểm tích luỹ', onPress: () => nav.push('rewards') },
-          { v: s.myVouchers.length, l: 'Voucher', onPress: () => nav.push('rewards') },
+          {
+            v: countValidVouchers(s.myVouchers, s.publicVouchers),
+            l: 'Mã giảm giá',
+            onPress: () => nav.push('rewards'),
+          },
         ].map((x, i) => (
           <Tap key={x.l} style={[{ flex: 1, alignItems: 'center' }, i > 0 && { borderLeftWidth: 1, borderLeftColor: C.line }]} onPress={x.onPress}>
             <Text style={{ fontSize: 19, fontWeight: '900', color: C.ink }}>{x.v}</Text>
@@ -527,8 +567,7 @@ export function PersonalScreen() {
           <ListRow icon="message-circle-more" label="Liên hệ hỗ trợ" value={HOTLINE} onPress={u.call} last />
         </Group>
         <Group title="Khác">
-          <ListRow icon="scale" label="Điều khoản ứng dụng" onPress={() => nav.push('terms')} />
-          <ListRow icon="refresh-cw" label="Cập nhật ứng dụng" value={APP_VERSION} onPress={() => u.alert('Bạn đang dùng bản mới nhất', `Phiên bản ${APP_VERSION}.`, '✅')} last />
+          <ListRow icon="scale" label="Điều khoản ứng dụng" onPress={() => nav.push('terms')} last />
         </Group>
         <Btn
           title="Đăng xuất"
@@ -548,7 +587,6 @@ const sx = StyleSheet.create({
   // Ô danh mục: icon cố định phía trên, tên căn giữa tối đa 2 dòng -> các ô thẳng hàng dù tên dài ngắn khác nhau.
   catTile: { width: 100, height: 88, borderRadius: R.lg, backgroundColor: '#fff', borderWidth: 1.5, borderColor: C.line, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 14, paddingHorizontal: 5, gap: 6 },
   catTileText: { width: '100%', height: 30, fontSize: 11.5, lineHeight: 15, fontWeight: '700', color: C.ink2, textAlign: 'center' },
-  ownedDot: { position: 'absolute', top: 8, right: 8, width: 7, height: 7, borderRadius: 4 },
   notice: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: 16, marginTop: 14, backgroundColor: C.card, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.gold, borderRadius: R.md, padding: 12 },
   noticeText: { flex: 1, color: C.ink2, fontSize: 13, lineHeight: 18, fontWeight: '500' },
   toolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, marginTop: 16, marginBottom: 12 },
@@ -559,7 +597,6 @@ const sx = StyleSheet.create({
   wHero: { backgroundColor: C.navy, ...grad.navyHero, borderRadius: 20, padding: 18, flexDirection: 'row', alignItems: 'center', ...shadow.md },
   wInfo: { borderRadius: 10, padding: 10, marginTop: 12 },
   groupTitle: { fontSize: 15, fontWeight: '800', color: C.ink, marginTop: 20 },
-  devHero: { backgroundColor: C.navy, ...grad.navyHero, borderRadius: 20, padding: 18, flexDirection: 'row', alignItems: 'center', ...shadow.md },
   oHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 9 },
   oCode: { fontWeight: '800', fontSize: 13 },
   oStatus: { fontWeight: '800', fontSize: 12 },

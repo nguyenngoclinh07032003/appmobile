@@ -51,7 +51,7 @@ export class ErrorBoundary extends React.Component {
             {typeof __DEV__ !== 'undefined' && __DEV__ && this.state.error ? (
               <View style={st.devBox}>
                 <Text style={st.devText} numberOfLines={4}>
-                  {String(this.state.error?.message || this.state.error)}
+                  {String(this.state.error?.message || this.state.error || 'Lỗi hiển thị giao diện.')}
                 </Text>
               </View>
             ) : null}

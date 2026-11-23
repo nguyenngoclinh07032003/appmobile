@@ -5,8 +5,9 @@ import {
   getService, formatVND, discountOf, isEstimate, isClean, durationText, featureFor, stepsFor, videoFor,
   COMMITMENTS, ALL_SERVICES, PAYMENTS, PAYMENT_METHODS, noteFor, voucherDiscount, normalize,
   catLabel, catIcon, MATERIALS, SITE_CONDITIONS, tierOf, comboDiscountFor, CATEGORIES,
+  resolveServiceWarrantyDays,
 } from '../../constants/data';
-import { useApp, cartTotal, fmtDate } from '../../context';
+import { useApp, cartTotal, fmtDate, getValidVouchers } from '../../context';
 import { hrmssApi } from '../../services/api';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Media, Badge, Stars, Stepper, Sheet, Radio, Field,
@@ -25,6 +26,23 @@ import {
 const COMMIT_ICON = ['clock', 'award', 'handshake', 'smile'];
 // Điểm trung bình hiển thị 1 chữ số thập phân (4.666… → 4.7).
 const fmtRating = (v) => (v == null || Number.isNaN(Number(v)) ? '' : Number(v).toFixed(1));
+const checkoutWarrantyLabel = (lines = [], curTier = null) => {
+  const knownDays = (lines || []).map((l) => resolveServiceWarrantyDays(l?.svc));
+  const posDays = [...new Set(knownDays.filter((d) => typeof d === 'number' && d > 0))].sort((a, b) => a - b);
+  if (posDays.length === 1 && knownDays.every((d) => d === posDays[0])) {
+    return `Bảo hành ${posDays[0]} ngày theo dịch vụ`;
+  }
+  if (posDays.length >= 2 && knownDays.every((d) => typeof d === 'number' && d > 0)) {
+    return `Bảo hành ${posDays[0]}–${posDays[posDays.length - 1]} ngày theo từng dịch vụ`;
+  }
+  if (posDays.length >= 1) {
+    return `Bảo hành đến ${posDays[posDays.length - 1]} ngày cho dịch vụ áp dụng`;
+  }
+  if (knownDays.length > 0 && knownDays.every((d) => d === 0 || d === null)) {
+    return 'Dịch vụ đã chọn không áp dụng bảo hành';
+  }
+  return `Bảo hành tiêu chuẩn ${curTier?.warrantyDays || BASE_WARRANTY_DAYS} ngày`;
+};
 // Id người dùng backend của tài khoản đang đăng nhập (auth.id dạng "be-<user_id>").
 const authUserId = (auth) => {
   const raw = auth?.userId ?? auth?.user_id ?? auth?.id;
@@ -102,11 +120,22 @@ export function DetailScreen({ params }) {
           </View>
 
           <View style={bx.trust}>
-            {[
-              ...(!isLifetimeSvc ? [{ i: 'shield-check', t: 'Bảo hành', v: `${curTier.warrantyDays || BASE_WARRANTY_DAYS} ngày` }] : [{ i: 'sparkles', t: 'Gói dịch vụ', v: 'Định kỳ trọn gói' }]),
-              { i: 'timer', t: 'Thời gian', v: isClean(service) ? durationText(service.id) : 'Theo khảo sát' },
-              { i: 'navigation', t: 'Phí đi lại', v: 'Miễn phí' },
-            ].map((x) => (
+            {(() => {
+              const svcWarrantyDays = resolveServiceWarrantyDays(service, detail);
+              const warrantyItem =
+                typeof svcWarrantyDays === 'number' && svcWarrantyDays > 0
+                  ? { i: 'shield-check', t: 'Bảo hành', v: `${svcWarrantyDays} ngày` }
+                  : isLifetimeSvc
+                    ? { i: 'sparkles', t: 'Gói dịch vụ', v: 'Định kỳ trọn gói' }
+                    : svcWarrantyDays === 0 || svcWarrantyDays === null
+                      ? { i: 'shield-check', t: 'Bảo hành', v: 'Không áp dụng' }
+                      : { i: 'shield-check', t: 'Bảo hành', v: `${curTier.warrantyDays || BASE_WARRANTY_DAYS} ngày` };
+              return [
+                warrantyItem,
+                { i: 'timer', t: 'Thời gian', v: isClean(service) ? durationText(service.id) : 'Theo khảo sát' },
+                { i: 'navigation', t: 'Phí đi lại', v: 'Miễn phí' },
+              ];
+            })().map((x) => (
               <View key={x.t} style={bx.trustItem}>
                 <AppIcon icon={x.i} size={20} color={C.primary} strokeWidth={2.1} />
                 <Text style={bx.trustT}>{x.t}</Text>
@@ -118,7 +147,7 @@ export function DetailScreen({ params }) {
           <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: C.card, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <AppIcon name="flame" size={20} color={C.primary} strokeWidth={2.2} />
             <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13 }}>Ưu đãi Combo nhiều máy chuẩn Minh Đức</Text>
+              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13 }}>Ưu đãi gộp nhiều máy chuẩn Minh Đức</Text>
               <Text style={{ color: C.ink2, fontSize: 12, marginTop: 2 }}>Đặt 2 máy giảm thêm 5% (tối đa 50K) · Đặt từ 3 máy giảm thêm 10% (tối đa 120K)</Text>
             </View>
             <Btn title="Đặt 2 máy" small variant="soft" style={{ flexShrink: 0 }} onPress={() => nav.push('checkout', { items: [{ id: service.id, qty: 2 }] })} />
@@ -490,19 +519,20 @@ export function CheckoutScreen({ params }) {
   const vDiscount = voucherDiscount(voucher, subtotal);
   const total = Math.max(0, subtotal - vDiscount);
   const nowTs = Date.now();
-  const allVouchers = [
-    ...(s.myVouchers || []).filter((v) => !v.expiresAt || v.expiresAt > nowTs),
-    ...(s.publicVouchers || []).filter((v) => !v.expiresAt || v.expiresAt > nowTs),
-  ];
+  const allVouchers = getValidVouchers(s.myVouchers, s.publicVouchers, nowTs);
 
   // Tự áp dụng mã đã chọn từ màn "Quyền lợi của tôi"
   React.useEffect(() => {
     if (!pendingVoucher) return;
-    if (!allVouchers.length) return;
     const wanted = String(pendingVoucher).trim().toUpperCase();
     const v = allVouchers.find((x) => String(x.code || '').trim().toUpperCase() === wanted);
-    // Nếu mới chỉ có publicVouchers mà myVouchers chưa kịp đồng bộ xong lúc đăng nhập, đợi thêm vòng đồng bộ ví.
-    if (!v && s.auth && !(s.myVouchers || []).length) return;
+    const catalogLoaded = (s.publicVouchers || []).length > 0 || (s.myVouchers || []).length > 0;
+    if (!v && s.auth && !catalogLoaded) return;
+    if (!v && !(s.myVouchers || []).length && (s.publicVouchers || []).length > 0) {
+      // Thử thêm 1 nhịp chờ ví voucher cá nhân; nếu không có trong danh mục vẫn dọn pendingVoucher khi không khớp.
+      setPendingVoucher(null);
+      return;
+    }
     setPendingVoucher(null);
     if (!v) return;
     if (v.min && subtotal < v.min) {
@@ -530,12 +560,12 @@ export function CheckoutScreen({ params }) {
       : allVouchers.find((x) => String(x.code || '').trim().toUpperCase() === upper);
     if (!v) {
       setShowVoucher(false);
-      u.alert('Mã không hợp lệ', 'Kiểm tra lại mã, hoặc chọn voucher trong ví / mã ưu đãi đang mở ở mục Quyền lợi.', '🎟️');
+      u.alert('Mã không hợp lệ', 'Kiểm tra lại mã, hoặc chọn mã giảm giá trong ví / mã ưu đãi đang mở ở mục Quyền lợi.', '🎟️');
       return;
     }
     if (v.expiresAt && v.expiresAt <= Date.now()) {
       setShowVoucher(false);
-      u.alert('Mã đã hết hạn', `Voucher ${v.code} đã hết hạn sử dụng.`, '🎟️');
+      u.alert('Mã đã hết hạn', `Mã giảm giá ${v.code} đã hết hạn sử dụng.`, '🎟️');
       return;
     }
     if (v.min && subtotal < v.min) {
@@ -583,10 +613,10 @@ export function CheckoutScreen({ params }) {
           setOtpSent(true);
         }
       } else {
-        setEmailOtpErr(errorText(res, 'Không thể gửi mã OTP.'));
+        setEmailOtpErr(errorText(res, 'Không thể gửi mã xác thực.'));
       }
     } catch (e) {
-      setEmailOtpErr(errorText(e, 'Không thể gửi mã OTP. Vui lòng thử lại.'));
+      setEmailOtpErr(errorText(e, 'Không thể gửi mã xác thực. Vui lòng thử lại.'));
     } finally {
       setOtpSending(false);
     }
@@ -594,7 +624,7 @@ export function CheckoutScreen({ params }) {
 
   const handleVerifyEmailOtp = async () => {
     if (otpVerifying) return;
-    if (emailOtpInput.length !== 6) { setEmailOtpErr('Vui lòng nhập đủ 6 chữ số của mã OTP.'); return; }
+    if (emailOtpInput.length !== 6) { setEmailOtpErr('Vui lòng nhập đủ 6 chữ số của mã xác thực.'); return; }
     setOtpVerifying(true);
     setEmailOtpErr('');
     try {
@@ -604,10 +634,10 @@ export function CheckoutScreen({ params }) {
         setEmailOtpInput('');
         setOtpSent(false);
       } else {
-        setEmailOtpErr(errorText(res, 'Mã OTP không chính xác.'));
+        setEmailOtpErr(errorText(res, 'Mã xác thực không chính xác.'));
       }
     } catch (e) {
-      setEmailOtpErr(errorText(e, 'Không xác thực được mã OTP. Vui lòng thử lại.'));
+      setEmailOtpErr(errorText(e, 'Không xác thực được mã xác thực. Vui lòng thử lại.'));
     } finally {
       setOtpVerifying(false);
     }
@@ -648,7 +678,7 @@ export function CheckoutScreen({ params }) {
       const expCode = voucher.code;
       setVoucher(null);
       setVoucherInput('');
-      u.alert('Mã giảm giá đã hết hạn', `Voucher ${expCode} vừa hết hạn. Vui lòng kiểm tra tổng thanh toán hoặc chọn mã khác trước khi đặt.`, '🎟️');
+      u.alert('Mã giảm giá đã hết hạn', `Mã giảm giá ${expCode} vừa hết hạn. Vui lòng kiểm tra tổng thanh toán hoặc chọn mã khác trước khi đặt.`, '🎟️');
       return;
     }
 
@@ -709,10 +739,10 @@ export function CheckoutScreen({ params }) {
             <IconBox icon="mail" size={42} bg={C.goldSoft} color={C.goldInk} radius={13} />
             <View style={{ flex: 1 }}>
               <Text style={{ fontWeight: '800', color: C.goldInk, fontSize: 14 }}>
-                Bắt buộc xác thực Email trước khi đặt lịch
+                Bắt buộc xác thực thư điện tử trước khi đặt lịch
               </Text>
               <Text style={{ color: C.ink2, fontSize: 12.5, marginTop: 2, lineHeight: 18 }}>
-                Email <Text style={{ fontWeight: '800', color: C.ink }}>{s.user?.email || s.auth?.email}</Text> chưa xác thực OTP 6 chữ số.
+                Thư điện tử <Text style={{ fontWeight: '800', color: C.ink }}>{s.user?.email || s.auth?.email}</Text> chưa xác thực mã 6 chữ số.
               </Text>
             </View>
             <Badge text="Xác thực ›" fg={C.goldInk} bg={C.goldSoft} />
@@ -721,7 +751,7 @@ export function CheckoutScreen({ params }) {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10, paddingHorizontal: 4 }}>
             <AppIcon name="check-circle-2" size={14} color={C.green} strokeWidth={2.3} />
             <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.green }}>
-              Email đặt lịch đã xác thực ({s.user?.email || s.auth?.email})
+              Thư điện tử đặt lịch đã xác thực ({s.user?.email || s.auth?.email})
             </Text>
           </View>
         )}
@@ -790,19 +820,6 @@ export function CheckoutScreen({ params }) {
             </View>
           </Card>
         ))}
-
-        <Tap
-          onPress={() => setShowAddServiceSheet(true)}
-          style={{
-            flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-            paddingVertical: 10, paddingHorizontal: 14, borderRadius: R.md,
-            borderWidth: 1.5, borderColor: C.primary, borderStyle: 'dashed',
-            backgroundColor: C.primarySoft, marginBottom: 14,
-          }}
-        >
-          <Text style={{ fontSize: 16, color: C.primary, fontWeight: '800' }}>＋</Text>
-          <Text style={{ fontSize: 13, color: C.primary, fontWeight: '700' }}>Chọn thêm dịch vụ khác vào đơn này</Text>
-        </Tap>
 
         <Field label="Mô tả tình trạng thiết bị" multiline value={note} onChangeText={setNote} placeholder="VD: Máy lạnh chảy nước, kém lạnh…" />
 
@@ -886,7 +903,7 @@ export function CheckoutScreen({ params }) {
           <Row l="Phí đi lại" v="Miễn phí" green />
           {productDiscount ? <Row l="Giảm giá dịch vụ" v={`-${formatVND(productDiscount)}`} green /> : null}
           {combo.amount ? <Row l={`Ưu đãi ${combo.label}`} v={`-${formatVND(combo.amount)}`} green /> : null}
-          {vDiscount ? <Row l={`Voucher ${voucher.code}`} v={`-${formatVND(vDiscount)}`} green /> : null}
+          {vDiscount ? <Row l={`Mã giảm giá ${voucher.code}`} v={`-${formatVND(vDiscount)}`} green /> : null}
           <View style={bx.totalRow}>
             <Text style={{ fontWeight: '800', color: C.ink, fontSize: 15 }}>Tổng thanh toán</Text>
             <Text style={[bx.price, { fontSize: 20 }]}>{formatVND(total)}</Text>
@@ -894,7 +911,7 @@ export function CheckoutScreen({ params }) {
           <View style={{ marginTop: 10, padding: 10, borderRadius: R.md, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Badge text={curTier.label} fg={curTier.color} bg={curTier.bg || C.primarySoft} />
             <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: C.ink2, lineHeight: 17 }}>
-              Bảo hành tiêu chuẩn {curTier.warrantyDays || BASE_WARRANTY_DAYS} ngày
+              {checkoutWarrantyLabel(lines, curTier)}
               {curTier.partDiscountPercent ? ` · Giảm ${curTier.partDiscountPercent}% vật tư phát sinh` : ''}
             </Text>
           </View>
@@ -910,7 +927,7 @@ export function CheckoutScreen({ params }) {
           <Text style={[bx.price, { fontSize: 20 }]}>{formatVND(total)}</Text>
         </View>
         <Btn
-          title={placing ? 'Đang gửi yêu cầu…' : s.auth?.role === 'customer' && !s.auth.emailVerified ? 'Xác thực Email để đặt lịch' : 'Xác nhận đặt lịch'}
+          title={placing ? 'Đang gửi yêu cầu…' : s.auth?.role === 'customer' && !s.auth.emailVerified ? 'Xác thực thư điện tử để đặt lịch' : 'Xác nhận đặt lịch'}
           disabled={placing || isTodayOutOfSlots}
           onPress={confirm}
         />
@@ -919,17 +936,17 @@ export function CheckoutScreen({ params }) {
       <Sheet
         visible={showEmailOtp}
         onClose={() => setShowEmailOtp(false)}
-        title="Xác thực Email đặt dịch vụ"
+        title="Xác thực thư điện tử đặt dịch vụ"
         footer={(
           <Btn
-            title={otpVerifying ? 'Đang kiểm tra...' : 'Xác nhận mã OTP'}
+            title={otpVerifying ? 'Đang kiểm tra...' : 'Xác nhận mã'}
             disabled={otpVerifying}
             onPress={handleVerifyEmailOtp}
           />
         )}
       >
         <Text style={{ color: C.ink2, lineHeight: 20, marginBottom: 12 }}>
-          Để ngăn chặn đơn hàng ảo và gửi hóa đơn/phiếu bảo hành điện tử chính xác, vui lòng nhập mã OTP 6 chữ số gửi tới địa chỉ Email:{' '}
+          Để ngăn chặn đơn hàng ảo và gửi hóa đơn/phiếu bảo hành điện tử chính xác, vui lòng nhập mã xác thực 6 chữ số gửi tới địa chỉ thư điện tử:{' '}
           <Text style={{ fontWeight: '800', color: C.ink }}>{s.user?.email || s.auth?.email}</Text>
         </Text>
         <View
@@ -942,13 +959,13 @@ export function CheckoutScreen({ params }) {
             marginBottom: 12,
           }}
         >
-          <Text style={{ fontSize: 12.5, color: C.navy, fontWeight: '700' }}>Kiểm tra hộp thư Email</Text>
+          <Text style={{ fontSize: 12.5, color: C.navy, fontWeight: '700' }}>Kiểm tra hộp thư điện tử</Text>
           <Text style={{ fontSize: 12, color: C.primary, marginTop: 2 }}>
             Mã xác thực 6 chữ số {otpSent ? 'đã được gửi' : 'sẽ được gửi'} tới {s.user?.email || s.auth?.email} (hiệu lực {OTP_TTL_MINUTES} phút).
           </Text>
         </View>
         <Field
-          label="Mã xác thực OTP (6 chữ số)"
+          label="Mã xác thực (6 chữ số)"
           value={emailOtpInput}
           onChangeText={(t) => { setEmailOtpInput(t.replace(/\D/g, '').slice(0, 6)); setEmailOtpErr(''); }}
           keyboardType="number-pad"
@@ -958,7 +975,7 @@ export function CheckoutScreen({ params }) {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
           <Text style={ui.meta}>Mã có hiệu lực trong {OTP_TTL_MINUTES} phút</Text>
           <Tap onPress={handleSendEmailOtp} disabled={otpSending}>
-            <Text style={ui.link}>{otpSending ? 'Đang gửi...' : 'Gửi lại mã OTP'}</Text>
+            <Text style={ui.link}>{otpSending ? 'Đang gửi...' : 'Gửi lại mã xác thực'}</Text>
           </Tap>
         </View>
       </Sheet>
@@ -1110,7 +1127,7 @@ export function CheckoutScreen({ params }) {
         )}
       >
         <Text style={[ui.meta, { marginBottom: 10 }]}>
-          Chọn thêm các dịch vụ vệ sinh, bảo dưỡng, nạp gas để thợ xử lý trọn gói cùng lúc (áp dụng ưu đãi combo giảm tới 10%).
+          Chọn thêm các dịch vụ vệ sinh, bảo dưỡng, nạp gas để thợ xử lý trọn gói cùng lúc (áp dụng ưu đãi gộp giảm tới 10%).
         </Text>
 
         {/* Tìm kiếm */}
@@ -1200,13 +1217,11 @@ export function CheckoutScreen({ params }) {
                           u.toast('Mỗi đơn chọn tối đa 10 dịch vụ', '⚠️');
                           return;
                         }
-                        let added = false;
                         setItems((p) => {
                           if (p.some((it) => it.id === svc.id) || p.length >= 10) return p;
-                          added = true;
                           return [...p, { id: svc.id, qty: 1 }];
                         });
-                        if (added) u.toast(`Đã thêm ${svc.name}`, '✅');
+                        u.toast(`Đã thêm ${svc.name}`, '✅');
                       }}
                     />
                   )}
@@ -1235,7 +1250,7 @@ export function SuccessScreen({ params }) {
     return (
       <NotFoundView
         title="Không tìm thấy đơn"
-        body="Đơn vừa đặt chưa hiển thị (có thể đang đồng bộ). Bạn có thể xem lại trong tab Hoạt động."
+        body="Đơn vừa đặt chưa hiển thị (có thể đang đồng bộ). Bạn có thể xem lại trong mục Hoạt động."
         onBack={() => nav.go('home')}
       />
     );
@@ -1495,7 +1510,7 @@ export function AddressFormScreen({ params }) {
       </ScrollView>
       <View style={bx.dockCol}><Btn title={saving ? 'Đang lưu…' : 'Lưu địa chỉ'} disabled={saving} onPress={save} /></View>
       <Sheet visible={showArea} onClose={() => setShowArea(false)} title="Chọn phường/xã (Hà Nội)">
-        <Field label="Tìm phường/xã" value={wardQuery} onChangeText={setWardQuery} placeholder="VD: cau giay, dong da" />
+        <Field label="Tìm phường/xã" value={wardQuery} onChangeText={setWardQuery} placeholder="VD: Cầu Giấy, Đống Đa" />
         {wardsState === 'loading' ? <Text style={ui.meta}>Đang tải danh sách phường/xã…</Text> : null}
         {wardsState === 'error' ? (
           <View style={{ paddingVertical: 12, gap: 8 }}>
@@ -1536,7 +1551,6 @@ export const bx = StyleSheet.create({
   name: { fontSize: 21, fontWeight: '800', color: C.ink, lineHeight: 28, marginTop: 10, letterSpacing: -0.3 },
   priceRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
   price: { color: C.ink, fontWeight: '900', fontSize: 26, fontVariant: ['tabular-nums'] },
-  old: { color: C.faint, fontSize: 15, textDecorationLine: 'line-through' },
   off: { backgroundColor: C.primarySoft, borderWidth: 1, borderColor: C.primaryBorder, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
   offText: { color: C.primary, fontSize: 12, fontWeight: '800' },
   trust: { flexDirection: 'row', marginTop: 16, backgroundColor: C.surface, borderRadius: R.md, paddingVertical: 12 },
@@ -1571,10 +1585,6 @@ export const bx = StyleSheet.create({
   dayOn: { backgroundColor: C.primary, borderColor: C.primary },
   dayLabel: { fontSize: 12, color: C.muted, fontWeight: '600' },
   dayDate: { fontSize: 16, color: C.ink, fontWeight: '800', marginTop: 2 },
-  slots: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8, marginTop: 12 },
-  slot: { width: '32%', height: 40, borderRadius: 11, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  slotOn: { backgroundColor: C.navy, borderColor: C.navy },
-  slotText: { fontSize: 12, color: C.ink, fontWeight: '700' },
   billRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: C.line, borderStyle: 'dashed', paddingTop: 12, marginTop: 12 },
   option: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.line },

@@ -6,6 +6,7 @@ import {
 } from '../constants/appPolicy.js';
 import { TIME_SLOTS } from '../constants/data.js';
 import { toVnParts, vnTimestamp } from './vnTime.js';
+import { toVietnamese } from './viText.js';
 
 export const DAY_MS = 86400000;
 
@@ -206,4 +207,139 @@ export function checkWarrantyAlertMilestone(completedAt, warrantyDays = BASE_WAR
   const res = analyzeWarrantyEligibility({ completedAt, warrantyDays, serverNow: nowTs, warrantyEndAt });
   if (!res.eligible) return null;
   return WARRANTY_ALERT_MILESTONES.includes(res.daysLeft) ? res.daysLeft : null;
+}
+
+export function normalizeWarrantyEndYmd(rawEnd) {
+  if (!rawEnd) return null;
+  if (rawEnd instanceof Date || typeof rawEnd === 'number') {
+    return formatYmd(rawEnd) || null;
+  }
+  const trimmed = String(rawEnd).trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}(?:$|T00:00:00(?:\.000)?Z?$|T23:59:59(?:\.\d+)?Z?$)/.test(trimmed)) {
+    return trimmed.slice(0, 10);
+  }
+  const parsed = new Date(trimmed);
+  if (!Number.isNaN(parsed.getTime())) {
+    const ymd = formatYmd(parsed);
+    if (ymd) return ymd;
+  }
+  return /^(\d{4}-\d{2}-\d{2})/.exec(trimmed)?.[1] || null;
+}
+
+/**
+ * Hợp nhất dữ liệu từ API GET /customer/requests/:id/warranty-eligibility vào kết quả kiểm tra cục bộ.
+ */
+export function applyServerWarrantyEligibility(baseInfo, serverElig, formatDateFn, nowInput = new Date()) {
+  if (!serverElig || typeof serverElig !== 'object') return baseInfo;
+  const rawSrvDays = serverElig.warranty_days ?? serverElig.warrantyDays;
+  const numSrvDays = rawSrvDays != null && rawSrvDays !== '' ? Number(rawSrvDays) : NaN;
+  const srvDays = Number.isFinite(numSrvDays) && numSrvDays >= 0 ? Math.round(numSrvDays) : null;
+  const totalDays = srvDays != null ? srvDays : (baseInfo?.totalDays ?? 0);
+  const rawEnd = serverElig.warranty_end_date || serverElig.warrantyEndDate || null;
+  const normalizedRawEnd = normalizeWarrantyEndYmd(rawEnd);
+  const endYmd = normalizedRawEnd || baseInfo?.endYmd || null;
+  const until = endYmd
+    ? getWarrantyEndTimestamp(null, totalDays || BASE_WARRANTY_DAYS, endYmd)
+    : (baseInfo?.until || null);
+
+  if (serverElig.eligible === false) {
+    const reason = String(serverElig.reason_code || serverElig.reasonCode || baseInfo?.reason || 'WARRANTY_EXPIRED');
+    const noWarranty = totalDays === 0 || reason === 'WARRANTY_NOT_APPLICABLE' || reason === 'NO_WARRANTY';
+    return {
+      ...baseInfo,
+      ok: false,
+      totalDays,
+      daysLeft: 0,
+      isFinalDay: reason === 'WARRANTY_FINAL_DAY_CUTOFF' || Boolean(serverElig.is_final_day),
+      isCutoff: reason === 'WARRANTY_FINAL_DAY_CUTOFF',
+      noWarranty,
+      reason,
+      until,
+      endYmd,
+      text: toVietnamese(serverElig.message, '') || baseInfo?.text || (noWarranty
+        ? 'Dịch vụ này không áp dụng bảo hành.'
+        : `Đơn đã hết thời hạn bảo hành ${totalDays} ngày.`),
+      supportHotline: serverElig.support_hotline || null,
+      retentionVoucher: serverElig.retention_voucher || null,
+      fromServer: true,
+    };
+  }
+
+  if (serverElig.eligible === true) {
+    const now = nowInput instanceof Date ? nowInput : new Date(nowInput);
+    const todayYmd = formatYmd(now);
+    if (endYmd && todayYmd && todayYmd > endYmd) {
+      return {
+        ...baseInfo,
+        ok: false,
+        totalDays,
+        daysLeft: 0,
+        reason: 'WARRANTY_EXPIRED',
+        until,
+        endYmd,
+        text: totalDays > 0
+          ? `Đơn đã hết thời hạn bảo hành ${totalDays} ngày.`
+          : (baseInfo?.text || 'Đơn đã hết thời hạn bảo hành.'),
+      };
+    }
+    const daysLeft = serverElig.days_remaining != null
+      ? Math.max(1, Number(serverElig.days_remaining))
+      : (baseInfo?.daysLeft ?? totalDays);
+    const isFinalDay = Boolean(serverElig.is_final_day) || Boolean(endYmd && todayYmd === endYmd);
+    if (isFinalDay) {
+      const np = toVnParts(now);
+      const curHour = np ? (np.hour + np.minute / 60) : 0;
+      const todayFinalSlots = getSlotsForDate(todayYmd, { now, endYmd: todayYmd });
+      if (curHour >= WARRANTY_FINAL_DAY_CUTOFF_HOUR || todayFinalSlots.length === 0) {
+        return {
+          ...baseInfo,
+          ok: false,
+          noWarranty: false,
+          totalDays,
+          daysLeft: 0,
+          isFinalDay: true,
+          isCutoff: true,
+          reason: 'WARRANTY_FINAL_DAY_CUTOFF',
+          until,
+          endYmd,
+          availableDates: [],
+          availableSlots: [],
+          serverAvailableSlotsToday: [],
+          text: baseInfo?.isCutoff && baseInfo?.text
+            ? baseInfo.text
+            : 'Hôm nay là ngày cuối cùng của thời hạn bảo hành và đã quá giờ nhận ca kỹ thuật viên (18h00).',
+          fromServer: true,
+        };
+      }
+    }
+    const availableDates = Array.isArray(serverElig.available_dates) && serverElig.available_dates.length
+      ? serverElig.available_dates
+      : baseInfo?.availableDates;
+    const serverSlotsToday = Array.isArray(serverElig.available_slots_today)
+      ? serverElig.available_slots_today
+      : null;
+    const dateText = until && typeof formatDateFn === 'function' ? formatDateFn(until) : '';
+    const defaultText = totalDays > 0
+      ? `Còn ${daysLeft}/${totalDays} ngày bảo hành${dateText ? ` (đến ${dateText})` : ''}.`
+      : (baseInfo?.text || '');
+    return {
+      ...baseInfo,
+      ok: true,
+      noWarranty: false,
+      totalDays,
+      daysLeft,
+      isFinalDay,
+      isCutoff: false,
+      availableDates,
+      availableSlots: serverSlotsToday?.length ? serverSlotsToday : baseInfo?.availableSlots,
+      serverAvailableSlotsToday: serverSlotsToday,
+      until,
+      endYmd,
+      text: serverElig.notice || defaultText,
+      fromServer: true,
+    };
+  }
+
+  return baseInfo;
 }

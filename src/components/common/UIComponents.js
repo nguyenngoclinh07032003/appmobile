@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { C, R, shadow, toneOf, STATUS_META, grad } from '../../theme';
 import { formatVND, discountOf, isEstimate, isClean, durationText } from '../../constants/data';
+import { formatMinutesToSlotStr } from '../../utils/dateTime';
 import { useApp } from '../../context';
 import { AppIcon, resolveIconColor } from './AppIcon';
 
@@ -133,11 +134,13 @@ export function resolveSemanticTone({ tone, title = '', message = '', text = '',
   }
 
   const isWarning =
-    tone === 'warning' ||
-    tone === 'alert' ||
-    fallback === 'warning' ||
-    ['⚠️', '⚠', '⏰', '⏳', '🔔', '📝', '✏️', '🔄', '🧾', 'alert-triangle', 'clock', 'timer', 'bell'].includes(ic) ||
-    /cảnh báo|thiếu|chưa|chờ|lưu ý|nhắc|phát sinh|muộn|trễ|tối thiểu|giới hạn|báo giá|kiểm tra|tạm ngưng|đổi lịch/i.test(combined);
+    tone !== 'info' && (
+      tone === 'warning' ||
+      tone === 'alert' ||
+      fallback === 'warning' ||
+      ['⚠️', '⚠', '⏰', '⏳', '🔔', '📝', '✏️', '🔄', '🧾', 'alert-triangle', 'clock', 'timer', 'bell'].includes(ic) ||
+      /cảnh báo|thiếu|chưa|chờ|lưu ý|nhắc|phát sinh|muộn|trễ|tối thiểu|giới hạn|báo giá|kiểm tra|tạm ngưng|đổi lịch/i.test(combined)
+    );
 
   if (isWarning) {
     return {
@@ -421,11 +424,11 @@ export function Radio({ on }) {
   return <View style={[ui.radio, on && ui.radioOn]}>{on ? <View style={ui.radioDot} /> : null}</View>;
 }
 
-export function Checkbox({ on, label, onPress }) {
+export function Checkbox({ on, label, onPress, style }) {
   return (
-    <Tap onPress={onPress} scaleTo={0.98} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 }}>
+    <Tap onPress={onPress} scaleTo={0.98} style={[{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 }, style]}>
       <View style={[ui.checkbox, on && ui.checkboxOn]}>{on ? <AppIcon name="check" size={14} color="#fff" strokeWidth={3} /> : null}</View>
-      <Text style={{ fontSize: 14, color: C.ink, fontWeight: '500' }}>{label}</Text>
+      <Text style={{ fontSize: 14, color: C.ink, fontWeight: '500', flex: 1 }}>{label}</Text>
     </Tap>
   );
 }
@@ -483,9 +486,15 @@ export function ListRow({ icon, iconBg, label, sub, value, onPress, danger, last
   return (
     <Tap onPress={onPress} scaleTo={0.99} style={[ui.listRow, !last && ui.listDivider]}>
       {icon ? (
-        <View style={{ width: 28, alignItems: 'center', justifyContent: 'center' }}>
-          <AppIcon icon={icon} size={22} color={danger ? C.red : C.ink2} strokeWidth={1.75} />
-        </View>
+        iconBg ? (
+          <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
+            <AppIcon icon={icon} size={18} color={danger ? C.red : resolveIconColor(iconBg, C.primary)} strokeWidth={2} />
+          </View>
+        ) : (
+          <View style={{ width: 28, alignItems: 'center', justifyContent: 'center' }}>
+            <AppIcon icon={icon} size={22} color={danger ? C.red : C.ink2} strokeWidth={1.75} />
+          </View>
+        )
       ) : null}
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={[ui.listLabel, danger && { color: C.red }]} numberOfLines={1}>{label}</Text>
@@ -549,7 +558,7 @@ export function Media({ item, height, width, radius = 0, iconSize }) {
           ...shadow.sm,
         }}
       >
-        <AppIcon icon={item?.icon || 'wrench'} size={Math.round(emblemSize * 0.5)} color={tone.fg || C.primary} strokeWidth={1.9} />
+        <AppIcon icon={item?.icon || 'wrench'} size={iconSize || Math.round(emblemSize * 0.5)} color={tone.fg || C.primary} strokeWidth={1.9} />
       </View>
     </View>
   );
@@ -558,23 +567,26 @@ export function Media({ item, height, width, radius = 0, iconSize }) {
 export function ServiceCard({ item, style }) {
   const { a, nav } = useApp();
   const discount = discountOf(item);
+  const warrantyLabel =
+    item?.warrantyDays > 0
+      ? `BH ${item.warrantyDays} ngày`
+      : item?.warrantyDays === undefined && item?.warranty && item?.kind !== 'lifetime'
+        ? item.warranty
+        : '';
   return (
     <Tap scaleTo={0.975} style={[ui.sCard, style]} onPress={() => nav.push('detail', { id: item.id })}>
       <View>
         <Media item={item} height={110} />
         {discount > 0 ? <View style={ui.offTag}><Text style={ui.offTagText}>-{discount}%</Text></View> : null}
-        {item?.kind !== 'lifetime' ? (
+        {warrantyLabel ? (
           <View style={[ui.warrantyTag, { flexDirection: 'row', alignItems: 'center', gap: 4 }]}>
             <AppIcon name="shield-check" size={11} color={C.primary} strokeWidth={2.4} />
-            <Text style={ui.warrantyTagText}>BH 60 ngày</Text>
+            <Text style={ui.warrantyTagText}>{warrantyLabel}</Text>
           </View>
         ) : null}
       </View>
       <View style={{ padding: 11, flex: 1 }}>
         <Text numberOfLines={2} style={ui.sCardName}>{item.name}</Text>
-        <Text numberOfLines={1} style={ui.meta}>
-          {' '}
-        </Text>
         {isEstimate(item) ? <Text style={ui.estimate}>Giá tham khảo</Text> : isClean(item) ? <Text style={ui.cleanLine}>Bao sạch · {durationText(item.id)}</Text> : <Text style={ui.cleanLine}> </Text>}
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginTop: 6 }}>
           <View style={{ flex: 1 }}>
@@ -711,11 +723,11 @@ export function DialogHost() {
             <Text style={ui.dialogTitle}>{cfg.title}</Text>
             {cfg.message ? <Text style={ui.dialogBody}>{cfg.message}</Text> : null}
             {cfg.content || null}
-            <View style={[ stacked ? { flexDirection: 'column', gap: 10, marginTop: 22 } : { flexDirection: 'row', gap: 10, marginTop: 22 } ]}>
+            <View style={[stacked ? { flexDirection: 'column', gap: 10, marginTop: 22 } : { flexDirection: 'row', gap: 10, marginTop: 22 }]}>
               {orderedActions.map((ac) => {
                 const isCancelLike = ac.variant === 'ghost' || ac.variant === 'outline';
                 const resolvedVariant = ac.variant === 'auto'
-                  ? (cfg.danger ? 'danger' : 'dark')
+                  ? (cfg.danger || sem.key === 'danger' ? 'danger' : 'dark')
                   : isCancelLike && stacked
                     ? 'outline'
                     : (ac.variant || 'dark');
@@ -782,38 +794,6 @@ export function ToastHost() {
   );
 }
 
-// Mã QR minh hoạ (sinh lưới ô vuông theo chuỗi)
-export function PseudoQR({ value, size = 200 }) {
-  const safeVal = String(value || 'MINHDUC');
-  const n = 21;
-  let h = 2166136261;
-  for (let i = 0; i < safeVal.length; i += 1) { h ^= safeVal.charCodeAt(i); h = Math.imul(h, 16777619); }
-  const rand = () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 1000) / 1000; };
-  const finder = (r, c) => {
-    const inBox = (r0, c0) => r >= r0 && r < r0 + 7 && c >= c0 && c < c0 + 7;
-    const boxes = [[0, 0], [0, n - 7], [n - 7, 0]];
-    for (const [r0, c0] of boxes) {
-      if (inBox(r0, c0)) {
-        const rr = r - r0; const cc = c - c0;
-        return rr === 0 || rr === 6 || cc === 0 || cc === 6 || (rr >= 2 && rr <= 4 && cc >= 2 && cc <= 4) ? 1 : 0;
-      }
-    }
-    return -1;
-  };
-  const cell = size / n;
-  const rows = [];
-  for (let r = 0; r < n; r += 1) {
-    const cols = [];
-    for (let c = 0; c < n; c += 1) {
-      const f = finder(r, c);
-      const on = f === -1 ? rand() > 0.52 : f === 1;
-      cols.push(<View key={c} style={{ width: cell, height: cell, backgroundColor: on ? C.navy : '#fff' }} />);
-    }
-    rows.push(<View key={r} style={{ flexDirection: 'row' }}>{cols}</View>);
-  }
-  return <View style={{ padding: 12, backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: C.line }}>{rows}</View>;
-}
-
 // ------------------------------------------------------------------ Styles
 const webNoOutline = Platform.select({ web: { outlineStyle: 'none' }, default: {} });
 
@@ -849,7 +829,6 @@ export const ui = StyleSheet.create({
     textAlign: 'center',
     flexShrink: 1,
   },
-  btnIcon: { fontSize: 14, marginRight: 5 },
   badge: { position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, backgroundColor: C.red, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' },
   badgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   card: { backgroundColor: C.card, borderRadius: R.lg, padding: 16, ...shadow.sm, borderWidth: 1, borderColor: 'rgba(226,232,240,0.95)' },
@@ -885,7 +864,6 @@ export const ui = StyleSheet.create({
   checkboxOn: { backgroundColor: C.primary, borderColor: C.primary },
   stepper: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface, borderRadius: 999, padding: 3 },
   stepBtn: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', ...shadow.sm },
-  stepMark: { fontSize: 17, color: C.ink, fontWeight: '700', lineHeight: 20 },
   stepVal: { minWidth: 28, textAlign: 'center', fontWeight: '800', color: C.ink, fontSize: 14 },
   fieldLabel: { fontSize: 13, fontWeight: '700', color: C.ink2, marginTop: 16, marginBottom: 8 },
   input: { backgroundColor: '#fff', borderWidth: 1.5, borderColor: C.line, borderRadius: R.md, paddingHorizontal: 14, minHeight: 52, fontSize: 15, color: C.ink, ...webNoOutline },
@@ -905,11 +883,9 @@ export const ui = StyleSheet.create({
   sCardName: { fontSize: 13, fontWeight: '700', color: C.ink, lineHeight: 18, minHeight: 36 },
   offTag: { position: 'absolute', left: 8, top: 8, backgroundColor: C.card, borderWidth: 1, borderColor: C.primaryBorder, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, ...shadow.sm },
   offTagText: { color: C.primary, fontSize: 11, fontWeight: '800' },
-  favBtn: { position: 'absolute', right: 8, top: 8, width: 28, height: 28, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.95)', alignItems: 'center', justifyContent: 'center', ...shadow.sm },
   warrantyTag: { position: 'absolute', left: 8, bottom: 8, backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3, ...shadow.sm },
   warrantyTagText: { color: C.ink2, fontSize: 10, fontWeight: '800' },
   addBtn: { width: 32, height: 32, borderRadius: 11, backgroundColor: C.primary, ...grad.primaryBtn, alignItems: 'center', justifyContent: 'center', ...shadow.primary },
-  addBtnText: { color: '#fff', fontSize: 20, fontWeight: '700', lineHeight: 22 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 12 },
   gridItem: { width: '48.4%' },
   sRow: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: R.lg, padding: 10, marginBottom: 10, ...shadow.sm, borderWidth: 1, borderColor: C.line },
@@ -926,17 +902,12 @@ export const ui = StyleSheet.create({
   dialogIconOuter: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
   dialogIconInner: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   dialogCloseBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: -2, marginRight: -4 },
-  dialogPill: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, marginBottom: 12 },
-  dialogDot: { width: 7, height: 7, borderRadius: 4 },
-  dialogPillText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.2, textTransform: 'uppercase' },
   dialogTitle: { fontSize: 18, fontWeight: '800', color: C.ink, textAlign: 'left' },
   dialogBody: { fontSize: 14.5, color: C.ink2, textAlign: 'left', marginTop: 6, lineHeight: 21 },
   toast: { position: 'absolute', alignSelf: 'center', maxWidth: '92%', bottom: 94, backgroundColor: 'rgba(7,26,58,0.96)', paddingLeft: 10, paddingRight: 18, paddingVertical: 9, borderRadius: 999, flexDirection: 'row', alignItems: 'center', zIndex: 100, ...shadow.lg, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.12)' },
   toastIconWrap: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   toastText: { color: '#fff', fontWeight: '700', fontSize: 13.5, flexShrink: 1 },
 });
-
-export const isWeb = Platform.OS === 'web';
 
 export const minutesToTimeStr = (mins) => {
   const m = Math.max(0, Math.floor(mins || 0));
@@ -945,15 +916,7 @@ export const minutesToTimeStr = (mins) => {
   return `${String(h).padStart(2, '0')}h${String(min).padStart(2, '0')}`;
 };
 
-export const minutesToSlotStr = (mins) => {
-  const m = Math.max(0, Math.floor(mins || 0));
-  const h1 = Math.floor(m / 60);
-  const min1 = m % 60;
-  const endMins = Math.min(m + 120, 22 * 60);
-  const h2 = Math.floor(endMins / 60);
-  const min2 = endMins % 60;
-  return `${String(h1).padStart(2, '0')}h${String(min1).padStart(2, '0')} - ${String(h2).padStart(2, '0')}h${String(min2).padStart(2, '0')}`;
-};
+export const minutesToSlotStr = formatMinutesToSlotStr;
 
 export function TimeRangeSlider({
   value,
@@ -961,12 +924,13 @@ export function TimeRangeSlider({
   minMinutes = 8 * 60,
   maxMinutes = 20 * 60,
   step = 15,
+  leadMinutes = 45,
   isToday = false,
   onSelectTomorrow,
   style,
 }) {
-  const clampedVal = Math.min(Math.max(value || minMinutes, minMinutes), maxMinutes);
-  const isOutOfRange = isToday && minMinutes >= maxMinutes;
+  const clampedVal = Math.min(Math.max(value ?? minMinutes, minMinutes), maxMinutes);
+  const isOutOfRange = isToday && minMinutes > maxMinutes;
 
   const handleChange = (newVal) => {
     const clamped = Math.min(Math.max(newVal, minMinutes), maxMinutes);
@@ -978,15 +942,35 @@ export function TimeRangeSlider({
     handleChange(clampedVal + delta);
   };
 
-  const PRESETS = [
-    { label: '08:30', val: 8 * 60 + 30 },
-    { label: '10:00', val: 10 * 60 },
-    { label: '13:30', val: 13 * 60 + 30 },
-    { label: '15:30', val: 15 * 60 + 30 },
-    { label: '18:00', val: 18 * 60 },
-  ];
+  const isExtendedRange = minMinutes < 8 * 60 || maxMinutes > 20 * 60;
+  const PRESETS = isExtendedRange
+    ? [
+      { label: '01:00', val: 1 * 60 },
+      { label: '06:00', val: 6 * 60 },
+      { label: '08:30', val: 8 * 60 + 30 },
+      { label: '10:00', val: 10 * 60 },
+      { label: '13:30', val: 13 * 60 + 30 },
+      { label: '15:30', val: 15 * 60 + 30 },
+      { label: '18:00', val: 18 * 60 },
+      { label: '21:00', val: 21 * 60 },
+      { label: '23:00', val: 23 * 60 },
+    ]
+    : [
+      { label: '08:30', val: 8 * 60 + 30 },
+      { label: '10:00', val: 10 * 60 },
+      { label: '13:30', val: 13 * 60 + 30 },
+      { label: '15:30', val: 15 * 60 + 30 },
+      { label: '18:00', val: 18 * 60 },
+    ];
 
-  const periodLabel = clampedVal < 12 * 60 ? 'Buổi sáng' : clampedVal < 18 * 60 ? 'Buổi chiều' : 'Buổi tối';
+  const periodLabel =
+    clampedVal < 5 * 60
+      ? 'Rạng sáng'
+      : clampedVal < 12 * 60
+        ? 'Buổi sáng'
+        : clampedVal < 18 * 60
+          ? 'Buổi chiều'
+          : 'Buổi tối';
   const progressPct = maxMinutes > minMinutes
     ? `${Math.max(0, Math.min(100, ((clampedVal - minMinutes) / (maxMinutes - minMinutes)) * 100))}%`
     : '0%';
@@ -1014,7 +998,8 @@ export function TimeRangeSlider({
       {isOutOfRange ? (
         <View style={[trsStyles.closedBox, { marginTop: 0 }]}>
           <Text style={trsStyles.closedText}>
-            Hôm nay đã hết khung giờ nhận lịch (trước 20:00 cần đặt sớm tối thiểu 45 phút). Quý khách vui lòng chọn Ngày mai hoặc các ngày tiếp theo.
+            Hôm nay đã hết khung giờ nhận lịch (trước {minutesToTimeStr(maxMinutes)}
+            {leadMinutes > 0 ? ` cần đặt sớm tối thiểu ${leadMinutes} phút` : ''}). Quý khách vui lòng chọn Ngày mai hoặc các ngày tiếp theo.
           </Text>
           {onSelectTomorrow && (
             <Tap style={trsStyles.tomorrowBtn} onPress={onSelectTomorrow}>
@@ -1056,7 +1041,7 @@ export function TimeRangeSlider({
           <View style={trsStyles.boundsRow}>
             <Text style={trsStyles.boundText}>{minutesToTimeStr(minMinutes)}</Text>
             <Text style={[trsStyles.boundText, { color: C.muted }]}>
-              {Platform.OS === 'web' ? 'Kéo thanh trượt để chỉnh giờ' : 'Bấm −15p / +15p hoặc mốc nhanh'}
+              {Platform.OS === 'web' ? 'Kéo thanh trượt để chỉnh giờ' : `Bấm −${step}p / +${step}p hoặc mốc nhanh`}
             </Text>
             <Text style={trsStyles.boundText}>{minutesToTimeStr(maxMinutes)}</Text>
           </View>
@@ -1089,7 +1074,7 @@ export function TimeRangeSlider({
             <View style={trsStyles.presetsGrid}>
               {PRESETS.map((p) => {
                 const isAvail = p.val >= minMinutes && p.val <= maxMinutes;
-                const isSelected = Math.abs(clampedVal - p.val) < 8;
+                const isSelected = Math.abs(clampedVal - p.val) <= Math.max(0, Math.min(2, Math.floor(step / 2)));
                 return (
                   <Tap
                     key={p.val}

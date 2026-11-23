@@ -2,34 +2,30 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   Linking,
   Image,
   TouchableOpacity,
   TextInput,
+  Platform,
 } from 'react-native';
-import { C, R, shadow } from '../../theme';
+import { C } from '../../theme';
 import { HOTLINE, getService } from '../../constants/data';
 import { BASE_WARRANTY_DAYS } from '../../constants/appPolicy';
 import { useApp } from '../../context/AppContext';
 import {
   AppIcon,
   Btn,
-  Card,
-  Field,
+  HScroll,
   Sheet,
   Tap,
 } from '../common';
 import { pickImage, pickCamera } from '../../utils/media';
 import { formatYmd, getSlotsForDate } from '../../utils/warrantyPolicy';
-import { validateVietnamesePhone } from '../../utils/validators';
+import { normalizeVnPhone, validateVietnamesePhone } from '../../utils/validators';
+import { WEEKDAYS } from '../../utils/dateTime';
 
-const normalizeVnPhone = (v) => {
-  const d = String(v || '').replace(/\D/g, '');
-  if (d.startsWith('84') && d.length >= 11) return `0${d.slice(2)}`;
-  return d;
-};
+const webNoOutline = Platform.select({ web: { outlineStyle: 'none' }, default: {} });
 
 /**
  * Lấy số điện thoại của đơn hàng:
@@ -93,16 +89,20 @@ export function WarrantyBookingSheet({
 
   const isCutoff = Boolean(winfo?.isCutoff);
   const isFinalDay = Boolean(winfo?.isFinalDay);
+  const isIneligible = Boolean(winfo && !winfo.ok && !isCutoff);
   const availableDates = winfo?.availableDates?.length ? winfo.availableDates : [formatYmd(new Date())];
 
   const [selectedDate, setSelectedDate] = useState(availableDates[0] || formatYmd(new Date()));
   const endYmd = winfo?.endYmd || null;
 
-  // Ca khả dụng theo ngày được chọn: bỏ ca đã qua (hôm nay) và ca từ 18h00 ở ngày cuối bảo hành.
-  const validSlots = useMemo(
-    () => getSlotsForDate(selectedDate, { now: new Date(), endYmd }),
-    [selectedDate, endYmd],
-  );
+  // Ca khả dụng theo ngày được chọn: dùng danh sách server trả cho hôm nay (nếu có), còn lại bỏ ca đã qua và ca từ 18h00 ở ngày cuối bảo hành.
+  const todayYmd = formatYmd(new Date());
+  const validSlots = useMemo(() => {
+    if (selectedDate === todayYmd && Array.isArray(winfo?.serverAvailableSlotsToday)) {
+      return winfo.serverAvailableSlotsToday;
+    }
+    return getSlotsForDate(selectedDate, { now: new Date(), endYmd });
+  }, [selectedDate, todayYmd, winfo?.serverAvailableSlotsToday, endYmd]);
 
   const [selectedSlot, setSelectedSlot] = useState(validSlots[0] || null);
 
@@ -141,17 +141,6 @@ export function WarrantyBookingSheet({
       });
     };
     (Array.isArray(order.materials) ? order.materials : []).forEach((m, idx) => pushMaterial(m, `mat-${m?.id || idx}`));
-    (Array.isArray(order.quote?.materials) ? order.quote.materials : []).forEach((m, idx) => pushMaterial(m, `quote-mat-${m?.id || idx}`));
-
-    // 4. Biên bản nghiệm thu của thợ (order.report?.summary)
-    if (order.report?.summary) {
-      list.push({
-        id: 'report-summary',
-        name: `Nội dung thợ làm: ${order.report.summary}`,
-        qty: 1,
-        type: 'report',
-      });
-    }
 
     // Fallback nếu không có mục nào
     if (!list.length) {
@@ -183,6 +172,7 @@ export function WarrantyBookingSheet({
     if (!visible || !order) return;
     const initialPhone = resolveContactPhone(order, s);
     setPhone(initialPhone);
+    setInitialPrefilledPhone(initialPhone && !initialPhone.includes('*') ? initialPhone : '');
     setAddress(resolveOrderAddress(order));
     const initialIds = completedItems.map((it) => it.id);
     seenItemIdsRef.current = new Set(initialIds);
@@ -193,9 +183,37 @@ export function WarrantyBookingSheet({
     const dates = winfo?.availableDates?.length ? winfo.availableDates : [formatYmd(new Date())];
     const nextDate = dates[0] || formatYmd(new Date());
     setSelectedDate(nextDate);
-    const slots = getSlotsForDate(nextDate, { now: new Date(), endYmd: winfo?.endYmd || null });
+    const tYmd = formatYmd(new Date());
+    const slots =
+      nextDate === tYmd && Array.isArray(winfo?.serverAvailableSlotsToday)
+        ? winfo.serverAvailableSlotsToday
+        : getSlotsForDate(nextDate, { now: new Date(), endYmd: winfo?.endYmd || null });
     setSelectedSlot(slots[0] || null);
   }, [visible, order?.code]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Nếu server eligibility cập nhật lại ngày / ca khả dụng sau khi mở sheet: tự đồng bộ lựa chọn hợp lệ.
+  useEffect(() => {
+    if (!visible || !order) return;
+    const dates = winfo?.availableDates?.length ? winfo.availableDates : [formatYmd(new Date())];
+    const targetDate = dates.includes(selectedDate) ? selectedDate : (dates[0] || formatYmd(new Date()));
+    if (targetDate !== selectedDate) setSelectedDate(targetDate);
+    const slots =
+      targetDate === todayYmd && Array.isArray(winfo?.serverAvailableSlotsToday)
+        ? winfo.serverAvailableSlotsToday
+        : getSlotsForDate(targetDate, { now: new Date(), endYmd });
+    if (!slots.includes(selectedSlot)) {
+      setSelectedSlot(slots[0] || null);
+    }
+  }, [
+    visible,
+    order?.code,
+    winfo?.availableDates,
+    winfo?.serverAvailableSlotsToday,
+    endYmd,
+    todayYmd,
+    selectedDate,
+    selectedSlot,
+  ]);
 
   // Nếu đơn được hydrate thêm hạng mục sau khi sheet đã mở: tự tick thêm hạng mục mới, giữ nguyên nội dung khách đang nhập.
   useEffect(() => {
@@ -209,9 +227,16 @@ export function WarrantyBookingSheet({
   if (!order) return null;
 
   const displayAddress = resolveOrderAddress(order);
-  const totalDays = winfo?.totalDays || BASE_WARRANTY_DAYS;
+  const totalDays = winfo?.totalDays ?? BASE_WARRANTY_DAYS;
   const daysLeft = winfo?.daysLeft ?? totalDays;
+  const hotline = winfo?.supportHotline || HOTLINE;
 
+  const isPrefilledPhoneShown = Boolean(
+    phone &&
+    !String(phone).includes('*') &&
+    initialPrefilledPhone &&
+    normalizeVnPhone(phone) === normalizeVnPhone(initialPrefilledPhone),
+  );
   const toggleItem = (itemId) => {
     setSelectedItemIds((prev) => {
       const next = new Set(prev);
@@ -283,8 +308,12 @@ export function WarrantyBookingSheet({
       return;
     }
 
-    if (!selectedSlot) {
-      u.toast('Vui lòng chọn khung giờ hẹn thợ.', '⚠️');
+    if (!availableDates.includes(selectedDate)) {
+      u.toast('Ngày hẹn bảo hành không còn khả dụng. Vui lòng chọn lại.', '⚠️');
+      return;
+    }
+    if (!selectedSlot || !validSlots.includes(selectedSlot)) {
+      u.toast('Vui lòng chọn khung giờ hẹn thợ khả dụng.', '⚠️');
       return;
     }
 
@@ -320,9 +349,20 @@ export function WarrantyBookingSheet({
     return ymdStr;
   };
 
-  // =========================================================================
-  // GIAO DIỆN KHI NGÀY THỨ 60 VÀ ĐÃ QUÁ GIỜ LÀM VIỆC CỦA THỢ (CUT-OFF REACHED)
-  // =========================================================================
+  const [initialPrefilledPhone, setInitialPrefilledPhone] = useState('');
+
+  const formatWarrantyDateLabel = (ymdStr) => {
+    const todayStr = formatYmd(new Date());
+    if (ymdStr === todayStr) return 'Hôm nay';
+    const parts = String(ymdStr || '').split('-').map(Number);
+    if (parts.length === 3 && parts.every(Number.isFinite)) {
+      const tomorrowStr = formatYmd(new Date(Date.now() + 86400000));
+      if (ymdStr === tomorrowStr) return 'Ngày mai';
+      const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+      return WEEKDAYS[d.getUTCDay()] || ymdStr;
+    }
+    return ymdStr;
+  };
   if (isCutoff) {
     return (
       <Sheet visible={visible} onClose={onClose} title="Hết giờ tiếp nhận bảo hành">
@@ -343,15 +383,49 @@ export function WarrantyBookingSheet({
               Vui lòng liên hệ trực tiếp với bộ phận chăm sóc khách hàng Thợ Minh Đức để được kiểm tra và xử lý ngoại lệ.
             </Text>
             <Btn
-              title={`Gọi Hotline ${HOTLINE}`}
+              title={`Gọi tổng đài ${hotline}`}
               variant="danger"
               style={{ marginTop: 12 }}
-              onPress={() => Linking.openURL(`tel:${HOTLINE.replace(/\s+/g, '')}`)}
+              onPress={() => Linking.openURL(`tel:${hotline.replace(/\s+/g, '')}`).catch(() => {})}
             />
           </View>
 
           <Btn
             title="Đóng thông báo"
+            variant="outline"
+            style={{ marginTop: 12, width: '100%' }}
+            onPress={onClose}
+          />
+        </View>
+      </Sheet>
+    );
+  }
+
+  if (isIneligible) {
+    return (
+      <Sheet visible={visible} onClose={onClose} title="Chưa thể gửi yêu cầu bảo hành">
+        <View style={styles.cutoffWrap}>
+          <View style={styles.cutoffIconBox}>
+            <AppIcon name="shield-alert" size={36} color={C.red} />
+          </View>
+          <Text style={styles.cutoffTitle}>Đơn chưa đủ điều kiện bảo hành</Text>
+          <Text style={styles.cutoffDesc}>
+            {winfo?.text || `Đơn ${order.code} hiện không thể gửi yêu cầu bảo hành mới.`}
+          </Text>
+          <View style={styles.cutoffCallCard}>
+            <Text style={styles.cutoffCallTitle}>Cần kiểm tra thêm?</Text>
+            <Text style={styles.cutoffCallSub}>
+              Liên hệ bộ phận hỗ trợ Thợ Minh Đức để được kiểm tra thông tin bảo hành của đơn hàng.
+            </Text>
+            <Btn
+              title={`Gọi tổng đài ${hotline}`}
+              variant="soft"
+              style={{ marginTop: 12 }}
+              onPress={() => Linking.openURL(`tel:${hotline.replace(/\s+/g, '')}`).catch(() => {})}
+            />
+          </View>
+          <Btn
+            title="Đóng"
             variant="outline"
             style={{ marginTop: 12, width: '100%' }}
             onPress={onClose}
@@ -421,12 +495,9 @@ export function WarrantyBookingSheet({
                     {it.name}
                   </Text>
                   <Text style={styles.itemMeta}>
-                    {it.type === 'material' ? 'Linh kiện thay thế' : it.type === 'report' ? 'Ghi nhận nghiệm thu' : `Dịch vụ gốc (x${it.qty})`}
+                    {it.type === 'material' ? 'Linh kiện thay thế' : `Dịch vụ gốc (x${it.qty})`}
                   </Text>
                 </View>
-                <Text style={[styles.itemBadge, isChecked ? styles.itemBadgeActive : styles.itemBadgeInactive]}>
-                  {isChecked ? 'Được bảo hành' : 'Bỏ chọn'}
-                </Text>
               </Tap>
             );
           })}
@@ -443,24 +514,26 @@ export function WarrantyBookingSheet({
             <Text style={styles.lockedDateBadge}>Hạn chót</Text>
           </View>
         ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateRow}>
-            {availableDates.map((dateStr, idx) => {
+          <HScroll contentContainerStyle={styles.dateRow}>
+            {availableDates.map((dateStr) => {
               const isSelected = selectedDate === dateStr;
-              const isToday = dateStr === formatYmd(new Date());
               return (
                 <Tap
                   key={dateStr}
                   style={[styles.dateChip, isSelected && styles.dateChipActive]}
                   onPress={() => {
                     setSelectedDate(dateStr);
-                    const slotsOfDay = getSlotsForDate(dateStr, { now: new Date(), endYmd });
+                    const slotsOfDay =
+                      dateStr === todayYmd && Array.isArray(winfo?.serverAvailableSlotsToday)
+                        ? winfo.serverAvailableSlotsToday
+                        : getSlotsForDate(dateStr, { now: new Date(), endYmd });
                     if (!slotsOfDay.includes(selectedSlot)) {
                       setSelectedSlot(slotsOfDay[0] || null);
                     }
                   }}
                 >
                   <Text style={[styles.dateChipDay, isSelected && styles.dateChipTextActive]}>
-                    {isToday ? 'Hôm nay' : `Ngày ${idx + 1}`}
+                    {formatWarrantyDateLabel(dateStr)}
                   </Text>
                   <Text style={[styles.dateChipNum, isSelected && styles.dateChipTextActive]}>
                     {formatDisplayDate(dateStr)}
@@ -468,7 +541,7 @@ export function WarrantyBookingSheet({
                 </Tap>
               );
             })}
-          </ScrollView>
+          </HScroll>
         )}
 
         {/* 3. CHỌN KHUNG GIỜ PHỤC VỤ */}
@@ -477,7 +550,9 @@ export function WarrantyBookingSheet({
           <View style={styles.emptySlotCard}>
             <AppIcon name="clock" size={20} color={C.red} />
             <Text style={styles.emptySlotText}>
-              Đã hết ca làm việc khả dụng trong ngày hôm nay. Vui lòng chọn ngày tiếp theo.
+              {isFinalDay
+                ? `Hôm nay là hạn cuối bảo hành và đã hết ca tiếp nhận trước 18h00. Vui lòng liên hệ tổng đài ${hotline} để được hỗ trợ.`
+                : 'Đã hết ca làm việc khả dụng trong ngày này. Vui lòng chọn ngày khác bên trên.'}
             </Text>
           </View>
         ) : (
@@ -503,7 +578,7 @@ export function WarrantyBookingSheet({
         {/* 4. SỐ ĐIỆN THOẠI LIÊN HỆ */}
         <View style={styles.sectionHeaderRow}>
           <Text style={[styles.sectionLabel, { marginTop: 18 }]}>4. SỐ ĐIỆN THOẠI LIÊN HỆ *</Text>
-          <Text style={[styles.sectionSub, { marginTop: 18 }]}>Đã điền từ đơn hàng</Text>
+          {isPrefilledPhoneShown ? <Text style={[styles.sectionSub, { marginTop: 18 }]}>Đã điền từ đơn hàng</Text> : null}
         </View>
         <TextInput
           style={styles.textInput}
@@ -844,6 +919,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 13.5,
     color: C.ink,
+    ...webNoOutline,
   },
   phoneHint: {
     fontSize: 11.5,

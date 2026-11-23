@@ -5,6 +5,11 @@ const compressWebFile = (f) => new Promise((resolve) => {
   const url = URL.createObjectURL(f);
   const img = new window.Image();
   img.onload = () => {
+    if (!img.width || !img.height) {
+      URL.revokeObjectURL(url);
+      resolve(undefined);
+      return;
+    }
     const k = Math.min(1, 480 / Math.max(img.width, img.height));
     const c = document.createElement('canvas');
     c.width = Math.round(img.width * k);

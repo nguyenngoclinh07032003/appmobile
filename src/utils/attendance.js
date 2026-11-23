@@ -1,6 +1,6 @@
 // Tiện ích nghiệp vụ Chấm công (vào ca có GPS, bảng công tháng, vi phạm) theo giờ Việt Nam (GMT+7).
 import { toVnParts, vnDateKey } from './vnTime.js';
-import { viFieldError, viServerMessage } from './viText.js';
+import { viFieldError, viServerMessage, toVietnamese } from './viText.js';
 import { TECH_WORK_SHIFTS } from '../constants/data.js';
 
 export { TECH_WORK_SHIFTS };
@@ -168,13 +168,13 @@ export const formatAttendanceCheckInError = (res = {}) => {
     }
     return {
       title: 'Thông tin chưa hợp lệ',
-      message: res?.message || viServerMessage(null, 'VALIDATION_ERROR', 400),
+      message: toVietnamese(res?.message, '') || viServerMessage(null, 'VALIDATION_ERROR', 400),
       shouldRefetch: false,
     };
   }
   return {
     title: 'Không thể vào ca',
-    message: res?.message || 'Không thể vào ca lúc này. Vui lòng thử lại.',
+    message: toVietnamese(res?.message, '') || 'Không thể vào ca lúc này. Vui lòng thử lại.',
     shouldRefetch: false,
   };
 };

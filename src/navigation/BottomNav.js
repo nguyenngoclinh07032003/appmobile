@@ -40,8 +40,7 @@ export default function BottomNav() {
                 </View>
               ) : null}
             </View>
-            <Text style={[styles.navLabel, tabs.length >= 5 && { fontSize: 10 }, on && styles.navLabelOn]} numberOfLines={1}>{t.label}</Text>
-            <View style={[styles.navDot, !on && styles.navDotOff]} />
+            <Text style={[styles.navLabel, on && styles.navLabelOn]} numberOfLines={1}>{t.label}</Text>
           </TouchableOpacity>
         );
       })}
@@ -64,8 +63,6 @@ const styles = StyleSheet.create({
   navIconOn: { backgroundColor: C.primarySoft },
   navLabel: { fontSize: 11, color: C.muted, marginTop: 3, fontWeight: '600' },
   navLabelOn: { color: C.primary, fontWeight: '800' },
-  navDot: { width: 16, height: 3, borderRadius: 2, backgroundColor: C.primary, marginTop: 3 },
-  navDotOff: { backgroundColor: 'transparent' },
   navBadge: {
     position: 'absolute',
     top: -4,

@@ -1,17 +1,30 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, Image, Platform, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, Image, Platform, ActivityIndicator, TouchableOpacity, Share } from 'react-native';
 import { SvgUri } from 'react-native-svg';
 import hrmssApi from '../../services/api';
 import { formatVND } from '../../constants/data';
 import { C } from '../../theme';
+import { toVietnamese } from '../../utils/viText';
 
 const POLL_MS = 5000;
 const DONE_STATUSES = ['PAID', 'NOTHING_TO_PAY'];
 
-// Ảnh QR thật từ backend (img.vietqr.io trả SVG -> dùng SvgUri; bản web dùng <Image>).
+// Ảnh QR thật từ backend: tự phát hiện .svg vs .png/.jpg và fallback sang <Image> nếu SvgUri lỗi.
 function QrImage({ uri, size }) {
-  if (Platform.OS === 'web') return <Image source={{ uri }} style={{ width: size, height: size * 1.15 }} resizeMode="contain" />;
-  return <SvgUri uri={uri} width={size} height={size * 1.15} />;
+  const [forceRaster, setForceRaster] = useState(false);
+  useEffect(() => { setForceRaster(false); }, [uri]);
+  const isSvgUrl = /\.svg(?:$|\?)/i.test(String(uri || ''));
+  if (Platform.OS === 'web' || forceRaster || !isSvgUrl) {
+    return <Image source={{ uri }} style={{ width: size, height: size * 1.15 }} resizeMode="contain" />;
+  }
+  return (
+    <SvgUri
+      uri={uri}
+      width={size}
+      height={size * 1.15}
+      onError={() => setForceRaster(true)}
+    />
+  );
 }
 
 function RetryButton({ onPress, busy }) {
@@ -33,19 +46,22 @@ function RetryButton({ onPress, busy }) {
  * Tiền về thì SePay báo backend; component hỏi lại hóa đơn mỗi 5 giây, thấy PAID / NOTHING_TO_PAY thì
  * dừng hỏi và gọi onPaid() đúng 1 lần.
  */
-export function VietQRPay({ requestId, onPaid, size = 220 }) {
+export function VietQRPay({ requestId, onPaid, size = 220, paused = false }) {
   const [qr, setQr] = useState(null);         // { amount, transfer_content, account_no, account_name, qr_image_url }
   const [bill, setBill] = useState(null);     // { payment_status, remaining_amount, paid_amount, overpaid_amount }
   const [error, setError] = useState(null);   // lỗi tạo QR
   const [billError, setBillError] = useState(null);
   const [alreadyPaid, setAlreadyPaid] = useState(false); // createVietQr trả ALREADY_PAID
   const [creating, setCreating] = useState(false);
+  const [copiedField, setCopiedField] = useState(null);
 
   const paidRef = useRef(false);
   const qrRef = useRef(null);
   const creatingRef = useRef(false);
   const stopRef = useRef(false);
   const timerRef = useRef(null);
+  const alreadyPaidRef = useRef(false);
+  const lastPartialRemainingRef = useRef(null);
   const onPaidRef = useRef(onPaid);
   onPaidRef.current = onPaid;
 
@@ -71,11 +87,16 @@ export function VietQRPay({ requestId, onPaid, size = 220 }) {
         setError(null);
         return;
       }
-      if (res?.code === 'ALREADY_PAID') { setAlreadyPaid(true); setError(null); return; } // để vòng hỏi hoá đơn xác nhận
+      if (res?.code === 'ALREADY_PAID') {
+        alreadyPaidRef.current = true;
+        setAlreadyPaid(true);
+        setError(null);
+        return;
+      } // để vòng hỏi hoá đơn xác nhận
       if (res?.code === 'NOT_PAYABLE_YET') { stopPolling(); setError('Đơn chưa đến bước thanh toán.'); return; }
-      setError(res?.message || 'Không kết nối được máy chủ.');
+      setError(toVietnamese(res?.message, '') || 'Không kết nối được máy chủ.');
     } catch (e) {
-      if (!stopRef.current) setError((e && e.message) || 'Không kết nối được máy chủ.');
+      if (!stopRef.current) setError(toVietnamese(e?.message, '') || 'Không kết nối được máy chủ.');
     } finally {
       creatingRef.current = false;
       if (!stopRef.current) setCreating(false);
@@ -88,15 +109,20 @@ export function VietQRPay({ requestId, onPaid, size = 220 }) {
     try {
       res = await hrmssApi.getBill(requestId);
     } catch (e) {
-      if (!stopRef.current) setBillError((e && e.message) || 'Không kết nối được máy chủ.');
+      if (!stopRef.current) setBillError(toVietnamese(e?.message, '') || 'Không kết nối được máy chủ.');
       return;
     }
     if (stopRef.current) return;
     if (!res?.ok || !res.data) {
       if (res?.code === 'NOT_PAYABLE_YET' || [400, 403, 404].includes(Number(res?.status))) {
         stopPolling();
+        if (alreadyPaidRef.current && !paidRef.current) {
+          paidRef.current = true;
+          try { onPaidRef.current?.({ payment_status: 'PAID' }); } catch (_e) {}
+          return;
+        }
       }
-      setBillError(res?.code === 'NOT_PAYABLE_YET' ? 'Đơn chưa đến bước thanh toán.' : (res?.message || 'Không lấy được hoá đơn.'));
+      setBillError(res?.code === 'NOT_PAYABLE_YET' ? 'Đơn chưa đến bước thanh toán.' : (toVietnamese(res?.message, '') || 'Không lấy được hoá đơn.'));
       return;
     }
     setBillError(null);
@@ -110,27 +136,58 @@ export function VietQRPay({ requestId, onPaid, size = 220 }) {
       }
       return;
     }
-    // Chuyển thiếu: mã cũ đã dùng -> tạo mã mới cho phần còn lại (loadQr tự chống gọi trùng).
+    // Chuyển thiếu: mã cũ đã dùng -> tạo mã mới cho phần còn lại (chặn gọi lặp cho cùng số tiền nếu lỗi).
     const cur = qrRef.current;
-    if (st === 'PARTIALLY_PAID' && cur && Number(cur.amount) !== Number(res.data.remaining_amount)) loadQr();
+    const rem = Number(res.data.remaining_amount);
+    if (st === 'PARTIALLY_PAID' && cur && Number(cur.amount) !== rem && lastPartialRemainingRef.current !== rem) {
+      lastPartialRemainingRef.current = rem;
+      loadQr();
+    }
   }, [requestId, loadQr, stopPolling]);
 
   // Một vòng cho mỗi đơn: tạo mã QR 1 lần, rồi hỏi hoá đơn mỗi 5 giây tới khi PAID / NOTHING_TO_PAY.
   useEffect(() => {
-    if (!requestId) return undefined;
+    if (!requestId || paused) return undefined;
     stopRef.current = false;
     paidRef.current = false;
     qrRef.current = null;
     creatingRef.current = false;
+    alreadyPaidRef.current = false;
+    lastPartialRemainingRef.current = null;
     setQr(null); setBill(null); setError(null); setBillError(null); setAlreadyPaid(false); setCreating(false);
     loadQr();
     tick();
     timerRef.current = setInterval(tick, POLL_MS);
     return () => { stopRef.current = true; stopPolling(); };
-  }, [requestId, loadQr, tick, stopPolling]);
+  }, [requestId, paused, loadQr, tick, stopPolling]);
+
+  const copyText = async (field, val) => {
+    const str = String(val ?? '');
+    if (!str) return;
+    let copied = false;
+    try {
+      if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(str);
+        copied = true;
+      } else {
+        await Share.share({ message: str });
+        copied = true;
+      }
+    } catch (_e) {
+      try {
+        await Share.share({ message: str });
+        copied = true;
+      } catch (_e2) {}
+    }
+    if (copied) {
+      setCopiedField(field);
+      setTimeout(() => setCopiedField((cur) => (cur === field ? null : cur)), 2000);
+    }
+  };
 
   const retry = () => {
     setError(null);
+    lastPartialRemainingRef.current = null;
     loadQr();
     if (!timerRef.current && !paidRef.current) {
       tick();
@@ -198,6 +255,39 @@ export function VietQRPay({ requestId, onPaid, size = 220 }) {
       <Text style={{ color: C.muted, textAlign: 'center' }}>
         {[qr.bank_name || qr.bank_code || qr.bank_id, qr.account_name, qr.account_no].filter(Boolean).join(' · ')}
       </Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6, marginTop: 2 }}>
+        {qr.account_no ? (
+          <TouchableOpacity
+            onPress={() => copyText('acc', qr.account_no)}
+            activeOpacity={0.8}
+            style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line }}
+          >
+            <Text style={{ fontSize: 12, fontWeight: '700', color: C.primary }}>
+              {copiedField === 'acc' ? '✓ Đã chép STK' : 'Sao chép STK'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+        {qr.transfer_content ? (
+          <TouchableOpacity
+            onPress={() => copyText('memo', qr.transfer_content)}
+            activeOpacity={0.8}
+            style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line }}
+          >
+            <Text style={{ fontSize: 12, fontWeight: '700', color: C.primary }}>
+              {copiedField === 'memo' ? '✓ Đã chép nội dung' : 'Sao chép nội dung'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity
+          onPress={() => copyText('amt', String(Math.round(Number(qr.amount) || 0)))}
+          activeOpacity={0.8}
+          style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line }}
+        >
+          <Text style={{ fontSize: 12, fontWeight: '700', color: C.primary }}>
+            {copiedField === 'amt' ? '✓ Đã chép số tiền' : 'Sao chép số tiền'}
+          </Text>
+        </TouchableOpacity>
+      </View>
       {error ? (
         <View style={{ alignItems: 'center' }}>
           <Text style={{ color: C.red, fontSize: 12, textAlign: 'center' }}>Không tạo được mã mới: {error}</Text>

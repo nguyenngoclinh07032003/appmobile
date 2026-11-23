@@ -4,10 +4,11 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { C, R } from '../../../theme';
 import { MATERIALS, formatVND, formatNumberInput } from '../../../constants/data';
-import { useApp, bookedValue, tierPartDiscountAmount, lateDiscountAmount } from '../../../context';
+import { useApp, bookedValue, tierPartDiscountAmount, lateDiscountAmount, getPendingExternalEstimates } from '../../../context';
 import { Badge, Btn, Card, Field, HScroll, Stepper, Tap, AppIcon, ui } from '../../../components';
 import { pickCamera, pickImage } from '../../../utils/media';
 import { formatRangeVND, normalizeExternalPartName } from '../../../utils/externalPartsPricing';
+import { toVietnamese } from '../../../utils/viText';
 import { tx } from './techStyles';
 import { useBusyRunner } from './useBusyRunner';
 
@@ -30,6 +31,7 @@ export function UsedAndExtraMaterialsCard({
   const [extraName, setExtraName] = useState('');
   const [extraPriceText, setExtraPriceText] = useState('');
   const [extraQty, setExtraQty] = useState(1);
+  const [selectedQuickMat, setSelectedQuickMat] = useState(null);
   // Số lượng vật tư kho hiển thị lạc quan trong lúc chờ server: id -> { qty, base } (base = qty server lúc bấm).
   const [localMatQty, setLocalMatQty] = useState({});
 
@@ -43,6 +45,7 @@ export function UsedAndExtraMaterialsCard({
     setExtraName('');
     setExtraPriceText('');
     setExtraQty(1);
+    setSelectedQuickMat(null);
     setLocalMatQty({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderCode]);
@@ -64,7 +67,7 @@ export function UsedAndExtraMaterialsCard({
             defaultPrice: l.actualPrice ?? l.price ?? '',
             receiptId: l.receiptId || null,
           }))
-      : (o.pendingExternalEstimates || []).map((est, idx) => ({
+      : getPendingExternalEstimates(o).map((est, idx) => ({
           syncKey: `est_${est.itemId || idx}`,
           name: est.name,
           minPrice: est.minPrice,
@@ -160,6 +163,7 @@ export function UsedAndExtraMaterialsCard({
     const norm = normalizeExternalPartName(mat?.name);
     const inQuotedLines = (o.quote?.lines || []).some(
       (l) =>
+        (o.quote?.approved || l.isPriorApproved) &&
         !l.isOriginal &&
         !l.isEstimatedRange &&
         ((mat?.matId && l.matId === mat.matId) || normalizeExternalPartName(l.name) === norm),
@@ -194,22 +198,33 @@ export function UsedAndExtraMaterialsCard({
   const handleMoveWarehouseToExtra = (mat) => {
     const unitPrice = Number(mat.price) || 0;
     const qty = Math.max(1, Number(mat.qty) || 1);
-    setExtraParts((prev) => [
-      ...prev,
-      {
-        id: `wh_extra_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        name: mat.name,
-        minPrice: null,
-        maxPrice: null,
-        qty,
-        alreadyBilledUnitPrice: 0,
-        actualPriceText: unitPrice > 0 ? formatNumberInput(String(unitPrice)) : '',
-        receiptId: null,
-        receiptUri: null,
-        isAddedInline: true,
-      },
-    ]);
-    u.toast(`Đã thêm "${mat.name}" vào mục tính Bill`, 'check-circle-2');
+    const norm = normalizeExternalPartName(mat.name);
+    if (extraParts.some((p) => normalizeExternalPartName(p.name) === norm)) {
+      u.toast(`"${mat.name}" đã có trong danh sách hoá đơn`, 'info');
+      return;
+    }
+    setExtraParts((prev) => {
+      if (prev.some((p) => normalizeExternalPartName(p.name) === norm)) return prev;
+      return [
+        ...prev,
+        {
+          id: `wh_extra_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          matId: mat.matId || null,
+          dbMaterialId: mat.dbMaterialId || null,
+          isWarehouse: Boolean(mat.matId || mat.dbMaterialId),
+          name: mat.name,
+          minPrice: null,
+          maxPrice: null,
+          qty,
+          alreadyBilledUnitPrice: 0,
+          actualPriceText: unitPrice > 0 ? formatNumberInput(String(unitPrice)) : '',
+          receiptId: null,
+          receiptUri: null,
+          isAddedInline: true,
+        },
+      ];
+    });
+    u.toast(`Đã thêm "${mat.name}" vào mục tính hoá đơn`, 'check-circle-2');
   };
 
   const handleAddInlineExtra = () => {
@@ -223,14 +238,51 @@ export function UsedAndExtraMaterialsCard({
       u.alert('Mức giá chưa hợp lệ', 'Vui lòng nhập mức giá cuối cùng lớn hơn 0đ.', 'alert-triangle');
       return;
     }
+    const normClean = normalizeExternalPartName(clean);
+    const addQty = Math.max(1, Number(extraQty) || 1);
+    const isQuickMatch = Boolean(
+      selectedQuickMat && normalizeExternalPartName(selectedQuickMat.name) === normClean,
+    );
+    const existing = extraParts.find((p) => normalizeExternalPartName(p.name) === normClean);
+    if (existing) {
+      setExtraParts((prev) =>
+        prev.map((p) => (
+          normalizeExternalPartName(p.name) === normClean
+            ? {
+                ...p,
+                qty: (Number(p.qty) || 1) + addQty,
+                qtyTouched: true,
+                actualPriceText: formatNumberInput(String(priceNum)),
+                ...(isQuickMatch
+                  ? {
+                      matId: p.matId || selectedQuickMat.matId || null,
+                      dbMaterialId: p.dbMaterialId || selectedQuickMat.dbMaterialId || null,
+                      isWarehouse: Boolean(p.isWarehouse || selectedQuickMat.isWarehouse),
+                    }
+                  : {}),
+              }
+            : p
+        )),
+      );
+      setExtraName('');
+      setExtraPriceText('');
+      setExtraQty(1);
+      setSelectedQuickMat(null);
+      setShowAddExtra(false);
+      u.toast(`Đã cập nhật "${clean}" trong hoá đơn`, 'check-circle-2');
+      return;
+    }
     setExtraParts((prev) => [
       ...prev,
       {
         id: `inline_ext_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        matId: isQuickMatch ? selectedQuickMat.matId : null,
+        dbMaterialId: isQuickMatch ? selectedQuickMat.dbMaterialId : null,
+        isWarehouse: Boolean(isQuickMatch && selectedQuickMat.isWarehouse),
         name: clean,
         minPrice: null,
         maxPrice: null,
-        qty: Math.max(1, Number(extraQty) || 1),
+        qty: addQty,
         alreadyBilledUnitPrice: 0,
         actualPriceText: formatNumberInput(String(priceNum)),
         receiptId: null,
@@ -241,8 +293,9 @@ export function UsedAndExtraMaterialsCard({
     setExtraName('');
     setExtraPriceText('');
     setExtraQty(1);
+    setSelectedQuickMat(null);
     setShowAddExtra(false);
-    u.toast(`Đã thêm "${clean}" (${formatVND(priceNum)}) vào Bill`, 'check-circle-2');
+    u.toast(`Đã thêm "${clean}" (${formatVND(priceNum)}) vào hoá đơn`, 'check-circle-2');
   };
 
   const pickReceipt = async (partId, useCamera) => {
@@ -251,24 +304,31 @@ export function UsedAndExtraMaterialsCard({
       if (uri === null && useCamera) uri = await pickImage();
       if (!uri) {
         if (uri === null) {
-          u.alert('Chưa chọn được ảnh', 'Vui lòng cấp quyền camera/thư viện để chọn ảnh.', 'camera');
+          u.alert('Chưa chọn được ảnh', 'Vui lòng cấp quyền máy ảnh/thư viện để chọn ảnh.', 'camera');
         }
         return;
       }
       setExtraParts((prev) => prev.map((p) => (p.id === partId ? { ...p, receiptUri: uri } : p)));
     } catch (e) {
-      u.alert('Không tải được ảnh', (e && e.message) || 'Vui lòng thử lại.', 'camera');
+      u.alert('Không tải được ảnh', toVietnamese(e?.message, 'Vui lòng thử lại.') || 'Vui lòng thử lại.', 'camera');
     }
   };
 
+  const extraPartNames = new Set(extraParts.map((p) => normalizeExternalPartName(p.name)));
   const fixedApprovedExtras = (o.quote?.lines || [])
-    .filter((l) => !l.isOriginal && !l.isEstimatedRange && !l.isFinalizedExternal)
-    .reduce((sum, l) => sum + (Number(l.price) || 0) * Math.max(1, Number(l.qty) || 1), 0);
+    .filter(
+      (l) =>
+        (o.quote?.approved || l.isPriorApproved) &&
+        !l.isOriginal &&
+        !l.isEstimatedRange &&
+        (!l.isFinalizedExternal || !extraPartNames.has(normalizeExternalPartName(l.name))),
+    )
+    .reduce((sum, l) => sum + (Number(l.isFinalizedExternal ? (l.actualPrice ?? l.price) : l.price) || 0) * Math.max(1, Number(l.qty) || 1), 0);
   const billedExternalDeposits = extraParts.reduce(
     (sum, p) => sum + (Number(p.alreadyBilledUnitPrice) || 0) * Math.max(1, Number(p.origQty ?? p.qty) || 1),
     0,
   );
-  const baseBeforeExtra = !isRevision && o?.bill && o.bill.quotationTotal != null
+  const baseBeforeExtra = !isRevision && o?.bill && (o.bill.quotationTotal != null || o.bill.supplementalTotal > 0)
     ? Math.max(0, Number(o.bill.amountDue) || 0)
     : Math.max(
         0,
@@ -297,13 +357,16 @@ export function UsedAndExtraMaterialsCard({
 
   const sendBillToCustomer = () => run(busyKey, async () => {
     if (!extraParts.length) {
-      u.alert('Chưa có vật tư phát sinh', 'Thêm ít nhất 1 vật tư phát sinh và nhập mức giá cuối để gửi Bill.', 'ℹ️');
+      u.alert('Chưa có vật tư phát sinh', 'Thêm ít nhất 1 vật tư phát sinh và nhập mức giá cuối để gửi hoá đơn.', 'ℹ️');
       return false;
     }
     const payloadParts = extraParts.map((p) => {
       const qty = Math.max(1, Number(p.qty) || 1);
       return {
         name: p.name,
+        matId: p.matId || null,
+        dbMaterialId: p.dbMaterialId || null,
+        isWarehouse: Boolean(p.isWarehouse),
         minPrice: p.minPrice,
         maxPrice: p.maxPrice,
         qty,
@@ -335,11 +398,11 @@ export function UsedAndExtraMaterialsCard({
       <View style={st.headerRow}>
         <Text style={[tx.h, { marginBottom: 0 }]}>🔩 Vật tư đã sử dụng & Phát sinh</Text>
         {canComposeBill && extraParts.length > 0 ? (
-          <Badge text={`${extraParts.length} mục chờ gửi Bill`} fg={C.orange} bg={C.orangeSoft} />
+          <Badge text={`${extraParts.length} mục chờ gửi hoá đơn`} fg={C.orange} bg={C.orangeSoft} />
         ) : null}
       </View>
       <Text style={[ui.meta, { marginTop: 4, marginBottom: 8, lineHeight: 17 }]}>
-        Ghi nhận vật tư sử dụng trong lúc sửa, đồng thời thêm vật tư phát sinh và cấu hình mức giá cuối cùng để gửi Bill cho khách thanh toán.
+        Ghi nhận vật tư sử dụng trong lúc sửa, đồng thời thêm vật tư phát sinh và cấu hình mức giá cuối cùng để gửi hoá đơn cho khách thanh toán.
       </Text>
 
       {/* 1. Vật tư đã ghi nhận (kho nội bộ / báo giá đã duyệt) */}
@@ -364,7 +427,7 @@ export function UsedAndExtraMaterialsCard({
                     {!isUsage ? (
                       <Badge text="Đã tính trong báo giá" fg={C.green} bg={C.greenSoft} />
                     ) : isAlreadyBilledOrListed(m) ? (
-                      <Badge text="Đã đưa vào Bill" fg={C.primary} bg={C.primarySoft} />
+                      <Badge text="Đã đưa vào hoá đơn" fg={C.primary} bg={C.primarySoft} />
                     ) : null}
                   </View>
                   {unitP > 0 ? (
@@ -394,10 +457,10 @@ export function UsedAndExtraMaterialsCard({
               {canAddToBill ? (
                 <View style={{ marginTop: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                   <Text style={{ fontSize: 11.5, color: C.muted, flex: 1, paddingRight: 8 }}>
-                    Xuất kho nội bộ · Chưa tính vào Bill khách
+                    Xuất kho nội bộ · Chưa tính vào hoá đơn khách
                   </Text>
                   <Tap onPress={() => handleMoveWarehouseToExtra(m)} style={st.moveToBillBtn}>
-                    <Text style={st.moveToBillText}>+ Tính giá vào Bill</Text>
+                    <Text style={st.moveToBillText}>+ Tính giá vào hoá đơn</Text>
                   </Tap>
                 </View>
               ) : null}
@@ -406,10 +469,10 @@ export function UsedAndExtraMaterialsCard({
         })
       )}
 
-      {/* Vật tư phát sinh đã chốt Bill & được khách duyệt trước đó */}
+      {/* Vật tư phát sinh đã chốt hoá đơn & được khách duyệt trước đó */}
       {visibleFinalized.length > 0 ? (
         <View style={st.sectionBox}>
-          <Text style={st.sectionTitleGreen}>✅ Vật tư phát sinh đã chốt Bill ({visibleFinalized.length})</Text>
+          <Text style={st.sectionTitleGreen}>✅ Vật tư phát sinh đã chốt hoá đơn ({visibleFinalized.length})</Text>
           {visibleFinalized.map((f, idx) => (
             <View key={`fin_${f.itemId || idx}`} style={st.finRow}>
               <Text style={{ flex: 1, color: C.ink, fontWeight: '600' }} numberOfLines={2}>
@@ -421,11 +484,11 @@ export function UsedAndExtraMaterialsCard({
         </View>
       ) : null}
 
-      {/* 2. Danh sách vật tư phát sinh đang cấu hình giá cuối để gửi Bill */}
+      {/* 2. Danh sách vật tư phát sinh đang cấu hình giá cuối để gửi hoá đơn */}
       {canComposeBill && extraParts.length > 0 ? (
         <View style={st.extraWrap}>
           <Text style={st.sectionTitleOrange}>
-            🧾 Vật tư phát sinh & Giá cuối gửi Bill ({extraParts.length})
+            🧾 Vật tư phát sinh & Giá cuối gửi hoá đơn ({extraParts.length})
           </Text>
           {extraParts.map((p, idx) => {
             const actualNum = parseNum(p.actualPriceText);
@@ -538,11 +601,11 @@ export function UsedAndExtraMaterialsCard({
               <Text style={[st.billVal, { color: C.orange }]}>+{formatVND(extraAddedDelta)}</Text>
             </View>
             <View style={[st.billRow, st.billTotalDivider]}>
-              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>Tổng Bill gửi khách</Text>
+              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>Tổng hoá đơn gửi khách</Text>
               <Text style={[ui.price, { fontSize: 18 }]}>{formatVND(projectedBillTotal)}</Text>
             </View>
             <Btn
-              title={busySendBill ? 'Đang gửi Bill cho khách…' : 'Chốt giá cuối & Gửi Bill cho khách'}
+              title={busySendBill ? 'Đang gửi hoá đơn cho khách…' : 'Chốt giá cuối & Gửi hoá đơn cho khách'}
               icon="receipt-text"
               small
               disabled={!canSendBillNow || busySendBill}
@@ -557,7 +620,7 @@ export function UsedAndExtraMaterialsCard({
       {canComposeBill && showAddExtra ? (
         <View style={st.addForm}>
           <View style={st.addFormHead}>
-            <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>➕ Thêm vật tư phát sinh tính Bill</Text>
+            <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>➕ Thêm vật tư phát sinh tính hoá đơn</Text>
             <Tap onPress={() => setShowAddExtra(false)} hitSlop={8}>
               <Text style={{ color: C.muted, fontWeight: '700' }}>Đóng</Text>
             </Tap>
@@ -570,6 +633,12 @@ export function UsedAndExtraMaterialsCard({
                 key={`q_${m.id}`}
                 onPress={() => {
                   setExtraName(m.name);
+                  setSelectedQuickMat({
+                    name: m.name,
+                    matId: m.id || null,
+                    dbMaterialId: m.dbMaterialId || null,
+                    isWarehouse: Boolean(m.id || m.dbMaterialId),
+                  });
                   if (Number(m.price) > 0) setExtraPriceText(formatNumberInput(String(m.price)));
                   else setExtraPriceText('');
                 }}
@@ -584,9 +653,14 @@ export function UsedAndExtraMaterialsCard({
 
           <Field
             label="Tên vật tư phát sinh *"
-            placeholder="VD: Dây đồng 2m, Tụ kích block, Van xả..."
+            placeholder="VD: Dây đồng 2m, Tụ kích lốc máy, Van xả..."
             value={extraName}
-            onChangeText={setExtraName}
+            onChangeText={(t) => {
+              setExtraName(t);
+              if (selectedQuickMat && normalizeExternalPartName(t) !== normalizeExternalPartName(selectedQuickMat.name)) {
+                setSelectedQuickMat(null);
+              }
+            }}
           />
 
           <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 10, marginTop: 8 }}>
@@ -615,9 +689,10 @@ export function UsedAndExtraMaterialsCard({
                 setExtraName('');
                 setExtraPriceText('');
                 setExtraQty(1);
+                setSelectedQuickMat(null);
               }}
             />
-            <Btn title="Thêm vào danh sách Bill" small style={{ flex: 1.7 }} onPress={handleAddInlineExtra} />
+            <Btn title="Thêm vào danh sách hoá đơn" small style={{ flex: 1.7 }} onPress={handleAddInlineExtra} />
           </View>
         </View>
       ) : null}
@@ -649,7 +724,7 @@ export function UsedAndExtraMaterialsCard({
       {awaitingApproval ? (
         <View style={[tx.note, { backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary, marginTop: 10 }]}>
           <Text style={{ color: C.ink2, fontSize: 12, fontWeight: '700', lineHeight: 17 }}>
-            Đã gửi Bill vật tư phát sinh. Đang chờ khách hàng xác nhận nghiệm thu trên App Khách.
+            Đã gửi hoá đơn vật tư phát sinh. Đang chờ khách hàng xác nhận nghiệm thu trên ứng dụng Khách hàng.
           </Text>
         </View>
       ) : null}

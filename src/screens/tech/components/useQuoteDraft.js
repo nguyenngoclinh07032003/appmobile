@@ -49,7 +49,7 @@ export const quoteSignature = (q) => {
 // CỘNG THÊM vào giá khách đã đặt -> chỉ chứa phần làm thêm, không chứa lại dịch vụ đã đặt (server trả 400
 // QUOTATION_DUPLICATES_BOOKED_SERVICE, bản server cũ thì tính tiền 2 lần).
 export const isOnSiteQuote = (o) => Boolean(
-  !(!o?.arrivedAt && !o?.checkIn && o?.status === 'diagnosing' && o?.quote?.revisionRequested && !o?.quote?.isSupplemental) &&
+  !(!o?.arrivedAt && !o?.checkIn && o?.status === 'diagnosing' && o?.quote?.revisionRequested && !(o?.quote?.quotationType === 'SUPPLEMENTAL' || o?.quote?.isSupplemental === true)) &&
   (o?.arrivedAt || o?.checkIn || ['diagnosing', 'repairing', 'out_of_warranty'].includes(o?.status)),
 );
 

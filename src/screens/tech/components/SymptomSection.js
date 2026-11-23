@@ -11,19 +11,19 @@ import { Tap, Card, Field, AppIcon } from '../../../components';
 import { parseSymptomPhotoTitle } from './useQuoteDraft';
 
 // Chèn / bỏ một cụm từ gợi ý trong ô văn bản (ngăn cách bằng dấu phẩy).
-const hasPhrase = (text, phrase) => String(text || '').toLowerCase().includes(phrase.toLowerCase());
+const escapeRe = (s) => String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const phraseRegex = (phrase) => new RegExp(`(^|[,;.\\n]\\s*)${escapeRe(phrase)}(?=\\s*[,;.\\n]|$)`, 'i');
+const hasPhrase = (text, phrase) => phraseRegex(phrase).test(String(text || '').trim());
 const togglePhrase = (text, phrase) => {
   const cur = String(text || '').trim();
   if (hasPhrase(cur, phrase)) {
-    // Khớp nguyên cụm trước (giữ được cụm gợi ý có chứa dấu phẩy như "Thiết bị bẩn, hiệu suất giảm").
-    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const removed = cur
-      .replace(new RegExp(`(^|[,;]\\s*)${escaped}(?=\\s*[,;]|$)`, 'gi'), '$1')
-      .split(/\s*[,;]\s*/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .join(', ');
-    if (removed.length < cur.length) return removed;
+      .replace(new RegExp(`(^|[,;.\\n]\\s*)${escapeRe(phrase)}(?=\\s*[,;.\\n]|$)`, 'gi'), '$1')
+      .replace(/^[,;.\s]+|[,;\s]+$/g, '')
+      .replace(/\s*([,;])\s*(?=[,;])/g, '$1')
+      .replace(/\s*,\s*/g, ', ')
+      .trim();
+    if (removed !== cur) return removed;
   }
   if (!cur) return phrase;
   return `${cur.replace(/[,;.\s]+$/, '')}, ${phrase}`;

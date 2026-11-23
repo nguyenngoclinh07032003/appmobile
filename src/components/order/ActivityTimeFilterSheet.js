@@ -3,7 +3,6 @@ import { View, Text, StyleSheet } from 'react-native';
 import { C, R } from '../../theme';
 import { AppIcon, Btn, Sheet, Tap } from '../common';
 import {
-  ACTIVITY_SORT_OPTIONS,
   ACTIVITY_SLOT_PERIODS,
   ACTIVITY_TIME_PRESETS,
   DEFAULT_ACTIVITY_TIME_FILTER,
@@ -83,6 +82,7 @@ export function ActivityTimeFilterSheet({
       preset: presetId,
       customFrom: null,
       customTo: null,
+      ...(presetId === 'all' ? { slotPeriod: 'all' } : {}),
       pickingEnd: false,
       ...ym,
     }));
@@ -312,31 +312,6 @@ export function ActivityTimeFilterSheet({
                   style={{ marginRight: 5 }}
                 />
                 <Text style={[st.chipText, active && st.chipTextActive]}>{sp.label}</Text>
-              </Tap>
-            );
-          })}
-        </View>
-
-        {/* 4. THỨ TỰ HIỂN THỊ */}
-        <Text style={[st.sectionLabel, { marginTop: 18 }]}>4. THỨ TỰ HIỂN THỊ</Text>
-        <View style={st.sortRow}>
-          {ACTIVITY_SORT_OPTIONS.map((opt) => {
-            const active = draft.sort === opt.id;
-            const title = opt.id === 'newest' ? 'Mới nhất trước' : 'Cũ nhất trước';
-            return (
-              <Tap
-                key={opt.id}
-                style={[st.sortBtn, active && st.sortBtnActive]}
-                onPress={() => setDraft((prev) => ({ ...prev, sort: opt.id }))}
-              >
-                {active ? (
-                  <AppIcon name="check" size={14} color={C.primary} strokeWidth={2.5} />
-                ) : (
-                  <AppIcon name="calendar-clock" size={14} color={C.muted} strokeWidth={2} />
-                )}
-                <Text style={[st.sortBtnText, active && { color: C.primary, fontWeight: '800' }]}>
-                  {title}
-                </Text>
               </Tap>
             );
           })}

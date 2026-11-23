@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { TopBar, EmptyState } from '../../components';
+import { toVietnamese } from '../../utils/viText';
 
 // Gọi một action trong context một cách phòng thủ: action có thể đồng bộ hoặc trả Promise,
 // có thể chưa tồn tại. Luôn trả Promise để dùng chung với try/catch.
@@ -16,8 +17,8 @@ export function callAction(fn, ...args) {
 // Thông điệp lỗi thân thiện từ Error / object { error | message }.
 export const errorText = (e, fallback = 'Đã có lỗi xảy ra, vui lòng thử lại.') => {
   if (!e) return fallback;
-  if (typeof e === 'string') return e;
-  return e.error || e.message || fallback;
+  const raw = typeof e === 'string' ? e : (e.error || e.message || '');
+  return toVietnamese(raw, fallback) || fallback;
 };
 
 // Kết quả action được coi là thành công: true / mã đơn / object không mang ok:false.
