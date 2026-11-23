@@ -255,8 +255,8 @@ export const classifyJobToWorkShift = (slotOrOrder) => {
     mins = parseShiftTimeToMinutes(slotOrOrder.preferredTimeAt);
   }
   if (mins == null) return null;
-  if (mins >= 6 * 60 && mins < 12 * 60) return 'ca1';
-  if (mins >= 12 * 60 && mins <= 17 * 60 + 30) return 'ca2';
+  if (mins >= 8 * 60 && mins < 12 * 60) return 'ca1';
+  if (mins >= 13 * 60 + 30 && mins <= 17 * 60 + 30) return 'ca2';
   return null;
 };
 

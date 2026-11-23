@@ -12,6 +12,7 @@ import { toVnParts, vnDateKey } from '../utils/vnTime';
 import { viNotification, toVietnamese } from '../utils/viText';
 import {
   parseExternalPartDesc,
+  parseDepositFinalizedNotes,
   extractExternalPartLifecycle,
   normalizeExternalPartName,
   computeQuoteRangeTotals,
@@ -134,8 +135,12 @@ const mapKnownStatus = (requestStatus, visitStatus, hasApprovedQuote = false, ha
   if (st === 'COMPLETED') {
     return 'done';
   }
-  if (['WARRANTY_PENDING', 'UNDER_WARRANTY'].includes(st)) {
-    return 'warranty_pending';
+  if (st === 'WARRANTY_PENDING') return 'warranty_pending';
+  if (st === 'UNDER_WARRANTY') {
+    if (hasPendingQuote) return 'quoted';
+    if (vs === 'IN_PROGRESS') return hasApprovedQuote ? 'repairing' : 'diagnosing';
+    if (vs === 'SCHEDULED') return 'confirmed';
+    return 'repairing';
   }
   if (st === 'OUT_OF_WARRANTY') {
     if (hasPendingQuote) return 'quoted';
@@ -184,6 +189,7 @@ export const mapBackendQuotationToAppQuote = (
   problemDesc = '',
   orderDiscount = 0,
   bookedItems = [],
+  progressList = [],
 ) => {
   if (!Array.isArray(quotations) || quotations.length === 0) return null;
   const sortedQuotes = sortQuotationsAsc(quotations);
@@ -217,9 +223,24 @@ export const mapBackendQuotationToAppQuote = (
     return Boolean(nameClean && bookedNames.has(nameClean));
   };
 
+  const extractQuoteItemReceipt = (qi) => {
+    const att = qi?.receipt_attachment && typeof qi.receipt_attachment === 'object' ? qi.receipt_attachment : null;
+    const receiptId = qi?.receipt_attachment_id ?? att?.attachment_id ?? att?.id ?? null;
+    const receiptUrl =
+      qi?.receipt_url ||
+      qi?.receipt_image_url ||
+      att?.image_url ||
+      att?.file_url ||
+      att?.url ||
+      att?.uri ||
+      null;
+    return { receiptId, receiptUrl };
+  };
+
   const mapQuoteItem = (qi, quoteIsSupplemental = isSupplemental) => {
     const extMeta = parseExternalPartDesc(qi.description_snapshot);
     const booked = isBookedItem(qi, quoteIsSupplemental);
+    const { receiptId, receiptUrl } = extractQuoteItemReceipt(qi);
     if (extMeta?.kind === 'estimated_external') {
       return {
         type: 'part',
@@ -234,7 +255,8 @@ export const mapBackendQuotationToAppQuote = (
         minPrice: extMeta.minPrice,
         maxPrice: extMeta.maxPrice,
         alreadyBilledUnitPrice: Number(qi.unit_price) || 0,
-        receiptId: qi.receipt_attachment_id || null,
+        receiptId,
+        ...(receiptUrl ? { receiptUrl } : {}),
         isOriginal: false,
       };
     }
@@ -259,7 +281,8 @@ export const mapBackendQuotationToAppQuote = (
         maxPrice: extMeta.maxPrice,
         priorDeposit,
         actualPrice,
-        receiptId: qi.receipt_attachment_id || null,
+        receiptId,
+        ...(receiptUrl ? { receiptUrl } : {}),
         isOriginal: false,
       };
     }
@@ -287,7 +310,8 @@ export const mapBackendQuotationToAppQuote = (
       price: resolvedPrice,
       dbItemId: qi.quotation_item_id || null,
       isCustom: Boolean(qi.is_external_purchase), // linh kiện thợ mua ngoài
-      receiptId: qi.receipt_attachment_id || null,
+      receiptId,
+      ...(receiptUrl ? { receiptUrl } : {}),
       isOriginal: booked,
       ...(needsPriceInput ? { needsPriceInput: true } : {}),
     };
@@ -328,7 +352,8 @@ export const mapBackendQuotationToAppQuote = (
   const approvedTotal = approvedList.length
     ? initialBase + sumOf(approvedList.filter((q) => q.quotation_type === 'SUPPLEMENTAL'))
     : null;
-  const approvedLifecycle = extractExternalPartLifecycle(approvedList);
+  const approvedLifecycle = extractExternalPartLifecycle(approvedList, progressList);
+  const depositSettledNames = parseDepositFinalizedNotes(progressList);
   const approvedPendingEst = approvedLifecycle.pendingExternalEstimates || [];
   const approvedEstMinDelta = approvedPendingEst.reduce(
     (s, est) => s + Math.max(0, (Number(est.minPrice) || 0) - (Number(est.alreadyBilledUnitPrice) || 0)) * Math.max(1, Number(est.qty) || 1),
@@ -365,7 +390,7 @@ export const mapBackendQuotationToAppQuote = (
       const initExtrasSum = latestInitMapped
         .filter((l) => !l.isOriginal)
         .reduce((sum, l) => sum + (Number(l.price) || 0) * Math.max(1, Number(l.qty) || 1), 0);
-      initialServiceDelta = Math.max(0, (initialBase - initExtrasSum) - bookedBase);
+      initialServiceDelta = (initialBase - initExtrasSum) - bookedBase;
     }
     const nonOrigCurrent = isRejected ? [] : rawLines.filter((l) => !l.isOriginal);
     const merged = [...origPart, ...earlierApprovedExtras, ...nonOrigCurrent];
@@ -394,10 +419,33 @@ export const mapBackendQuotationToAppQuote = (
     lines = isSupplemental ? lines.filter((l) => l.isOriginal) : [];
   }
 
+  if (depositSettledNames.size > 0) {
+    lines = lines.map((l) => {
+      if (l.isEstimatedRange && depositSettledNames.has(normalizeExternalPartName(l.name))) {
+        const settledPrice = Number(l.price) > 0 ? Number(l.price) : (Number(l.minPrice) || 0);
+        return {
+          ...l,
+          price: settledPrice,
+          actualPrice: settledPrice,
+          priorDeposit: settledPrice,
+          origQty: l.qty,
+          isEstimatedRange: false,
+          isFinalizedExternal: true,
+          settledAtDeposit: true,
+        };
+      }
+      return l;
+    });
+  }
+
   const rawExtraLines = isRejected ? [] : rawLines.filter((l) => !l.isOriginal);
   const rawExtraTotal = rawExtraLines.reduce((sum, l) => sum + l.price * l.qty, 0);
-  const approvedExtrasTotal = approvedTotal != null ? Math.max(0, approvedTotal - bookedBase) : 0;
+  const signedApprovedDelta = approvedTotal != null ? (approvedTotal - bookedBase) : 0;
+  const approvedExtrasTotal = approvedTotal != null ? Math.max(0, signedApprovedDelta) : 0;
   const priorApprovedExtra = !isApproved && approvedTotal != null ? approvedExtrasTotal : 0;
+  const effectivePriorExtra = includesPriorApprovedLines
+    ? initialServiceDelta
+    : (!isApproved && approvedTotal != null ? signedApprovedDelta : 0);
   const extraTotal = isRejected
     ? approvedExtrasTotal
     : isApproved && approvedTotal != null
@@ -416,10 +464,10 @@ export const mapBackendQuotationToAppQuote = (
 
   const quoteRange = computeQuoteRangeTotals(lines, {
     bookedBase,
-    priorApprovedExtra: includesPriorApprovedLines ? initialServiceDelta : priorApprovedExtra,
+    priorApprovedExtra: effectivePriorExtra,
     prodDisc: disc,
     comboDisc: 0,
-    isOnSite: isSupplemental || earlierApprovedQuotes.length > 0,
+    isOnSite: isSupplemental || earlierApprovedQuotes.length > 0 || !lines.some((l) => l.isOriginal),
   });
 
   return {
@@ -449,6 +497,8 @@ export const mapBackendQuotationToAppQuote = (
     customExtraMin: quoteRange.customExtraMin,
     customExtraMax: quoteRange.customExtraMax,
     includesPriorApprovedLines,
+    initialServiceDelta,
+    effectivePriorExtra,
     booked: bookedBase,
     needsApproval: !isApproved,
     approved: isApproved,
@@ -483,7 +533,12 @@ export const mapBackendBill = (summary) => {
   };
 };
 // Đơn bảo hành mà thợ kết luận ngoài bảo hành thì tính tiền như đơn thường (backend effectiveRequestType).
-const kindOf = (req) => (req?.request_type === 'WARRANTY' && !req?.out_of_warranty ? 'warranty' : 'normal');
+const kindOf = (req) => {
+  const rt = String(req?.request_type || '').toUpperCase();
+  if (rt === 'WARRANTY' && !req?.out_of_warranty) return 'warranty';
+  if (rt === 'FOLLOW_UP' || rt === 'FOLLOWUP') return 'followup';
+  return 'normal';
+};
 const dateMs = (v) => (v ? new Date(v).getTime() : null);
 const DAY_MS = 24 * 60 * 60 * 1000;
 const resolveSiteCondition = (scId) => (scId ? (SITE_CONDITIONS.find((sc) => sc.id === scId) || null) : null);
@@ -593,6 +648,23 @@ export const mergeCustomerRequestDetail = (rawReq, detailData) => {
   const visitPhotos = (Array.isArray(mergedVisits) ? mergedVisits : [])
     .flatMap((v) => [...(Array.isArray(v?.attachments) ? v.attachments : []), ...(Array.isArray(v?.photos) ? v.photos : [])])
     .filter(Boolean);
+  const quoteReceiptPhotos = (Array.isArray(mergedQuotes) ? mergedQuotes : [])
+    .flatMap((q) => (Array.isArray(q?.items) ? q.items : []))
+    .map((qi) => {
+      const att = qi?.receipt_attachment && typeof qi.receipt_attachment === 'object' ? qi.receipt_attachment : null;
+      const attUrl = att?.image_url || att?.file_url || att?.url || att?.uri || qi?.receipt_url || qi?.receipt_image_url || '';
+      const attId = qi?.receipt_attachment_id ?? att?.attachment_id ?? att?.id ?? null;
+      if (!attUrl && !att) return null;
+      const cleanName = parseExternalPartDesc(qi?.description_snapshot)?.cleanName || qi?.description_snapshot || '';
+      return {
+        ...(att || {}),
+        ...(attId != null ? { attachment_id: attId } : {}),
+        ...(attUrl ? { image_url: att?.image_url || attUrl } : {}),
+        evidence_type: att?.evidence_type || att?.type || 'DOCUMENT',
+        description: att?.description || att?.note || (cleanName ? `Hoá đơn mua ngoài · ${cleanName}` : ''),
+      };
+    })
+    .filter(Boolean);
   const rawPhotoCandidates = [
     ...(Array.isArray(detReq.attachments) ? detReq.attachments : []),
     ...(Array.isArray(detReq.initial_attachments) ? detReq.initial_attachments : []),
@@ -603,11 +675,12 @@ export const mergeCustomerRequestDetail = (rawReq, detailData) => {
     ...(Array.isArray(detailData.evidence) ? detailData.evidence : []),
     ...(Array.isArray(detailData.photos) ? detailData.photos : []),
     ...visitPhotos,
+    ...quoteReceiptPhotos,
     ...(Array.isArray(rawReq._detailAttachments) ? rawReq._detailAttachments : []),
   ].filter(
     (row) =>
       row &&
-      (!row.procedure_step_id || String(row.evidence_type || '').toUpperCase() === 'AFTER_REPAIR'),
+      (!row.procedure_step_id || ['AFTER_REPAIR', 'DOCUMENT'].includes(String(row.evidence_type || '').toUpperCase())),
   );
 
   const dedupPhotos = [];
@@ -650,17 +723,19 @@ export const mergeCustomerRequestDetail = (rawReq, detailData) => {
 
 export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = '') => {
   if (!req) return null;
-  const isWarranty = kindOf(req) === 'warranty';
+  const orderKind = kindOf(req);
+  const isFreeOrder = orderKind === 'warranty' || orderKind === 'followup';
   const techInfo = req.technician || null;
   const techName = techInfo?.full_name || ASSIGNED_TECH_PLACEHOLDER;
   const items = mapBackendItemsToAppItems(req.items || []);
   const itemsGoods = items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.qty) || 1), 0);
-  const goods = isWarranty ? 0 : (Number(req.goods_amount) > 0 ? Number(req.goods_amount) : itemsGoods);
+  const goods = isFreeOrder ? 0 : (Number(req.goods_amount) > 0 ? Number(req.goods_amount) : itemsGoods);
   const visits = req.visits || [];
   const latestVisit = visits[visits.length - 1] || null;
-  const productDiscount = isWarranty ? 0 : (Number(req.product_discount_amount) || Number(req.bill?.bill?.product_discount_amount) || 0);
-  const comboDiscount = isWarranty ? 0 : (Number(req.combo_discount_amount) || Number(req.bill?.bill?.combo_discount_amount) || 0);
-  const booked = isWarranty ? 0 : Math.max(0, goods - productDiscount - comboDiscount);
+  const progressList = req.progress || latestVisit?.progress || [];
+  const productDiscount = isFreeOrder ? 0 : (Number(req.product_discount_amount) || Number(req.bill?.bill?.product_discount_amount) || 0);
+  const comboDiscount = isFreeOrder ? 0 : (Number(req.combo_discount_amount) || Number(req.bill?.bill?.combo_discount_amount) || 0);
+  const booked = isFreeOrder ? 0 : Math.max(0, goods - productDiscount - comboDiscount);
   const wpDiagMatch = /Tình trạng:\s*(.+?)(?:\.\s*Thiết bị hoạt động ổn định|\.\s*$|$)/i.exec(latestVisit?.work_performed || '');
   const effectiveDiagnoses =
     Array.isArray(req.diagnoses) && req.diagnoses.length > 0
@@ -689,6 +764,7 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
     req.problem_description,
     productDiscount + comboDiscount,
     items,
+    progressList,
   );
   const hasPendingQuote = (req.quotations || []).some(isQuotationPendingCustomer);
   const anyQuoteApproved = (req.quotations || []).some(
@@ -761,19 +837,21 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
   const paid = bill
     ? ['PAID', 'NOTHING_TO_PAY'].includes(bill.paymentStatus)
     : ['COMPLETED', 'READY_FOR_ACCEPTANCE'].includes(String(req.request_status || '').toUpperCase());
-  const estimated = Number(req.estimated_total);
+  const rawEst = req.estimated_total;
+  const hasEst = rawEst != null && rawEst !== '' && Number.isFinite(Number(rawEst)) && Number(rawEst) >= 0;
+  const estimated = hasEst ? Number(rawEst) : NaN;
 
-  const voucherDiscount = isWarranty
+  const voucherDiscount = isFreeOrder
     ? 0
     : (bill?.voucherDiscount != null ? Number(bill.voucherDiscount) : (Number(req.voucher_discount_amount) || 0));
-  const tierPartDiscount = isWarranty ? 0 : (Number(bill?.tierPartDiscount) || 0);
-  const lateDiscount = isWarranty ? 0 : (Number(bill?.lateDiscount) || 0);
+  const tierPartDiscount = isFreeOrder ? 0 : (Number(bill?.tierPartDiscount) || 0);
+  const lateDiscount = isFreeOrder ? 0 : (Number(bill?.lateDiscount) || 0);
   const inactiveQuoteSt = ['REJECTED', 'EXPIRED', 'CANCELLED', 'SUPERSEDED'];
   const activeQuoteTotal =
     quote && !quote.rejectReason && !quote.revisionRequested && !inactiveQuoteSt.includes(String(quote.status || '').toUpperCase())
       ? (quote.approved && quote.approvedTotal != null ? quote.approvedTotal : quote.total)
       : (quote?.approvedTotal != null ? quote.approvedTotal : null);
-  const resolvedTotal = isWarranty
+  const resolvedTotal = isFreeOrder
     ? 0
     : bill && (['pending_payment', 'done'].includes(status) ? bill.amountDue != null : (bill.quotationTotal != null || bill.supplementalTotal > 0)) && status !== 'quoted'
       ? bill.amountDue
@@ -781,9 +859,9 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
         ? Math.max(0, activeQuoteTotal - tierPartDiscount - voucherDiscount - lateDiscount)
         : bill
           ? bill.amountDue
-          : Number.isFinite(estimated) && estimated > 0
+          : (hasEst && (estimated > 0 || voucherDiscount >= booked))
             ? estimated
-            : booked;
+            : Math.max(0, booked - voucherDiscount);
   const resolvedPayment = resolveOrderPayment(req.preferred_payment_method, bill);
 
   return {
@@ -864,11 +942,16 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
       req.attachments || req.initial_attachments || req._detailAttachments || [],
     ),
     ...(() => {
-      const extLifecycle = extractExternalPartLifecycle(req.quotations || []);
+      const extLifecycle = extractExternalPartLifecycle(req.quotations || [], progressList);
+      const resolvedExtState = (noQuoteOverride && extLifecycle.externalPriceState === 'revision_requested')
+        ? (extLifecycle.pendingExternalEstimates.length > 0
+            ? 'needs_final_price'
+            : (extLifecycle.finalizedApprovedItems.length > 0 ? 'finalized' : 'none'))
+        : extLifecycle.externalPriceState;
       return {
         pendingExternalEstimates: extLifecycle.pendingExternalEstimates,
         finalizedExternalParts: extLifecycle.finalizedApprovedItems,
-        externalPriceState: extLifecycle.externalPriceState,
+        externalPriceState: resolvedExtState,
       };
     })(),
     materials: (quote?.approved ? (quote.lines || []) : (quote?.lines || []).filter((l) => l.isPriorApproved))
@@ -903,14 +986,16 @@ export const mapBackendCustomerRequestToOrder = (req, customerPhoneFallback = ''
 export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
   if (!job || !job.request) return null;
   const req = job.request;
-  const isWarranty = kindOf(req) === 'warranty';
+  const orderKind = kindOf(req);
+  const isFreeOrder = orderKind === 'warranty' || orderKind === 'followup';
   const visit = job.visit || {};
+  const techProgressList = job.progress || visit.progress || req.progress || [];
   const items = mapBackendItemsToAppItems(job.services || []);
   const itemsGoods = items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.qty) || 1), 0);
-  const goods = isWarranty ? 0 : (Number(req.goods_amount) > 0 ? Number(req.goods_amount) : itemsGoods);
-  const productDiscount = isWarranty ? 0 : (Number(req.product_discount_amount) || Number(job.bill?.bill?.product_discount_amount) || 0);
-  const comboDiscount = isWarranty ? 0 : (Number(req.combo_discount_amount) || Number(job.bill?.bill?.combo_discount_amount) || 0);
-  const booked = isWarranty ? 0 : Math.max(0, goods - productDiscount - comboDiscount);
+  const goods = isFreeOrder ? 0 : (Number(req.goods_amount) > 0 ? Number(req.goods_amount) : itemsGoods);
+  const productDiscount = isFreeOrder ? 0 : (Number(req.product_discount_amount) || Number(job.bill?.bill?.product_discount_amount) || 0);
+  const comboDiscount = isFreeOrder ? 0 : (Number(req.combo_discount_amount) || Number(job.bill?.bill?.combo_discount_amount) || 0);
+  const booked = isFreeOrder ? 0 : Math.max(0, goods - productDiscount - comboDiscount);
   const hasPendingQuote = (job.quotations || []).some(isQuotationPendingCustomer);
   const anyQuoteApproved = (job.quotations || []).some(
     (q) => q.quotation_status === 'APPROVED' || q.customer_decision === 'APPROVED',
@@ -922,6 +1007,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     req.problem_description,
     productDiscount + comboDiscount,
     items,
+    techProgressList,
   );
   // Phân công còn hiệu lực với thợ này. Mọi trạng thái khác (ENDED, EXPIRED, TIMEOUT, RELEASED, REASSIGNED, REVOKED...)
   // = việc không còn được giao cho thợ -> chỉ giữ lại nếu chính thợ này đã làm xong.
@@ -942,6 +1028,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     }
     : null;
   let status;
+  let noQuoteOverride = false;
   if (
     PAYMENT_STAGE.includes(rs) &&
     (!isEnded || job.completed_at || visit.actual_end || String(visit.visit_status || '').toUpperCase() === 'COMPLETED')
@@ -961,7 +1048,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     const latestJobQuote = sortedJobQuotes[sortedJobQuotes.length - 1] || null;
     const latestQuoteTs = latestJobQuote ? ts(latestJobQuote.updated_at || latestJobQuote.sent_at) : 0;
     const diagAfterQuote = Boolean(latestTechDiag && latestTechDiag.recorded_at && ts(latestTechDiag.recorded_at) > latestQuoteTs);
-    const noQuoteOverride = Boolean(latestTechDiag && latestTechDiag.needs_quotation === false && diagAfterQuote);
+    noQuoteOverride = Boolean(latestTechDiag && latestTechDiag.needs_quotation === false && diagAfterQuote);
     const decidedNoQuote = noQuoteOverride || ((
       (Boolean(latestTechDiag) && latestTechDiag.needs_quotation !== true) ||
       req.needs_quotation === false ||
@@ -1053,15 +1140,18 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
   const isDone = status === 'done';
   const { warrantyDays, warrantyStartAt, warrantyEndAt, warrantyCertificateCode } = extractOrderWarranty(req, items);
   const doneAt = isDone ? (dateMs(job.completed_at) || dateMs(visit.actual_end) || dateMs(visit.scheduled_end) || createdAt) : null;
-  const voucherDiscount = isWarranty ? 0 : (bill ? bill.voucherDiscount : (Number(req.voucher_discount_amount) || 0));
-  const tierPartDiscount = isWarranty ? 0 : (Number(bill?.tierPartDiscount) || 0);
-  const lateDiscount = isWarranty ? 0 : (Number(bill?.lateDiscount) || 0);
+  const rawEst = req.estimated_total;
+  const hasEst = rawEst != null && rawEst !== '' && Number.isFinite(Number(rawEst)) && Number(rawEst) >= 0;
+  const estimated = hasEst ? Number(rawEst) : NaN;
+  const voucherDiscount = isFreeOrder ? 0 : (bill ? bill.voucherDiscount : (Number(req.voucher_discount_amount) || 0));
+  const tierPartDiscount = isFreeOrder ? 0 : (Number(bill?.tierPartDiscount) || 0);
+  const lateDiscount = isFreeOrder ? 0 : (Number(bill?.lateDiscount) || 0);
   const inactiveQuoteSt = ['REJECTED', 'EXPIRED', 'CANCELLED', 'SUPERSEDED'];
   const activeQuoteTotal =
     quote && !quote.rejectReason && !quote.revisionRequested && !inactiveQuoteSt.includes(String(quote.status || '').toUpperCase())
       ? (quote.approved && quote.approvedTotal != null ? quote.approvedTotal : quote.total)
       : (quote?.approvedTotal != null ? quote.approvedTotal : null);
-  const resolvedTotal = isWarranty
+  const resolvedTotal = isFreeOrder
     ? 0
     : bill && (['pending_payment', 'done'].includes(status) ? bill.amountDue != null : (bill.quotationTotal != null || bill.supplementalTotal > 0)) && status !== 'quoted'
       ? bill.amountDue
@@ -1069,9 +1159,9 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
         ? Math.max(0, activeQuoteTotal - tierPartDiscount - voucherDiscount - lateDiscount)
         : bill
           ? bill.amountDue
-          : Number(req.estimated_total) > 0
-            ? Number(req.estimated_total)
-            : booked;
+          : (hasEst && (estimated > 0 || voucherDiscount >= booked))
+            ? estimated
+            : Math.max(0, booked - voucherDiscount);
   const resolvedPayment = resolveOrderPayment(req.preferred_payment_method, bill);
 
   return {
@@ -1142,11 +1232,16 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
       req.attachments || req.initial_attachments || job.attachments || req.photos || [],
     ),
     ...(() => {
-      const extLifecycle = extractExternalPartLifecycle(job.quotations || req.quotations || []);
+      const extLifecycle = extractExternalPartLifecycle(job.quotations || req.quotations || [], techProgressList);
+      const resolvedExtState = (noQuoteOverride && extLifecycle.externalPriceState === 'revision_requested')
+        ? (extLifecycle.pendingExternalEstimates.length > 0
+            ? 'needs_final_price'
+            : (extLifecycle.finalizedApprovedItems.length > 0 ? 'finalized' : 'none'))
+        : extLifecycle.externalPriceState;
       return {
         pendingExternalEstimates: extLifecycle.pendingExternalEstimates,
         finalizedExternalParts: extLifecycle.finalizedApprovedItems,
-        externalPriceState: extLifecycle.externalPriceState,
+        externalPriceState: resolvedExtState,
       };
     })(),
     materials: mergedTechMaterials,
@@ -1164,11 +1259,15 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     externalParts: (job.quotations || [])
       .filter((q) => q.quotation_status === 'APPROVED' || q.customer_decision === 'APPROVED')
       .flatMap((q) => (q.items || []).filter((it) => it.is_external_purchase || it.external_purchase || (it.item_type === 'MATERIAL' && !it.material_id)))
-      .map((it) => ({
-        itemId: it.quotation_item_id,
-        name: parseExternalPartDesc(it.description_snapshot)?.cleanName || it.description_snapshot,
-        receiptId: it.receipt_attachment_id || null,
-      })),
+      .map((it) => {
+        const att = it?.receipt_attachment && typeof it.receipt_attachment === 'object' ? it.receipt_attachment : null;
+        return {
+          itemId: it.quotation_item_id,
+          name: parseExternalPartDesc(it.description_snapshot)?.cleanName || it.description_snapshot,
+          receiptId: it.receipt_attachment_id ?? att?.attachment_id ?? att?.id ?? null,
+          receiptUrl: it.receipt_url || it.receipt_image_url || att?.image_url || att?.file_url || att?.url || att?.uri || null,
+        };
+      }),
     followUpRequested: Boolean(visit.follow_up_reason),
     // Đánh giá của khách nếu server trả kèm việc (nếu không, AppContext gắn từ GET /technician/jobs/reviews).
     rating: (req.review || job.review) ? {
@@ -1264,13 +1363,18 @@ const EVIDENCE_STAGE = {
   BEFORE_REPAIR: 'before',
   AFTER_REPAIR: 'after',
   DOCUMENT: 'receipt',
+  RECEIPT: 'receipt',
+  PART_RECEIPT: 'receipt',
+  INVOICE: 'receipt',
+  RECEIPT_PHOTO: 'receipt',
 };
 export const mapBackendPhotoToEvidence = (row) => {
   const rawType = String(row?.evidence_type || row?.type || '').trim().toUpperCase();
   const hasJob = Boolean(row?.job_id || row?.assignment_id || row?.visit_id || row?.procedure_step_id);
-  const stage = EVIDENCE_STAGE[rawType] || (!rawType && !hasJob ? 'diagnosis' : 'after');
-  const uploaderRole = String(row?.uploaded_by_role || row?.uploader_role || row?.role || '').trim().toUpperCase();
   const note = row?.description || row?.note || '';
+  const isReceiptNote = /^(?:biên lai|hoá đơn|hóa đơn|receipt)\b/i.test(String(note).trim());
+  const stage = EVIDENCE_STAGE[rawType] || (isReceiptNote ? 'receipt' : (!rawType && !hasJob ? 'diagnosis' : 'after'));
+  const uploaderRole = String(row?.uploaded_by_role || row?.uploader_role || row?.role || '').trim().toUpperCase();
   const isWarrantyUpload = /^\[Bảo hành\]/i.test(String(note).trim());
   const isCustomerInitial = Boolean(
     !isWarrantyUpload &&
@@ -1282,6 +1386,7 @@ export const mapBackendPhotoToEvidence = (row) => {
     dbAttachmentId: row?.attachment_id ?? row?.id ?? null,
     uri: row?.image_url || row?.file_url || row?.url || row?.uri || '',
     stage,
+    evidenceType: rawType || null,
     note,
     isWarrantyUpload,
     isCustomerInitial,
@@ -1294,7 +1399,7 @@ export const extractInitialAttachments = (evidence = [], rawAttachments = []) =>
   const out = [];
   const seen = new Set();
   const pushOne = (item) => {
-    if (!item?.uri || item.isWarrantyUpload) return;
+    if (!item?.uri || item.isWarrantyUpload || item.stage === 'receipt') return;
     if (/^\[Bảo hành\]/i.test(String(item.note || item.description || '').trim())) return;
     const key = item.dbAttachmentId != null ? `id:${item.dbAttachmentId}` : `uri:${item.uri}`;
     if (seen.has(key)) return;

@@ -7,7 +7,7 @@ import { formatVND, formatNumberInput } from '../../../constants/data';
 import { useApp, bookedValue, tierPartDiscountAmount, lateDiscountAmount, getPendingExternalEstimates } from '../../../context';
 import { Btn, Field, Sheet, Stepper, Tap, ui, AppIcon, Badge } from '../../../components';
 import { pickCamera, pickImage } from '../../../utils/media';
-import { formatRangeVND, normalizeExternalPartName } from '../../../utils/externalPartsPricing';
+import { formatRangeVND, normalizeExternalPartName, matchReceiptsToQuoteLines } from '../../../utils/externalPartsPricing';
 import { toVietnamese } from '../../../utils/viText';
 import { useBusyRunner } from './useBusyRunner';
 
@@ -43,17 +43,22 @@ export function ExternalPartsFinalizeSheet({
 
     const isRevision = o.externalPriceState === 'revision_requested' && o.quote?.isExternalFinalization;
     if (isRevision) {
-      // Bỏ các dòng đã được khách duyệt ở đợt trước (isPriorApproved) để không gửi lại / tính tiền 2 lần.
-      const finLines = (o.quote?.lines || []).filter((l) => l.isFinalizedExternal && !l.isPriorApproved);
+      // Giữ cả linh kiện mua ngoài và vật tư kho gửi kèm (loại bỏ dịch vụ gốc, mục đã duyệt trước và khoảng giá dự kiến).
+      const finLines = (o.quote?.lines || []).filter(
+        (l) => !l.isOriginal && !l.isPriorApproved && !l.isEstimatedRange,
+      );
+      const { lineReceipts } = matchReceiptsToQuoteLines(finLines, o.evidence || []);
       const baseParts = finLines.map((l, idx) => {
         const draft = sharedByName.get(normalizeExternalPartName(l.name));
+        const matched = lineReceipts.get(idx) || null;
+        const isWh = Boolean(draft?.isWarehouse || l.isWarehouse || (!l.isCustom && (l.type === 'part' || Boolean(l.matId))));
         return {
           id: draft?.id || l.dbItemId || `rev_${idx}`,
           ...(draft?.syncKey ? { syncKey: draft.syncKey } : {}),
           ...(draft?.qtyTouched ? { qtyTouched: true } : {}),
           matId: draft?.matId || l.matId || null,
           dbMaterialId: draft?.dbMaterialId || l.dbMaterialId || null,
-          isWarehouse: Boolean(draft?.isWarehouse || l.isWarehouse),
+          isWarehouse: isWh,
           name: l.name,
           minPrice: l.minPrice,
           maxPrice: l.maxPrice,
@@ -61,7 +66,8 @@ export function ExternalPartsFinalizeSheet({
           origQty: draft?.origQty ?? Math.max(1, Number(l.origQty ?? l.qty) || 1),
           alreadyBilledUnitPrice: Number(l.priorDeposit) || 0,
           actualPriceText: draft?.actualPriceText || formatNumberInput(String(l.actualPrice ?? l.price ?? '')),
-          receiptId: draft?.receiptId || l.receiptId || null,
+          receiptId: draft?.receiptId || l.receiptId || matched?.dbAttachmentId || null,
+          receiptUrl: draft?.receiptUrl || l.receiptUrl || matched?.uri || null,
           receiptUri: draft?.receiptUri || null,
         };
       });
@@ -116,6 +122,7 @@ export function ExternalPartsFinalizeSheet({
   };
 
   const isRevision = o.externalPriceState === 'revision_requested' && o.quote?.isExternalFinalization;
+  const pendingEstNames = new Set(getPendingExternalEstimates(o).map((e) => normalizeExternalPartName(e.name)));
   const currentPartNames = new Set(parts.map((p) => normalizeExternalPartName(p.name)));
   const fixedApprovedExtras = (o.quote?.lines || [])
     .filter(
@@ -242,10 +249,14 @@ export function ExternalPartsFinalizeSheet({
         const actualNum = parseNum(p.actualPriceText);
         const hasRange = p.minPrice != null && p.maxPrice != null && p.maxPrice > 0;
         const inRange = hasRange && actualNum >= p.minPrice && actualNum <= p.maxPrice;
-        const existingImg = p.receiptId
+        const existingImg = p.receiptUrl || (p.receiptId
           ? (o.evidence || []).find((e) => String(e.dbAttachmentId) === String(p.receiptId))?.uri
-          : null;
+          : null);
         const previewUri = p.receiptUri || existingImg;
+        const canRemovePart = Boolean(
+          p.isAddedInline ||
+          (!p.alreadyBilledUnitPrice && !(p.maxPrice > 0) && !pendingEstNames.has(normalizeExternalPartName(p.name))),
+        );
 
         return (
           <View key={p.id} style={st.partCard}>
@@ -263,7 +274,7 @@ export function ExternalPartsFinalizeSheet({
                   value={p.qty}
                   onChange={(q) => setParts((prev) => prev.map((x) => (x.id === p.id ? { ...x, qty: q, qtyTouched: true } : x)))}
                 />
-                {p.isAddedInline ? (
+                {canRemovePart ? (
                   <Tap
                     onPress={() => {
                       setParts((prev) => prev.filter((x) => x.id !== p.id));
@@ -336,7 +347,7 @@ export function ExternalPartsFinalizeSheet({
                     onPress={() => pickReceipt(p.id, false)}
                   />
                 </View>
-                {p.receiptUri || p.receiptId ? (
+                {p.receiptUri || p.receiptId || p.receiptUrl ? (
                   <Badge text="Đã đính kèm hoá đơn" fg={C.green} bg={C.greenSoft} />
                 ) : (
                   <Text style={{ fontSize: 11.5, color: C.muted, fontWeight: '600' }}>
@@ -349,87 +360,85 @@ export function ExternalPartsFinalizeSheet({
         );
       })}
 
-      {!isRevision ? (
-        showAddExtra ? (
-          <View style={st.addExtraBox}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13 }}>Thêm vật tư phát sinh mới</Text>
-              <Tap onPress={() => setShowAddExtra(false)} hitSlop={8}>
-                <Text style={{ color: C.muted, fontWeight: '700' }}>Đóng</Text>
-              </Tap>
-            </View>
-            <Field
-              label="Tên vật tư phát sinh *"
-              placeholder="VD: Dây đồng 2m, Tụ kích, Van xả..."
-              value={newPartName}
-              onChangeText={setNewPartName}
-            />
-            <Field
-              label="Mức giá cuối cùng (VNĐ / cái) *"
-              placeholder="VD: 150.000"
-              value={newPartPriceText}
-              onChangeText={(t) => setNewPartPriceText(formatNumberInput(t))}
-              keyboardType="numeric"
-              style={{ marginTop: 8 }}
-            />
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-              <Btn
-                title="Huỷ"
-                variant="ghost"
-                small
-                style={{ flex: 1 }}
-                onPress={() => {
-                  setShowAddExtra(false);
-                  setNewPartName('');
-                  setNewPartPriceText('');
-                }}
-              />
-              <Btn
-                title="Thêm vào hoá đơn"
-                small
-                style={{ flex: 1.5 }}
-                onPress={() => {
-                  const clean = newPartName.trim();
-                  const priceNum = parseNum(newPartPriceText);
-                  if (!clean) {
-                    u.alert('Thiếu tên vật tư', 'Vui lòng nhập tên vật tư phát sinh.', 'alert-triangle');
-                    return;
-                  }
-                  if (!priceNum || priceNum <= 0) {
-                    u.alert('Giá không hợp lệ', 'Vui lòng nhập mức giá cuối cùng lớn hơn 0đ.', 'alert-triangle');
-                    return;
-                  }
-                  const newPart = {
-                    id: `sheet_ext_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-                    name: clean,
-                    minPrice: null,
-                    maxPrice: null,
-                    qty: 1,
-                    alreadyBilledUnitPrice: 0,
-                    actualPriceText: formatNumberInput(String(priceNum)),
-                    receiptId: null,
-                    receiptUri: null,
-                    isAddedInline: true,
-                  };
-                  setParts((prev) => [...prev, newPart]);
-                  onChangeSharedExtraParts?.((prev) => [
-                    ...(Array.isArray(prev) ? prev : []).filter((x) => normalizeExternalPartName(x.name) !== normalizeExternalPartName(newPart.name)),
-                    newPart,
-                  ]);
-                  setNewPartName('');
-                  setNewPartPriceText('');
-                  setShowAddExtra(false);
-                }}
-              />
-            </View>
+      {showAddExtra ? (
+        <View style={st.addExtraBox}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13 }}>Thêm vật tư phát sinh mới</Text>
+            <Tap onPress={() => setShowAddExtra(false)} hitSlop={8}>
+              <Text style={{ color: C.muted, fontWeight: '700' }}>Đóng</Text>
+            </Tap>
           </View>
-        ) : (
-          <Tap style={st.addExtraBtn} onPress={() => setShowAddExtra(true)}>
-            <AppIcon name="plus" size={14} color={C.primary} strokeWidth={2.5} />
-            <Text style={{ color: C.primary, fontWeight: '800', fontSize: 13 }}>Thêm vật tư phát sinh khác</Text>
-          </Tap>
-        )
-      ) : null}
+          <Field
+            label="Tên vật tư phát sinh *"
+            placeholder="VD: Dây đồng 2m, Tụ kích, Van xả..."
+            value={newPartName}
+            onChangeText={setNewPartName}
+          />
+          <Field
+            label="Mức giá cuối cùng (VNĐ / cái) *"
+            placeholder="VD: 150.000"
+            value={newPartPriceText}
+            onChangeText={(t) => setNewPartPriceText(formatNumberInput(t))}
+            keyboardType="numeric"
+            style={{ marginTop: 8 }}
+          />
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+            <Btn
+              title="Huỷ"
+              variant="ghost"
+              small
+              style={{ flex: 1 }}
+              onPress={() => {
+                setShowAddExtra(false);
+                setNewPartName('');
+                setNewPartPriceText('');
+              }}
+            />
+            <Btn
+              title="Thêm vào hoá đơn"
+              small
+              style={{ flex: 1.5 }}
+              onPress={() => {
+                const clean = newPartName.trim();
+                const priceNum = parseNum(newPartPriceText);
+                if (!clean) {
+                  u.alert('Thiếu tên vật tư', 'Vui lòng nhập tên vật tư phát sinh.', 'alert-triangle');
+                  return;
+                }
+                if (!priceNum || priceNum <= 0) {
+                  u.alert('Giá không hợp lệ', 'Vui lòng nhập mức giá cuối cùng lớn hơn 0đ.', 'alert-triangle');
+                  return;
+                }
+                const newPart = {
+                  id: `sheet_ext_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                  name: clean,
+                  minPrice: null,
+                  maxPrice: null,
+                  qty: 1,
+                  alreadyBilledUnitPrice: 0,
+                  actualPriceText: formatNumberInput(String(priceNum)),
+                  receiptId: null,
+                  receiptUri: null,
+                  isAddedInline: true,
+                };
+                setParts((prev) => [...prev, newPart]);
+                onChangeSharedExtraParts?.((prev) => [
+                  ...(Array.isArray(prev) ? prev : []).filter((x) => normalizeExternalPartName(x.name) !== normalizeExternalPartName(newPart.name)),
+                  newPart,
+                ]);
+                setNewPartName('');
+                setNewPartPriceText('');
+                setShowAddExtra(false);
+              }}
+            />
+          </View>
+        </View>
+      ) : (
+        <Tap style={st.addExtraBtn} onPress={() => setShowAddExtra(true)}>
+          <AppIcon name="plus" size={14} color={C.primary} strokeWidth={2.5} />
+          <Text style={{ color: C.primary, fontWeight: '800', fontSize: 13 }}>Thêm vật tư phát sinh khác</Text>
+        </Tap>
+      )}
 
       <Field
         label="Nội dung công việc đã hoàn thành"

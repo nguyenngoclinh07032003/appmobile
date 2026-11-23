@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Image } from 'react-native';
 import { C, R } from '../../../theme';
 import { formatVND, SAFETY_CHECKLIST_ITEMS } from '../../../constants/data';
-import { useApp, orderTotal, cashToCollect, fmtDateTime, isQRPayment, bookedValue, tierPartDiscountAmount, lateDiscountAmount, isPaid, getPendingExternalEstimates } from '../../../context';
+import { useApp, orderTotal, amountRemaining, cashToCollect, fmtDateTime, isQRPayment, bookedValue, tierPartDiscountAmount, lateDiscountAmount, isPaid, getPendingExternalEstimates } from '../../../context';
 import { Btn, Field, Sheet, Checkbox, Tap, Badge, ui, AppIcon } from '../../../components';
 import { pickCamera, pickImage } from '../../../utils/media';
 import { toVietnamese } from '../../../utils/viText';
@@ -72,10 +72,13 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
   const safetyDone = SAFETY_ITEMS.filter((it) => safetyChecks.includes(it)).length;
   const bookedBase = bookedValue(o);
   const finalTotal = orderTotal(o);
+  const paidAmount = Number(o.bill?.paidAmount) || 0;
+  const remainDue = amountRemaining(o);
+  const orderDisc = (Number(o.productDiscount) || 0) + (Number(o.comboDiscount) || 0);
   const extraAmount = o.bill
     ? (Number(o.bill.supplementalTotal) || 0) +
       (o.bill.quotationTotal != null
-        ? Math.max(0, Number(o.bill.quotationTotal) - (Number(o.bill.bookedAmount) || bookedBase))
+        ? Math.max(0, Math.max(0, Number(o.bill.quotationTotal) - orderDisc) - (Number(o.bill.bookedAmount) || bookedBase))
         : 0)
     : o.quote?.approved
       ? Math.max(0, Number(o.quote.extraAmount) || 0)
@@ -211,6 +214,18 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
           <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13.5 }}>Tổng thanh toán chốt với khách</Text>
           <Text style={[ui.price, { fontSize: 18 }]}>{formatVND(finalTotal)}</Text>
         </View>
+        {paidAmount > 0 && !orderPaid ? (
+          <>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+              <Text style={{ fontSize: 12.5, color: C.green }}>Đã thanh toán trước</Text>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: C.green }}>-{formatVND(paidAmount)}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 }}>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: C.ink }}>Còn lại cần thanh toán</Text>
+              <Text style={{ fontSize: 14, fontWeight: '800', color: C.primary }}>{formatVND(remainDue)}</Text>
+            </View>
+          </>
+        ) : null}
       </View>
       <Field label="Nội dung công việc đã làm" multiline value={summary} onChangeText={setSummary} />
 
@@ -336,7 +351,7 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
             <Text style={{ fontWeight: '800', color: orderPaid ? C.greenInk : C.goldInk, fontSize: 13.5, flex: 1 }}>
               {orderPaid
                 ? `Khách đã chuyển khoản VietQR (${formatVND(orderTotal(o))})`
-                : `Khách chuyển khoản QR (${formatVND(orderTotal(o))}) — KHÔNG THU TIỀN`}
+                : `Khách chuyển khoản QR (${formatVND(remainDue)}) — KHÔNG THU TIỀN`}
             </Text>
           </View>
           <Text style={{ fontSize: 12, color: C.ink2, marginTop: 4, lineHeight: 18 }}>

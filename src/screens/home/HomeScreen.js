@@ -197,7 +197,7 @@ export default function HomeScreen() {
                   <Text style={st.activeCode}>{active.code}</Text>
                   <StatusChip status={active.status} meta={activeMeta} />
                 </View>
-                <Text style={st.activeName} numberOfLines={1}>{activeSvc?.name}</Text>
+                <Text style={st.activeName} numberOfLines={1}>{activeSvc?.name || active.items?.[0]?.name || 'Dịch vụ kỹ thuật'}</Text>
                 <Text style={ui.meta}>
                   {active.status === 'quoted'
                     ? (active.quote?.isExternalFinalization ? 'Thợ đã gửi chi phí cuối chờ xác nhận' : 'Có báo giá chờ bạn duyệt')

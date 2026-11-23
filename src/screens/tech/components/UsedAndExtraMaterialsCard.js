@@ -7,7 +7,7 @@ import { MATERIALS, formatVND, formatNumberInput } from '../../../constants/data
 import { useApp, bookedValue, tierPartDiscountAmount, lateDiscountAmount, getPendingExternalEstimates } from '../../../context';
 import { Badge, Btn, Card, Field, HScroll, Stepper, Tap, AppIcon, ui } from '../../../components';
 import { pickCamera, pickImage } from '../../../utils/media';
-import { formatRangeVND, normalizeExternalPartName } from '../../../utils/externalPartsPricing';
+import { formatRangeVND, normalizeExternalPartName, matchReceiptsToQuoteLines } from '../../../utils/externalPartsPricing';
 import { toVietnamese } from '../../../utils/viText';
 import { tx } from './techStyles';
 import { useBusyRunner } from './useBusyRunner';
@@ -53,20 +53,30 @@ export function UsedAndExtraMaterialsCard({
   const estSource = !o
     ? []
     : isRevision
-      ? (o.quote?.lines || [])
-          // Bỏ các dòng khách đã duyệt ở đợt trước (isPriorApproved) để không gửi lại / tính tiền 2 lần.
-          .filter((l) => l.isFinalizedExternal && !l.isPriorApproved)
-          .map((l, idx) => ({
-            syncKey: `rev_${l.dbItemId || idx}`,
-            name: l.name,
-            minPrice: l.minPrice,
-            maxPrice: l.maxPrice,
-            qty: Math.max(1, Number(l.qty) || 1),
-            origQty: Math.max(1, Number(l.origQty ?? l.qty) || 1),
-            alreadyBilledUnitPrice: Number(l.priorDeposit) || 0,
-            defaultPrice: l.actualPrice ?? l.price ?? '',
-            receiptId: l.receiptId || null,
-          }))
+      ? (() => {
+          const finLines = (o.quote?.lines || [])
+            // Giữ cả linh kiện mua ngoài và vật tư kho gửi kèm (loại bỏ dịch vụ gốc, mục đã duyệt trước và khoảng giá dự kiến).
+            .filter((l) => !l.isOriginal && !l.isPriorApproved && !l.isEstimatedRange);
+          const { lineReceipts } = matchReceiptsToQuoteLines(finLines, o.evidence || []);
+          return finLines.map((l, idx) => {
+            const matched = lineReceipts.get(idx) || null;
+            return {
+              syncKey: `rev_${l.dbItemId || idx}`,
+              matId: l.matId || null,
+              dbMaterialId: l.dbMaterialId || null,
+              isWarehouse: Boolean(l.isWarehouse || (!l.isCustom && (l.type === 'part' || Boolean(l.matId)))),
+              name: l.name,
+              minPrice: l.minPrice,
+              maxPrice: l.maxPrice,
+              qty: Math.max(1, Number(l.qty) || 1),
+              origQty: Math.max(1, Number(l.origQty ?? l.qty) || 1),
+              alreadyBilledUnitPrice: Number(l.priorDeposit) || 0,
+              defaultPrice: l.actualPrice ?? l.price ?? '',
+              receiptId: l.receiptId || matched?.dbAttachmentId || null,
+              receiptUrl: l.receiptUrl || matched?.uri || null,
+            };
+          });
+        })()
       : getPendingExternalEstimates(o).map((est, idx) => ({
           syncKey: `est_${est.itemId || idx}`,
           name: est.name,
@@ -77,6 +87,7 @@ export function UsedAndExtraMaterialsCard({
           alreadyBilledUnitPrice: Number(est.alreadyBilledUnitPrice) || 0,
           defaultPrice: est.alreadyBilledUnitPrice > 0 ? est.alreadyBilledUnitPrice : '',
           receiptId: null,
+          receiptUrl: null,
         }));
   const estSourceSig = JSON.stringify(estSource);
 
@@ -90,6 +101,9 @@ export function UsedAndExtraMaterialsCard({
         if (existing) {
           return {
             ...existing,
+            matId: existing.matId || src.matId || null,
+            dbMaterialId: existing.dbMaterialId || src.dbMaterialId || null,
+            isWarehouse: Boolean(existing.isWarehouse || src.isWarehouse),
             name: src.name,
             minPrice: src.minPrice,
             maxPrice: src.maxPrice,
@@ -98,11 +112,15 @@ export function UsedAndExtraMaterialsCard({
             origQty: existing.origQty ?? src.origQty,
             alreadyBilledUnitPrice: src.alreadyBilledUnitPrice,
             receiptId: existing.receiptId || src.receiptId,
+            receiptUrl: existing.receiptUrl || src.receiptUrl || null,
           };
         }
         return {
           id: src.syncKey,
           syncKey: src.syncKey,
+          matId: src.matId || null,
+          dbMaterialId: src.dbMaterialId || null,
+          isWarehouse: Boolean(src.isWarehouse),
           name: src.name,
           minPrice: src.minPrice,
           maxPrice: src.maxPrice,
@@ -111,6 +129,7 @@ export function UsedAndExtraMaterialsCard({
           alreadyBilledUnitPrice: src.alreadyBilledUnitPrice,
           actualPriceText: src.defaultPrice ? formatNumberInput(String(src.defaultPrice)) : '',
           receiptId: src.receiptId,
+          receiptUrl: src.receiptUrl || null,
           receiptUri: null,
           isAddedInline: false,
         };
@@ -153,6 +172,7 @@ export function UsedAndExtraMaterialsCard({
   const canEditWarehouse = mine && o.status === 'repairing';
   const warehouseMats = o.materials || [];
   const finalizedApproved = o.finalizedExternalParts || [];
+  const pendingEstNames = new Set(getPendingExternalEstimates(o).map((e) => normalizeExternalPartName(e.name)));
   const matNameSet = new Set(warehouseMats.map((m) => normalizeExternalPartName(m.name)));
   const visibleFinalized = finalizedApproved.filter((f) => !matNameSet.has(normalizeExternalPartName(f.name)));
 
@@ -495,10 +515,14 @@ export function UsedAndExtraMaterialsCard({
             const qty = Math.max(1, Number(p.qty) || 1);
             const hasRange = p.minPrice != null && p.maxPrice != null && p.maxPrice > 0;
             const inRange = hasRange && actualNum >= p.minPrice && actualNum <= p.maxPrice;
-            const existingImg = p.receiptId
+            const existingImg = p.receiptUrl || (p.receiptId
               ? (o.evidence || []).find((e) => String(e.dbAttachmentId) === String(p.receiptId))?.uri
-              : null;
+              : null);
             const previewUri = p.receiptUri || existingImg;
+            const canRemoveExtra = Boolean(
+              p.isAddedInline ||
+              (!p.alreadyBilledUnitPrice && !(p.maxPrice > 0) && !pendingEstNames.has(normalizeExternalPartName(p.name))),
+            );
 
             return (
               <View key={p.id} style={st.extraCard}>
@@ -526,7 +550,7 @@ export function UsedAndExtraMaterialsCard({
                       value={qty}
                       onChange={(q) => setExtraParts((prev) => prev.map((x) => (x.id === p.id ? { ...x, qty: q, qtyTouched: true } : x)))}
                     />
-                    {p.isAddedInline ? (
+                    {canRemoveExtra ? (
                       <Tap
                         onPress={() => setExtraParts((prev) => prev.filter((x) => x.id !== p.id))}
                         hitSlop={8}
@@ -577,7 +601,7 @@ export function UsedAndExtraMaterialsCard({
                     <AppIcon name="image" size={13} color={C.ink2} strokeWidth={2.2} />
                     <Text style={[st.receiptChipText, { color: C.ink2 }]}>Chọn ảnh</Text>
                   </Tap>
-                  {p.receiptUri || p.receiptId ? (
+                  {p.receiptUri || p.receiptId || p.receiptUrl ? (
                     <Badge text="Có ảnh" fg={C.green} bg={C.greenSoft} />
                   ) : null}
                 </View>

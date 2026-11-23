@@ -27,7 +27,7 @@ import {
   validateCheckInNote,
 } from '../../utils/attendance';
 import {
-  AppIcon, Badge, Btn, Card, Field, IconBtn, PageHead, Sheet, Tap, TopBar, ui,
+  AppIcon, Badge, Btn, Card, Field, IconBtn, PageHead, Sheet, Tap, ui,
 } from '../../components';
 
 const ATT_STATUS_META = {
@@ -74,7 +74,6 @@ export function TechAttendanceScreen() {
   selMonthRef.current = selMonth;
   selYearRef.current = selYear;
 
-  const isStackTop = nav.top?.name === 'tech-attendance';
   const todayVnNow = getVnTodayInfo();
   const isViewingCurrentMonth = selMonth === todayVnNow.month && selYear === todayVnNow.year;
 
@@ -303,11 +302,7 @@ export function TechAttendanceScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
-      {isStackTop ? (
-        <TopBar title="Chấm công" sub="Ca 1: 08h00 – 12h00 · Ca 2: 13h30 – 17h30" right={refreshBtn} />
-      ) : (
-        <PageHead title="Chấm công" sub="Ca 1: 08h00 – 12h00 · Ca 2: 13h30 – 17h30" right={refreshBtn} />
-      )}
+      <PageHead title="Chấm công" sub="Ca 1: 08h00 – 12h00 · Ca 2: 13h30 – 17h30" right={refreshBtn} />
 
       <ScrollView
         style={{ flex: 1 }}

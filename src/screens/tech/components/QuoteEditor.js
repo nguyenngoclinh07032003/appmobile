@@ -51,8 +51,8 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
   });
   const hasRange = rangeTotals.hasEstimatedRange;
   const deductTotal = partDisc + voucherDisc + lateDisc;
-  const diffMin = onSite ? rangeTotals.extraMin : Math.max(0, (rangeTotals.totalMin + deductTotal) - booked);
-  const diffMax = onSite ? rangeTotals.extraMax : Math.max(diffMin, (rangeTotals.totalMax + deductTotal) - booked);
+  const diffMin = onSite ? rangeTotals.extraMin : Math.max(0, rangeTotals.grossTotalMin - booked);
+  const diffMax = onSite ? rangeTotals.extraMax : Math.max(diffMin, rangeTotals.grossTotalMax - booked);
   const paysMin = rangeTotals.totalMin;
   const paysMax = rangeTotals.totalMax;
 
@@ -179,7 +179,7 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
 
   return (
     <>
-      {o.kind === 'warranty' ? (
+      {o.kind === 'warranty' && o.status === 'diagnosing' ? (
         <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.red }}>
           <Text style={[tx.h, { color: C.redInk, marginBottom: 4 }]}>Thẩm định bảo hành tại chỗ</Text>
           <Text style={{ color: C.ink2, fontSize: 13, lineHeight: 19 }}>

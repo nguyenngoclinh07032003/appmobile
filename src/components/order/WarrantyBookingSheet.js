@@ -161,6 +161,7 @@ export function WarrantyBookingSheet({
   ));
 
   const [phone, setPhone] = useState('');
+  const [initialPrefilledPhone, setInitialPrefilledPhone] = useState('');
   const [address, setAddress] = useState('');
   const [description, setDescription] = useState('');
   const [images, setImages] = useState([]);
@@ -348,8 +349,6 @@ export function WarrantyBookingSheet({
     }
     return ymdStr;
   };
-
-  const [initialPrefilledPhone, setInitialPrefilledPhone] = useState('');
 
   const formatWarrantyDateLabel = (ymdStr) => {
     const todayStr = formatYmd(new Date());

@@ -37,7 +37,7 @@ import {
 } from '../../components';
 import { NotFoundView } from '../shared/actionHelpers';
 import { pickImage, pickCamera } from '../../utils/media';
-import { computeQuoteRangeTotals, formatRangeVND } from '../../utils/externalPartsPricing';
+import { computeQuoteRangeTotals, formatRangeVND, matchReceiptsToQuoteLines } from '../../utils/externalPartsPricing';
 import { TrackingCard, SymptomBreakdownView } from '../../components/order';
 import { tx } from './components/techStyles';
 import { useBusyRunner } from './components/useBusyRunner';
@@ -118,10 +118,10 @@ function JobCard({ o, compact, onDecline }) {
               const fee = Number(o.inspectionFee) || 0;
               return (
                 <View style={tx.payBox}>
-                  <Text style={[tx.payLabel, { color: fee > 0 ? C.goldInk : C.redInk, fontWeight: '800' }]}>
-                    {fee > 0 ? 'Phí kiểm tra' : 'Đã huỷ'}
+                  <Text style={[tx.payLabel, { color: fee > 0 ? (orderPaid ? C.greenInk : C.goldInk) : C.redInk, fontWeight: '800' }]}>
+                    {fee > 0 ? (orderPaid ? 'Đã thu phí KT' : 'Phí kiểm tra') : 'Đã huỷ'}
                   </Text>
-                  <Text style={[ui.price, { fontSize: 14.5, marginTop: 2, color: fee > 0 ? C.ink : C.muted }]}>
+                  <Text style={[ui.price, { fontSize: 14.5, marginTop: 2, color: fee > 0 ? (orderPaid ? C.green : C.ink) : C.muted }]}>
                     {fee > 0 ? formatVND(fee) : '0đ'}
                   </Text>
                 </View>
@@ -690,7 +690,7 @@ export function TechNotifsScreen() {
   const hasRead = (s.techNotifs || []).some((n) => Boolean(n.read));
   const filtered = list.filter((n) => {
     if (filter === 'unread') return !n.read;
-    if (filter === 'jobs') return /việc|đơn|báo giá|hoá đơn|đến nơi|bàn giao|đánh giá|huỷ|hủy|lịch|khách|hoàn thành|thanh toán|phân công|bảo hành|vật tư/i.test(`${n.title} ${n.body || ''}`);
+    if (filter === 'jobs') return String(n.type || '').toUpperCase().startsWith('HANDOVER_') || /việc|đơn|báo giá|hoá đơn|đến nơi|bàn giao|tiền mặt|nộp tiền|đánh giá|huỷ|hủy|lịch|khách|hoàn thành|thanh toán|phân công|bảo hành|vật tư/i.test(`${n.title} ${n.body || ''}`);
     if (filter === 'attendance') {
       return isAttendanceNotifType(n.type) || /chấm công|ca làm|vào ca|vi phạm|kỳ công/i.test(`${n.title} ${n.body || ''}`);
     }
@@ -1027,7 +1027,7 @@ export function TechAccountScreen() {
 
 // =========================================================== CHI TIẾT CÔNG VIỆC
 // Biên lai linh kiện mua ngoài (báo giá đã duyệt): backend bắt gắn ảnh biên lai cho từng dòng trước khi nộp hoàn thành.
-function ReceiptCard({ o, editable }) {
+function ReceiptCard({ o, editable, onPreviewPhoto }) {
   const { a, ui: u } = useApp();
   const [busyId, setBusyId] = useState(null);
   const attachBusyRef = useRef(false);
@@ -1071,13 +1071,19 @@ function ReceiptCard({ o, editable }) {
       <Text style={[ui.meta, { marginBottom: 8 }]}>Chụp hoặc tải ảnh hoá đơn mua cho từng linh kiện. Thiếu biên lai thì chưa nộp hoàn thành được.</Text>
       {parts.map((p) => {
         // Ảnh biên lai đã gắn (ảnh DOCUMENT của việc) — hiện ngay tại dòng linh kiện, không nằm trong ảnh minh chứng.
-        const receipt = p.receiptId ? (o.evidence || []).find((e) => String(e.dbAttachmentId) === String(p.receiptId)) : null;
+        const receiptUri =
+          p.receiptUrl ||
+          (p.receiptId ? (o.evidence || []).find((e) => String(e.dbAttachmentId) === String(p.receiptId))?.uri : null);
         return (
           <View key={p.itemId} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.line }}>
-            {receipt?.uri ? (
-              <View style={{ width: 44, height: 44, borderRadius: 10, overflow: 'hidden', backgroundColor: C.surface }}>
-                <Image source={{ uri: receipt.uri }} style={{ width: '100%', height: '100%' }} />
-              </View>
+            {receiptUri ? (
+              <Tap
+                style={{ width: 44, height: 44, borderRadius: 10, overflow: 'hidden', backgroundColor: C.surface }}
+                scaleTo={0.96}
+                onPress={() => onPreviewPhoto?.({ uri: receiptUri, title: `Biên lai · ${p.name}` })}
+              >
+                <Image source={{ uri: receiptUri }} style={{ width: '100%', height: '100%' }} />
+              </Tap>
             ) : (
               <View style={{ width: 44, height: 44, borderRadius: 10, backgroundColor: p.receiptId ? C.greenSoft : C.goldSoft, alignItems: 'center', justifyContent: 'center' }}>
                 <AppIcon name="receipt-text" size={20} color={p.receiptId ? C.green : C.goldInk} strokeWidth={2.1} />
@@ -1340,8 +1346,8 @@ export function TechJobScreen({ params }) {
   const extraItems = draft.lines.filter((l) => !l.isOriginal);
   const extraTotal = draftRange.extraMax;
   const deductDraft = partDisc + voucherDisc + lateDisc;
-  const diffMin = onSiteQuote ? draftRange.extraMin : Math.max(0, (draftRange.totalMin + deductDraft) - bookedValue(o));
-  const diffMax = onSiteQuote ? draftRange.extraMax : Math.max(diffMin, (draftRange.totalMax + deductDraft) - bookedValue(o));
+  const diffMin = onSiteQuote ? draftRange.extraMin : Math.max(0, draftRange.grossTotalMin - bookedValue(o));
+  const diffMax = onSiteQuote ? draftRange.extraMax : Math.max(diffMin, draftRange.grossTotalMax - bookedValue(o));
   const netDraftTotal = draftRange.totalMax;
   const mats = MATERIALS.filter((m) => matAll || m.category === 'all' || cats.includes(m.category));
   const addPart = (m) => {
@@ -1389,6 +1395,14 @@ export function TechJobScreen({ params }) {
     }
     const text = [symptoms, diag].filter(Boolean).join('. ');
     const hasExtra = draft.lines.some((l) => !l.isOriginal);
+    if (o.kind === 'warranty' && hasExtra) {
+      u.alert(
+        'Đơn bảo hành miễn phí (0đ)',
+        'Nếu thiết bị hư hỏng ngoài phạm vi bảo hành và cần báo giá có phí, hãy bấm «Từ chối bảo hành → Báo giá có phí» trước.',
+        'shield-alert',
+      );
+      return;
+    }
     // Tại nhà khách không có phát sinh: không gửi báo giá (nếu gửi, dịch vụ đã đặt bị tính 2 lần), chỉ ghi chẩn đoán rồi làm.
     if (onSiteQuote && !hasExtra) {
       run(K.quote, () => a.startRepairWithoutQuote(o.code, { diagnosis: text, symptoms, recommendation: reco }))
@@ -1698,7 +1712,7 @@ export function TechJobScreen({ params }) {
                   <Text style={{ fontWeight: '800', color: orderPaid ? C.greenInk : C.ink, fontSize: 13 }}>
                     {orderPaid
                       ? '✓ Đã thu tiền mặt tại nhà'
-                      : `Đơn thu tiền mặt tại nhà: ${(o.quote?.hasEstimatedRange || o.quote?.approvedHasEstimatedRange) && !['pending_payment', 'done'].includes(o.status) ? formatOrderTotal(o) : formatVND(cashToCollect(o))}`}
+                      : `Đơn thu tiền mặt tại nhà: ${(o.status === 'quoted' || o.quote?.hasEstimatedRange || o.quote?.approvedHasEstimatedRange) && !['pending_payment', 'done'].includes(o.status) ? formatOrderTotal(o) : formatVND(cashToCollect(o))}`}
                   </Text>
                   <Text style={{ fontSize: 12, color: C.ink2, marginTop: 2 }}>
                     {orderPaid ? 'Đã đối soát thanh toán hoàn tất.' : 'Kỹ thuật viên trực tiếp thu tiền mặt từ khách sau khi nghiệm thu.'}
@@ -1723,7 +1737,7 @@ export function TechJobScreen({ params }) {
         </Card>
 
         {/* Báo giá trước khi xuất phát (Thợ chủ động thỏa thuận trước khi đi) */}
-        {o.status === 'confirmed' && mine && !o.quote ? (
+        {o.status === 'confirmed' && mine && !o.quote && o.kind !== 'warranty' ? (
           <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <View style={{ flex: 1, paddingRight: 8 }}>
@@ -1791,13 +1805,20 @@ export function TechJobScreen({ params }) {
               const isRevise = Boolean(o.quote.revisionRequested);
               const qRange = computeQuoteRangeTotals(o.quote.lines || [], {
                 bookedBase: o.quote.booked ?? bookedValue(o),
-                priorApprovedExtra: o.quote.includesPriorApprovedLines ? 0 : (Number(o.quote.priorApprovedExtra) || 0),
+                priorApprovedExtra: o.quote.effectivePriorExtra ?? (
+                  o.quote.includesPriorApprovedLines
+                    ? (Number(o.quote.initialServiceDelta) || 0)
+                    : (Number(o.quote.priorApprovedExtra) || 0)
+                ),
                 prodDisc,
                 comboDisc,
                 partDisc,
                 voucherDisc,
                 lateDisc,
-                isOnSite: Boolean(o.arrivedAt || o.checkIn || o.quote.quotationType === 'SUPPLEMENTAL'),
+                isOnSite:
+                  o.quote.quotationType === 'SUPPLEMENTAL' ||
+                  Boolean(o.quote.includesPriorApprovedLines) ||
+                  !(o.quote.lines || []).some((l) => l.isOriginal),
               });
               const displayQuoteTotal = o.quote.hasEstimatedRange && qRange.hasEstimatedRange
                 ? formatRangeVND(qRange.totalMin, qRange.totalMax)
@@ -1821,19 +1842,60 @@ export function TechJobScreen({ params }) {
                       initialAttachments={o.attachments}
                     />
                   </View>
-                  {(o.quote.lines || []).map((l, i) => (
-                    <View key={`${l.name}-${i}`} style={tx.qRow}>
-                      <AppIcon name={l.type === 'part' ? 'settings' : 'hammer'} size={13} color={C.ink2} style={{ marginTop: 2 }} />
-                      <Text style={{ flex: 1, color: C.ink2 }} numberOfLines={2}>
-                        {l.name} x{l.qty}{l.isEstimatedRange ? ' (Giá dao động)' : l.isFinalizedExternal ? ' (VT ngoài chốt giá)' : ''}
-                      </Text>
-                      <Text style={{ color: l.isEstimatedRange ? C.orange : C.ink, fontWeight: '700' }}>
-                        {l.isEstimatedRange
-                          ? formatRangeVND(l.minPrice * l.qty, l.maxPrice * l.qty)
-                          : formatVND((l.isFinalizedExternal && l.actualPrice != null ? l.actualPrice : l.price) * l.qty)}
-                      </Text>
-                    </View>
-                  ))}
+                  {(() => {
+                    const { lineReceipts, unmatchedReceipts } = matchReceiptsToQuoteLines(o.quote.lines || [], evidence);
+                    return (
+                      <>
+                        {(o.quote.lines || []).map((l, i) => {
+                          const receiptEv = lineReceipts.get(i) || null;
+                          return (
+                            <View key={`${l.name}-${i}`}>
+                              <View style={tx.qRow}>
+                                <AppIcon name={l.type === 'part' ? 'settings' : 'hammer'} size={13} color={C.ink2} style={{ marginTop: 2 }} />
+                                <Text style={{ flex: 1, color: C.ink2 }} numberOfLines={2}>
+                                  {l.name} x{l.qty}{l.isEstimatedRange ? ' (Giá dao động)' : l.isFinalizedExternal ? ' (VT ngoài chốt giá)' : ''}
+                                </Text>
+                                <Text style={{ color: l.isEstimatedRange ? C.orange : C.ink, fontWeight: '700' }}>
+                                  {l.isEstimatedRange
+                                    ? formatRangeVND(l.minPrice * l.qty, l.maxPrice * l.qty)
+                                    : formatVND((l.isFinalizedExternal && l.actualPrice != null ? l.actualPrice : l.price) * l.qty)}
+                                </Text>
+                              </View>
+                              {receiptEv?.uri ? (
+                                <Tap
+                                  style={{ marginLeft: 19, marginTop: 4, marginBottom: 4, flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start' }}
+                                  scaleTo={0.97}
+                                  onPress={() => setPreviewTechPhoto({ uri: receiptEv.uri, title: `Hoá đơn mua ngoài · ${l.name}` })}
+                                >
+                                  <Image source={{ uri: receiptEv.uri }} style={{ width: 48, height: 48, borderRadius: 8, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface }} />
+                                  <Text style={[ui.meta, { fontSize: 11, color: C.primary }]}>Hoá đơn đính kèm · Chạm để xem</Text>
+                                </Tap>
+                              ) : null}
+                            </View>
+                          );
+                        })}
+                        {unmatchedReceipts.length ? (
+                          <View style={{ marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: C.line }}>
+                            <Text style={[ui.meta, { fontSize: 12, fontWeight: '700', color: C.ink2, marginBottom: 6 }]}>
+                              Hoá đơn / biên lai đính kèm ({unmatchedReceipts.length})
+                            </Text>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                              {unmatchedReceipts.map((rEv, rIdx) => (
+                                <Tap
+                                  key={rEv.id || `tech_unmatched_rcpt_${rIdx}`}
+                                  style={{ alignItems: 'flex-start' }}
+                                  scaleTo={0.97}
+                                  onPress={() => setPreviewTechPhoto({ uri: rEv.uri, title: rEv.note || 'Hoá đơn / biên lai đính kèm' })}
+                                >
+                                  <Image source={{ uri: rEv.uri }} style={{ width: 54, height: 54, borderRadius: 8, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface }} />
+                                </Tap>
+                              ))}
+                            </View>
+                          </View>
+                        ) : null}
+                      </>
+                    );
+                  })()}
                   {o.productDiscount ? (
                     <View style={tx.qRow}>
                       <AppIcon name="tag" size={13} color={C.green} style={{ marginTop: 2 }} />
@@ -1935,7 +1997,7 @@ export function TechJobScreen({ params }) {
         {o.status === 'repairing' && mine && o.externalPriceState === 'finalized' ? (
           <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.green }}>
             <Text style={{ fontWeight: '800', color: C.greenInk, fontSize: 13.5 }}>
-              Khách đã xác nhận tổng chi phí cuối ({formatVND(orderTotal(o))})
+              Đã chốt tổng chi phí cuối ({formatVND(orderTotal(o))})
             </Text>
             <Text style={[ui.meta, { color: C.ink2, marginTop: 3, lineHeight: 18 }]}>
               Bấm “Ký bàn giao & Mở TT” ở thanh dưới cùng để ký biên bản bàn giao thiết bị & mở thanh toán cho khách hàng.
@@ -2047,7 +2109,7 @@ export function TechJobScreen({ params }) {
 
         {/* ===== Các bước thực hiện (backend: bắt buộc xong trước khi nộp biên bản) ===== */}
         {o.procedure && (mine || o.procedure.progress_percent > 0) ? <ProcedureCard o={o} editable={mine && ['diagnosing', 'repairing'].includes(o.status)} /> : null}
-        {mine ? <ReceiptCard o={o} editable={['diagnosing', 'repairing'].includes(o.status)} /> : null}
+        {mine ? <ReceiptCard o={o} editable={['diagnosing', 'repairing'].includes(o.status)} onPreviewPhoto={setPreviewTechPhoto} /> : null}
 
         {/* ===== Biên bản hoàn thành ===== */}
         {o.report ? (() => {
@@ -2109,15 +2171,36 @@ export function TechJobScreen({ params }) {
         ) : null}
 
         {o.status === 'cancelled' ? (
-          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: (o.inspectionFee || 0) > 0 ? C.gold : C.muted }}>
-            <Text style={[tx.h, { color: (o.inspectionFee || 0) > 0 ? C.goldInk : C.ink }]}>
-              {(o.inspectionFee || 0) > 0 ? `Phí kiểm tra tại nhà: ${formatVND(o.inspectionFee)}` : 'Đơn huỷ không thu phí (0đ)'}
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: (o.inspectionFee || 0) > 0 ? (orderPaid ? C.green : C.gold) : C.muted }}>
+            <Text style={[tx.h, { color: (o.inspectionFee || 0) > 0 ? (orderPaid ? C.greenInk : C.goldInk) : C.ink }]}>
+              {(o.inspectionFee || 0) > 0
+                ? (orderPaid ? `Đã thu phí kiểm tra: ${formatVND(o.inspectionFee)}` : `Phí kiểm tra tại nhà: ${formatVND(o.inspectionFee)}`)
+                : 'Đơn huỷ không thu phí (0đ)'}
             </Text>
             <Text style={{ color: C.ink2, lineHeight: 20 }}>
               {(o.inspectionFee || 0) > 0
-                ? `Khách huỷ sau khi thợ đã tới kiểm tra thiết bị trực tiếp tại nhà. Khách thanh toán ${formatVND(o.inspectionFee)} phí kiểm tra cho thợ.`
+                ? orderPaid
+                  ? `Đã thanh toán phí kiểm tra ${formatVND(o.inspectionFee)}.`
+                  : isQRPayment(o)
+                    ? `Khách huỷ sau khi thợ đã tới kiểm tra tại nhà. Khách chọn chuyển khoản VietQR (${formatVND(o.inspectionFee)}) — không thu tiền mặt.`
+                    : `Khách huỷ sau khi thợ đã tới kiểm tra thiết bị trực tiếp tại nhà. Khách thanh toán ${formatVND(o.inspectionFee)} phí kiểm tra cho thợ.`
                 : 'Chính sách Minh Đức miễn phí 100% kiểm tra tại nhà khi khách từ chối sửa chữa (0đ).'}
             </Text>
+            {(o.inspectionFee || 0) > 0 && mine && !orderPaid && !isQRPayment(o) ? (
+              <Btn
+                title={busyCash ? 'Đang xác nhận…' : `Đã nhận tiền mặt ${formatVND(o.inspectionFee)}`}
+                icon="banknote"
+                small
+                disabled={busyCash}
+                style={{ marginTop: 10 }}
+                onPress={() => u.confirm(
+                  'Xác nhận đã nhận tiền mặt?',
+                  `Bạn xác nhận đã nhận đủ ${formatVND(o.inspectionFee)} phí kiểm tra cho đơn ${o.code}.`,
+                  () => run(K.cash, () => a.confirmCashReceived(o.code)),
+                  'Đã nhận',
+                )}
+              />
+            ) : null}
           </Card>
         ) : null}
       </ScrollView>
@@ -2164,7 +2247,7 @@ export function TechJobScreen({ params }) {
           ) : null}
         </View>
       ) : null}
-      {mine && (o.status === 'diagnosing' || o.status === 'out_of_warranty') && !(o.quote?.isExternalFinalization && o.quote?.revisionRequested) ? (
+      {mine && (o.status === 'diagnosing' || o.status === 'out_of_warranty') ? (
         <View style={{ paddingHorizontal: 16, paddingTop: 8, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line }}>
           <Tap onPress={() => { setReleaseReason(RELEASE_REASONS[0]); setReleaseNote(''); setShowRelease(true); }}>
             <Text style={{ color: C.red, fontWeight: '700', textAlign: 'center', marginBottom: 4 }}>Không thể tiếp tục? Trả việc cho điều phối</Text>
@@ -2174,10 +2257,23 @@ export function TechJobScreen({ params }) {
       {mine && (o.status === 'diagnosing' || o.status === 'out_of_warranty') ? (
         o.quote?.isExternalFinalization && o.quote?.revisionRequested ? (
           <View style={tx.dock}>
+            {getPendingExternalEstimates(o).length === 0 ? (
+              <Btn
+                title={busyQuote ? 'Đang xử lý…' : 'Bỏ phát sinh · Sửa tiếp'}
+                variant="ghost"
+                style={{ flex: 1 }}
+                disabled={busyQuote}
+                onPress={() => run(K.quote, () => a.startRepairWithoutQuote(o.code, {
+                  diagnosis: o.quote?.diagnosis || 'Không phát sinh thêm vật tư',
+                  symptoms: o.quote?.symptoms || '',
+                  recommendation: 'Tiếp tục hoàn thành dịch vụ đã đặt theo đơn gốc',
+                }))}
+              />
+            ) : null}
             <Btn
               title="Nhập lại giá VT ngoài & gửi nghiệm thu"
               icon="receipt-text"
-              style={{ flex: 1 }}
+              style={{ flex: 1.5 }}
               onPress={() => setShowFinalizeExt(true)}
             />
           </View>

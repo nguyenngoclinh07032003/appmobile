@@ -19,7 +19,7 @@ import {
 } from '../../components';
 import {
   pickImage, validateVietnamesePhone, validateContactName, computeQuoteRangeTotals, formatRangeVND,
-  parseSymptomPhotoTitle, sanitizeVnPhoneInput,
+  parseSymptomPhotoTitle, sanitizeVnPhoneInput, matchReceiptsToQuoteLines, isReceiptEvidence,
 } from '../../utils';
 import {
   nextDays, minSelectableMinute, isDayOutOfSlots, clampToDay, parseSlotToMinutes, dayIndexOfKey, dobError,
@@ -39,6 +39,54 @@ const newAttId = () => `a${Date.now().toString(36)}${Math.random().toString(36).
 const FREE_CANCEL_TEXT = FREE_CANCEL_MIN_BEFORE % 60 === 0 ? `${FREE_CANCEL_MIN_BEFORE / 60} tiếng` : `${FREE_CANCEL_MIN_BEFORE} phút`;
 // Một số thông báo (techPolicy) còn ghi cứng số hotline cũ → thay bằng HOTLINE hiện hành.
 const withHotline = (t) => (t ? String(t).replace(/1900\s?6868/g, HOTLINE) : t);
+
+function QuoteLineReceiptThumb({ receiptEv, partName, onPreview, thumbSize = 72, compactLabel = false }) {
+  if (!receiptEv?.uri) return null;
+  return (
+    <Tap
+      style={{ marginTop: 6, alignSelf: 'flex-start' }}
+      scaleTo={0.97}
+      onPress={() => onPreview?.({ uri: receiptEv.uri, title: `Hoá đơn mua ngoài · ${partName}` })}
+    >
+      <Image
+        source={{ uri: receiptEv.uri }}
+        style={{ width: thumbSize, height: thumbSize, borderRadius: thumbSize >= 70 ? 10 : 8, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface }}
+      />
+      <Text style={[ui.meta, compactLabel ? { fontSize: 11, marginTop: 2 } : { fontSize: 11, marginTop: 2, color: C.primary }]}>
+        {compactLabel ? 'Hoá đơn mua ngoài đính kèm' : 'Hoá đơn mua ngoài đính kèm · Chạm để phóng to'}
+      </Text>
+    </Tap>
+  );
+}
+
+function UnmatchedReceiptStrip({ receipts, onPreview, title }) {
+  if (!Array.isArray(receipts) || !receipts.length) return null;
+  return (
+    <View style={{ marginTop: title ? 8 : 6 }}>
+      {title ? (
+        <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.ink2, marginBottom: 6 }}>{title}</Text>
+      ) : null}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+        {receipts.map((rEv, rIdx) => (
+          <Tap
+            key={rEv.id || `unmatched_rcpt_${rIdx}`}
+            style={{ alignItems: 'flex-start' }}
+            scaleTo={0.97}
+            onPress={() => onPreview?.({ uri: rEv.uri, title: rEv.note || 'Hoá đơn / biên lai linh kiện đính kèm' })}
+          >
+            <Image
+              source={{ uri: rEv.uri }}
+              style={{ width: 72, height: 72, borderRadius: 10, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface }}
+            />
+            <Text style={[ui.meta, { fontSize: 11, marginTop: 2, color: C.primary, maxWidth: 96 }]} numberOfLines={1}>
+              {rEv.note || 'Chạm để phóng to'}
+            </Text>
+          </Tap>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 // =========================================================== TÌM KIẾM
 export function SearchScreen() {
@@ -671,7 +719,16 @@ export function OrderScreen({ params }) {
               : bookedValue(o);
           const goodsBase = o.goods || (bookedBase + prodDisc + comboDisc);
           const priorApprovedExtra = Number(o.quote.priorApprovedExtra) || 0;
-          const effectivePriorExtra = o.quote.includesPriorApprovedLines ? 0 : priorApprovedExtra;
+          const effectivePriorExtra = o.quote.effectivePriorExtra ?? (
+            o.quote.includesPriorApprovedLines
+              ? (Number(o.quote.initialServiceDelta) || 0)
+              : priorApprovedExtra
+          );
+          const quoteIsOnSiteLike =
+            isOnSite ||
+            o.quote.quotationType === 'SUPPLEMENTAL' ||
+            Boolean(o.quote.includesPriorApprovedLines) ||
+            !lines.some((l) => l.isOriginal);
           const lateDisc = lateDiscountAmount(o);
           const rangeTotals = computeQuoteRangeTotals(lines, {
             bookedBase,
@@ -681,17 +738,16 @@ export function OrderScreen({ params }) {
             partDisc: partDisc || 0,
             voucherDisc: o.voucherDiscount || 0,
             lateDisc,
-            isOnSite: isOnSite || o.quote.quotationType === 'SUPPLEMENTAL' || Boolean(o.quote.includesPriorApprovedLines),
+            isOnSite: quoteIsOnSiteLike,
           });
           const isSupplementalQuote = o.quote.quotationType === 'SUPPLEMENTAL';
           const hasRange = rangeTotals.hasEstimatedRange;
-          const totalDeduct = (partDisc || 0) + (o.voucherDiscount || 0) + lateDisc;
           const extraMin = isSupplementalQuote
             ? rangeTotals.extraMin
-            : Math.max(rangeTotals.extraMin, Math.max(0, (rangeTotals.totalMin + totalDeduct) - bookedBase));
+            : Math.max(rangeTotals.extraMin, Math.max(0, rangeTotals.grossTotalMin - bookedBase));
           const extraMax = isSupplementalQuote
             ? rangeTotals.extraMax
-            : Math.max(rangeTotals.extraMax, Math.max(0, (rangeTotals.totalMax + totalDeduct) - bookedBase));
+            : Math.max(rangeTotals.extraMax, Math.max(0, rangeTotals.grossTotalMax - bookedBase));
           const finalAfterQuote = rangeTotals.totalMax;
 
           return (
@@ -790,82 +846,87 @@ export function OrderScreen({ params }) {
               ) : null}
 
               {/* Vật tư mua ngoài (giá dao động dự kiến hoặc giá mua thực tế nghiệm thu) */}
-              {customItems.length ? (
-                <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line }}>
-                  <Text style={{ fontSize: 13, fontWeight: '800', color: C.ink, marginBottom: 4 }}>
-                    {isExternalFinalization
-                      ? `Vật tư mua ngoài thực tế (${customItems.length})`
-                      : `Vật tư mua ngoài (${customItems.length})`}
-                  </Text>
-                  {customItems.map((l, i) => {
-                    const displayUnit = l.actualPrice != null ? l.actualPrice : l.price;
-                    const hasOrigRange = l.minPrice != null && l.maxPrice != null && l.maxPrice > 0;
-                    const inOrigRange = hasOrigRange && displayUnit >= l.minPrice && displayUnit <= l.maxPrice;
-                    const receiptEv = l.receiptId
-                      ? (o.evidence || []).find((e) => String(e.dbAttachmentId) === String(l.receiptId))
-                      : null;
+              {(() => {
+                const { lineReceipts, unmatchedReceipts } = matchReceiptsToQuoteLines(customItems, evidence);
+                if (!customItems.length && !unmatchedReceipts.length) return null;
+                return (
+                  <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line }}>
+                    <Text style={{ fontSize: 13, fontWeight: '800', color: C.ink, marginBottom: 4 }}>
+                      {customItems.length
+                        ? (isExternalFinalization
+                          ? `Vật tư mua ngoài thực tế (${customItems.length})`
+                          : `Vật tư mua ngoài (${customItems.length})`)
+                        : `Hoá đơn / biên lai linh kiện đính kèm (${unmatchedReceipts.length})`}
+                    </Text>
+                    {customItems.map((l, i) => {
+                      const displayUnit = l.actualPrice != null ? l.actualPrice : l.price;
+                      const hasOrigRange = l.minPrice != null && l.maxPrice != null && l.maxPrice > 0;
+                      const inOrigRange = hasOrigRange && displayUnit >= l.minPrice && displayUnit <= l.maxPrice;
+                      const receiptEv = lineReceipts.get(i) || null;
 
-                    return (
-                      <View key={`custom_${l.name}_${i}`} style={{ paddingVertical: 6 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <View style={{ flex: 1, paddingRight: 8 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              <Text style={{ color: C.ink, fontWeight: '700', fontSize: 13.5 }} numberOfLines={2}>{l.name}</Text>
+                      return (
+                        <View key={`custom_${l.name}_${i}`} style={{ paddingVertical: 6 }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <View style={{ flex: 1, paddingRight: 8 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                <Text style={{ color: C.ink, fontWeight: '700', fontSize: 13.5 }} numberOfLines={2}>{l.name}</Text>
+                                {l.isEstimatedRange ? (
+                                  <Badge text="Giá dao động" fg={C.goldInk} bg={C.goldSoft} />
+                                ) : l.isFinalizedExternal ? (
+                                  <Badge
+                                    text={hasOrigRange ? (inOrigRange ? 'Đúng dự kiến' : 'Ngoài khoảng dự kiến') : 'Giá chốt cuối'}
+                                    fg={!hasOrigRange || inOrigRange ? C.greenInk : C.goldInk}
+                                    bg={!hasOrigRange || inOrigRange ? C.greenSoft : C.goldSoft}
+                                  />
+                                ) : (
+                                  <Badge text={l.type === 'labor' ? 'Công thêm' : 'Vật tư ngoài'} fg={C.goldInk} bg={C.goldSoft} />
+                                )}
+                              </View>
                               {l.isEstimatedRange ? (
-                                <Badge text="Giá dao động" fg={C.goldInk} bg={C.goldSoft} />
-                              ) : l.isFinalizedExternal ? (
-                                <Badge
-                                  text={hasOrigRange ? (inOrigRange ? 'Đúng dự kiến' : 'Ngoài khoảng dự kiến') : 'Giá chốt cuối'}
-                                  fg={!hasOrigRange || inOrigRange ? C.greenInk : C.goldInk}
-                                  bg={!hasOrigRange || inOrigRange ? C.greenSoft : C.goldSoft}
-                                />
+                                <>
+                                  <Text style={[ui.meta, { fontSize: 12, color: C.goldInk }]}>
+                                    {formatRangeVND(l.minPrice, l.maxPrice)} x{l.qty}
+                                  </Text>
+                                  <Text style={[ui.meta, { fontSize: 11.5, marginTop: 2, lineHeight: 16 }]}>
+                                    Thợ sẽ nhập lại giá mua thực tế kèm hoá đơn khi hoàn thành sửa chữa để bạn nghiệm thu.
+                                  </Text>
+                                </>
                               ) : (
-                                <Badge text={l.type === 'labor' ? 'Công thêm' : 'Vật tư ngoài'} fg={C.goldInk} bg={C.goldSoft} />
+                                <>
+                                  <Text style={[ui.meta, { fontSize: 12 }]}>
+                                    {formatVND(displayUnit)} x{l.qty}
+                                  </Text>
+                                  {l.isFinalizedExternal && hasOrigRange ? (
+                                    <Text style={[ui.meta, { fontSize: 11.5, marginTop: 2 }]}>
+                                      Khoảng giá dự kiến ban đầu: {formatRangeVND(l.minPrice, l.maxPrice)}
+                                    </Text>
+                                  ) : null}
+                                </>
                               )}
                             </View>
-                            {l.isEstimatedRange ? (
-                              <>
-                                <Text style={[ui.meta, { fontSize: 12, color: C.goldInk }]}>
-                                  {formatRangeVND(l.minPrice, l.maxPrice)} x{l.qty}
-                                </Text>
-                                <Text style={[ui.meta, { fontSize: 11.5, marginTop: 2, lineHeight: 16 }]}>
-                                  Thợ sẽ nhập lại giá mua thực tế kèm hoá đơn khi hoàn thành sửa chữa để bạn nghiệm thu.
-                                </Text>
-                              </>
-                            ) : (
-                              <>
-                                <Text style={[ui.meta, { fontSize: 12 }]}>
-                                  {formatVND(displayUnit)} x{l.qty}
-                                </Text>
-                                {l.isFinalizedExternal && hasOrigRange ? (
-                                  <Text style={[ui.meta, { fontSize: 11.5, marginTop: 2 }]}>
-                                    Khoảng giá dự kiến ban đầu: {formatRangeVND(l.minPrice, l.maxPrice)}
-                                  </Text>
-                                ) : null}
-                              </>
-                            )}
+                            <Text style={{ fontWeight: '800', color: l.isEstimatedRange ? C.goldInk : C.ink }}>
+                              {l.isEstimatedRange
+                                ? formatRangeVND(l.minPrice * l.qty, l.maxPrice * l.qty)
+                                : `+${formatVND(displayUnit * l.qty)}`}
+                            </Text>
                           </View>
-                          <Text style={{ fontWeight: '800', color: l.isEstimatedRange ? C.goldInk : C.ink }}>
-                            {l.isEstimatedRange
-                              ? formatRangeVND(l.minPrice * l.qty, l.maxPrice * l.qty)
-                              : `+${formatVND(displayUnit * l.qty)}`}
-                          </Text>
+                          <QuoteLineReceiptThumb
+                            receiptEv={receiptEv}
+                            partName={l.name}
+                            onPreview={setPreviewOrderPhoto}
+                            thumbSize={72}
+                          />
                         </View>
-                        {receiptEv?.uri ? (
-                          <Tap
-                            style={{ marginTop: 6, alignSelf: 'flex-start' }}
-                            scaleTo={0.97}
-                            onPress={() => setPreviewOrderPhoto({ uri: receiptEv.uri, title: `Hoá đơn mua ngoài · ${l.name}` })}
-                          >
-                            <Image source={{ uri: receiptEv.uri }} style={{ width: 72, height: 72, borderRadius: 10, borderWidth: 1, borderColor: C.line }} />
-                            <Text style={[ui.meta, { fontSize: 11, marginTop: 2, color: C.primary }]}>Hoá đơn mua ngoài đính kèm · Chạm để phóng to</Text>
-                          </Tap>
-                        ) : null}
-                      </View>
-                    );
-                  })}
-                </View>
-              ) : null}
+                      );
+                    })}
+                    <UnmatchedReceiptStrip
+                      receipts={unmatchedReceipts}
+                      onPreview={setPreviewOrderPhoto}
+                      title={customItems.length ? `Hoá đơn / biên lai linh kiện đính kèm (${unmatchedReceipts.length})` : ''}
+                    />
+                  </View>
+                );
+              })()}
 
               {/* Tổng kết chi tiết minh bạch */}
               <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line }}>
@@ -1213,42 +1274,48 @@ export function OrderScreen({ params }) {
               ) : null}
 
               {/* Danh sách vật tư mua ngoài (nếu có) */}
-              {customItems.length ? (
-                <View style={{ marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: C.line }}>
-                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.ink, marginBottom: 2 }}>
-                    Vật tư mua ngoài / phát sinh ({customItems.length})
-                  </Text>
-                  {customItems.map((l, i) => {
-                    const receiptEv = l.receiptId
-                      ? (o.evidence || []).find((e) => String(e.dbAttachmentId) === String(l.receiptId))
-                      : null;
-                    return (
-                      <View key={`d_custom_${l.name}_${i}`} style={{ marginTop: 4 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Text style={[ui.meta, { fontSize: 13, color: C.ink2, flex: 1, paddingRight: 6 }]} numberOfLines={2}>
-                            {l.name} x{l.qty}{l.isEstimatedRange ? ' (Giá dao động)' : l.isFinalizedExternal ? ' (Giá chốt cuối)' : ''}
-                          </Text>
-                          <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: l.isEstimatedRange ? C.goldInk : C.ink }]}>
-                            {l.isEstimatedRange
-                              ? formatRangeVND(l.minPrice * l.qty, l.maxPrice * l.qty)
-                              : `+${formatVND((l.actualPrice ?? l.price) * l.qty)}`}
-                          </Text>
+              {(() => {
+                const { lineReceipts, unmatchedReceipts } = matchReceiptsToQuoteLines(customItems, evidence);
+                if (!customItems.length && !unmatchedReceipts.length) return null;
+                return (
+                  <View style={{ marginTop: 8, paddingTop: 6, borderTopWidth: 1, borderTopColor: C.line }}>
+                    <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.ink, marginBottom: 2 }}>
+                      {customItems.length
+                        ? `Vật tư mua ngoài / phát sinh (${customItems.length})`
+                        : `Hoá đơn / biên lai linh kiện đính kèm (${unmatchedReceipts.length})`}
+                    </Text>
+                    {customItems.map((l, i) => {
+                      const receiptEv = lineReceipts.get(i) || null;
+                      return (
+                        <View key={`d_custom_${l.name}_${i}`} style={{ marginTop: 4 }}>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Text style={[ui.meta, { fontSize: 13, color: C.ink2, flex: 1, paddingRight: 6 }]} numberOfLines={2}>
+                              {l.name} x{l.qty}{l.isEstimatedRange ? ' (Giá dao động)' : l.isFinalizedExternal ? ' (Giá chốt cuối)' : ''}
+                            </Text>
+                            <Text style={[ui.meta, { fontSize: 13, fontWeight: '700', color: l.isEstimatedRange ? C.goldInk : C.ink }]}>
+                              {l.isEstimatedRange
+                                ? formatRangeVND(l.minPrice * l.qty, l.maxPrice * l.qty)
+                                : `+${formatVND((l.actualPrice ?? l.price) * l.qty)}`}
+                            </Text>
+                          </View>
+                          <QuoteLineReceiptThumb
+                            receiptEv={receiptEv}
+                            partName={l.name}
+                            onPreview={setPreviewOrderPhoto}
+                            thumbSize={64}
+                            compactLabel
+                          />
                         </View>
-                        {receiptEv?.uri ? (
-                          <Tap
-                            style={{ marginTop: 5, alignSelf: 'flex-start' }}
-                            scaleTo={0.97}
-                            onPress={() => setPreviewOrderPhoto({ uri: receiptEv.uri, title: `Hoá đơn mua ngoài · ${l.name}` })}
-                          >
-                            <Image source={{ uri: receiptEv.uri }} style={{ width: 64, height: 64, borderRadius: 8, borderWidth: 1, borderColor: C.line }} />
-                            <Text style={[ui.meta, { fontSize: 11, marginTop: 2 }]}>Hoá đơn mua ngoài đính kèm</Text>
-                          </Tap>
-                        ) : null}
-                      </View>
-                    );
-                  })}
-                </View>
-              ) : null}
+                      );
+                    })}
+                    <UnmatchedReceiptStrip
+                      receipts={unmatchedReceipts}
+                      onPreview={setPreviewOrderPhoto}
+                      title={customItems.length ? `Hoá đơn / biên lai linh kiện đính kèm (${unmatchedReceipts.length})` : ''}
+                    />
+                  </View>
+                );
+              })()}
 
               {o.quote?.rejectReason ? (
                 <Text style={[ui.meta, { color: o.quote?.revisionRequested ? C.orange : C.red, fontWeight: '700', marginTop: 8 }]}>
@@ -1282,6 +1349,27 @@ export function OrderScreen({ params }) {
             ))}
           </Card>
         ) : null}
+        {(() => {
+          const pendingQuoteShown = Boolean(o.status === 'quoted' && o.quote);
+          const quoteRejected = o.quote?.status === 'REJECTED';
+          const activeLines = quoteRejected
+            ? (o.quote?.lines || []).filter((l) => l.isOriginal || l.isPriorApproved)
+            : (o.quote?.lines || []);
+          const hasPostDiagCard = o.status !== 'quoted' && Boolean(
+            (o.quote && (!quoteRejected || activeLines.length > 0)) ||
+            o.diagnosisReport ||
+            (o.attachments || []).length > 0 ||
+            evidence.some((e) => e.stage === 'diagnosis'),
+          );
+          const receiptPhotos = evidence.filter(isReceiptEvidence);
+          if (pendingQuoteShown || hasPostDiagCard || !receiptPhotos.length) return null;
+          return (
+            <Card style={{ marginTop: 12 }}>
+              <Text style={mx.tlTitle}>Hoá đơn / biên lai linh kiện đính kèm ({receiptPhotos.length})</Text>
+              <UnmatchedReceiptStrip receipts={receiptPhotos} onPreview={setPreviewOrderPhoto} />
+            </Card>
+          );
+        })()}
         {(() => {
           const unlinkedPhotos = evidence.filter(
             (e) =>
@@ -1384,7 +1472,11 @@ export function OrderScreen({ params }) {
                   !o.quote.rejectReason &&
                   !o.quote.revisionRequested &&
                   o.quote.status !== 'REJECTED';
+                const isFinalizingExact = Boolean(
+                  hasActiveQuote && o.quote.isExternalFinalization && !o.quote.hasEstimatedRange,
+                );
                 const hasApprovedEst = Boolean(
+                  !isFinalizingExact &&
                   o.quote?.approvedHasEstimatedRange &&
                   (getPendingExternalEstimates(o).length > 0 || o.quote?.revisionRequested),
                 );
@@ -1397,15 +1489,18 @@ export function OrderScreen({ params }) {
                 const estExtraMax = hasActiveQuote && o.quote.hasEstimatedRange
                   ? (Number(o.quote.extraMax) || 0)
                   : Math.max(estExtraMin, (Number(o.quote?.approvedTotalMax) || 0) - bookedValue(o));
+                const orderDisc = (Number(o.productDiscount) || 0) + (Number(o.comboDiscount) || 0);
                 const billExtra =
                   (Number(o.bill?.supplementalTotal) || 0) +
                   (o.bill?.quotationTotal != null
-                    ? Math.max(0, Number(o.bill.quotationTotal) - (Number(o.bill?.bookedAmount) || bookedValue(o)))
+                    ? Math.max(0, Math.max(0, Number(o.bill.quotationTotal) - orderDisc) - (Number(o.bill?.bookedAmount) || bookedValue(o)))
                     : 0);
                 const quoteExtra = hasActiveQuote
                   ? (o.quote.approved && o.bill && (o.bill.quotationTotal != null || o.bill.supplementalTotal > 0)
                       ? billExtra
-                      : (Number(o.quote.extraAmount) || Math.max(0, (Number(o.quote.total) || 0) - bookedValue(o))))
+                      : (o.quote.quotationType === 'SUPPLEMENTAL'
+                          ? (Number(o.quote.extraAmount) || Math.max(0, (Number(o.quote.total) || 0) - bookedValue(o)))
+                          : Math.max(Number(o.quote.extraAmount) || 0, Math.max(0, (Number(o.quote.total) || 0) - bookedValue(o)))))
                   : billExtra;
                 return (
                   <>
@@ -1457,7 +1552,8 @@ export function OrderScreen({ params }) {
                   !o.quote.revisionRequested &&
                   o.quote.status !== 'REJECTED' &&
                   o.quote.hasEstimatedRange) ||
-                  (o.quote?.approvedHasEstimatedRange &&
+                  (!(o.quote && !o.quote.rejectReason && !o.quote.revisionRequested && o.quote.status !== 'REJECTED' && o.quote.isExternalFinalization && !o.quote.hasEstimatedRange) &&
+                    o.quote?.approvedHasEstimatedRange &&
                     (getPendingExternalEstimates(o).length > 0 || o.quote?.revisionRequested)))
                   ? 'Tổng thanh toán (dự kiến)'
                   : 'Tổng thanh toán'}
@@ -1679,35 +1775,44 @@ export function OrderScreen({ params }) {
         const isRejectOnSite = Boolean(o.arrivedAt || o.checkIn || o.history?.some((h) => h.status === 'diagnosing'));
         const isRejectSupplemental = o.quote?.quotationType === 'SUPPLEMENTAL';
         const isExtFin = Boolean(o.quote?.isExternalFinalization);
+        const isStrictFinalization = Boolean(
+          isExtFin && (
+            getPendingExternalEstimates(o).length > 0 ||
+            (o.quote?.lines || []).some(
+              (l) => l.isFinalizedExternal && !l.isPriorApproved && (Number(l.priorDeposit) > 0 || (l.maxPrice != null && l.maxPrice > 0)),
+            )
+          ),
+        );
+        const useFinalizeReasons = isStrictFinalization || (isExtFin && rejectMode === 'revise');
         return (
           <Sheet
             visible={showReject}
             onClose={() => { if (!quoteBusy) setShowReject(false); }}
-            title={isExtFin ? 'Yêu cầu kiểm tra lại giá vật tư' : 'Phản hồi báo giá'}
+            title={isStrictFinalization ? 'Yêu cầu kiểm tra lại giá vật tư' : (isExtFin ? 'Phản hồi hoá đơn phát sinh' : 'Phản hồi báo giá')}
             footer={(
               <Btn
                 title={
                   quoteBusy
                     ? 'Đang gửi…'
-                    : isExtFin
+                    : isStrictFinalization
                       ? 'Gửi yêu cầu nhập lại giá'
                       : rejectMode === 'revise'
-                        ? 'Gửi yêu cầu báo giá lại'
+                        ? (isExtFin ? 'Gửi yêu cầu chỉnh lại giá' : 'Gửi yêu cầu báo giá lại')
                         : isRejectSupplemental
                           ? 'Xác nhận từ chối phát sinh'
                           : 'Xác nhận từ chối & huỷ đơn'
                 }
-                variant={isExtFin || rejectMode === 'revise' ? 'primary' : 'danger'}
+                variant={isStrictFinalization || rejectMode === 'revise' ? 'primary' : 'danger'}
                 disabled={quoteBusy}
                 onPress={async () => {
-                  const reasonList = isExtFin ? FINALIZE_REVISION_REASONS : REJECT_REASONS;
+                  const reasonList = useFinalizeReasons ? FINALIZE_REVISION_REASONS : REJECT_REASONS;
                   const chosen = reasonList.includes(rejectReason) ? rejectReason : reasonList[0];
                   const finalWhy = chosen === 'Lý do khác' ? rejectCustom.trim() : chosen;
                   if (chosen === 'Lý do khác' && finalWhy.length < 3) {
                     u.alert('Thiếu lý do', 'Vui lòng nhập ngắn gọn lý do phản hồi (tối thiểu 3 ký tự).', '✏️');
                     return;
                   }
-                  const sendRevise = isExtFin || rejectMode === 'revise';
+                  const sendRevise = isStrictFinalization || rejectMode === 'revise';
                   const ok = await respondQuote(sendRevise ? 'revise' : false, finalWhy);
                   if (ok) {
                     setShowReject(false);
@@ -1717,7 +1822,7 @@ export function OrderScreen({ params }) {
               />
             )}
           >
-            {!isExtFin ? (
+            {!isStrictFinalization ? (
               <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
                 <Tap
                   onPress={() => setRejectMode('revise')}
@@ -1760,18 +1865,20 @@ export function OrderScreen({ params }) {
               </View>
             ) : null}
             <Text style={[ui.meta, { fontSize: 13, marginBottom: 8 }]}>
-              {isExtFin
+              {isStrictFinalization
                 ? 'Thợ đã hoàn thành sửa chữa và sẽ kiểm tra lại giá / hoá đơn mua ngoài rồi gửi lại để bạn nghiệm thu.'
                 : rejectMode === 'revise'
-                  ? 'Thợ sẽ nhận được yêu cầu và điều chỉnh lại phương án / chi phí cho bạn.'
+                  ? (isExtFin
+                      ? 'Thợ sẽ kiểm tra lại giá / hoá đơn vật tư phát sinh và gửi lại cho bạn.'
+                      : 'Thợ sẽ nhận được yêu cầu và điều chỉnh lại phương án / chi phí cho bạn.')
                   : isRejectSupplemental
                     ? 'Chỉ từ chối phần phát sinh mới, đơn hàng vẫn tiếp tục thực hiện các hạng mục đã đặt/đã duyệt.'
                     : isRejectOnSite
                       ? 'Huỷ sau khi thợ đã kiểm tra tại nhà có thể áp dụng phí kiểm tra theo chính sách hiện hành.'
                       : 'Đơn hàng sẽ được huỷ miễn phí (0đ) trước khi thợ xuất phát.'}
             </Text>
-            {(isExtFin ? FINALIZE_REVISION_REASONS : REJECT_REASONS).map((r) => {
-              const reasonList = isExtFin ? FINALIZE_REVISION_REASONS : REJECT_REASONS;
+            {(useFinalizeReasons ? FINALIZE_REVISION_REASONS : REJECT_REASONS).map((r) => {
+              const reasonList = useFinalizeReasons ? FINALIZE_REVISION_REASONS : REJECT_REASONS;
               const active = (reasonList.includes(rejectReason) ? rejectReason : reasonList[0]) === r;
               return (
                 <Tap key={r} style={mx.option} onPress={() => setRejectReason(r)}>
@@ -2403,7 +2510,7 @@ export function RewardsScreen({ params }) {
               </View>
               <Text style={{ color: C.ink, fontWeight: '700', marginTop: 6, lineHeight: 19 }}>{activeTier.summary}</Text>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                <Badge text={`Bảo hành ${activeTier.warrantyDays || BASE_WARRANTY_DAYS} ngày`} fg={C.primary} bg={C.primarySoft} />
+                <Badge text="Bảo hành điện tử theo từng dịch vụ" fg={C.primary} bg={C.primarySoft} />
                 <Badge text={`Tích luỹ của bạn: ${lp}/${activeTier.min || 0} điểm`} fg={C.ink2} bg={C.surface} />
               </View>
               {activeTier.min > 0 ? (

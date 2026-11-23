@@ -201,20 +201,22 @@ test('attendance: parseShiftTimeToMinutes & classifyJobToWorkShift xếp đúng 
   assert.equal(parseShiftTimeToMinutes('2026-11-22T01:00:00.000Z'), 8 * 60);
   assert.equal(parseShiftTimeToMinutes(''), null);
 
-  // Ca 1 (06:00 - <12:00)
+  // Ca 1 (08:00 - <12:00)
   assert.equal(classifyJobToWorkShift('08h00 - 10h00'), 'ca1');
   assert.equal(classifyJobToWorkShift('08h00 - 12h00'), 'ca1');
   assert.equal(classifyJobToWorkShift('10h00 - 12h00'), 'ca1');
   assert.equal(classifyJobToWorkShift('Ca 1'), 'ca1');
 
-  // Ca 2 (12:00 - 17:30)
-  assert.equal(classifyJobToWorkShift('12h00 - 14h00'), 'ca2');
+  // Ca 2 (13:30 - 17:30)
   assert.equal(classifyJobToWorkShift('13h30 - 17h30'), 'ca2');
   assert.equal(classifyJobToWorkShift('14h00 - 16h00'), 'ca2');
   assert.equal(classifyJobToWorkShift('16h00 - 18h00'), 'ca2');
   assert.equal(classifyJobToWorkShift('Ca 2'), 'ca2');
 
-  // Ngoài khung 2 ca (<06:00 hoặc >17:30)
+  // Ngoài khung 2 ca (<08:00, nghỉ trưa 12:00-13:29, >17:30)
+  assert.equal(classifyJobToWorkShift('07h00 - 09h00'), null);
+  assert.equal(classifyJobToWorkShift('12h00 - 14h00'), null);
+  assert.equal(classifyJobToWorkShift('12h30 - 14h30'), null);
   assert.equal(classifyJobToWorkShift('18h00 - 20h00'), null);
   assert.equal(classifyJobToWorkShift('05h00 - 06h00'), null);
   assert.equal(classifyJobToWorkShift(null), null);
