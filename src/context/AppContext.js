@@ -214,6 +214,38 @@ export const tierPartDiscountAmount = (o) =>
   Number(o?.bill?.tierPartDiscount) || 0;
 /** Giảm do thợ đến muộn: lấy từ hoá đơn server (bill.late_discount_amount). */
 export const lateDiscountAmount = (o) => Number(o?.bill?.lateDiscount) || 0;
+// Chi phí vật tư & phát sinh thực tế trên hoá đơn: suy từ amountDue của server để khớp cân bằng hoá đơn,
+// tránh cộng trùng supplemental_total khi quotation_total đã bao gồm phát sinh.
+export const billExtraAmount = (o) => {
+  if (!o || o.kind === "warranty" || o.kind === "followup" || o.status === "cancelled") {
+    return 0;
+  }
+  const booked = o.goods > 0 ? bookedValue(o) : (Number(o.bill?.bookedAmount) || 0);
+  if (o.bill) {
+    const deduct =
+      tierPartDiscountAmount(o) +
+      (Number(o.voucherDiscount) || 0) +
+      lateDiscountAmount(o);
+    const due = o.bill.amountDue != null ? Math.max(0, Number(o.bill.amountDue) || 0) : null;
+    if (due != null && due > 0) {
+      return Math.max(0, Math.round(due + deduct - booked));
+    }
+    if (o.quote?.approvedExtrasTotal != null) {
+      return Math.max(0, Math.round(Number(o.quote.approvedExtrasTotal) || 0));
+    }
+    const supp = Math.max(0, Number(o.bill.supplementalTotal) || 0);
+    const orderDisc = (Number(o.productDiscount) || 0) + (Number(o.comboDiscount) || 0);
+    const bookedRef = Number(o.bill.bookedAmount) > 0 ? Number(o.bill.bookedAmount) : booked;
+    const qDiff = o.bill.quotationTotal != null
+      ? Math.max(0, Math.max(0, Number(o.bill.quotationTotal) - orderDisc) - bookedRef)
+      : 0;
+    return Math.max(supp, qDiff);
+  }
+  if (o.quote?.approved) {
+    return Math.max(0, Math.round(Number(o.quote.approvedExtrasTotal ?? o.quote.extraAmount) || 0));
+  }
+  return Math.max(0, Math.round(Number(o.quote?.priorApprovedExtra) || 0));
+};
 // Số tiền khách phải trả = bill.amount_due của server (đã gồm báo giá, phát sinh, giảm hạng, voucher, đến muộn, phí kiểm tra).
 // Chưa tải được hoá đơn thì tạm dùng tổng server trả cùng đơn (estimated_total / tổng báo giá đã duyệt).
 const INACTIVE_QUOTE_STATUSES = ["REJECTED", "EXPIRED", "CANCELLED", "SUPERSEDED"];

@@ -379,4 +379,115 @@ describe('qaRoleplayFixes: kiểm thử toàn bộ lỗi đồng bộ Khách ↔
     const nestedRes = matchReceiptsToQuoteLines([mappedNested.quote.lines[1]], mappedNested.evidence);
     assert.equal(nestedRes.lineReceipts.get(0)?.uri, 'https://cdn.example.com/nested-att.jpg');
   });
+
+  test('Fix #22: billExtraAmount không cộng trùng supplemental_total khi quotation_total đã bao gồm phát sinh (REQ-8922643662)', () => {
+    const { billExtraAmount } = ctx;
+
+    // 1. Kịch bản đúng với REQ-8922643662: đặt 5k, phát sinh 100k -> quotation_total=105k, supplemental_total=100k, amount_due=105k
+    const reqExact = baseReq({
+      request_code: 'REQ-8922643662',
+      request_status: 'COMPLETED',
+      goods_amount: 5000,
+      items: [{ request_service_id: 2001, service_id: 102, service_name: '[TEST] Thử thanh toán 5.000đ', selected_price: 5000, quantity: 1 }],
+      quotations: [
+        {
+          quotation_id: 1001,
+          quotation_type: 'INITIAL',
+          quotation_status: 'APPROVED',
+          total_amount: 5000,
+          sent_at: '2026-11-23T11:20:00Z',
+          items: [
+            { quotation_item_id: 2011, item_type: 'SERVICE', request_service_id: 2001, description_snapshot: '[TEST] Thử thanh toán 5.000đ', quantity: 1, unit_price: 5000 },
+          ],
+        },
+        {
+          quotation_id: 1002,
+          quotation_type: 'SUPPLEMENTAL',
+          quotation_status: 'APPROVED',
+          total_amount: 100000,
+          sent_at: '2026-11-23T11:25:00Z',
+          items: [
+            { quotation_item_id: 2012, item_type: 'MATERIAL', is_external_purchase: true, description_snapshot: formatFinalizedExternalDesc({ name: 'bo mạch chủ' }), quantity: 1, unit_price: 100000 },
+          ],
+        },
+      ],
+      bill: {
+        bill: {
+          booked_amount: 5000,
+          quotation_total: 105000,
+          supplemental_total: 100000,
+          amount_due: 105000,
+        },
+        paid_amount: 105000,
+        remaining_amount: 0,
+        payment_status: 'PAID',
+        payment_method: 'CASH',
+      },
+    });
+    const custExact = mapBackendCustomerRequestToOrder(reqExact);
+    const techExact = mapBackendTechJobToOrder({
+      assignment_id: 101,
+      assignment_status: 'ENDED',
+      request: reqExact,
+      services: reqExact.items,
+      quotations: reqExact.quotations,
+      bill: reqExact.bill,
+    });
+    assert.equal(billExtraAmount(custExact), 100000);
+    assert.equal(billExtraAmount(techExact), 100000);
+
+    // 2. Kịch bản backend tách riêng quotation_total (620k gồm giảm giá 80k + 120k vật tư) và supplemental_total (250k), voucher 20k -> 120k + 250k = 370k
+    const splitBillOrder = {
+      goods: 500000,
+      productDiscount: 50000,
+      comboDiscount: 30000,
+      voucherDiscount: 20000,
+      bill: {
+        bookedAmount: 420000,
+        quotationTotal: 620000,
+        supplementalTotal: 250000,
+        amountDue: 770000,
+        tierPartDiscount: 0,
+        lateDiscount: 0,
+      },
+    };
+    assert.equal(billExtraAmount(splitBillOrder), 370000);
+
+    // 3. Kịch bản có đủ giảm hạng thành viên (5k), voucher (10k) và bồi thường trễ (20k) -> amountDue = 265k -> phát sinh = 100k
+    const multiDeductOrder = {
+      goods: 200000,
+      productDiscount: 0,
+      comboDiscount: 0,
+      voucherDiscount: 10000,
+      bill: {
+        bookedAmount: 200000,
+        quotationTotal: 300000,
+        supplementalTotal: 100000,
+        amountDue: 265000,
+        tierPartDiscount: 5000,
+        lateDiscount: 20000,
+      },
+    };
+    assert.equal(billExtraAmount(multiDeductOrder), 100000);
+
+    // 4. Kịch bản voucher 100% kéo amountDue về 0đ -> phát sinh vẫn giữ 50k (không cộng đúp 100k, không đội voucher)
+    const zeroDueOrder = {
+      goods: 100000,
+      productDiscount: 0,
+      comboDiscount: 0,
+      voucherDiscount: 200000,
+      bill: {
+        bookedAmount: 100000,
+        quotationTotal: 150000,
+        supplementalTotal: 50000,
+        amountDue: 0,
+      },
+    };
+    assert.equal(billExtraAmount(zeroDueOrder), 50000);
+
+    // 5. Đơn bảo hành, đã huỷ và đơn không phát sinh -> luôn 0đ
+    assert.equal(billExtraAmount({ kind: 'warranty', goods: 5000, bill: { amountDue: 105000 } }), 0);
+    assert.equal(billExtraAmount({ status: 'cancelled', inspectionFee: 100000, bill: { amountDue: 100000 } }), 0);
+    assert.equal(billExtraAmount({ goods: 100000, bill: { bookedAmount: 100000, quotationTotal: 100000, supplementalTotal: 0, amountDue: 100000 } }), 0);
+  });
 });

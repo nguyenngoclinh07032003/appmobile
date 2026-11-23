@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Image } from 'react-native';
 import { C, R } from '../../../theme';
 import { formatVND, SAFETY_CHECKLIST_ITEMS } from '../../../constants/data';
-import { useApp, orderTotal, amountRemaining, cashToCollect, fmtDateTime, isQRPayment, bookedValue, tierPartDiscountAmount, lateDiscountAmount, isPaid, getPendingExternalEstimates } from '../../../context';
+import { useApp, orderTotal, amountRemaining, cashToCollect, fmtDateTime, isQRPayment, bookedValue, billExtraAmount, tierPartDiscountAmount, lateDiscountAmount, isPaid, getPendingExternalEstimates } from '../../../context';
 import { Btn, Field, Sheet, Checkbox, Tap, Badge, ui, AppIcon } from '../../../components';
 import { pickCamera, pickImage } from '../../../utils/media';
 import { toVietnamese } from '../../../utils/viText';
@@ -74,15 +74,7 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
   const finalTotal = orderTotal(o);
   const paidAmount = Number(o.bill?.paidAmount) || 0;
   const remainDue = amountRemaining(o);
-  const orderDisc = (Number(o.productDiscount) || 0) + (Number(o.comboDiscount) || 0);
-  const extraAmount = o.bill
-    ? (Number(o.bill.supplementalTotal) || 0) +
-      (o.bill.quotationTotal != null
-        ? Math.max(0, Math.max(0, Number(o.bill.quotationTotal) - orderDisc) - (Number(o.bill.bookedAmount) || bookedBase))
-        : 0)
-    : o.quote?.approved
-      ? Math.max(0, Number(o.quote.extraAmount) || 0)
-      : Math.max(0, Number(o.quote?.priorApprovedExtra) || 0);
+  const extraAmount = billExtraAmount(o);
   const deductAmount = tierPartDiscountAmount(o) + (Number(o.voucherDiscount) || 0) + lateDiscountAmount(o);
 
   const handleAddCompletionPhoto = async (source = 'camera') => {

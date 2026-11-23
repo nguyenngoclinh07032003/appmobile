@@ -7,7 +7,7 @@ import {
 } from '../../constants/data';
 import {
   useApp, fmtDate, fmtDateTime, timeAgo, warrantyInfo, isActiveOrder, orderTotal, formatOrderTotal, isPaid, amountRemaining,
-  customerStatusMeta, isOfferExpired, bookedValue, latestNotifPerOrder,
+  customerStatusMeta, isOfferExpired, bookedValue, billExtraAmount, latestNotifPerOrder,
   lateDiscountAmount, tierPartDiscountAmount, normalizeTechRep, getCancellationWindowStatus, isQRPayment,
   getValidVouchers, getPendingExternalEstimates,
 } from '../../context';
@@ -1489,12 +1489,7 @@ export function OrderScreen({ params }) {
                 const estExtraMax = hasActiveQuote && o.quote.hasEstimatedRange
                   ? (Number(o.quote.extraMax) || 0)
                   : Math.max(estExtraMin, (Number(o.quote?.approvedTotalMax) || 0) - bookedValue(o));
-                const orderDisc = (Number(o.productDiscount) || 0) + (Number(o.comboDiscount) || 0);
-                const billExtra =
-                  (Number(o.bill?.supplementalTotal) || 0) +
-                  (o.bill?.quotationTotal != null
-                    ? Math.max(0, Math.max(0, Number(o.bill.quotationTotal) - orderDisc) - (Number(o.bill?.bookedAmount) || bookedValue(o)))
-                    : 0);
+                const billExtra = billExtraAmount(o);
                 const quoteExtra = hasActiveQuote
                   ? (o.quote.approved && o.bill && (o.bill.quotationTotal != null || o.bill.supplementalTotal > 0)
                       ? billExtra
