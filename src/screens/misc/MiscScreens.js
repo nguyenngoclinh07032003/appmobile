@@ -929,53 +929,85 @@ export function OrderScreen({ params }) {
               })()}
 
               {/* Tổng kết chi tiết minh bạch */}
-              <View style={{ marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.line }}>
-                {(prodDisc > 0 || comboDisc > 0) ? (
-                  <Bill l="Tổng tiền dịch vụ" v={formatVND(goodsBase)} />
-                ) : null}
-                {prodDisc > 0 ? (
-                  <Bill l="Giảm giá dịch vụ" v={`-${formatVND(prodDisc)}`} green />
-                ) : null}
-                {comboDisc > 0 ? (
-                  <Bill l={`Ưu đãi ${o.comboLabel || 'gộp nhiều máy (-5%)'}`} v={`-${formatVND(comboDisc)}`} green />
-                ) : null}
-                <Bill l="Giá dịch vụ đã đặt" v={formatVND(bookedBase)} />
-                {effectivePriorExtra > 0 ? (
-                  <Bill l="Đã duyệt ở bước trước" v={`+${formatVND(effectivePriorExtra)}`} />
-                ) : null}
-                {rangeTotals.warehouseExtra > 0 ? (
-                  <Bill l={`Vật tư / linh kiện kho (${partItems.length})`} v={`+${formatVND(rangeTotals.warehouseExtra)}`} />
-                ) : null}
-                {rangeTotals.customExtraMax > 0 ? (
-                  <Bill
-                    l={isExternalFinalization ? 'Vật tư mua ngoài thực tế' : 'Chi phí / vật tư phát sinh'}
-                    v={formatRangeVND(rangeTotals.customExtraMin, rangeTotals.customExtraMax, { prefix: '+' })}
-                  />
-                ) : null}
-                {extraMax > 0 ? (
-                  <Bill
-                    l={hasRange ? 'Tổng phát sinh dự kiến' : 'Tổng phát sinh thêm'}
-                    v={formatRangeVND(extraMin, extraMax, { prefix: '+' })}
-                  />
-                ) : (
-                  <Bill l="Chi phí phát sinh" v="0 đ (Đúng giá gốc, không phát sinh)" green />
-                )}
-                {partDisc ? <Bill l={`Ưu đãi hạng thành viên (−${o.bill?.tierPartDiscountPercent || 0}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
-                {o.voucherDiscount ? <Bill l={`Mã giảm giá ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
-                {lateDisc > 0 ? <Bill l="Bồi thường thợ đến muộn" v={`−${formatVND(lateDisc)}`} green /> : null}
-                <View style={mx.totalRow}>
-                  <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>
-                    {isExternalFinalization
-                      ? 'Tổng thanh toán cuối cùng'
-                      : hasRange
-                        ? 'Tổng thanh toán dự kiến'
-                        : 'Tổng thanh toán sau báo giá'}
-                  </Text>
-                  <Text style={[ui.price, { fontSize: hasRange && rangeTotals.totalMin !== rangeTotals.totalMax ? 17 : 20 }]}>
-                    {hasRange ? formatRangeVND(rangeTotals.totalMin, rangeTotals.totalMax) : formatVND(finalAfterQuote)}
-                  </Text>
-                </View>
-              </View>
+              {(() => {
+                const custExtraSources =
+                  (effectivePriorExtra > 0 ? 1 : 0) +
+                  (rangeTotals.warehouseExtra > 0 ? 1 : 0) +
+                  (rangeTotals.customExtraMax > 0 ? 1 : 0);
+                const custSameAsSingleExtra = custExtraSources === 1 && (
+                  (rangeTotals.customExtraMax > 0 && extraMin === rangeTotals.customExtraMin && extraMax === rangeTotals.customExtraMax) ||
+                  (rangeTotals.warehouseExtra > 0 && extraMin === rangeTotals.warehouseExtra && extraMax === rangeTotals.warehouseExtra) ||
+                  (effectivePriorExtra > 0 && extraMin === effectivePriorExtra && extraMax === effectivePriorExtra)
+                );
+                const grandLabelBase = isExternalFinalization
+                  ? 'Tổng thanh toán cuối cùng'
+                  : 'Tổng thanh toán';
+                return (
+                  <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line }}>
+                    {(prodDisc > 0 || comboDisc > 0) ? (
+                      <Bill l="Tổng tiền dịch vụ" v={formatVND(goodsBase)} />
+                    ) : null}
+                    {prodDisc > 0 ? (
+                      <Bill l="Giảm giá dịch vụ" v={`-${formatVND(prodDisc)}`} green />
+                    ) : null}
+                    {comboDisc > 0 ? (
+                      <Bill l={`Ưu đãi ${o.comboLabel || 'gộp nhiều máy (-5%)'}`} v={`-${formatVND(comboDisc)}`} green />
+                    ) : null}
+                    <Bill l="Giá dịch vụ đã đặt" v={formatVND(bookedBase)} />
+                    {effectivePriorExtra > 0 ? (
+                      <Bill l="Đã duyệt ở bước trước" v={`+${formatVND(effectivePriorExtra)}`} />
+                    ) : null}
+                    {rangeTotals.warehouseExtra > 0 ? (
+                      <Bill l={`Vật tư / linh kiện kho (${partItems.length})`} v={`+${formatVND(rangeTotals.warehouseExtra)}`} />
+                    ) : null}
+                    {rangeTotals.customExtraMax > 0 ? (
+                      <Bill
+                        l={isExternalFinalization ? 'Vật tư mua ngoài thực tế' : 'Vật tư mua ngoài'}
+                        v={formatRangeVND(rangeTotals.customExtraMin, rangeTotals.customExtraMax, { prefix: '+' })}
+                        orange
+                      />
+                    ) : null}
+                    {!custSameAsSingleExtra ? (
+                      extraMax > 0 ? (
+                        <Bill
+                          l={hasRange ? 'Tổng phát sinh dự kiến' : 'Tổng phát sinh thêm'}
+                          v={formatRangeVND(extraMin, extraMax, { prefix: '+' })}
+                          orange
+                        />
+                      ) : (
+                        <Bill l="Chi phí phát sinh" v="0 đ (Đúng giá gốc)" green />
+                      )
+                    ) : null}
+                    {partDisc ? <Bill l={`Ưu đãi hạng thành viên (−${o.bill?.tierPartDiscountPercent || 0}% vật tư)`} v={`−${formatVND(partDisc)}`} green /> : null}
+                    {o.voucherDiscount ? <Bill l={`Mã giảm giá ${o.voucher?.code}`} v={`-${formatVND(o.voucherDiscount)}`} green /> : null}
+                    {lateDisc > 0 ? <Bill l="Bồi thường thợ đến muộn" v={`−${formatVND(lateDisc)}`} green /> : null}
+                    {hasRange && rangeTotals.totalMin !== rangeTotals.totalMax ? (
+                      <View style={[mx.totalRow, { flexDirection: 'column', alignItems: 'stretch', gap: 4 }]}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                          <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink, flex: 1 }}>{grandLabelBase}</Text>
+                          <Badge text="Dự kiến" fg={C.goldInk} bg={C.goldSoft} />
+                        </View>
+                        <Text
+                          style={[ui.price, { fontSize: 19, textAlign: 'right', color: C.navy, fontVariant: ['tabular-nums'] }]}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                        >
+                          {formatRangeVND(rangeTotals.totalMin, rangeTotals.totalMax)}
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={mx.totalRow}>
+                        <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink, flex: 1 }}>
+                          {isExternalFinalization ? 'Tổng thanh toán cuối cùng' : 'Tổng thanh toán sau báo giá'}
+                        </Text>
+                        <Text style={[ui.price, { fontSize: 19, flexShrink: 0, textAlign: 'right', color: C.navy, fontVariant: ['tabular-nums'] }]}>
+                          {formatVND(finalAfterQuote)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })()}
 
               <Tap onPress={() => setShowMatPrice(true)} style={{ marginTop: 10 }}>
                 <Text style={ui.link}>Đối chiếu bảng giá vật tư niêm yết Minh Đức ›</Text>
@@ -1539,38 +1571,47 @@ export function OrderScreen({ params }) {
               }
               green={isPaid(o) || (o.status === 'cancelled' && !(o.inspectionFee > 0))}
             />
-            <View style={mx.totalRow}>
-              <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink }}>
-                {o.status !== 'cancelled' &&
-                ((o.quote &&
-                  !o.quote.rejectReason &&
-                  !o.quote.revisionRequested &&
-                  o.quote.status !== 'REJECTED' &&
-                  o.quote.hasEstimatedRange) ||
-                  (!(o.quote && !o.quote.rejectReason && !o.quote.revisionRequested && o.quote.status !== 'REJECTED' && o.quote.isExternalFinalization && !o.quote.hasEstimatedRange) &&
-                    o.quote?.approvedHasEstimatedRange &&
-                    (getPendingExternalEstimates(o).length > 0 || o.quote?.revisionRequested)))
-                  ? 'Tổng thanh toán (dự kiến)'
-                  : 'Tổng thanh toán'}
-              </Text>
-              <Text style={[ui.price, { fontSize: 20 }]}>
-                {o.status === 'cancelled' ? formatVND(o.inspectionFee || 0) : formatOrderTotal(o)}
-              </Text>
-            </View>
+            {(() => {
+              const totalDisplay = o.status === 'cancelled' ? formatVND(o.inspectionFee || 0) : formatOrderTotal(o);
+              const isRangeTotal = totalDisplay.includes('–');
+              return (
+                <View style={mx.totalRow}>
+                  <Text style={{ fontWeight: '800', fontSize: 15, color: C.ink, flex: 1 }}>
+                    {o.status !== 'cancelled' &&
+                    ((o.quote &&
+                      !o.quote.rejectReason &&
+                      !o.quote.revisionRequested &&
+                      o.quote.status !== 'REJECTED' &&
+                      o.quote.hasEstimatedRange) ||
+                      (!(o.quote && !o.quote.rejectReason && !o.quote.revisionRequested && o.quote.status !== 'REJECTED' && o.quote.isExternalFinalization && !o.quote.hasEstimatedRange) &&
+                        o.quote?.approvedHasEstimatedRange &&
+                        (getPendingExternalEstimates(o).length > 0 || o.quote?.revisionRequested)))
+                      ? 'Tổng thanh toán (dự kiến)'
+                      : 'Tổng thanh toán'}
+                  </Text>
+                  <Text style={[ui.price, { fontSize: isRangeTotal ? 18 : 20, flexShrink: 0, textAlign: 'right', fontVariant: ['tabular-nums'] }]}>
+                    {totalDisplay}
+                  </Text>
+                </View>
+              );
+            })()}
             {['confirmed', 'onway', 'diagnosing', 'quoted', 'repairing'].includes(o.status) && !isPaid(o) && !o.bill?.cashClaimPending && o.kind !== 'warranty' && o.kind !== 'followup' ? (
               isQRPayment(o) ? (
-                <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <IconBox icon="banknote" size={38} bg={C.card} color={C.ink2} radius={12} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13 }}>Không chuyển khoản được?</Text>
-                    <Text style={{ fontSize: 12, color: C.muted, marginTop: 2, lineHeight: 17 }}>
-                      Đổi sang tiền mặt để trả trực tiếp cho thợ tại nhà.
-                    </Text>
+                <View style={{ marginTop: 14, padding: 14, borderRadius: R.md, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line, gap: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+                    <IconBox icon="banknote" size={42} bg={C.card} color={C.ink2} radius={13} style={{ borderWidth: 1, borderColor: C.line }} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>Không chuyển khoản được?</Text>
+                      <Text style={{ fontSize: 12.5, color: C.muted, marginTop: 3, lineHeight: 18 }}>
+                        Đổi sang tiền mặt để thanh toán trực tiếp cho kỹ thuật viên tại nhà.
+                      </Text>
+                    </View>
                   </View>
                   <Btn
-                    title="Đổi tiền mặt"
+                    title="Đổi sang thanh toán tiền mặt"
+                    icon="banknote"
                     small
-                    variant="soft"
+                    variant="outline"
                     onPress={() => u.confirm(
                       'Đổi sang tiền mặt?',
                       'Thợ sẽ được mở lại quyền thu tiền mặt cho đơn này. Bạn có thể đổi lại sang VietQR bất cứ lúc nào khi chưa thanh toán.',
@@ -1579,16 +1620,22 @@ export function OrderScreen({ params }) {
                   />
                 </View>
               ) : (
-                <View style={{ marginTop: 12, padding: 12, borderRadius: R.md, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <IconBox icon="qr-code" size={38} bg={C.card} color={C.primary} radius={12} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: '800', color: C.ink, fontSize: 13 }}>Muốn chuyển khoản bằng mã QR?</Text>
-                    <Text style={{ fontSize: 12, color: C.muted, marginTop: 2, lineHeight: 17 }}>
-                      Đổi sang VietQR để quét mã trên ứng dụng — thợ sẽ không thu tiền mặt.
-                    </Text>
+                <View style={{ marginTop: 14, padding: 14, borderRadius: R.md, backgroundColor: C.primarySoft, borderWidth: 1, borderColor: C.primaryBorder, gap: 12 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+                    <IconBox icon="qr-code" size={42} bg={C.card} color={C.primary} radius={13} style={{ borderWidth: 1, borderColor: C.primaryBorder }} />
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                        <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>Muốn chuyển khoản bằng mã QR?</Text>
+                        <Badge text="VietQR 24/7" fg={C.primary} bg={C.card} />
+                      </View>
+                      <Text style={{ fontSize: 12.5, color: C.ink2, marginTop: 3, lineHeight: 18 }}>
+                        Đổi sang VietQR để quét mã ngay trên ứng dụng — thợ sẽ không thu tiền mặt.
+                      </Text>
+                    </View>
                   </View>
                   <Btn
-                    title="Đổi sang chuyển khoản QR"
+                    title="Đổi sang chuyển khoản VietQR"
+                    icon="qr-code"
                     small
                     variant="primary"
                     onPress={() => u.confirm(
@@ -1968,10 +2015,10 @@ const InfoLine = ({ icon, label, value, link }) => (
     </View>
   </View>
 );
-const Bill = ({ l, v, green }) => (
-  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 }}>
-    <Text style={{ color: C.muted, fontSize: 14 }}>{l}</Text>
-    <Text style={{ color: green ? C.green : C.ink, fontWeight: '700', fontSize: 14 }}>{v}</Text>
+const Bill = ({ l, v, green, orange }) => (
+  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginTop: 8 }}>
+    <Text style={{ flex: 1, color: orange ? C.orange : C.muted, fontSize: 13.5, lineHeight: 20 }}>{l}</Text>
+    <Text style={{ flexShrink: 0, textAlign: 'right', color: green ? C.green : orange ? C.orange : C.ink, fontWeight: '700', fontSize: 13.5, lineHeight: 20, fontVariant: ['tabular-nums'] }}>{v}</Text>
   </View>
 );
 
@@ -2935,7 +2982,7 @@ const mx = StyleSheet.create({
   tlTitle: { fontSize: 15, fontWeight: '800', color: C.ink },
   techAvatar: { width: 52, height: 52, borderRadius: 18, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
   sec: { fontSize: 15, fontWeight: '800', color: C.ink, marginTop: 20, marginBottom: 10 },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: C.line, paddingTop: 12, marginTop: 12 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 12, marginTop: 12 },
   dock: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: C.line, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
   option: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: C.line },
   bonus: { backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderRadius: R.md, padding: 14, marginTop: 16 },

@@ -1,12 +1,12 @@
 // Biên bản nghiệm thu & hoàn thành (sheet) của thợ.
-// - Checklist an toàn: mặc định CHƯA tick, phải tick đủ mới gửi được (đếm số mục động).
-// - Thu tiền mặt: chỉ hiện khi có tiền mặt cần thu (cashToCollect), mặc định CHƯA tick.
-// - Xác nhận nghiệm thu của khách: họ tên người nghiệm thu + tick đồng ý; thời điểm ghi lúc bấm xác nhận.
+// - Checklist an toàn: smart-precheck mặc định đủ các tiêu chuẩn, tóm tắt 1 dòng và cho phép mở chi tiết để điều chỉnh.
+// - Xác nhận nghiệm thu của khách: điền sẵn tên khách (cho phép sửa), bấm nút hoàn thành để xác nhận luôn.
+// - Thu tiền mặt: đưa trực tiếp ra nút CTA ở footer (không cần tick thêm checkbox thừa).
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Image } from 'react-native';
 import { C, R } from '../../../theme';
 import { formatVND, SAFETY_CHECKLIST_ITEMS } from '../../../constants/data';
-import { useApp, orderTotal, amountRemaining, cashToCollect, fmtDateTime, isQRPayment, bookedValue, billExtraAmount, tierPartDiscountAmount, lateDiscountAmount, isPaid, getPendingExternalEstimates } from '../../../context';
+import { useApp, orderTotal, amountRemaining, cashToCollect, isQRPayment, bookedValue, billExtraAmount, tierPartDiscountAmount, lateDiscountAmount, isPaid, getPendingExternalEstimates } from '../../../context';
 import { Btn, Field, Sheet, Checkbox, Tap, Badge, ui, AppIcon } from '../../../components';
 import { pickCamera, pickImage } from '../../../utils/media';
 import { toVietnamese } from '../../../utils/viText';
@@ -20,31 +20,29 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
   const { a, ui: u } = useApp();
   const { run, isBusy } = useBusyRunner();
   const [summary, setSummary] = useState(initialSummary);
-  const [paid, setPaid] = useState(false);
-  const [safetyChecks, setSafetyChecks] = useState([]);
+  const [safetyChecks, setSafetyChecks] = useState(() => [...SAFETY_ITEMS]);
+  const [showSafetyDetails, setShowSafetyDetails] = useState(false);
   const [acceptName, setAcceptName] = useState('');
-  const [accepted, setAccepted] = useState(false);
-  const [acceptedAt, setAcceptedAt] = useState(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [localPendingUris, setLocalPendingUris] = useState([]);
   const allEvidence = o ? (Array.isArray(evidence) ? evidence : (o.evidence || [])) : [];
   const serverAfterPhotos = allEvidence.filter((e) => e?.stage === 'after' && e?.uri);
   const [uploadedUris, setUploadedUris] = useState([]);
   const serverCountRef = useRef(serverAfterPhotos.length);
+  const lastPickedUriRef = useRef(null);
 
-  // Mỗi lần mở sheet: làm mới bản nháp (không giữ tick từ lần trước).
+  // Mỗi lần mở sheet: smart-precheck đủ tiêu chuẩn an toàn & điền sẵn tên khách nghiệm thu.
   useEffect(() => {
     if (!visible) return;
     setSummary(initialSummary);
-    setPaid(false);
-    setSafetyChecks([]);
+    setSafetyChecks([...SAFETY_ITEMS]);
+    setShowSafetyDetails(false);
     setAcceptName(o?.report?.customerSignature && typeof o.report.customerSignature === 'string'
       ? o.report.customerSignature
       : (o?.address?.name || ''));
-    setAccepted(false);
-    setAcceptedAt(null);
     setLocalPendingUris([]);
     setUploadedUris([]);
+    lastPickedUriRef.current = null;
     serverCountRef.current = serverAfterPhotos.length;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
@@ -89,6 +87,7 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
         }
         return;
       }
+      lastPickedUriRef.current = uri;
       setLocalPendingUris((prev) => (prev.includes(uri) ? prev : [...prev, uri]));
       if (o.dbAssignmentId) {
         const beforeUploadCount = serverCountRef.current;
@@ -115,19 +114,9 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
     }
   };
 
-  const toggleAccepted = () => {
-    if (accepted) { setAccepted(false); setAcceptedAt(null); return; }
-    if (!acceptName.trim()) {
-      u.alert('Thiếu họ tên', 'Nhập họ tên người nghiệm thu tại chỗ trước khi xác nhận.', 'pencil');
-      return;
-    }
-    setAccepted(true);
-    setAcceptedAt(Date.now());
-  };
-
   const close = () => { if (!busy && !uploadingPhoto) onClose?.(); };
 
-  const submit = () => run(busyKey, async () => {
+  const submit = (collectCash = false) => run(busyKey, async () => {
     if (getPendingExternalEstimates(o).length > 0) {
       u.alert(
         'Chưa chốt giá vật tư mua ngoài',
@@ -153,21 +142,23 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
       return false;
     }
     if (safetyDone < safetyTotal) {
+      setShowSafetyDetails(true);
       u.alert('Chưa đủ danh mục kiểm tra an toàn', `Vui lòng kiểm tra và đánh dấu đủ ${safetyTotal} tiêu chuẩn an toàn kỹ thuật (đã đánh dấu ${safetyDone}/${safetyTotal}) trước khi bàn giao.`, 'zap');
       return false;
     }
     const name = acceptName.trim();
-    if (!name || !accepted || !acceptedAt) {
-      u.alert('Chưa có xác nhận nghiệm thu', 'Nhập họ tên người nghiệm thu và đánh dấu “Khách đã kiểm tra và đồng ý nghiệm thu”.', 'pen-tool');
+    if (!name) {
+      u.alert('Thiếu tên người nghiệm thu', 'Nhập họ tên khách hàng / người nghiệm thu tại chỗ trước khi hoàn thành.', 'pen-tool');
       return false;
     }
     const ok = await Promise.resolve(a.completeJob(o.code, {
       summary: summary.trim(),
-      paid: qr ? orderPaid : (needsCash ? paid : false),
+      paid: qr ? orderPaid : (needsCash ? Boolean(collectCash) : false),
       safetyChecklist: SAFETY_ITEMS.filter((it) => safetyChecks.includes(it)),
-      customerSignature: name, // giữ kiểu cũ: chuỗi họ tên
-      customerAcceptance: { name, confirmedAt: acceptedAt },
+      customerSignature: name,
+      customerAcceptance: { name, confirmedAt: Date.now() },
       completionPhotoUris: localPendingUris,
+      completionPhotoFallbackUri: lastPickedUriRef.current,
     }));
     if (ok) onClose?.();
     return ok;
@@ -178,8 +169,29 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
       visible={visible}
       onClose={close}
       title="Biên bản nghiệm thu & hoàn thành"
-      footer={(
-        <Btn title={busy ? 'Đang gửi biên bản…' : 'Gửi biên bản & hoàn thành'} disabled={busy} onPress={submit} />
+      footer={needsCash ? (
+        <View style={{ gap: 6 }}>
+          <Btn
+            title={busy ? 'Đang gửi biên bản…' : `Hoàn thành & Đã thu ${formatVND(cashDue)}`}
+            icon="banknote"
+            disabled={busy || uploadingPhoto}
+            onPress={() => submit(true)}
+          />
+          <Btn
+            title="Hoàn thành (chưa thu tiền mặt)"
+            variant="ghost"
+            small
+            disabled={busy || uploadingPhoto}
+            onPress={() => submit(false)}
+          />
+        </View>
+      ) : (
+        <Btn
+          title={busy ? 'Đang gửi biên bản…' : 'Hoàn thành & Bàn giao'}
+          icon="check-circle-2"
+          disabled={busy || uploadingPhoto}
+          onPress={() => submit(qr ? orderPaid : false)}
+        />
       )}
     >
       <View style={{ padding: 12, borderRadius: R.md, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary, marginTop: -8, marginBottom: 14 }}>
@@ -291,39 +303,76 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
         ) : null}
       </View>
 
-      <Text style={[ui.fieldLabel, { marginTop: 10, marginBottom: 6 }]}>
-        Danh mục kiểm tra an toàn kỹ thuật & nghiệm thu ({safetyDone}/{safetyTotal})
-      </Text>
-      <View style={{ padding: 10, borderRadius: R.md, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line, marginBottom: 10, gap: 6 }}>
-        {SAFETY_ITEMS.map((item) => {
-          const checked = safetyChecks.includes(item);
-          return (
-            <Checkbox
-              key={item}
-              on={checked}
-              onPress={() => setSafetyChecks((prev) => (checked ? prev.filter((x) => x !== item) : [...prev, item]))}
-              label={item}
+      <View
+        style={{
+          marginTop: 10,
+          marginBottom: 10,
+          borderRadius: R.md,
+          backgroundColor: C.bg,
+          borderWidth: 1,
+          borderColor: safetyDone === safetyTotal ? C.greenBorder : C.goldBorder,
+          padding: 10,
+        }}
+      >
+        <Tap
+          onPress={() => setShowSafetyDetails((v) => !v)}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+            <AppIcon
+              name={safetyDone === safetyTotal ? 'check-circle-2' : 'alert-triangle'}
+              size={18}
+              color={safetyDone === safetyTotal ? C.green : C.gold}
+              strokeWidth={2.2}
             />
-          );
-        })}
-      </View>
-
-      <Text style={[ui.fieldLabel, { marginTop: 6, marginBottom: 6 }]}>Xác nhận nghiệm thu của khách hàng</Text>
-      <View style={{ padding: 12, borderRadius: R.md, backgroundColor: C.bg, borderWidth: 1, borderColor: accepted ? C.greenBorder : C.line, marginBottom: 10 }}>
-        <Field
-          label="Họ tên người nghiệm thu tại chỗ"
-          value={acceptName}
-          onChangeText={(t) => { setAcceptName(t); if (accepted) { setAccepted(false); setAcceptedAt(null); } }}
-          placeholder="VD: Nguyễn Văn A"
-          style={{ marginTop: -12 }}
-        />
-        <Checkbox on={accepted} onPress={toggleAccepted} label="Khách đã kiểm tra và đồng ý nghiệm thu" style={{ marginTop: 12 }} />
-        {accepted && acceptedAt ? (
-          <Text style={{ fontSize: 11.5, color: C.green, fontWeight: '700', marginTop: 6 }}>
-            ✓ {acceptName.trim()} xác nhận lúc {fmtDateTime(acceptedAt)}
-          </Text>
+            <Text
+              style={{
+                flex: 1,
+                fontWeight: '700',
+                fontSize: 13,
+                color: safetyDone === safetyTotal ? C.greenInk : C.goldInk,
+              }}
+            >
+              {safetyDone === safetyTotal
+                ? `Đạt đủ ${safetyDone}/${safetyTotal} tiêu chuẩn an toàn kỹ thuật`
+                : `Thiếu tiêu chuẩn an toàn (${safetyDone}/${safetyTotal})`}
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.primary }}>
+              {showSafetyDetails ? 'Thu gọn' : 'Chi tiết'}
+            </Text>
+            <View style={{ transform: [{ rotate: showSafetyDetails ? '-90deg' : '90deg' }] }}>
+              <AppIcon name="chevron-right" size={14} color={C.primary} strokeWidth={2.3} />
+            </View>
+          </View>
+        </Tap>
+        {showSafetyDetails ? (
+          <View style={{ marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: C.line, gap: 6 }}>
+            {SAFETY_ITEMS.map((item) => {
+              const checked = safetyChecks.includes(item);
+              return (
+                <Checkbox
+                  key={item}
+                  on={checked}
+                  onPress={() => setSafetyChecks((prev) => (checked ? prev.filter((x) => x !== item) : [...prev, item]))}
+                  label={item}
+                />
+              );
+            })}
+          </View>
         ) : null}
       </View>
+
+      <Field
+        label="Người xác nhận nghiệm thu tại chỗ"
+        value={acceptName}
+        onChangeText={setAcceptName}
+        placeholder="VD: Nguyễn Văn A"
+      />
+      <Text style={[ui.meta, { marginTop: 4, marginBottom: 10 }]}>
+        Bấm hoàn thành đồng nghĩa khách đã kiểm tra & đồng ý nghiệm thu thiết bị.
+      </Text>
 
       {qr && orderTotal(o) > 0 ? (
         <View
@@ -356,17 +405,11 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
       {needsCash ? (
         <View style={[tx.note, { backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary, marginTop: 4 }]}>
           <Text style={{ color: C.ink, fontWeight: '800', lineHeight: 19 }}>
-            Tiền mặt cần thu: {formatVND(cashDue)} ({o.payment})
+            Tiền mặt cần thu tại chỗ: {formatVND(cashDue)} ({o.payment})
           </Text>
-          <Checkbox
-            on={paid}
-            onPress={() => setPaid(!paid)}
-            label={`Tôi đã nhận đủ ${formatVND(cashDue)} tiền mặt`}
-            style={{ marginTop: 10 }}
-          />
-          {!paid ? (
-            <Text style={[ui.meta, { marginTop: 6 }]}>Chưa thu thì để trống — khách có thể báo đã trả sau, bạn xác nhận khi nhận đủ.</Text>
-          ) : null}
+          <Text style={[ui.meta, { marginTop: 4 }]}>
+            Chọn "Hoàn thành & Đã thu" bên dưới nếu khách trả ngay, hoặc "Hoàn thành (chưa thu)" để đối soát sau.
+          </Text>
         </View>
       ) : null}
       <Text style={[ui.meta, { marginTop: 12 }]}>Sau khi gửi, khách nhận thông báo hoàn thành và có thể đánh giá.</Text>

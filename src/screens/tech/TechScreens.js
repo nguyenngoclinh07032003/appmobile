@@ -15,7 +15,7 @@ import {
   useApp, orderTotal, amountRemaining, formatOrderTotal, cashToCollect, bookedValue, tierPartDiscountAmount, lateDiscountAmount,
   isActiveOrder, dateKeyOf, todayKey, fmtDateTime, timeAgo,
   assessCancelAfterAccept, slotStartTs, matchJobForTech, isQRPayment, isPaid, latestNotifPerOrder, techStatusMeta,
-  getPendingExternalEstimates,
+  getPendingExternalEstimates, getBlockingProcedureSteps,
 } from '../../context';
 import { validateVietnamesePhone, validateContactName, sanitizeVnPhoneInput } from '../../utils';
 import {
@@ -1044,7 +1044,8 @@ function ReceiptCard({ o, editable, onPreviewPhoto }) {
     a.reconcilePartReceipts?.(o.code);
   }, [editable, missingSig, evidenceCount, o.code]);
 
-  if (!parts.length) return null;
+  const hasMissing = parts.some((p) => !p.receiptId);
+  if (!parts.length || !hasMissing) return null;
   const attach = async (part, useCamera = true) => {
     if (busyId || attachBusyRef.current) return;
     attachBusyRef.current = true;
@@ -1107,20 +1108,40 @@ function ReceiptCard({ o, editable, onPreviewPhoto }) {
   );
 }
 
-// Các bước thực hiện của việc: checklist, chỉ số đo, ảnh (nếu bước yêu cầu) -> "Xong bước" gửi backend.
+// Các bước thực hiện của việc: mặc định thu gọn thành 1 dòng tự đồng bộ khi bàn giao,
+// chỉ tự mở rộng khi có bước bắt buộc đòi hỏi nhập chỉ số đo kỹ thuật.
 function ProcedureCard({ o, editable }) {
   const { a, ui: u } = useApp();
+  const proc = o.procedure;
+  const blockingSteps = useMemo(() => getBlockingProcedureSteps(proc), [proc]);
+  const hasBlockingMeasures = blockingSteps.length > 0;
+  const [expanded, setExpanded] = useState(hasBlockingMeasures);
   const [openId, setOpenId] = useState(null);
   const [checked, setChecked] = useState([]);
   const [measures, setMeasures] = useState({});
   const [photos, setPhotos] = useState([]);
   const [busy, setBusy] = useState(false);
+
   useEffect(() => {
     if (!editable && openId != null) setOpenId(null);
   }, [editable, openId]);
-  const proc = o.procedure;
+
+  useEffect(() => {
+    if (hasBlockingMeasures) {
+      setExpanded(true);
+      const firstBlocking = blockingSteps[0];
+      if (editable && firstBlocking && openId == null) {
+        setOpenId(firstBlocking.step_id);
+        setChecked([...(firstBlocking.items || [])]);
+        setMeasures(Object.fromEntries((firstBlocking.measures || []).map((m) => [m.key, firstBlocking.measurements?.[m.key] != null ? String(firstBlocking.measurements[m.key]) : ''])));
+        setPhotos([]);
+      }
+    }
+  }, [hasBlockingMeasures]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!proc) return null;
   const steps = (proc.services || []).flatMap((sv) => (sv.steps || []).map((st) => ({ ...st, service_name: sv.service_name })));
+  const allDone = proc.total_steps > 0 && proc.done_steps === proc.total_steps;
   const open = (st) => {
     if (busy || !editable || st.status !== 'PENDING') return;
     setOpenId(openId === st.step_id ? null : st.step_id);
@@ -1159,13 +1180,71 @@ function ProcedureCard({ o, editable }) {
     setOpenId(null);
     u.toast(`Đã xong bước ${st.step_no}`, '✅');
   };
+
+  if (!expanded) {
+    return (
+      <Card style={{ marginTop: 12 }}>
+        <Tap
+          onPress={() => setExpanded(true)}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+        >
+          <View
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 12,
+              backgroundColor: allDone ? C.greenSoft : C.primarySoft,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <AppIcon
+              name={allDone ? 'check-circle-2' : 'clipboard-check'}
+              size={18}
+              color={allDone ? C.green : C.primary}
+              strokeWidth={2.2}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontWeight: '800', fontSize: 13.5, color: C.ink }}>
+              Quy trình kỹ thuật ({proc.done_steps}/{proc.total_steps})
+            </Text>
+            <Text style={[ui.meta, { marginTop: 2 }]}>
+              {allDone ? 'Đã hoàn tất quy trình kỹ thuật' : 'Tự động hoàn tất khi gửi biên bản bàn giao'}
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.primary }}>Xem</Text>
+            <AppIcon name="chevron-right" size={14} color={C.primary} strokeWidth={2.3} />
+          </View>
+        </Tap>
+      </Card>
+    );
+  }
+
   return (
     <Card style={{ marginTop: 12 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text style={[tx.h, { marginBottom: 0 }]}>Các bước thực hiện</Text>
-        <Badge text={`${proc.done_steps}/${proc.total_steps} bước`} fg={proc.done_steps === proc.total_steps ? C.green : C.primary} bg={proc.done_steps === proc.total_steps ? C.greenSoft : C.primarySoft} />
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <Text style={[tx.h, { marginBottom: 0, flex: 1 }]}>Các bước thực hiện</Text>
+        <Badge text={`${proc.done_steps}/${proc.total_steps} bước`} fg={allDone ? C.green : C.primary} bg={allDone ? C.greenSoft : C.primarySoft} />
+        {!hasBlockingMeasures ? (
+          <Tap
+            onPress={() => setExpanded(false)}
+            hitSlop={8}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingLeft: 4 }}
+          >
+            <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.primary }}>Thu gọn</Text>
+            <View style={{ transform: [{ rotate: '-90deg' }] }}>
+              <AppIcon name="chevron-right" size={13} color={C.primary} strokeWidth={2.3} />
+            </View>
+          </Tap>
+        ) : null}
       </View>
-      <Text style={[ui.meta, { marginTop: 4, marginBottom: 6 }]}>Đánh dấu xong các bước bắt buộc rồi mới nộp biên bản.</Text>
+      <Text style={[ui.meta, { marginTop: 4, marginBottom: 6 }]}>
+        {hasBlockingMeasures
+          ? 'Nhập các chỉ số đo bắt buộc bên dưới trước khi hoàn thành.'
+          : 'Có thể bấm làm từng bước hoặc để tự động hoàn tất khi nộp biên bản.'}
+      </Text>
       {steps.map((st) => {
         const done = st.status !== 'PENDING';
         const isOpen = openId === st.step_id;
@@ -1226,6 +1305,9 @@ export function TechJobScreen({ params }) {
   const { run, isBusy } = useBusyRunner();
   const [matMode, setMatMode] = useState(null); // 'quote' | 'usage'
   const [showPreQuote, setShowPreQuote] = useState(false);
+  const [showDiagQuoteForm, setShowDiagQuoteForm] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [showRepairNotes, setShowRepairNotes] = useState(false);
   const [matAll, setMatAll] = useState(false);
   const [repairNote, setRepairNote] = useState('');
   const [editingNoteId, setEditingNoteId] = useState(null);
@@ -1264,6 +1346,26 @@ export function TechJobScreen({ params }) {
   useEffect(() => {
     if (o?.status !== 'confirmed' && showPreQuote) setShowPreQuote(false);
   }, [o?.status, showPreQuote]);
+
+  useEffect(() => {
+    const mustOpen = Boolean(
+      o?.status === 'out_of_warranty' ||
+      o?.quote?.revisionRequested ||
+      o?.quoteEditing ||
+      o?.kind === 'warranty'
+    );
+    setShowDiagQuoteForm(mustOpen);
+  }, [o?.code, o?.status, o?.quote?.revisionRequested, o?.quoteEditing, o?.kind]);
+
+  const repairNoteCount = (o?.repairNotes || []).length;
+  useEffect(() => {
+    setShowTimeline(false);
+    setShowRepairNotes(repairNoteCount > 0);
+  }, [o?.code]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (repairNoteCount > 0) setShowRepairNotes(true);
+  }, [repairNoteCount]);
 
   useEffect(() => {
     if (!jobReqId) return undefined;
@@ -1422,6 +1524,13 @@ export function TechJobScreen({ params }) {
       if (succeeded(res)) { draft.markSaved(); setShowPreQuote(false); }
     });
   };
+  const quickStartRepair = () => {
+    run(K.quote, () => a.startRepairWithoutQuote(o.code, {
+      diagnosis: 'Thiết bị đúng tình trạng đặt lịch, không phát sinh thêm chi phí',
+      symptoms: '',
+      recommendation: 'Thực hiện đúng dịch vụ khách đã đặt',
+    })).then((res) => { if (succeeded(res)) draft.markSaved(); });
+  };
   const submitRepairNote = () => {
     const note = repairNote.trim();
     if (!note) { u.alert('Thiếu nội dung', 'Nhập ghi chú công việc đã làm.', '📝'); return; }
@@ -1439,9 +1548,9 @@ export function TechJobScreen({ params }) {
       setShowFinalizeExt(true);
       return;
     }
-    const pendingSteps = (o.procedure?.services || []).flatMap((sv) => sv.steps || []).filter((st) => st.is_required && st.status === 'PENDING');
-    if (pendingSteps.length) {
-      u.alert('Chưa xong các bước thực hiện', `Còn ${pendingSteps.length} bước bắt buộc chưa xong:\n${pendingSteps.map((st) => `• Bước ${st.step_no}: ${st.title}`).join('\n')}`, '📋');
+    const blockingSteps = getBlockingProcedureSteps(o.procedure);
+    if (blockingSteps.length) {
+      u.alert('Thiếu chỉ số đo kỹ thuật', `Còn ${blockingSteps.length} bước cần nhập chỉ số đo trước khi hoàn thành:\n${blockingSteps.map((st) => `• Bước ${st.step_no}: ${st.title}`).join('\n')}`, '📋');
       return;
     }
     setShowDone(true);
@@ -1478,31 +1587,6 @@ export function TechJobScreen({ params }) {
           <View style={tx.offline}><Text style={{ color: C.goldInk, fontWeight: '700' }}>Bạn đã từ chối việc này. Vẫn có thể nhận lại nếu còn trống lịch.</Text></View>
         ) : null}
         {o.status === 'onway' ? <TrackingCard order={o} compact /> : null}
-
-        {o.checkIn ? (
-          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary }}>
-            <Text style={tx.h}>Nhật ký xác nhận đến nơi</Text>
-            <Text style={{ color: C.ink2, marginTop: 6, lineHeight: 20 }}>
-              {o.checkIn.label || 'Đã xác thực vị trí'}
-              {o.checkIn.at ? ` · ${fmtDateTime(o.checkIn.at)}` : ''}
-            </Text>
-            {o.checkIn.lat != null ? (
-              <Text style={[ui.meta, { marginTop: 4 }]}>
-                {Number(o.checkIn.lat).toFixed(5)}, {Number(o.checkIn.lng).toFixed(5)}
-                {o.checkIn.accuracy != null ? ` · ±${o.checkIn.accuracy}m` : ''}
-              </Text>
-            ) : null}
-            {o.lateCompensation ? (
-              <Text style={[ui.meta, { color: C.goldInk, fontWeight: '700', marginTop: 6 }]}>
-                {(o.lateCompensation.minutesLate || o.lateCompensation.minutes)
-                  ? `Muộn ${o.lateCompensation.minutesLate || o.lateCompensation.minutes} phút · đã ghi nhận chính sách`
-                  : 'Đến nơi muộn · đã ghi nhận chính sách'}
-              </Text>
-            ) : o.arrivedAt ? (
-              <Text style={[ui.meta, { color: C.green, fontWeight: '700', marginTop: 6 }]}>Đúng chính sách giờ hẹn</Text>
-            ) : null}
-          </Card>
-        ) : null}
 
         {o.status === 'pending_payment' ? (
           <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.gold }}>
@@ -1578,163 +1662,39 @@ export function TechJobScreen({ params }) {
           </Card>
         ) : null}
 
-        {/* Lịch sử trạng thái */}
-        <Card style={{ marginTop: 12 }}>
-          <Text style={tx.h}>Dòng thời gian</Text>
-          {(o.history || []).map((h, i, arr) => {
-            const hm = STATUS_META[h.status] || STATUS_META.pending;
-            const last = i === arr.length - 1;
-            return (
-              <View key={`${h.status}-${h.at}-${i}`} style={tx.histRow}>
-                <View style={tx.histRail}>
-                  <View style={[tx.histDot, { backgroundColor: hm.fg }]} />
-                  {!last ? <View style={tx.histLine} /> : null}
-                </View>
-                <View style={{ flex: 1, paddingBottom: last ? 0 : 12 }}>
-                  <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>{hm.label}</Text>
-                  <Text style={[ui.meta, { marginTop: 2 }]}>{fmtDateTime(h.at)}</Text>
-                </View>
-              </View>
-            );
-          })}
-        </Card>
-
-        {/* Khách hàng */}
-        <Card style={{ marginTop: 12 }}>
-          <Text style={tx.h}>Khách hàng</Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <IconBox icon="user" size={46} bg={C.primarySoft} radius={15} />
-            <View style={{ flex: 1 }}>
-              <Text style={tx.name}>{o.address?.gender === 'Nữ' ? 'Chị' : 'Anh'} {o.address?.name}</Text>
-              <Text style={ui.meta}>{o.address?.phone}</Text>
-            </View>
-            {(mine || o.status === 'pending') && o.address?.phone && !String(o.address.phone).includes('*') ? (
-              <IconBtn icon="phone-call" onPress={() => callPhone(o.address?.phone)} style={{ backgroundColor: C.greenSoft }} label="Gọi khách" />
+        {o.status === 'cancelled' ? (
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: (o.inspectionFee || 0) > 0 ? (orderPaid ? C.green : C.gold) : C.muted }}>
+            <Text style={[tx.h, { color: (o.inspectionFee || 0) > 0 ? (orderPaid ? C.greenInk : C.goldInk) : C.ink }]}>
+              {(o.inspectionFee || 0) > 0
+                ? (orderPaid ? `Đã thu phí kiểm tra: ${formatVND(o.inspectionFee)}` : `Phí kiểm tra tại nhà: ${formatVND(o.inspectionFee)}`)
+                : 'Đơn huỷ không thu phí (0đ)'}
+            </Text>
+            <Text style={{ color: C.ink2, lineHeight: 20 }}>
+              {(o.inspectionFee || 0) > 0
+                ? orderPaid
+                  ? `Đã thanh toán phí kiểm tra ${formatVND(o.inspectionFee)}.`
+                  : isQRPayment(o)
+                    ? `Khách huỷ sau khi thợ đã tới kiểm tra tại nhà. Khách chọn chuyển khoản VietQR (${formatVND(o.inspectionFee)}) — không thu tiền mặt.`
+                    : `Khách huỷ sau khi thợ đã tới kiểm tra thiết bị trực tiếp tại nhà. Khách thanh toán ${formatVND(o.inspectionFee)} phí kiểm tra cho thợ.`
+                : 'Chính sách Minh Đức miễn phí 100% kiểm tra tại nhà khi khách từ chối sửa chữa (0đ).'}
+            </Text>
+            {(o.inspectionFee || 0) > 0 && mine && !orderPaid && !isQRPayment(o) ? (
+              <Btn
+                title={busyCash ? 'Đang xác nhận…' : `Đã nhận tiền mặt ${formatVND(o.inspectionFee)}`}
+                icon="banknote"
+                small
+                disabled={busyCash}
+                style={{ marginTop: 10 }}
+                onPress={() => u.confirm(
+                  'Xác nhận đã nhận tiền mặt?',
+                  `Bạn xác nhận đã nhận đủ ${formatVND(o.inspectionFee)} phí kiểm tra cho đơn ${o.code}.`,
+                  () => run(K.cash, () => a.confirmCashReceived(o.code)),
+                  'Đã nhận',
+                )}
+              />
             ) : null}
-          </View>
-          <Tap style={tx.addrBox} disabled={!mine && o.status !== 'pending'} onPress={() => openMap(o.address?.full)}>
-            <AppIcon name="map-pin" size={16} color={C.primary} strokeWidth={2.2} />
-            <Text style={{ flex: 1, color: C.ink, fontWeight: '600', lineHeight: 20 }}>{o.address?.full}</Text>
-            {(mine || o.status === 'pending') ? <Text style={ui.link}>Chỉ đường</Text> : null}
-          </Tap>
-        </Card>
-
-        {/* Lịch hẹn + dịch vụ */}
-        <Card style={{ marginTop: 12 }}>
-          <Text style={tx.h}>Lịch hẹn & yêu cầu</Text>
-          {o.customerTierLabel ? (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-              <Badge text={`👑 Khách hạng ${o.customerTierLabel}${o.warrantyDays > 0 ? ` · BH ${o.warrantyDays} ngày` : ''}`} fg={C.primary} bg={C.primarySoft} />
-            </View>
-          ) : null}
-          <Text style={tx.info}>📅 {o.dateLabel} · {o.slot}</Text>
-          {o.device ? (
-            <Text style={[tx.info, { marginTop: 6 }]}>
-              📺 Thiết bị tại nhà: {catLabel(o.device.category)}{o.device.brand ? ` · ${o.device.brand}` : ''}{o.device.room ? ` (${o.device.room})` : ''}{o.device.serial ? ` · Số sê-ri: ${o.device.serial}` : ''}
-            </Text>
-          ) : null}
-          {o.siteCondition ? (
-            <Text style={[tx.info, { marginTop: 6 }]}>
-              🏢 Vị trí thi công: {o.siteCondition.label} ({o.siteCondition.note})
-            </Text>
-          ) : null}
-          {o.note ? <Text style={[tx.info, { marginTop: 6 }]}>📝 “{o.note}”</Text> : null}
-          {(o.attachments || []).length ? (
-            <View style={{ marginTop: 8 }}>
-              <Text style={[ui.meta, { fontWeight: '700', marginBottom: 6 }]}>Hình ảnh triệu chứng ban đầu ({o.attachments.length})</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {o.attachments.map((att) => (
-                  <Tap
-                    key={att.id}
-                    style={tx.thumb}
-                    onPress={() => att.uri && setPreviewTechPhoto({ uri: att.uri, title: att.note || 'Hình ảnh triệu chứng ban đầu' })}
-                    scaleTo={0.97}
-                  >
-                    {att.uri ? <Image source={{ uri: att.uri }} style={{ width: '100%', height: '100%' }} /> : <AppIcon name="image" size={22} color={C.muted} />}
-                  </Tap>
-                ))}
-              </View>
-            </View>
-          ) : null}
-          <Text style={[tx.info, { marginTop: 6 }]}>💳 {o.payment}</Text>
-          {o.kind !== 'warranty' ? (
-            isQRPayment(o) ? (
-              <View
-                style={{
-                  marginTop: 10,
-                  padding: 12,
-                  borderRadius: R.md,
-                  backgroundColor: C.surface,
-                  borderWidth: 1,
-                  borderColor: C.line,
-                  borderLeftWidth: 3.5,
-                  borderLeftColor: orderPaid ? C.green : C.gold,
-                  gap: 4,
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                    <AppIcon name={orderPaid ? 'check-circle-2' : 'alert-triangle'} size={16} color={orderPaid ? C.green : C.gold} strokeWidth={2.3} />
-                    <Text style={{ fontWeight: '800', color: orderPaid ? C.greenInk : C.goldInk, fontSize: 13, flex: 1 }}>
-                      {orderPaid ? 'Khách đã chuyển khoản VietQR thành công' : 'Khách chuyển khoản QR · KHÔNG THU TIỀN MẶT'}
-                    </Text>
-                  </View>
-                  <Badge
-                    text={orderPaid ? 'ĐÃ CHUYỂN KHOẢN' : 'KHÔNG THU TIỀN'}
-                    fg={orderPaid ? C.greenInk : C.goldInk}
-                    bg={orderPaid ? C.greenSoft : C.goldSoft}
-                  />
-                </View>
-                <Text style={{ fontSize: 12.5, color: C.ink2, lineHeight: 18 }}>
-                  {orderPaid
-                    ? `Khách đã chuyển khoản đủ ${formatVND(orderTotal(o))} qua VietQR.`
-                    : `Khách thanh toán ${o.status === 'pending_payment' ? formatVND(amountRemaining(o)) : formatOrderTotal(o)} qua mã VietQR trên ứng dụng Khách hàng. Kỹ thuật viên tuyệt đối KHÔNG thu tiền mặt.`}
-                </Text>
-              </View>
-            ) : (
-              <View
-                style={{
-                  marginTop: 10,
-                  padding: 10,
-                  borderRadius: R.md,
-                  backgroundColor: C.surface,
-                  borderWidth: 1,
-                  borderColor: C.line,
-                  borderLeftWidth: 3.5,
-                  borderLeftColor: orderPaid ? C.green : C.primary,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 8,
-                }}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '800', color: orderPaid ? C.greenInk : C.ink, fontSize: 13 }}>
-                    {orderPaid
-                      ? '✓ Đã thu tiền mặt tại nhà'
-                      : `Đơn thu tiền mặt tại nhà: ${(o.status === 'quoted' || o.quote?.hasEstimatedRange || o.quote?.approvedHasEstimatedRange) && !['pending_payment', 'done'].includes(o.status) ? formatOrderTotal(o) : formatVND(cashToCollect(o))}`}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: C.ink2, marginTop: 2 }}>
-                    {orderPaid ? 'Đã đối soát thanh toán hoàn tất.' : 'Kỹ thuật viên trực tiếp thu tiền mặt từ khách sau khi nghiệm thu.'}
-                  </Text>
-                </View>
-                <Badge text={orderPaid ? 'Hoàn thành' : 'Thu trực tiếp'} fg={orderPaid ? C.greenInk : C.primary} bg={orderPaid ? C.greenSoft : C.primarySoft} />
-              </View>
-            )
-          ) : null}
-          <View style={{ marginTop: 10, gap: 8 }}>
-            {o.items.map((it) => {
-              const sv = getService(it.id);
-              return (
-                <View key={it.id} style={tx.svcRow}>
-                  <AppIcon icon={sv?.icon} size={20} color={C.primary} strokeWidth={2.1} />
-                  <Text style={{ flex: 1, color: C.ink, fontWeight: '600' }} numberOfLines={2}>{sv?.name || it.name || 'Dịch vụ kỹ thuật'}</Text>
-                  <Text style={{ color: C.ink2, fontWeight: '800' }}>x{it.qty}</Text>
-                </View>
-              );
-            })}
-          </View>
-        </Card>
+          </Card>
+        ) : null}
 
         {/* Báo giá trước khi xuất phát (Thợ chủ động thỏa thuận trước khi đi) */}
         {o.status === 'confirmed' && mine && !o.quote && o.kind !== 'warranty' ? (
@@ -1756,17 +1716,54 @@ export function TechJobScreen({ params }) {
           </Card>
         ) : null}
 
+        {/* ===== Chọn nhanh tại nhà: Không phát sinh vs Có phát sinh ===== */}
+        {mine && o.status === 'diagnosing' && !showDiagQuoteForm && !(o.quote?.isExternalFinalization && o.quote?.revisionRequested) ? (
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary }}>
+            <Text style={tx.h}>Kiểm tra thiết bị tại nhà</Text>
+            <Text style={{ color: C.ink2, fontSize: 13, lineHeight: 19, marginBottom: 12 }}>
+              {o.quote?.approved
+                ? 'Khách đã duyệt báo giá trước đó. Có phát sinh thêm hạng mục nào nữa không?'
+                : 'Đúng dịch vụ khách đã đặt hay có phát sinh thêm vật tư / lỗi khác?'}
+            </Text>
+            <View style={{ gap: 8 }}>
+              <Btn
+                title={busyQuote ? 'Đang bắt đầu…' : 'Không phát sinh · Bắt đầu sửa ngay'}
+                icon="wrench"
+                disabled={busyQuote}
+                onPress={quickStartRepair}
+              />
+              <Btn
+                title={o.quote?.approved ? 'Có phát sinh thêm · Lập báo giá bổ sung' : 'Có phát sinh · Chẩn đoán & Báo giá'}
+                icon="receipt-text"
+                variant="soft"
+                disabled={busyQuote}
+                onPress={() => setShowDiagQuoteForm(true)}
+              />
+            </View>
+          </Card>
+        ) : null}
+
         {/* ===== Chẩn đoán & báo giá ===== */}
-        {(o.status === 'diagnosing' || o.status === 'out_of_warranty' || (o.status === 'confirmed' && (showPreQuote || o.quote?.revisionRequested))) && mine && !(o.quote?.isExternalFinalization && o.quote?.revisionRequested) ? (
-          <QuoteEditor
-            o={o}
-            draft={draft}
-            cats={cats}
-            matsCount={mats.length}
-            onOpenMaterials={() => setMatMode('quote')}
-            onCancelEdit={() => setShowPreQuote(false)}
-            evidence={evidence}
-          />
+        {((o.status === 'out_of_warranty') || (o.status === 'diagnosing' && showDiagQuoteForm) || (o.status === 'confirmed' && (showPreQuote || o.quote?.revisionRequested))) && mine && !(o.quote?.isExternalFinalization && o.quote?.revisionRequested) ? (
+          <>
+            {o.status === 'diagnosing' && !o.quote?.revisionRequested && o.kind !== 'warranty' && !o.quoteEditing ? (
+              <View style={{ marginTop: 12, alignItems: 'flex-start' }}>
+                <Tap onPress={() => setShowDiagQuoteForm(false)} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <AppIcon name="arrow-left" size={14} color={C.primary} strokeWidth={2.3} />
+                  <Text style={ui.link}>Quay lại chọn nhanh (Không phát sinh)</Text>
+                </Tap>
+              </View>
+            ) : null}
+            <QuoteEditor
+              o={o}
+              draft={draft}
+              cats={cats}
+              matsCount={mats.length}
+              onOpenMaterials={() => setMatMode('quote')}
+              onCancelEdit={() => setShowPreQuote(false)}
+              evidence={evidence}
+            />
+          </>
         ) : null}
 
         {/* ===== Khách yêu cầu kiểm tra lại giá vật tư mua ngoài ===== */}
@@ -1795,6 +1792,39 @@ export function TechJobScreen({ params }) {
             </Text>
           </Card>
         ) : null}
+
+        {/* Thông báo đã chốt xong Bill chi phí cuối -> hướng dẫn ký bàn giao */}
+        {o.status === 'repairing' && mine && o.externalPriceState === 'finalized' ? (
+          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.green }}>
+            <Text style={{ fontWeight: '800', color: C.greenInk, fontSize: 13.5 }}>
+              Đã chốt tổng chi phí cuối ({formatVND(orderTotal(o))})
+            </Text>
+            <Text style={[ui.meta, { color: C.ink2, marginTop: 3, lineHeight: 18 }]}>
+              Bấm “Ký bàn giao & Mở TT” ở thanh dưới cùng để ký biên bản bàn giao thiết bị & mở thanh toán cho khách hàng.
+            </Text>
+          </Card>
+        ) : null}
+
+        {/* ===== Vật tư sử dụng & Vật tư phát sinh ===== */}
+        {(mine && (
+          o.status === 'repairing' ||
+          (o.quote?.isExternalFinalization && o.quote?.revisionRequested && ['diagnosing', 'quoted'].includes(o.status)) ||
+          getPendingExternalEstimates(o).length > 0
+        )) || (o.materials || []).length || (o.finalizedExternalParts || []).length ? (
+          <UsedAndExtraMaterialsCard
+            o={o}
+            mine={mine}
+            onOpenWarehouseUsage={() => setMatMode('usage')}
+            sharedExtraParts={extraBillParts}
+            onChangeSharedExtraParts={setExtraBillParts}
+          />
+        ) : null}
+
+        {/* ===== Biên lai linh kiện mua ngoài (tự ẩn khi đã gắn đủ biên lai) ===== */}
+        {mine ? <ReceiptCard o={o} editable={['diagnosing', 'repairing'].includes(o.status)} onPreviewPhoto={setPreviewTechPhoto} /> : null}
+
+        {/* ===== Quy trình kỹ thuật (mặc định thu gọn 1 dòng tự đồng bộ khi bàn giao) ===== */}
+        {o.procedure && (mine || o.procedure.progress_percent > 0) ? <ProcedureCard o={o} editable={mine && ['diagnosing', 'repairing'].includes(o.status)} /> : null}
 
         {/* ===== Báo giá đã gửi ===== */}
         {o.quote && !(mine && ['diagnosing', 'confirmed', 'out_of_warranty'].includes(o.status) && ((o.quote.revisionRequested && !o.quote.isExternalFinalization) || showPreQuote)) ? (
@@ -1931,10 +1961,22 @@ export function TechJobScreen({ params }) {
                       <Text style={{ color: C.green, fontWeight: '700' }}>-{formatVND(lateDisc)}</Text>
                     </View>
                   ) : null}
-                  <View style={tx.totalRow}>
-                    <Text style={{ fontWeight: '800', color: C.ink }}>{o.quote.hasEstimatedRange ? 'Tổng (dự kiến)' : 'Tổng'}</Text>
-                    <Text style={[ui.price, { fontSize: 17 }]}>{displayQuoteTotal}</Text>
-                  </View>
+                  {o.quote.hasEstimatedRange && displayQuoteTotal.includes('–') ? (
+                    <View style={[tx.totalRow, { flexDirection: 'column', alignItems: 'stretch', gap: 4, borderTopWidth: 1, borderTopColor: C.line, paddingTop: 10 }]}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                        <Text style={{ fontWeight: '800', color: C.ink, flex: 1 }}>Tổng thanh toán</Text>
+                        <Badge text="Dự kiến" fg={C.goldInk} bg={C.goldSoft} />
+                      </View>
+                      <Text style={[ui.price, { fontSize: 18, textAlign: 'right', fontVariant: ['tabular-nums'] }]} numberOfLines={1} adjustsFontSizeToFit>
+                        {displayQuoteTotal}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View style={[tx.totalRow, { borderTopWidth: 1, borderTopColor: C.line, paddingTop: 10 }]}>
+                      <Text style={{ fontWeight: '800', color: C.ink, flex: 1 }}>Tổng</Text>
+                      <Text style={[ui.price, { fontSize: 17, flexShrink: 0, textAlign: 'right', fontVariant: ['tabular-nums'] }]}>{displayQuoteTotal}</Text>
+                    </View>
+                  )}
                 </>
               );
             })()}
@@ -1992,124 +2034,6 @@ export function TechJobScreen({ params }) {
             ) : null}
           </Card>
         ) : null}
-
-        {/* Thông báo đã chốt xong Bill chi phí cuối -> hướng dẫn ký bàn giao */}
-        {o.status === 'repairing' && mine && o.externalPriceState === 'finalized' ? (
-          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.green }}>
-            <Text style={{ fontWeight: '800', color: C.greenInk, fontSize: 13.5 }}>
-              Đã chốt tổng chi phí cuối ({formatVND(orderTotal(o))})
-            </Text>
-            <Text style={[ui.meta, { color: C.ink2, marginTop: 3, lineHeight: 18 }]}>
-              Bấm “Ký bàn giao & Mở TT” ở thanh dưới cùng để ký biên bản bàn giao thiết bị & mở thanh toán cho khách hàng.
-            </Text>
-          </Card>
-        ) : null}
-
-        {/* Nhật ký ghi chú sửa chữa */}
-        {(o.status === 'repairing' && mine) || (o.repairNotes || []).length ? (
-          <Card style={{ marginTop: 12 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <Text style={tx.h}>Ghi chú sửa chữa</Text>
-              {(o.repairNotes || []).length > 0 ? (
-                <Badge text={`${(o.repairNotes || []).length} ghi chú`} fg={C.ink2} bg={C.surface} />
-              ) : null}
-            </View>
-            {(o.repairNotes || []).map((n) => (
-              <View key={n.id} style={[tx.progRow, { borderBottomWidth: 1, borderBottomColor: C.surface, paddingBottom: 10, marginBottom: 8 }]}>
-                {editingNoteId === n.id ? (
-                  <View style={{ marginTop: 4, padding: 10, backgroundColor: C.bg, borderRadius: R.md, borderWidth: 1, borderColor: C.line }}>
-                    <Field
-                      value={editingNoteText}
-                      onChangeText={setEditingNoteText}
-                      multiline
-                      placeholder="Nội dung ghi chú sửa chữa…"
-                    />
-                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
-                      <Btn title="Huỷ" variant="ghost" small onPress={() => setEditingNoteId(null)} />
-                      <Btn
-                        title={busyNote ? 'Đang lưu…' : 'Lưu'}
-                        small
-                        disabled={busyNote}
-                        onPress={() => {
-                          run(K.note, () => a.updateRepairNote(o.code, n.id, editingNoteText)).then((ok) => {
-                            if (ok) setEditingNoteId(null);
-                          });
-                        }}
-                      />
-                    </View>
-                  </View>
-                ) : (
-                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: C.ink, fontWeight: '600', lineHeight: 20 }}>{n.text}</Text>
-                      <Text style={[ui.meta, { marginTop: 2 }]}>{fmtDateTime(n.at)}</Text>
-                    </View>
-                    {mine && n.dbProgressId && !['done', 'cancelled', 'pending_payment'].includes(o.status) ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                        <Tap
-                          style={{ padding: 6, borderRadius: 6, backgroundColor: C.surface }}
-                          hitSlop={6}
-                          onPress={() => {
-                            setEditingNoteId(n.id);
-                            setEditingNoteText(n.text);
-                          }}
-                        >
-                          <AppIcon name="pencil" size={13} color={C.ink2} />
-                        </Tap>
-                        <Tap
-                          style={{ padding: 6, borderRadius: 6, backgroundColor: C.redSoft }}
-                          hitSlop={6}
-                          onPress={() => {
-                            u.dialog({
-                              icon: 'trash-2',
-                              title: 'Xoá ghi chú này?',
-                              message: 'Bạn có chắc muốn xoá dòng ghi chú này?',
-                              actions: [
-                                { label: 'Huỷ', variant: 'ghost' },
-                                {
-                                  label: 'Xác nhận xoá',
-                                  variant: 'danger',
-                                  onPress: () => run(K.note, () => a.deleteRepairNote(o.code, n.id)),
-                                },
-                              ],
-                            });
-                          }}
-                        >
-                          <AppIcon name="trash-2" size={13} color={C.red} />
-                        </Tap>
-                      </View>
-                    ) : null}
-                  </View>
-                )}
-              </View>
-            ))}
-            {o.status === 'repairing' && mine ? (
-              <View style={{ marginTop: 6 }}>
-                <Field value={repairNote} onChangeText={setRepairNote} placeholder="Thêm ghi chú công việc đã làm / phát hiện thêm…" multiline />
-                <Btn title={busyNote ? 'Đang lưu…' : '＋ Thêm ghi chú mới'} variant="soft" small style={{ marginTop: 10 }} disabled={busyNote || !repairNote.trim()} onPress={submitRepairNote} />
-              </View>
-            ) : null}
-          </Card>
-        ) : null}
-
-        {/* ===== Vật tư sử dụng & Vật tư phát sinh ===== */}
-        {(mine && (
-          o.status === 'repairing' ||
-          (o.quote?.isExternalFinalization && o.quote?.revisionRequested && ['diagnosing', 'quoted'].includes(o.status)) ||
-          getPendingExternalEstimates(o).length > 0
-        )) || (o.materials || []).length || (o.finalizedExternalParts || []).length ? (
-          <UsedAndExtraMaterialsCard
-            o={o}
-            mine={mine}
-            onOpenWarehouseUsage={() => setMatMode('usage')}
-            sharedExtraParts={extraBillParts}
-            onChangeSharedExtraParts={setExtraBillParts}
-          />
-        ) : null}
-
-        {/* ===== Các bước thực hiện (backend: bắt buộc xong trước khi nộp biên bản) ===== */}
-        {o.procedure && (mine || o.procedure.progress_percent > 0) ? <ProcedureCard o={o} editable={mine && ['diagnosing', 'repairing'].includes(o.status)} /> : null}
-        {mine ? <ReceiptCard o={o} editable={['diagnosing', 'repairing'].includes(o.status)} onPreviewPhoto={setPreviewTechPhoto} /> : null}
 
         {/* ===== Biên bản hoàn thành ===== */}
         {o.report ? (() => {
@@ -2170,39 +2094,309 @@ export function TechJobScreen({ params }) {
           </Card>
         ) : null}
 
-        {o.status === 'cancelled' ? (
-          <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: (o.inspectionFee || 0) > 0 ? (orderPaid ? C.green : C.gold) : C.muted }}>
-            <Text style={[tx.h, { color: (o.inspectionFee || 0) > 0 ? (orderPaid ? C.greenInk : C.goldInk) : C.ink }]}>
-              {(o.inspectionFee || 0) > 0
-                ? (orderPaid ? `Đã thu phí kiểm tra: ${formatVND(o.inspectionFee)}` : `Phí kiểm tra tại nhà: ${formatVND(o.inspectionFee)}`)
-                : 'Đơn huỷ không thu phí (0đ)'}
+        {/* ===== Thông tin đơn hàng (gộp Khách hàng + Lịch hẹn + Check-in gọn) ===== */}
+        <Card style={{ marginTop: 12 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <Text style={[tx.h, { marginBottom: 0 }]}>Thông tin đơn hàng</Text>
+            {o.customerTierLabel ? (
+              <Badge text={`👑 ${o.customerTierLabel}${o.warrantyDays > 0 ? ` · BH ${o.warrantyDays}n` : ''}`} fg={C.primary} bg={C.primarySoft} />
+            ) : null}
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <IconBox icon="user" size={44} bg={C.primarySoft} radius={14} />
+            <View style={{ flex: 1 }}>
+              <Text style={tx.name}>{o.address?.gender === 'Nữ' ? 'Chị' : 'Anh'} {o.address?.name}</Text>
+              <Text style={ui.meta}>{o.address?.phone}</Text>
+            </View>
+            {(mine || o.status === 'pending') && o.address?.phone && !String(o.address.phone).includes('*') ? (
+              <IconBtn icon="phone-call" onPress={() => callPhone(o.address?.phone)} style={{ backgroundColor: C.greenSoft }} label="Gọi khách" />
+            ) : null}
+          </View>
+          <Tap style={tx.addrBox} disabled={!mine && o.status !== 'pending'} onPress={() => openMap(o.address?.full)}>
+            <AppIcon name="map-pin" size={16} color={C.primary} strokeWidth={2.2} />
+            <Text style={{ flex: 1, color: C.ink, fontWeight: '600', lineHeight: 20 }}>{o.address?.full}</Text>
+            {(mine || o.status === 'pending') ? <Text style={ui.link}>Chỉ đường</Text> : null}
+          </Tap>
+
+          <View style={{ height: 1, backgroundColor: C.line, marginVertical: 12 }} />
+
+          <Text style={tx.info}>📅 {o.dateLabel} · {o.slot}</Text>
+          {o.device ? (
+            <Text style={[tx.info, { marginTop: 6 }]}>
+              📺 Thiết bị tại nhà: {catLabel(o.device.category)}{o.device.brand ? ` · ${o.device.brand}` : ''}{o.device.room ? ` (${o.device.room})` : ''}{o.device.serial ? ` · Số sê-ri: ${o.device.serial}` : ''}
             </Text>
-            <Text style={{ color: C.ink2, lineHeight: 20 }}>
-              {(o.inspectionFee || 0) > 0
-                ? orderPaid
-                  ? `Đã thanh toán phí kiểm tra ${formatVND(o.inspectionFee)}.`
-                  : isQRPayment(o)
-                    ? `Khách huỷ sau khi thợ đã tới kiểm tra tại nhà. Khách chọn chuyển khoản VietQR (${formatVND(o.inspectionFee)}) — không thu tiền mặt.`
-                    : `Khách huỷ sau khi thợ đã tới kiểm tra thiết bị trực tiếp tại nhà. Khách thanh toán ${formatVND(o.inspectionFee)} phí kiểm tra cho thợ.`
-                : 'Chính sách Minh Đức miễn phí 100% kiểm tra tại nhà khi khách từ chối sửa chữa (0đ).'}
+          ) : null}
+          {o.siteCondition ? (
+            <Text style={[tx.info, { marginTop: 6 }]}>
+              🏢 Vị trí thi công: {o.siteCondition.label} ({o.siteCondition.note})
             </Text>
-            {(o.inspectionFee || 0) > 0 && mine && !orderPaid && !isQRPayment(o) ? (
-              <Btn
-                title={busyCash ? 'Đang xác nhận…' : `Đã nhận tiền mặt ${formatVND(o.inspectionFee)}`}
-                icon="banknote"
-                small
-                disabled={busyCash}
-                style={{ marginTop: 10 }}
-                onPress={() => u.confirm(
-                  'Xác nhận đã nhận tiền mặt?',
-                  `Bạn xác nhận đã nhận đủ ${formatVND(o.inspectionFee)} phí kiểm tra cho đơn ${o.code}.`,
-                  () => run(K.cash, () => a.confirmCashReceived(o.code)),
-                  'Đã nhận',
-                )}
-              />
+          ) : null}
+          {o.note ? <Text style={[tx.info, { marginTop: 6 }]}>📝 “{o.note}”</Text> : null}
+          {(o.attachments || []).length ? (
+            <View style={{ marginTop: 8 }}>
+              <Text style={[ui.meta, { fontWeight: '700', marginBottom: 6 }]}>Hình ảnh triệu chứng ban đầu ({o.attachments.length})</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {o.attachments.map((att) => (
+                  <Tap
+                    key={att.id}
+                    style={tx.thumb}
+                    onPress={() => att.uri && setPreviewTechPhoto({ uri: att.uri, title: att.note || 'Hình ảnh triệu chứng ban đầu' })}
+                    scaleTo={0.97}
+                  >
+                    {att.uri ? <Image source={{ uri: att.uri }} style={{ width: '100%', height: '100%' }} /> : <AppIcon name="image" size={22} color={C.muted} />}
+                  </Tap>
+                ))}
+              </View>
+            </View>
+          ) : null}
+          <Text style={[tx.info, { marginTop: 6 }]}>💳 {o.payment}</Text>
+          {o.kind !== 'warranty' ? (
+            isQRPayment(o) ? (
+              <View
+                style={{
+                  marginTop: 10,
+                  padding: 12,
+                  borderRadius: R.md,
+                  backgroundColor: C.surface,
+                  borderWidth: 1,
+                  borderColor: C.line,
+                  borderLeftWidth: 3.5,
+                  borderLeftColor: orderPaid ? C.green : C.gold,
+                  gap: 4,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                    <AppIcon name={orderPaid ? 'check-circle-2' : 'alert-triangle'} size={16} color={orderPaid ? C.green : C.gold} strokeWidth={2.3} />
+                    <Text style={{ fontWeight: '800', color: orderPaid ? C.greenInk : C.goldInk, fontSize: 13, flex: 1 }}>
+                      {orderPaid ? 'Khách đã chuyển khoản VietQR thành công' : 'Khách chuyển khoản QR · KHÔNG THU TIỀN MẶT'}
+                    </Text>
+                  </View>
+                  <Badge
+                    text={orderPaid ? 'ĐÃ CHUYỂN KHOẢN' : 'KHÔNG THU TIỀN'}
+                    fg={orderPaid ? C.greenInk : C.goldInk}
+                    bg={orderPaid ? C.greenSoft : C.goldSoft}
+                  />
+                </View>
+                <Text style={{ fontSize: 12.5, color: C.ink2, lineHeight: 18 }}>
+                  {orderPaid
+                    ? `Khách đã chuyển khoản đủ ${formatVND(orderTotal(o))} qua VietQR.`
+                    : `Khách thanh toán ${o.status === 'pending_payment' ? formatVND(amountRemaining(o)) : formatOrderTotal(o)} qua mã VietQR trên ứng dụng Khách hàng. Kỹ thuật viên tuyệt đối KHÔNG thu tiền mặt.`}
+                </Text>
+              </View>
+            ) : (
+              <View
+                style={{
+                  marginTop: 10,
+                  padding: 10,
+                  borderRadius: R.md,
+                  backgroundColor: C.surface,
+                  borderWidth: 1,
+                  borderColor: C.line,
+                  borderLeftWidth: 3.5,
+                  borderLeftColor: orderPaid ? C.green : C.primary,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: '800', color: orderPaid ? C.greenInk : C.ink, fontSize: 13 }}>
+                    {orderPaid
+                      ? '✓ Đã thu tiền mặt tại nhà'
+                      : `Đơn thu tiền mặt tại nhà: ${(o.status === 'quoted' || o.quote?.hasEstimatedRange || o.quote?.approvedHasEstimatedRange) && !['pending_payment', 'done'].includes(o.status) ? formatOrderTotal(o) : formatVND(cashToCollect(o))}`}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: C.ink2, marginTop: 2 }}>
+                    {orderPaid ? 'Đã đối soát thanh toán hoàn tất.' : 'Kỹ thuật viên trực tiếp thu tiền mặt từ khách sau khi nghiệm thu.'}
+                  </Text>
+                </View>
+                <Badge text={orderPaid ? 'Hoàn thành' : 'Thu trực tiếp'} fg={orderPaid ? C.greenInk : C.primary} bg={orderPaid ? C.greenSoft : C.primarySoft} />
+              </View>
+            )
+          ) : null}
+          <View style={{ marginTop: 10, gap: 8 }}>
+            {o.items.map((it) => {
+              const sv = getService(it.id);
+              return (
+                <View key={it.id} style={tx.svcRow}>
+                  <AppIcon icon={sv?.icon} size={20} color={C.primary} strokeWidth={2.1} />
+                  <Text style={{ flex: 1, color: C.ink, fontWeight: '600' }} numberOfLines={2}>{sv?.name || it.name || 'Dịch vụ kỹ thuật'}</Text>
+                  <Text style={{ color: C.ink2, fontWeight: '800' }}>x{it.qty}</Text>
+                </View>
+              );
+            })}
+          </View>
+          {o.checkIn ? (
+            <View
+              style={{
+                marginTop: 10,
+                paddingTop: 10,
+                borderTopWidth: 1,
+                borderTopColor: C.line,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <AppIcon name="map-pin" size={14} color={C.green} strokeWidth={2.2} />
+                <Text style={{ fontSize: 12.5, color: C.ink2, fontWeight: '600', flex: 1 }}>
+                  Đã đến nơi{o.checkIn.at ? ` · ${fmtDateTime(o.checkIn.at)}` : ''}
+                </Text>
+              </View>
+              {o.lateCompensation ? (
+                <Badge
+                  text={(o.lateCompensation.minutesLate || o.lateCompensation.minutes) ? `Muộn ${o.lateCompensation.minutesLate || o.lateCompensation.minutes}p` : 'Đến muộn'}
+                  fg={C.goldInk}
+                  bg={C.goldSoft}
+                />
+              ) : o.arrivedAt ? (
+                <Badge text="Đúng giờ" fg={C.greenInk} bg={C.greenSoft} />
+              ) : null}
+            </View>
+          ) : null}
+        </Card>
+
+        {/* Nhật ký ghi chú sửa chữa (thu gọn khi chưa có ghi chú) */}
+        {(o.status === 'repairing' && mine) || (o.repairNotes || []).length ? (
+          <Card style={{ marginTop: 12 }}>
+            <Tap
+              onPress={() => setShowRepairNotes((v) => !v)}
+              style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}
+            >
+              <Text style={[tx.h, { marginBottom: 0, flex: 1 }]}>
+                Ghi chú sửa chữa{(o.repairNotes || []).length === 0 && !showRepairNotes ? ' (tuỳ chọn)' : ''}
+              </Text>
+              {(o.repairNotes || []).length > 0 ? (
+                <Badge text={`${(o.repairNotes || []).length} ghi chú`} fg={C.ink2} bg={C.surface} />
+              ) : null}
+              <View style={{ transform: [{ rotate: showRepairNotes ? '-90deg' : '90deg' }] }}>
+                <AppIcon name="chevron-right" size={14} color={C.muted} strokeWidth={2.2} />
+              </View>
+            </Tap>
+            {showRepairNotes ? (
+              <View style={{ marginTop: 10 }}>
+                {(o.repairNotes || []).map((n) => (
+                  <View key={n.id} style={[tx.progRow, { borderBottomWidth: 1, borderBottomColor: C.surface, paddingBottom: 10, marginBottom: 8 }]}>
+                    {editingNoteId === n.id ? (
+                      <View style={{ marginTop: 4, padding: 10, backgroundColor: C.bg, borderRadius: R.md, borderWidth: 1, borderColor: C.line }}>
+                        <Field
+                          value={editingNoteText}
+                          onChangeText={setEditingNoteText}
+                          multiline
+                          placeholder="Nội dung ghi chú sửa chữa…"
+                        />
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                          <Btn title="Huỷ" variant="ghost" small onPress={() => setEditingNoteId(null)} />
+                          <Btn
+                            title={busyNote ? 'Đang lưu…' : 'Lưu'}
+                            small
+                            disabled={busyNote}
+                            onPress={() => {
+                              run(K.note, () => a.updateRepairNote(o.code, n.id, editingNoteText)).then((ok) => {
+                                if (ok) setEditingNoteId(null);
+                              });
+                            }}
+                          />
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: C.ink, fontWeight: '600', lineHeight: 20 }}>{n.text}</Text>
+                          <Text style={[ui.meta, { marginTop: 2 }]}>{fmtDateTime(n.at)}</Text>
+                        </View>
+                        {mine && n.dbProgressId && !['done', 'cancelled', 'pending_payment'].includes(o.status) ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                            <Tap
+                              style={{ padding: 6, borderRadius: 6, backgroundColor: C.surface }}
+                              hitSlop={6}
+                              onPress={() => {
+                                setEditingNoteId(n.id);
+                                setEditingNoteText(n.text);
+                              }}
+                            >
+                              <AppIcon name="pencil" size={13} color={C.ink2} />
+                            </Tap>
+                            <Tap
+                              style={{ padding: 6, borderRadius: 6, backgroundColor: C.redSoft }}
+                              hitSlop={6}
+                              onPress={() => {
+                                u.dialog({
+                                  icon: 'trash-2',
+                                  title: 'Xoá ghi chú này?',
+                                  message: 'Bạn có chắc muốn xoá dòng ghi chú này?',
+                                  actions: [
+                                    { label: 'Huỷ', variant: 'ghost' },
+                                    {
+                                      label: 'Xác nhận xoá',
+                                      variant: 'danger',
+                                      onPress: () => run(K.note, () => a.deleteRepairNote(o.code, n.id)),
+                                    },
+                                  ],
+                                });
+                              }}
+                            >
+                              <AppIcon name="trash-2" size={13} color={C.red} />
+                            </Tap>
+                          </View>
+                        ) : null}
+                      </View>
+                    )}
+                  </View>
+                ))}
+                {o.status === 'repairing' && mine ? (
+                  <View style={{ marginTop: 4 }}>
+                    <Field value={repairNote} onChangeText={setRepairNote} placeholder="Thêm ghi chú công việc đã làm / phát hiện thêm…" multiline />
+                    <Btn title={busyNote ? 'Đang lưu…' : '＋ Thêm ghi chú mới'} variant="soft" small style={{ marginTop: 10 }} disabled={busyNote || !repairNote.trim()} onPress={submitRepairNote} />
+                  </View>
+                ) : null}
+              </View>
             ) : null}
           </Card>
         ) : null}
+
+        {/* Lịch sử trạng thái (thu gọn mặc định ở cuối trang) */}
+        <Card style={{ marginTop: 12 }}>
+          <Tap
+            onPress={() => setShowTimeline((v) => !v)}
+            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}
+          >
+            <Text style={[tx.h, { marginBottom: 0, flex: 1 }]}>
+              Dòng thời gian ({(o.history || []).length} mốc)
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.primary }}>
+                {showTimeline ? 'Thu gọn' : 'Xem'}
+              </Text>
+              <View style={{ transform: [{ rotate: showTimeline ? '-90deg' : '90deg' }] }}>
+                <AppIcon name="chevron-right" size={14} color={C.primary} strokeWidth={2.2} />
+              </View>
+            </View>
+          </Tap>
+          {showTimeline ? (
+            <View style={{ marginTop: 12 }}>
+              {(o.history || []).map((h, i, arr) => {
+                const hm = STATUS_META[h.status] || STATUS_META.pending;
+                const last = i === arr.length - 1;
+                return (
+                  <View key={`${h.status}-${h.at}-${i}`} style={tx.histRow}>
+                    <View style={tx.histRail}>
+                      <View style={[tx.histDot, { backgroundColor: hm.fg }]} />
+                      {!last ? <View style={tx.histLine} /> : null}
+                    </View>
+                    <View style={{ flex: 1, paddingBottom: last ? 0 : 12 }}>
+                      <Text style={{ fontWeight: '800', color: C.ink, fontSize: 14 }}>{hm.label}</Text>
+                      <Text style={[ui.meta, { marginTop: 2 }]}>{fmtDateTime(h.at)}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+        </Card>
       </ScrollView>
 
       {/* ===== Thanh hành động ===== */}
@@ -2275,6 +2469,24 @@ export function TechJobScreen({ params }) {
               icon="receipt-text"
               style={{ flex: 1.5 }}
               onPress={() => setShowFinalizeExt(true)}
+            />
+          </View>
+        ) : !showDiagQuoteForm && o.status === 'diagnosing' ? (
+          <View style={tx.dock}>
+            <Btn
+              title="Báo giá phát sinh"
+              icon="receipt-text"
+              variant="soft"
+              style={{ flex: 1 }}
+              disabled={busyQuote}
+              onPress={() => setShowDiagQuoteForm(true)}
+            />
+            <Btn
+              title={busyQuote ? 'Đang bắt đầu…' : 'Bắt đầu sửa ngay'}
+              icon="wrench"
+              style={{ flex: 1.4 }}
+              disabled={busyQuote}
+              onPress={quickStartRepair}
             />
           </View>
         ) : (

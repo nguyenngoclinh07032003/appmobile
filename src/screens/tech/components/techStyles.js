@@ -224,7 +224,7 @@ export const tx = StyleSheet.create({
     marginTop: 10,
     backgroundColor: C.primarySoft,
   },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 10 },
   note: { borderRadius: R.md, padding: 12, marginTop: 12 },
   qRow: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
   progRow: {

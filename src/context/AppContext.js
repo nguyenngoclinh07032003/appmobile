@@ -33,6 +33,12 @@ import {
 import { C, STATUS_META } from "../theme/colors";
 export { matchJobForTech, comboDiscountFor } from "../constants/data";
 import {
+  getBlockingProcedureSteps,
+  getAutoCompletableProcedureSteps,
+  pickStepPhotoAllocation,
+} from "../utils/procedureHelpers";
+export { getBlockingProcedureSteps };
+import {
   getSession,
   clearSession,
   setSession,
@@ -2865,6 +2871,129 @@ export function AppProvider({ children }) {
     return linkedCount;
   };
 
+  // Tự động đồng bộ các bước quy trình bắt buộc không cần nhập chỉ số đo khi thợ nộp biên bản hoàn thành.
+  // Tận dụng ảnh hiện có của việc (ưu tiên ảnh AFTER_REPAIR cho bước sau, ảnh BEFORE_REPAIR riêng cho bước đầu)
+  // để giữ 100% tương thích backend HRMSS mà thợ không phải bấm "Xong bước" từng bước.
+  const autoCompletePendingProcedureSteps = async (
+    assignmentId,
+    initialProcedure = null,
+    { freshAfterIds = [], fallbackPhotoUri = null } = {},
+  ) => {
+    if (!assignmentId || !authTokens.get()) {
+      return { completedCount: 0, procedure: initialProcedure };
+    }
+    let proc = initialProcedure;
+    if (!proc || !Array.isArray(proc.services) || proc.services.length === 0) {
+      const detRes = await hrmssApi.getTechnicianJobDetail(assignmentId).catch(() => null);
+      if (detRes?.ok) {
+        proc = detRes.data?.job?.procedure || detRes.data?.procedure || proc;
+      }
+    }
+    const pendingAuto = getAutoCompletableProcedureSteps(proc);
+    if (!pendingAuto.length) {
+      return { completedCount: 0, procedure: proc };
+    }
+
+    const stepsNeedingPhoto = pendingAuto.filter(
+      (st) => st.require_photo && !(Array.isArray(st.photo_ids) && st.photo_ids.length > 0),
+    );
+    let allocations = new Map();
+    let uploadedBeforeId = null;
+
+    if (stepsNeedingPhoto.length > 0) {
+      const photosRes = await hrmssApi.listJobPhotos(assignmentId).catch(() => null);
+      const rawRows = photosRes?.ok
+        ? photosRes.data?.items ||
+          photosRes.data?.attachments ||
+          (Array.isArray(photosRes.data) ? photosRes.data : [])
+        : [];
+      const sortedRows = [...(Array.isArray(rawRows) ? rawRows : [])]
+        .filter((r) => r && r.attachment_id != null)
+        .sort((x, y) => Number(y.attachment_id) - Number(x.attachment_id));
+
+      const isReceiptAttachment = (r) => {
+        const evType = String(r.evidence_type || "").toUpperCase();
+        return ["DOCUMENT", "RECEIPT", "PART_RECEIPT", "INVOICE", "RECEIPT_PHOTO"].includes(evType);
+      };
+      const nonReceiptRows = sortedRows.filter((r) => !isReceiptAttachment(r));
+      const afterPhotoIds = [
+        ...(Array.isArray(freshAfterIds) ? freshAfterIds : []),
+        ...nonReceiptRows
+          .filter((r) => String(r.evidence_type || "").toUpperCase() === "AFTER_REPAIR")
+          .map((r) => r.attachment_id),
+      ];
+      const otherPhotoIds = nonReceiptRows
+        .filter((r) => {
+          const evType = String(r.evidence_type || "").toUpperCase();
+          const desc = String(r.description || r.note || "").trim();
+          // Không lấy ảnh [Triệu chứng] để server không gắn procedure_step_id làm ẩn ảnh khỏi app khách.
+          return evType !== "AFTER_REPAIR" && !desc.startsWith("[Triệu chứng]");
+        })
+        .map((r) => r.attachment_id);
+
+      allocations = pickStepPhotoAllocation(stepsNeedingPhoto, {
+        afterPhotoIds,
+        otherPhotoIds,
+      });
+
+      const needsBefore = [...allocations.values()].some(
+        (al) => al?.needsBeforeUpload && al?.photoId == null,
+      );
+      const isLocalUri =
+        typeof fallbackPhotoUri === "string" &&
+        /^(data:|blob:|file:|content:|ph:\/\/)/i.test(fallbackPhotoUri.trim());
+      if (needsBefore && isLocalUri) {
+        const upBefore = await hrmssApi
+          .uploadJobPhoto(
+            assignmentId,
+            fallbackPhotoUri,
+            "BEFORE_REPAIR",
+            "Ảnh kiểm tra quy trình tự động",
+          )
+          .catch(() => null);
+        if (upBefore?.ok && upBefore.data?.attachment?.attachment_id != null) {
+          uploadedBeforeId = upBefore.data.attachment.attachment_id;
+        }
+      }
+    }
+
+    // Chạy step_no <= 1 trước, các bước sau chạy sau để nếu fallback trùng ID thì bước AFTER vẫn giữ bản mới nhất.
+    const orderedSteps = [...pendingAuto].sort(
+      (a, b) => (Number(a.step_no) || 0) - (Number(b.step_no) || 0),
+    );
+    let completedCount = 0;
+    let latestProc = proc;
+    for (const st of orderedSteps) {
+      const body = { status: "DONE" };
+      if (Array.isArray(st.items) && st.items.length > 0) {
+        body.checked_items = st.items;
+      }
+      if (st.require_photo) {
+        if (Array.isArray(st.photo_ids) && st.photo_ids.length > 0) {
+          body.photo_ids = st.photo_ids;
+        } else {
+          const alloc = allocations.get(st.step_id);
+          const chosenId =
+            alloc?.photoId ??
+            (alloc?.needsBeforeUpload ? (uploadedBeforeId ?? alloc?.fallbackPhotoId) : alloc?.fallbackPhotoId);
+          if (chosenId != null) {
+            body.photo_ids = [chosenId];
+          }
+        }
+      }
+      const stepRes = await hrmssApi
+        .updateProcedureStep(assignmentId, st.step_id, body)
+        .catch(() => null);
+      if (stepRes?.ok) {
+        completedCount += 1;
+        if (stepRes.data?.job?.procedure !== undefined) {
+          latestProc = stepRes.data.job.procedure;
+        }
+      }
+    }
+    return { completedCount, procedure: latestProc };
+  };
+
   const a = {
     syncFromBackend,
     syncCatalog: syncPublicCatalog,
@@ -5067,7 +5196,14 @@ export function AppProvider({ children }) {
     // bắt buộc -> 409 PROCEDURE_INCOMPLETE) thì báo thợ và KHÔNG đổi trạng thái trên máy. Trả true khi nộp được.
     completeJob: async (
       code,
-      { summary, paid, safetyChecklist, customerSignature, completionPhotoUris = [] },
+      {
+        summary,
+        paid,
+        safetyChecklist,
+        customerSignature,
+        completionPhotoUris = [],
+        completionPhotoFallbackUri = null,
+      },
     ) => {
       const now = Date.now();
       const o0 = s.orders.find((x) => x.code === code);
@@ -5102,6 +5238,7 @@ export function AppProvider({ children }) {
       const handoverBase = collectedCash
         ? "Đã thu tiền dịch vụ, bàn giao thiết bị và kích hoạt bảo hành điện tử"
         : "Đã bàn giao thiết bị cho khách hàng và kích hoạt bảo hành điện tử";
+      const freshAfterIds = [];
       if (Array.isArray(completionPhotoUris) && completionPhotoUris.length) {
         for (const uri of completionPhotoUris) {
           if (!uri) continue;
@@ -5116,20 +5253,28 @@ export function AppProvider({ children }) {
             );
             return false;
           }
-          if (
-            upRes?.ok &&
-            upRes.data?.attachment?.attachment_id &&
-            !upRes.data.attachment.description
-          ) {
-            await hrmssApi
-              .updatePhotoNote(upRes.data.attachment.attachment_id, "Ảnh hoàn thành bàn giao thiết bị")
-              .catch(() => null);
+          const att = upRes.data?.attachment;
+          if (att?.attachment_id) {
+            freshAfterIds.push(att.attachment_id);
+            if (!att.description) {
+              await hrmssApi
+                .updatePhotoNote(att.attachment_id, "Ảnh hoàn thành bàn giao thiết bị")
+                .catch(() => null);
+            }
           }
         }
       }
       if ((o0.externalParts || []).some((p) => p.itemId && !p.receiptId)) {
         await reconcileMissingPartReceipts(o0.dbAssignmentId).catch(() => 0);
       }
+      const fallbackPhotoUri =
+        completionPhotoFallbackUri ||
+        (Array.isArray(completionPhotoUris) ? completionPhotoUris.find(Boolean) : null) ||
+        null;
+      await autoCompletePendingProcedureSteps(o0.dbAssignmentId, o0.procedure, {
+        freshAfterIds,
+        fallbackPhotoUri,
+      }).catch(() => null);
       const completePayload = {
         work_performed: cleanSummary,
         testing_result: testingBase,
@@ -5149,6 +5294,19 @@ export function AppProvider({ children }) {
           o0.dbAssignmentId,
         ).catch(() => 0);
         if (linked > 0) {
+          res = await hrmssApi.completeTechnicianJob(
+            o0.dbAssignmentId,
+            completePayload,
+          );
+        }
+      }
+      if (!res.ok && res.code === "PROCEDURE_INCOMPLETE") {
+        const autoRetry = await autoCompletePendingProcedureSteps(
+          o0.dbAssignmentId,
+          null,
+          { freshAfterIds, fallbackPhotoUri },
+        ).catch(() => null);
+        if (autoRetry?.completedCount > 0) {
           res = await hrmssApi.completeTechnicianJob(
             o0.dbAssignmentId,
             completePayload,

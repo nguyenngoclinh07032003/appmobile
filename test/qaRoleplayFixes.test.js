@@ -15,6 +15,11 @@ const {
   matchReceiptsToQuoteLines,
 } = await import('../src/utils/externalPartsPricing.js');
 const { parseSymptomsField } = await import('../src/utils/symptomItems.js');
+const {
+  getBlockingProcedureSteps,
+  getAutoCompletableProcedureSteps,
+  pickStepPhotoAllocation,
+} = await import('../src/utils/procedureHelpers.js');
 const sync = await import('../src/services/syncService.js');
 const ctx = await import('../src/context/AppContext.js');
 
@@ -489,5 +494,64 @@ describe('qaRoleplayFixes: kiểm thử toàn bộ lỗi đồng bộ Khách ↔
     assert.equal(billExtraAmount({ kind: 'warranty', goods: 5000, bill: { amountDue: 105000 } }), 0);
     assert.equal(billExtraAmount({ status: 'cancelled', inspectionFee: 100000, bill: { amountDue: 100000 } }), 0);
     assert.equal(billExtraAmount({ goods: 100000, bill: { bookedAmount: 100000, quotationTotal: 100000, supplementalTotal: 0, amountDue: 100000 } }), 0);
+  });
+
+  test('Rút gọn quy trình thợ: phân tách bước có measures bắt buộc vs bước tự động hoàn tất & phân bổ ảnh', () => {
+    const procedure = {
+      total_steps: 4,
+      done_steps: 1,
+      services: [
+        {
+          service_name: '[TEST] Thử thanh toán 5.000đ',
+          steps: [
+            { step_id: 11, step_no: 1, title: 'Kiểm tra và chẩn đoán lỗi', is_required: true, status: 'PENDING', require_photo: true, items: ['Ghi nhận triệu chứng'], measures: [] },
+            { step_id: 12, step_no: 2, title: 'Đo áp suất gas', is_required: true, status: 'PENDING', require_photo: false, items: [], measures: [{ key: 'pressure', label: 'Áp suất gas', unit: 'PSI' }] },
+            { step_id: 13, step_no: 3, title: 'Chạy thử và bàn giao', is_required: true, status: 'PENDING', require_photo: true, items: ['Chạy thử 15 phút'], measures: [] },
+            { step_id: 14, step_no: 4, title: 'Bước tuỳ chọn', is_required: false, status: 'PENDING', require_photo: false, items: [], measures: [] },
+          ],
+        },
+      ],
+    };
+
+    const blocking = getBlockingProcedureSteps(procedure);
+    assert.deepEqual(blocking.map((s) => s.step_id), [12]);
+
+    const autoSteps = getAutoCompletableProcedureSteps(procedure);
+    assert.deepEqual(autoSteps.map((s) => s.step_id), [11, 13]);
+
+    // Chỉ có 1 ảnh AFTER -> bước 3 nhận ảnh 101, bước 1 đánh dấu needsBeforeUpload để tránh đè FK
+    const singleAfterAlloc = pickStepPhotoAllocation(
+      [autoSteps[0], autoSteps[1]],
+      { afterPhotoIds: [101], otherPhotoIds: [] },
+    );
+    assert.equal(singleAfterAlloc.get(13).photoId, 101);
+    assert.equal(singleAfterAlloc.get(13).needsBeforeUpload, false);
+    assert.equal(singleAfterAlloc.get(11).photoId, null);
+    assert.equal(singleAfterAlloc.get(11).fallbackPhotoId, 101);
+    assert.equal(singleAfterAlloc.get(11).needsBeforeUpload, true);
+
+    // Khi có sẵn ảnh riêng -> cả bước 1 và bước 3 dùng ID khác nhau, không cần upload bổ sung
+    const dualAlloc = pickStepPhotoAllocation(
+      [autoSteps[0], autoSteps[1]],
+      { afterPhotoIds: [101], otherPhotoIds: [99] },
+    );
+    assert.equal(dualAlloc.get(13).photoId, 101);
+    assert.equal(dualAlloc.get(11).photoId, 99);
+    assert.equal(dualAlloc.get(11).needsBeforeUpload, false);
+  });
+
+  test('Rút gọn quy trình thợ: vật tư mua ngoài giá cố định tính tổng chính xác không tạo khoảng dao động', () => {
+    const fixedLines = [
+      { key: 'orig_1', type: 'labor', name: 'Vệ sinh máy lạnh', qty: 1, price: 250000, isOriginal: true },
+      { key: 'custom_1', type: 'part', name: 'Tụ điện Panasonic', qty: 1, price: 150000, minPrice: null, maxPrice: null, isCustom: true, isEstimatedRange: false },
+    ];
+    const totals = computeQuoteRangeTotals(fixedLines, { bookedBase: 250000, isOnSite: true });
+    assert.equal(totals.hasEstimatedRange, false);
+    assert.equal(totals.extraMin, 150000);
+    assert.equal(totals.extraMax, 150000);
+    assert.equal(totals.customExtraMin, 150000);
+    assert.equal(totals.customExtraMax, 150000);
+    assert.equal(totals.totalMin, 400000);
+    assert.equal(totals.totalMax, 400000);
   });
 });
