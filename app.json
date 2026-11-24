@@ -14,7 +14,7 @@
     },
     "android": {
       "package": "com.hrmss.thominhduc",
-      "versionCode": 2,
+      "versionCode": 4,
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
