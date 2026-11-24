@@ -1228,14 +1228,15 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
     setMeasures(Object.fromEntries((st.measures || []).map((m) => [m.key, st.measurements?.[m.key] != null ? String(st.measurements[m.key]) : ''])));
     setPhotos([]);
   };
-  const addPhoto = async () => {
-    let uri = await pickCamera();
-    if (uri === null) uri = await pickImage();
-    if (uri == null) {
+  const addPhoto = async (source = 'camera') => {
+    if (photos.length >= 5) return;
+    let uri = source === 'camera' ? await pickCamera() : await pickImage();
+    if (source === 'camera' && uri === null) uri = await pickImage();
+    if (!uri) {
       if (uri === null) u.alert('Chưa hỗ trợ máy ảnh', 'Cho phép máy ảnh hoặc chọn ảnh từ thư viện.', '📷');
       return;
     }
-    setPhotos((p) => [...p, uri]);
+    setPhotos((p) => (p.includes(uri) ? p : [...p, uri]).slice(0, 5));
   };
   const finish = async (st) => {
     const missing = (st.measures || []).filter((m) => String(measures[m.key] ?? '').trim() === '' || Number.isNaN(Number(measures[m.key])));
@@ -1419,20 +1420,37 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
                   <Field key={m.key} label={`${m.label}${m.unit ? ` (${m.unit})` : ''}`} value={measures[m.key] ?? ''} keyboardType="decimal-pad"
                     onChangeText={(t) => setMeasures((p) => ({ ...p, [m.key]: t.replace(',', '.').replace(/[^0-9.-]/g, '') }))} />
                 ))}
-                {st.require_photo ? (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                    {photos.map((uri, i) => (
-                      <View key={`${i}`} style={tx.thumb}>
-                        <Image source={{ uri }} style={{ width: '100%', height: '100%' }} />
-                        <Tap style={tx.thumbX} onPress={() => setPhotos((p) => p.filter((_, j) => j !== i))}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>✕</Text></Tap>
+                {(() => {
+                  const isHandoverStep = Number(st.step_no) > 1 && /bàn giao|hoàn thành|nghiệm thu/i.test(String(st.title || ''));
+                  const photoLabel = st.require_photo
+                    ? (isHandoverStep ? 'Ảnh hoàn thành / bàn giao (bắt buộc)' : 'Ảnh bước (bắt buộc)')
+                    : (isHandoverStep ? 'Ảnh hoàn thành / bàn giao' : 'Ảnh minh chứng (tuỳ chọn)');
+                  return (
+                    <View style={{ marginTop: 2 }}>
+                      <Text style={[ui.meta, { fontWeight: '700', marginBottom: 6 }]}>{photoLabel}</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                        {photos.map((uri, i) => (
+                          <View key={`${i}`} style={tx.thumb}>
+                            <Image source={{ uri }} style={{ width: '100%', height: '100%' }} />
+                            <Tap style={tx.thumbX} onPress={() => setPhotos((p) => p.filter((_, j) => j !== i))}><Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>✕</Text></Tap>
+                          </View>
+                        ))}
+                        {photos.length < 5 ? (
+                          <>
+                            <Tap style={[tx.thumb, tx.thumbAdd]} onPress={() => addPhoto('camera')}>
+                              <AppIcon name="camera" size={20} color={C.primary} strokeWidth={2.1} />
+                              <Text style={{ fontSize: 10, color: C.primary, fontWeight: '700', marginTop: 2 }}>Chụp ảnh</Text>
+                            </Tap>
+                            <Tap style={[tx.thumb, tx.thumbAdd]} onPress={() => addPhoto('gallery')}>
+                              <AppIcon name="image" size={20} color={C.primary} strokeWidth={2.1} />
+                              <Text style={{ fontSize: 10, color: C.primary, fontWeight: '700', marginTop: 2 }}>Tải ảnh lên</Text>
+                            </Tap>
+                          </>
+                        ) : null}
                       </View>
-                    ))}
-                    <Tap style={[tx.thumb, tx.thumbAdd]} onPress={addPhoto}>
-                      <Text style={{ fontSize: 22, color: C.primary }}>＋</Text>
-                      <Text style={{ fontSize: 10, color: C.primary, fontWeight: '700' }}>Ảnh bước</Text>
-                    </Tap>
-                  </View>
-                ) : null}
+                    </View>
+                  );
+                })()}
                 <Btn title={busy ? 'Đang gửi…' : `Xong bước ${st.step_no}`} disabled={busy} onPress={() => finish(st)} />
               </View>
             ) : null}

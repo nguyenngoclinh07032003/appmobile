@@ -3346,11 +3346,20 @@ export function AppProvider({ children }) {
       const photoIds = [];
       const uploadedAttachments = [];
       const stepEvType = step.step_no === 1 ? "BEFORE_REPAIR" : "AFTER_REPAIR";
+      const isHandoverStep =
+        Number(step?.step_no) > 1 &&
+        /bàn giao|hoàn thành|nghiệm thu/i.test(String(step?.title || ""));
+      const stepPhotoDesc = isHandoverStep
+        ? "Ảnh hoàn thành bàn giao thiết bị"
+        : step?.title
+          ? `Ảnh bước ${step.step_no}: ${step.title}`
+          : null;
       for (const uri of photoUris) {
         const up = await hrmssApi.uploadJobPhoto(
           o.dbAssignmentId,
           uri,
           stepEvType,
+          stepPhotoDesc,
         );
         if (!up.ok)
           return {
@@ -3368,6 +3377,7 @@ export function AppProvider({ children }) {
             attachment_id: attObj.attachment_id,
             image_url: attObj.image_url || attObj.file_url || attObj.url || uri,
             evidence_type: stepEvType,
+            description: attObj.description || stepPhotoDesc || "",
             procedure_step_id: step.step_id,
           }),
         );
