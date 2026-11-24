@@ -28,6 +28,16 @@
       }
     },
     "userInterfaceStyle": "light",
+    "web": {
+      "name": "Thợ Minh Đức",
+      "shortName": "Thợ Minh Đức",
+      "lang": "vi",
+      "display": "standalone",
+      "startUrl": "/",
+      "backgroundColor": "#f4f7fb",
+      "themeColor": "#0b4da2",
+      "favicon": "./assets/app-icon.png"
+    },
     "platforms": [
       "ios",
       "android",

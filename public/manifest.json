@@ -1,0 +1,21 @@
+{
+  "id": "/",
+  "name": "Thợ Minh Đức",
+  "short_name": "Thợ Minh Đức",
+  "description": "Đặt lịch sửa chữa, vệ sinh và bảo trì điện máy tại nhà.",
+  "lang": "vi",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f7fb",
+  "theme_color": "#0b4da2",
+  "icons": [
+    {
+      "src": "/icons/app-icon.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
