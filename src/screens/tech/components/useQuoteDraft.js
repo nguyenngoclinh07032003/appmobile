@@ -62,6 +62,7 @@ export function draftFromOrder(o) {
   const q = o?.quote;
   const onSite = isOnSiteQuote(o);
   const isFreeWarranty = o?.kind === 'warranty' && !o?.outOfWarranty && o?.status !== 'out_of_warranty';
+  const zeroBookedBase = isFreeWarranty || (o?.goods != null && Number(o.goods) === 0);
   const { tags, symptomItems } = parseSymptomsField(q?.symptoms, o?.evidence || []);
   // Lúc gửi, chẩn đoán được ghép "triệu chứng. kết luận" -> tách lại để không nhân đôi phần triệu chứng.
   const diagnosis = stripSymptomsPrefixFromDiagnosis(q?.diagnosis || '', q?.symptoms, tags, symptomItems);
@@ -78,7 +79,7 @@ export function draftFromOrder(o) {
       type: 'labor',
       name: it.name || getService(it.id)?.name || 'Dịch vụ',
       qty: Math.max(1, Number(it.qty) || 1),
-      price: isFreeWarranty ? 0 : (it.price != null ? Number(it.price) : (getService(it.id)?.price || 0)),
+      price: zeroBookedBase ? 0 : (it.price != null ? Number(it.price) : (getService(it.id)?.price || 0)),
       unit: 'lần',
       isOriginal: true,
     }));

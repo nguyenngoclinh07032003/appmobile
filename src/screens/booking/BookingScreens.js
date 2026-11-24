@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, Image, Platform } from 'react-native';
 import { C, R, shadow } from '../../theme';
 import {
@@ -7,7 +7,10 @@ import {
   catLabel, catIcon, MATERIALS, SITE_CONDITIONS, tierOf, comboDiscountFor, CATEGORIES,
   resolveServiceWarrantyDays,
 } from '../../constants/data';
-import { useApp, cartTotal, fmtDate, getValidVouchers } from '../../context';
+import {
+  useApp, cartTotal, fmtDate, getValidVouchers,
+  getNonWorkingDayInfo, findFirstWorkingDayIndex,
+} from '../../context';
 import { hrmssApi } from '../../services/api';
 import {
   Tap, Btn, IconBtn, IconBox, Card, TopBar, SectionTitle, Media, Badge, Stars, Stepper, Sheet, Radio, Field,
@@ -425,19 +428,48 @@ export function CheckoutScreen({ params }) {
   const [otpSending, setOtpSending] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
 
-  const days = nextDays(7);
+  const days = useMemo(() => nextDays(14), []);
+  const holidayOpts = useMemo(
+    () => ({ holidays: s.holidays || [], sundaysClosed: s.sundaysClosed !== false }),
+    [s.holidays, s.sundaysClosed],
+  );
+  const firstWorkingIdx = useMemo(
+    () => findFirstWorkingDayIndex(days, holidayOpts, {
+      isTodayOutOfSlots: minSelectableMinute(0) > MAX_DAY_MINUTE,
+    }),
+    [days, holidayOpts],
+  );
+  const fallbackNextWorkingIdx = useMemo(() => {
+    const idx = days.findIndex((dd, i) => i > 0 && !getNonWorkingDayInfo(dd.key, holidayOpts).blocked);
+    if (idx >= 0) return idx;
+    return firstWorkingIdx >= 0 ? firstWorkingIdx : 1;
+  }, [days, holidayOpts, firstWorkingIdx]);
   const getMinSelectable = (dIdx) => minSelectableMinute(dIdx);
 
-  const [dayIdx, setDayIdx] = useState(1);
+  const [dayIdx, setDayIdx] = useState(() => (firstWorkingIdx >= 0 ? firstWorkingIdx : 1));
   const [timeMinutes, setTimeMinutes] = useState(() => {
-    const minM = getMinSelectable(1);
+    const startIdx = firstWorkingIdx >= 0 ? firstWorkingIdx : 1;
+    const minM = getMinSelectable(startIdx);
     return Math.min(Math.max(DEFAULT_SLOT_MINUTE, minM), MAX_DAY_MINUTE);
   });
-  const [slot, setSlot] = useState(() => minutesToSlotStr(DEFAULT_SLOT_MINUTE));
+  const [slot, setSlot] = useState(() => {
+    const startIdx = firstWorkingIdx >= 0 ? firstWorkingIdx : 1;
+    const minM = getMinSelectable(startIdx);
+    return minutesToSlotStr(Math.min(Math.max(DEFAULT_SLOT_MINUTE, minM), MAX_DAY_MINUTE));
+  });
 
   const minAvailable = getMinSelectable(dayIdx);
   const isTodayOutOfSlots = dayIdx === 0 && minAvailable > MAX_DAY_MINUTE;
   const attachBusyRef = useRef(false);
+
+  // Tự chuyển khỏi ngày nghỉ / Chủ nhật nếu cấu hình ngày lễ đồng bộ xong sau khi mở màn hình.
+  useEffect(() => {
+    const curDay = days[dayIdx];
+    const blockedInfo = curDay ? getNonWorkingDayInfo(curDay.key, holidayOpts) : null;
+    if (blockedInfo?.blocked && firstWorkingIdx >= 0 && firstWorkingIdx !== dayIdx) {
+      handleDaySelect(firstWorkingIdx);
+    }
+  }, [holidayOpts, firstWorkingIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Giữ slot & timeMinutes đồng bộ với minAvailable khi đồng hồ nhảy qua mốc 15 phút hoặc cuối ngày.
   useEffect(() => {
@@ -453,6 +485,12 @@ export function CheckoutScreen({ params }) {
   }, [dayIdx, minAvailable]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDaySelect = (i) => {
+    const targetDay = days[i];
+    const off = targetDay ? getNonWorkingDayInfo(targetDay.key, holidayOpts) : null;
+    if (off?.blocked) {
+      u.toast(`${off.label}: Trung tâm không phục vụ vào ngày này.`, 'calendar-clock');
+      return;
+    }
     setDayIdx(i);
     const newMin = getMinSelectable(i);
     if (i === 0 && newMin > MAX_DAY_MINUTE) {
@@ -657,6 +695,16 @@ export function CheckoutScreen({ params }) {
       });
       return;
     }
+    const chosenDay = days[dayIdx];
+    const blockedDay = chosenDay ? getNonWorkingDayInfo(chosenDay.key, holidayOpts) : null;
+    if (blockedDay?.blocked) {
+      u.alert(
+        'Ngày không phục vụ',
+        `${chosenDay.label} (${chosenDay.ddmm}) là ${blockedDay.label}. Vui lòng chọn ngày làm việc khác.`,
+        'calendar-clock',
+      );
+      return;
+    }
     const liveMin = getMinSelectable(dayIdx);
     const liveOut = dayIdx === 0 && liveMin > MAX_DAY_MINUTE;
     if (dayIdx === 0 && liveOut) {
@@ -780,12 +828,36 @@ export function CheckoutScreen({ params }) {
         {/* Lịch hẹn */}
         <Text style={bx.sec}>Thời gian thực hiện</Text>
         <HScroll contentContainerStyle={{ gap: 8 }}>
-          {days.map((dd, i) => (
-            <Tap key={dd.ddmm} onPress={() => handleDaySelect(i)} style={[bx.day, dayIdx === i && bx.dayOn]}>
-              <Text style={[bx.dayLabel, dayIdx === i && { color: 'rgba(255,255,255,0.8)' }]}>{dd.label}</Text>
-              <Text style={[bx.dayDate, dayIdx === i && { color: '#fff' }]}>{dd.ddmm}</Text>
-            </Tap>
-          ))}
+          {days.map((dd, i) => {
+            const off = getNonWorkingDayInfo(dd.key, holidayOpts);
+            const isSelected = !off.blocked && dayIdx === i;
+            return (
+              <Tap
+                key={dd.key || dd.ddmm}
+                onPress={() => handleDaySelect(i)}
+                style={[
+                  bx.day,
+                  isSelected && bx.dayOn,
+                  off.blocked && { backgroundColor: C.surface, borderColor: C.line, opacity: 0.55 },
+                ]}
+              >
+                <Text style={[bx.dayLabel, isSelected && { color: 'rgba(255,255,255,0.8)' }, off.blocked && { color: C.muted }]}>
+                  {dd.label}
+                </Text>
+                <Text style={[bx.dayDate, isSelected && { color: '#fff' }, off.blocked && { color: C.muted }]}>
+                  {dd.ddmm}
+                </Text>
+                {off.blocked ? (
+                  <Text
+                    style={{ fontSize: 9.5, fontWeight: '800', color: off.reason === 'HOLIDAY' ? C.redInk : C.muted, marginTop: 1 }}
+                    numberOfLines={1}
+                  >
+                    {off.shortLabel}
+                  </Text>
+                ) : null}
+              </Tap>
+            );
+          })}
         </HScroll>
         <TimeRangeSlider
           value={timeMinutes}
@@ -794,7 +866,7 @@ export function CheckoutScreen({ params }) {
           maxMinutes={MAX_DAY_MINUTE}
           step={SLOT_STEP_MINUTES}
           isToday={dayIdx === 0}
-          onSelectTomorrow={() => handleDaySelect(1)}
+          onSelectTomorrow={() => handleDaySelect(fallbackNextWorkingIdx)}
         />
 
         {/* Dịch vụ */}
@@ -1581,7 +1653,7 @@ export const bx = StyleSheet.create({
   addAddr: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: R.lg, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.primary, backgroundColor: C.primarySoft },
   addrName: { fontSize: 15, fontWeight: '800', color: C.ink },
   sec: { fontSize: 15, fontWeight: '800', color: C.ink, marginTop: 22, marginBottom: 10 },
-  day: { width: 76, height: 64, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  day: { width: 76, minHeight: 68, paddingVertical: 6, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   dayOn: { backgroundColor: C.primary, borderColor: C.primary },
   dayLabel: { fontSize: 12, color: C.muted, fontWeight: '600' },
   dayDate: { fontSize: 16, color: C.ink, fontWeight: '800', marginTop: 2 },

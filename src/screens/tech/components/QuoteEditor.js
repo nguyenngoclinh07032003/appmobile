@@ -4,8 +4,8 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { C, R } from '../../../theme';
 import { formatVND, formatNumberInput } from '../../../constants/data';
-import { useApp, bookedValue, tierPartDiscountAmount, lateDiscountAmount } from '../../../context';
-import { Tap, Btn, Card, Badge, Field, Stepper, ui, AppIcon } from '../../../components';
+import { useApp, bookedValue, tierPartDiscountAmount, lateDiscountAmount, getPendingExternalEstimates, validateQuoteItemWarrantyFields } from '../../../context';
+import { Tap, Btn, Card, Badge, Field, Stepper, ui, AppIcon, Radio } from '../../../components';
 import { pickImage, pickCamera } from '../../../utils/media';
 import { computeQuoteRangeTotals, formatRangeVND } from '../../../utils/externalPartsPricing';
 import { toVietnamese } from '../../../utils/viText';
@@ -28,6 +28,13 @@ function SummaryRow({ label, value, tone = 'default', bold = false }) {
   );
 }
 
+const OOW_REASONS = [
+  'Thiết bị rơi vỡ / hư hỏng do ngoại lực bên ngoài',
+  'Chập cháy do nguồn điện hoặc môi trường ẩm ướt',
+  'Đã có đơn vị / bên thứ 3 tháo mở hoặc sửa chữa trước đó',
+  'Lý do khác',
+];
+
 export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCancelEdit, evidence }) {
   const { a, ui: u } = useApp();
   const [showCustomFee, setShowCustomFee] = useState(false);
@@ -36,7 +43,15 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
   const [customFixedPrice, setCustomFixedPrice] = useState('');
   const [customMinPrice, setCustomMinPrice] = useState('');
   const [customMaxPrice, setCustomMaxPrice] = useState('');
+  const [showCustomWarranty, setShowCustomWarranty] = useState(false);
+  const [customWarrantyDays, setCustomWarrantyDays] = useState('');
+  const [customWarrantyCode, setCustomWarrantyCode] = useState('');
+  const [customSerialNumber, setCustomSerialNumber] = useState('');
+  const [openSerialKeys, setOpenSerialKeys] = useState(() => ({}));
   const [busySymptomPhotoId, setBusySymptomPhotoId] = useState(null);
+  const [showOowPicker, setShowOowPicker] = useState(false);
+  const [oowPreset, setOowPreset] = useState(OOW_REASONS[0]);
+  const [oowCustomReason, setOowCustomReason] = useState('');
 
   const { lines, setLines } = draft;
   const booked = bookedValue(o);
@@ -53,9 +68,13 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
   const partDisc = tierPartDiscountAmount(o);
   const voucherDisc = Number(o.voucherDiscount) || 0;
   const lateDisc = lateDiscountAmount(o);
-  const priorApprovedExtra = o.quote?.approved
-    ? (Number(o.quote?.approvedExtrasTotal) || 0)
+  const priorApprovedExtra = o.quote?.approvedTotal != null
+    ? (Number(o.quote.approvedTotal) - booked)
     : (Number(o.quote?.priorApprovedExtra) || 0);
+  const origSumNet = originalLines.length > 0
+    ? Math.max(0, originalLines.reduce((s, l) => s + (Number(l.price) || 0) * Math.max(1, Number(l.qty) || 1), 0) - prodDisc - comboDisc)
+    : 0;
+  const initServiceDelta = !onSite && originalLines.length > 0 ? (origSumNet - booked) : 0;
   const rangeTotals = computeQuoteRangeTotals(lines, {
     bookedBase: booked,
     priorApprovedExtra,
@@ -66,12 +85,27 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
     lateDisc,
     isOnSite: onSite,
   });
-  const hasRange = rangeTotals.hasEstimatedRange;
+  const priorPendingEst = getPendingExternalEstimates(o).filter(
+    (est) => !lines.some((l) => l.isEstimatedRange && String(l.name || '').trim().toLowerCase() === String(est.name || '').trim().toLowerCase()),
+  );
+  const priorEstMin = priorPendingEst.reduce(
+    (s, e) => s + Math.max(0, (Number(e.minPrice) || 0) - (Number(e.alreadyBilledUnitPrice) || 0)) * Math.max(1, Number(e.qty) || 1),
+    0,
+  );
+  const priorEstMax = priorPendingEst.reduce(
+    (s, e) => s + Math.max(0, (Number(e.maxPrice) || 0) - (Number(e.alreadyBilledUnitPrice) || 0)) * Math.max(1, Number(e.qty) || 1),
+    0,
+  );
+  const hasRange = rangeTotals.hasEstimatedRange || priorEstMax > 0;
   const deductTotal = partDisc + voucherDisc + lateDisc;
-  const diffMin = onSite ? rangeTotals.extraMin : Math.max(0, rangeTotals.grossTotalMin - booked);
-  const diffMax = onSite ? rangeTotals.extraMax : Math.max(diffMin, rangeTotals.grossTotalMax - booked);
-  const paysMin = rangeTotals.totalMin;
-  const paysMax = rangeTotals.totalMax;
+  const grossWithPriorMin = rangeTotals.grossTotalMin + priorEstMin;
+  const grossWithPriorMax = rangeTotals.grossTotalMax + priorEstMax;
+  const diffMin = Math.max(0, grossWithPriorMin - booked);
+  const diffMax = Math.max(diffMin, grossWithPriorMax - booked);
+  const netReductionMin = diffMax === 0 && grossWithPriorMax < booked ? Math.max(0, booked - grossWithPriorMax) : 0;
+  const netReductionMax = diffMax === 0 && grossWithPriorMin < booked ? Math.max(netReductionMin, booked - grossWithPriorMin) : 0;
+  const paysMin = Math.max(0, grossWithPriorMin - deductTotal);
+  const paysMax = Math.max(paysMin, grossWithPriorMax - deductTotal);
 
   const handleAddCustomFee = () => {
     const name = customFeeName.trim();
@@ -85,6 +119,17 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
         u.alert('Giá không hợp lệ', 'Vui lòng nhập đơn giá cố định lớn hơn 0đ.', 'alert-triangle');
         return;
       }
+      const wCheck = validateQuoteItemWarrantyFields({
+        isExternalPurchase: true,
+        warrantyDays: customWarrantyDays,
+        externalWarrantyCode: customWarrantyCode,
+        serialNumber: customSerialNumber,
+      });
+      if (!wCheck.ok) {
+        u.alert('Bảo hành linh kiện chưa hợp lệ', wCheck.error, 'alert-triangle');
+        return;
+      }
+      const wDaysNum = customWarrantyDays.trim() ? Number(customWarrantyDays.trim()) : null;
       const newFeeLine = {
         key: `custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         type: 'part',
@@ -96,12 +141,19 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
         unit: 'cái',
         isCustom: true,
         isEstimatedRange: false,
+        ...(wDaysNum ? { warrantyDays: wDaysNum } : {}),
+        ...(wDaysNum && customWarrantyCode.trim() ? { externalWarrantyCode: customWarrantyCode.trim() } : {}),
+        ...(customSerialNumber.trim() ? { serialNumber: customSerialNumber.trim() } : {}),
       };
       setLines((prev) => [...prev, newFeeLine]);
       setCustomFeeName('');
       setCustomFixedPrice('');
       setCustomMinPrice('');
       setCustomMaxPrice('');
+      setCustomWarrantyDays('');
+      setCustomWarrantyCode('');
+      setCustomSerialNumber('');
+      setShowCustomWarranty(false);
       setCustomPriceMode('fixed');
       setShowCustomFee(false);
       u.toast(`Đã thêm VT ngoài: ${name} (${formatVND(fixedNum)})`, 'check-circle-2');
@@ -230,29 +282,69 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
         <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.red }}>
           <Text style={[tx.h, { color: C.redInk, marginBottom: 4 }]}>Thẩm định bảo hành tại chỗ</Text>
           <Text style={{ color: C.ink2, fontSize: 13, lineHeight: 19 }}>
-            Nếu thiết bị bị rơi vỡ, chập cháy nguồn điện ngoài hoặc tác động của bên thứ 3, KTV bấm từ chối bảo hành để chuyển sang Báo giá sửa có phí.
+            Nếu thiết bị bị rơi vỡ, chập cháy nguồn điện ngoài hoặc tác động của bên thứ 3, KTV chọn lý do từ chối bảo hành để chuyển sang Báo giá sửa có phí.
           </Text>
-          <View style={{ marginTop: 10 }}>
-            <Btn
-              title="Từ chối bảo hành (Do lỗi người dùng) → Báo giá có phí"
-              variant="dangerSoft"
-              onPress={() => {
-                u.dialog({
-                  icon: 'alert-triangle',
-                  title: 'Xác nhận ngoài bảo hành?',
-                  message: 'Thiết bị hư hỏng do tác động bên ngoài hoặc lỗi người dùng. Đơn sẽ chuyển sang luồng Sửa chữa có phí.',
-                  actions: [
-                    { label: 'Huỷ', variant: 'ghost' },
-                    {
-                      label: 'Xác nhận chuyển',
-                      variant: 'danger',
-                      onPress: () => a.rejectWarrantyAsOutOfWarranty(o.code, 'Thiết bị rơi vỡ/hư hỏng do ngoại lực bên ngoài'),
-                    },
-                  ],
-                });
-              }}
-            />
-          </View>
+          {showOowPicker ? (
+            <View style={{ marginTop: 10, gap: 6 }}>
+              {OOW_REASONS.map((r) => {
+                const picked = oowPreset === r;
+                return (
+                  <Tap
+                    key={r}
+                    onPress={() => setOowPreset(r)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: 10,
+                      borderRadius: R.md,
+                      borderWidth: 1,
+                      borderColor: picked ? C.red : C.line,
+                      backgroundColor: picked ? C.redSoft : C.bg,
+                    }}
+                  >
+                    <Radio on={picked} />
+                    <Text style={{ flex: 1, fontSize: 12.5, fontWeight: picked ? '700' : '500', color: picked ? C.redInk : C.ink }}>{r}</Text>
+                  </Tap>
+                );
+              })}
+              {oowPreset === 'Lý do khác' ? (
+                <Field
+                  label="Nhập lý do ngoài bảo hành *"
+                  placeholder="Mô tả nguyên nhân hư hỏng do ngoại lực / lỗi người dùng…"
+                  value={oowCustomReason}
+                  onChangeText={setOowCustomReason}
+                  style={{ marginTop: 4 }}
+                />
+              ) : null}
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+                <Btn title="Huỷ" variant="ghost" small style={{ flex: 1 }} onPress={() => setShowOowPicker(false)} />
+                <Btn
+                  title="Xác nhận chuyển có phí"
+                  variant="danger"
+                  small
+                  style={{ flex: 1.6 }}
+                  onPress={() => {
+                    const finalReason = oowPreset === 'Lý do khác' ? oowCustomReason.trim() : oowPreset;
+                    if (finalReason.length < 5) {
+                      u.alert('Thiếu lý do', 'Vui lòng mô tả lý do ngoài bảo hành (tối thiểu 5 ký tự).', 'alert-triangle');
+                      return;
+                    }
+                    setShowOowPicker(false);
+                    a.rejectWarrantyAsOutOfWarranty(o.code, finalReason);
+                  }}
+                />
+              </View>
+            </View>
+          ) : (
+            <View style={{ marginTop: 10 }}>
+              <Btn
+                title="Từ chối bảo hành (Do lỗi người dùng) → Báo giá có phí"
+                variant="dangerSoft"
+                onPress={() => setShowOowPicker(true)}
+              />
+            </View>
+          )}
         </Card>
       ) : null}
       {o.quote?.revisionRequested ? (
@@ -274,16 +366,24 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
           <Tap onPress={draft.resetFromServer} hitSlop={8}><Text style={ui.link}>Lấy lại bản hệ thống</Text></Tap>
         </View>
       ) : null}
-      <SymptomSection
-        cats={cats}
-        draft={draft}
-        evidence={evidence}
-        busySymptomPhotoId={busySymptomPhotoId}
-        onPickSymptomPhoto={handlePickSymptomPhoto}
-        onRemoveSymptomPhoto={handleRemoveSymptomPhoto}
-        onRemoveSymptomItem={handleRemoveSymptomItem}
-        onChangeSymptomAction={handleChangeSymptomAction}
-      />
+      {onSite ? (
+        <SymptomSection
+          cats={cats}
+          draft={draft}
+          evidence={evidence}
+          busySymptomPhotoId={busySymptomPhotoId}
+          onPickSymptomPhoto={handlePickSymptomPhoto}
+          onRemoveSymptomPhoto={handleRemoveSymptomPhoto}
+          onRemoveSymptomItem={handleRemoveSymptomItem}
+          onChangeSymptomAction={handleChangeSymptomAction}
+        />
+      ) : (
+        <Card style={{ marginTop: 12, backgroundColor: C.surface }}>
+          <Text style={{ fontSize: 12.5, color: C.ink2, lineHeight: 18 }}>
+            Báo giá trước khi xuất phát dùng để thoả thuận danh mục vật tư / linh kiện dự kiến. Chẩn đoán kỹ thuật & ảnh triệu chứng chi tiết sẽ được ghi nhận sau khi thợ đến nơi.
+          </Text>
+        </Card>
+      )}
       <Card style={{ marginTop: 12 }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text style={tx.h}>Báo giá chi tiết</Text>
@@ -326,6 +426,7 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
             </Text>
             {partLines.map((l) => {
               const showPriceInput = Boolean(l.needsPriceInput || !(Number(l.price) > 0));
+              const serialOpen = Boolean(openSerialKeys[l.key] || l.serialNumber);
               return (
                 <View key={l.key} style={[tx.lineRow, { flexDirection: 'column', alignItems: 'stretch', gap: 8 }]}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -340,6 +441,15 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
                           Chưa có đơn giá niêm yết · Vui lòng nhập giá bên dưới
                         </Text>
                       )}
+                      {!serialOpen ? (
+                        <Tap
+                          onPress={() => setOpenSerialKeys((prev) => ({ ...prev, [l.key]: true }))}
+                          hitSlop={6}
+                          style={{ marginTop: 4, alignSelf: 'flex-start' }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: C.primary }}>＋ Số sê-ri (tuỳ chọn)</Text>
+                        </Tap>
+                      ) : null}
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <Stepper value={l.qty} onChange={(q) => setLines((p) => p.map((x) => (x.key === l.key ? { ...x, qty: q } : x)))} />
@@ -348,6 +458,16 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
                       </Tap>
                     </View>
                   </View>
+                  {serialOpen ? (
+                    <Field
+                      label="Số sê-ri linh kiện (tuỳ chọn)"
+                      placeholder="VD: SN-2026-001 (tối đa 100 ký tự)"
+                      value={l.serialNumber || ''}
+                      maxLength={100}
+                      onChangeText={(t) => setLines((p) => p.map((x) => (x.key === l.key ? { ...x, serialNumber: t } : x)))}
+                      style={{ marginTop: 0 }}
+                    />
+                  ) : null}
                   {showPriceInput ? (
                     <Field
                       label={`Đơn giá vật tư (${l.unit || 'cái'}) *`}
@@ -389,7 +509,18 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
                       {formatRangeVND(l.minPrice, l.maxPrice)} x{l.qty} = <Text style={{ fontWeight: '700', color: C.goldInk }}>{formatRangeVND(l.minPrice * l.qty, l.maxPrice * l.qty)}</Text>
                     </Text>
                   ) : (
-                    <Text style={ui.meta}>{formatVND(l.price)} x{l.qty} = <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(l.price * l.qty)}</Text></Text>
+                    <>
+                      <Text style={ui.meta}>{formatVND(l.price)} x{l.qty} = <Text style={{ fontWeight: '700', color: C.ink }}>{formatVND(l.price * l.qty)}</Text></Text>
+                      {(l.warrantyDays || l.externalWarrantyCode || l.serialNumber) ? (
+                        <Text style={{ fontSize: 11.5, color: C.primary, fontWeight: '600', marginTop: 2 }}>
+                          {[
+                            l.warrantyDays ? `BH hãng ${l.warrantyDays} ngày` : null,
+                            l.externalWarrantyCode ? `Mã BH: ${l.externalWarrantyCode}` : null,
+                            l.serialNumber ? `SN: ${l.serialNumber}` : null,
+                          ].filter(Boolean).join(' · ')}
+                        </Text>
+                      ) : null}
+                    </>
                   )}
                 </View>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -476,14 +607,54 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
             />
 
             {customPriceMode === 'fixed' ? (
-              <Field
-                label="Đơn giá cố định (VNĐ) *"
-                placeholder="VD: 150.000"
-                value={customFixedPrice}
-                onChangeText={(t) => setCustomFixedPrice(formatNumberInput(t))}
-                keyboardType="numeric"
-                style={{ marginTop: 8 }}
-              />
+              <>
+                <Field
+                  label="Đơn giá cố định (VNĐ) *"
+                  placeholder="VD: 150.000"
+                  value={customFixedPrice}
+                  onChangeText={(t) => setCustomFixedPrice(formatNumberInput(t))}
+                  keyboardType="numeric"
+                  style={{ marginTop: 8 }}
+                />
+                <Tap
+                  onPress={() => setShowCustomWarranty((v) => !v)}
+                  style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.primary }}>
+                    {showCustomWarranty ? '▾ Ẩn thông tin bảo hành hãng & sê-ri' : '＋ Bảo hành hãng & Số sê-ri (tuỳ chọn)'}
+                  </Text>
+                </Tap>
+                {showCustomWarranty ? (
+                  <View style={{ marginTop: 6, gap: 6 }}>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Field
+                        label="Số ngày BH (1–3650)"
+                        placeholder="VD: 180"
+                        value={customWarrantyDays}
+                        onChangeText={(t) => setCustomWarrantyDays(t.replace(/[^0-9]/g, '').slice(0, 4))}
+                        keyboardType="numeric"
+                        style={{ flex: 1, marginTop: 0 }}
+                      />
+                      <Field
+                        label="Mã phiếu BH hãng"
+                        placeholder="VD: HANG-1"
+                        value={customWarrantyCode}
+                        maxLength={100}
+                        onChangeText={setCustomWarrantyCode}
+                        style={{ flex: 1.2, marginTop: 0 }}
+                      />
+                    </View>
+                    <Field
+                      label="Số sê-ri linh kiện"
+                      placeholder="VD: SN-NEW (tối đa 100 ký tự)"
+                      value={customSerialNumber}
+                      maxLength={100}
+                      onChangeText={setCustomSerialNumber}
+                      style={{ marginTop: 0 }}
+                    />
+                  </View>
+                ) : null}
+              </>
             ) : (
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
                 <Field
@@ -517,6 +688,10 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
                   setCustomFixedPrice('');
                   setCustomMinPrice('');
                   setCustomMaxPrice('');
+                  setCustomWarrantyDays('');
+                  setCustomWarrantyCode('');
+                  setCustomSerialNumber('');
+                  setShowCustomWarranty(false);
                   setCustomPriceMode('fixed');
                 }}
               />
@@ -527,13 +702,17 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
 
         {(() => {
           const extraSources =
-            (priorApprovedExtra > 0 ? 1 : 0) +
+            (priorApprovedExtra !== 0 ? 1 : 0) +
+            (initServiceDelta !== 0 ? 1 : 0) +
             (partLines.length > 0 ? 1 : 0) +
             (customLines.length > 0 ? 1 : 0);
           const sameAsSingleExtra = extraSources === 1 && (
             (customLines.length > 0 && diffMin === rangeTotals.customExtraMin && diffMax === rangeTotals.customExtraMax) ||
             (partLines.length > 0 && diffMin === rangeTotals.warehouseExtra && diffMax === rangeTotals.warehouseExtra) ||
-            (priorApprovedExtra > 0 && diffMin === priorApprovedExtra && diffMax === priorApprovedExtra)
+            (priorApprovedExtra > 0 && diffMin === priorApprovedExtra && diffMax === priorApprovedExtra) ||
+            (priorApprovedExtra < 0 && diffMax === 0 && netReductionMin === Math.abs(priorApprovedExtra) && netReductionMax === Math.abs(priorApprovedExtra)) ||
+            (initServiceDelta > 0 && diffMin === initServiceDelta && diffMax === initServiceDelta) ||
+            (initServiceDelta < 0 && diffMax === 0 && netReductionMin === Math.abs(initServiceDelta) && netReductionMax === Math.abs(initServiceDelta))
           );
           const isRangeTotal = hasRange && paysMin !== paysMax;
           return (
@@ -553,6 +732,13 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
               <SummaryRow label="Giá khách đã đặt" value={formatVND(booked)} />
               {priorApprovedExtra > 0 ? (
                 <SummaryRow label="Phát sinh đã duyệt đợt trước" value={`+${formatVND(priorApprovedExtra)}`} />
+              ) : priorApprovedExtra < 0 ? (
+                <SummaryRow label="Điều chỉnh giảm đợt trước" value={`-${formatVND(Math.abs(priorApprovedExtra))}`} tone="green" />
+              ) : null}
+              {initServiceDelta > 0 ? (
+                <SummaryRow label="Điều chỉnh tăng dịch vụ" value={`+${formatVND(initServiceDelta)}`} />
+              ) : initServiceDelta < 0 ? (
+                <SummaryRow label="Điều chỉnh giảm dịch vụ" value={`-${formatVND(Math.abs(initServiceDelta))}`} tone="green" />
               ) : null}
               {partLines.length > 0 ? (
                 <SummaryRow
@@ -569,12 +755,21 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
                 />
               ) : null}
               {!sameAsSingleExtra ? (
-                <SummaryRow
-                  label={hasRange ? 'Tổng phát sinh thêm (dự kiến)' : 'Tổng phát sinh thêm'}
-                  value={diffMax > 0 ? formatRangeVND(diffMin, diffMax, { prefix: '+' }) : '0 đ'}
-                  tone={diffMax > 0 ? 'orange' : 'green'}
-                  bold
-                />
+                diffMax === 0 && netReductionMax > 0 ? (
+                  <SummaryRow
+                    label={hasRange ? 'Chênh lệch dự kiến so với giá đặt' : 'Chênh lệch so với giá đặt'}
+                    value={formatRangeVND(netReductionMin, netReductionMax, { prefix: '-' })}
+                    tone="green"
+                    bold
+                  />
+                ) : (
+                  <SummaryRow
+                    label={hasRange ? 'Tổng phát sinh thêm (dự kiến)' : 'Tổng phát sinh thêm'}
+                    value={diffMax > 0 ? formatRangeVND(diffMin, diffMax, { prefix: '+' }) : '0 đ'}
+                    tone={diffMax > 0 ? 'orange' : 'green'}
+                    bold
+                  />
+                )
               ) : null}
               {partDisc > 0 ? (
                 <SummaryRow label={`Ưu đãi hạng thành viên (−${o.bill?.tierPartDiscountPercent || 0}% VT)`} value={`-${formatVND(partDisc)}`} tone="green" />

@@ -39,6 +39,38 @@ import {
 } from "../utils/procedureHelpers";
 export { getBlockingProcedureSteps };
 import {
+  normalizeAssignmentRole,
+  isSupportAssignment,
+  isSupportWaitingForLead,
+  isStepInSupportScope,
+  resolveCategoryNamesByIds,
+} from "../utils/teamHelpers";
+export {
+  normalizeAssignmentRole,
+  isSupportAssignment,
+  isSupportWaitingForLead,
+  isStepInSupportScope,
+  resolveCategoryNamesByIds,
+};
+import {
+  getNonWorkingDayInfo,
+  findFirstWorkingDayIndex,
+  getHolidayQueryRange,
+} from "../utils/workingDays";
+export { getNonWorkingDayInfo, findFirstWorkingDayIndex, getHolidayQueryRange };
+import {
+  MATERIAL_WARRANTY_STATUS_META,
+  extractMaterialWarrantiesFromQuotations,
+  validateQuoteItemWarrantyFields,
+  buildQuoteItemWarrantyPayload,
+} from "../utils/materialWarranty";
+export {
+  MATERIAL_WARRANTY_STATUS_META,
+  extractMaterialWarrantiesFromQuotations,
+  validateQuoteItemWarrantyFields,
+  buildQuoteItemWarrantyPayload,
+};
+import {
   getSession,
   clearSession,
   setSession,
@@ -126,7 +158,7 @@ import {
   getCancellationWindowStatus,
   isOfferExpired,
 } from "../constants/techPolicy";
-import { getCheckInLocation } from "../utils/geo";
+import { getCheckInLocation, distanceKm } from "../utils/geo";
 import { viNotification } from "../utils/viText";
 import { isAttendanceNotifType } from "../utils/attendance";
 export {
@@ -149,6 +181,48 @@ const networkError = (res) =>
   res?.code === "TIMEOUT"
     ? `Máy chủ ${API_BASE_URL} phản hồi quá lâu. Kiểm tra mạng rồi thử lại.`
     : `Không kết nối được máy chủ ${API_BASE_URL}. Kiểm tra mạng rồi thử lại.`;
+
+const buildTrackingMeta = (lat, lng, ord, serverData = {}) => {
+  const numLat = lat != null ? Number(lat) : null;
+  const numLng = lng != null ? Number(lng) : null;
+  const custAddr =
+    ord?.address && ord.address.lat != null && ord.address.lng != null
+      ? ord.address
+      : null;
+  const distKm =
+    numLat != null && numLng != null && custAddr
+      ? distanceKm({ lat: numLat, lng: numLng }, custAddr)
+      : null;
+  const initialDistKm =
+    ord?.tracking?.initialDistKm ?? (distKm != null && distKm > 0 ? distKm : null);
+  const srvEta = serverData.eta_min ?? serverData.etaMin;
+  const etaMin =
+    srvEta != null && Number.isFinite(Number(srvEta))
+      ? Math.max(1, Math.round(Number(srvEta)))
+      : distKm != null
+        ? Math.max(1, Math.round((distKm / 25) * 60))
+        : (ord?.tracking?.etaMin ?? null);
+  const srvProg = serverData.progress;
+  const computedProg =
+    srvProg != null && Number.isFinite(Number(srvProg))
+      ? Math.min(0.96, Math.max(0.05, Number(srvProg)))
+      : distKm != null && initialDistKm != null && initialDistKm > 0
+        ? Math.min(
+            0.95,
+            Math.max(0.08, 1 - distKm / Math.max(initialDistKm, distKm, 0.5)),
+          )
+        : distKm != null
+          ? distKm <= 0.3
+            ? 0.92
+            : Math.min(0.9, Math.max(0.1, 1 - distKm / 10))
+          : (ord?.tracking?.progress ?? null);
+  return {
+    ...(initialDistKm != null ? { initialDistKm } : {}),
+    ...(distKm != null ? { distanceKm: distKm } : {}),
+    ...(etaMin != null ? { etaMin } : {}),
+    ...(computedProg != null ? { progress: computedProg } : {}),
+  };
+};
 
 // ---------------------------------------------------------------------------
 // Tiện ích thời gian
@@ -510,6 +584,8 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
     };
   if (o.kind === "warranty")
     return { ok: false, totalDays, text: "Đây là đơn bảo hành." };
+  if (o.kind === "followup")
+    return { ok: false, totalDays: 0, noWarranty: true, text: "Đây là lượt tái khám miễn phí." };
   const open = orders.find(
     (x) =>
       x.kind === "warranty" &&
@@ -522,7 +598,7 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
     const openSched =
       totalDays > 0
         ? analyzeWarrantyEligibility({
-            completedAt: o.warrantyStartAt || o.doneAt,
+            completedAt: o.doneAt || o.warrantyStartAt,
             warrantyDays: totalDays,
             serverNow: Date.now(),
             warrantyEndAt: o.warrantyEndAt || null,
@@ -582,11 +658,15 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
     };
 
   const schedule = analyzeWarrantyEligibility({
-    completedAt: o.warrantyStartAt || o.doneAt,
+    completedAt: o.doneAt || o.warrantyStartAt,
     warrantyDays: totalDays,
     serverNow: Date.now(),
     warrantyEndAt: o.warrantyEndAt || null,
   });
+
+  const startYmd = o.warrantyStartAt ? vnDateKey(o.warrantyStartAt) : null;
+  const todayYmd = vnDateKey(Date.now());
+  const startsInFuture = Boolean(startYmd && todayYmd && startYmd > todayYmd);
 
   const baseInfo = !schedule.eligible
     ? {
@@ -601,19 +681,31 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
         until: schedule.until,
         endYmd: schedule.endYmd,
       }
-    : {
-        ok: true,
-        totalDays,
-        daysLeft: schedule.daysLeft,
-        isFinalDay: schedule.isFinalDay,
-        availableDates: schedule.availableDates,
-        availableSlots: schedule.availableSlots,
-        until: schedule.until,
-        endYmd: schedule.endYmd,
-        text:
-          schedule.notice ||
-          `Còn ${schedule.daysLeft}/${totalDays} ngày bảo hành (đến ${fmtDate(schedule.until)}).`,
-      };
+    : startsInFuture
+      ? {
+          ok: false,
+          notStarted: true,
+          totalDays,
+          daysLeft: totalDays,
+          isFinalDay: false,
+          reason: "WARRANTY_NOT_STARTED",
+          until: schedule.until,
+          endYmd: schedule.endYmd,
+          text: `Bảo hành ${totalDays} ngày sẽ bắt đầu từ ngày ${fmtDate(o.warrantyStartAt)}${schedule.until ? ` (đến ${fmtDate(schedule.until)})` : ""}.`,
+        }
+      : {
+          ok: true,
+          totalDays,
+          daysLeft: schedule.daysLeft,
+          isFinalDay: schedule.isFinalDay,
+          availableDates: schedule.availableDates,
+          availableSlots: schedule.availableSlots,
+          until: schedule.until,
+          endYmd: schedule.endYmd,
+          text:
+            schedule.notice ||
+            `Còn ${schedule.daysLeft}/${totalDays} ngày bảo hành (đến ${fmtDate(schedule.until)}).`,
+        };
 
   return applyServerWarrantyEligibility(
     baseInfo,
@@ -770,6 +862,8 @@ const makeInitial = () => ({
   publicVouchers: [],
   redeemOptions: [],
   policy: null,
+  holidays: [],
+  sundaysClosed: true,
   serviceReviews: {},
   declinedByTech: {}, // { [techCode]: string[] }
   techProfile: null,
@@ -882,7 +976,16 @@ export const customerStatusMeta = (o, now = Date.now()) => {
 };
 
 export const techStatusMeta = (o) => {
-  if (o?.status === "quoted" && o?.quote?.isExternalFinalization) {
+  if (isSupportWaitingForLead(o)) {
+    return {
+      label: "Chờ thợ chính tới",
+      fg: C.goldInk,
+      bg: C.goldSoft,
+      desc: "Bạn đã check-in tại nhà khách. Vui lòng chờ thợ chính check-in để bắt đầu phần việc hỗ trợ.",
+    };
+  }
+  const isSupport = isSupportAssignment(o);
+  if (!isSupport && o?.status === "quoted" && o?.quote?.isExternalFinalization) {
     return {
       label: "Chờ khách xác nhận hoá đơn",
       fg: C.goldInk,
@@ -891,6 +994,7 @@ export const techStatusMeta = (o) => {
     };
   }
   if (
+    !isSupport &&
     (o?.externalPriceState === "revision_requested" ||
       (o?.quote?.isExternalFinalization && o?.quote?.revisionRequested)) &&
     ["diagnosing", "repairing", "quoted"].includes(o?.status)
@@ -902,7 +1006,7 @@ export const techStatusMeta = (o) => {
       desc: "Khách yêu cầu kiểm tra lại mức giá vật tư cuối cùng. Hãy cập nhật và gửi lại hoá đơn.",
     };
   }
-  if (o?.status === "repairing" && o?.externalPriceState === "finalized") {
+  if (!isSupport && o?.status === "repairing" && o?.externalPriceState === "finalized") {
     return {
       label: "Chờ ký bàn giao & Mở TT",
       fg: C.greenInk,
@@ -911,6 +1015,7 @@ export const techStatusMeta = (o) => {
     };
   }
   if (
+    !isSupport &&
     o?.status === "repairing" &&
     getPendingExternalEstimates(o).length > 0
   ) {
@@ -1523,11 +1628,13 @@ export function AppProvider({ children }) {
     }
     catalogSyncPromiseRef.current = (async () => {
       try {
-        const [catRes, svcRes, cfgRes, matRes] = await Promise.all([
+        const hRange = getHolidayQueryRange(120);
+        const [catRes, svcRes, cfgRes, matRes, holRes] = await Promise.all([
           hrmssApi.getServiceCategories(),
           hrmssApi.getServices(),
           hrmssApi.getPublicConfig(),
           hrmssApi.getPublicMaterials(),
+          hrmssApi.getPublicHolidays(hRange.from, hRange.to).catch(() => null),
         ]);
         if (catRes.ok && svcRes.ok && matRes.ok)
           catalogFetchedAt.current = Date.now();
@@ -1583,6 +1690,12 @@ export function AppProvider({ children }) {
           if (late.soft != null) TECH_POLICY.lateMidMin = Number(late.soft);
           if (late.mid != null) TECH_POLICY.lateSevereMin = Number(late.mid);
           up(() => ({ policy: cfgRes.data }));
+        }
+        if (holRes?.ok && holRes.data) {
+          up(() => ({
+            holidays: Array.isArray(holRes.data.holidays) ? holRes.data.holidays : [],
+            sundaysClosed: holRes.data.sundays_closed !== false,
+          }));
         }
       } catch (e) {
         // eslint-disable-next-line no-console
@@ -1667,7 +1780,7 @@ export function AppProvider({ children }) {
               const c = isFinished(r)
                 ? finishedOrderCache.current.get(String(r.request_id))
                 : null;
-              return c && c.cacheVer === 4 && c.status === r.request_status && (c.updatedAt || null) === (r.updated_at || null) ? c : null;
+              return c && c.cacheVer === 6 && c.status === r.request_status && (c.updatedAt || null) === (r.updated_at || null) ? c : null;
             };
             rawRequests.forEach((r) => {
               const c = cached(r);
@@ -1678,6 +1791,8 @@ export function AppProvider({ children }) {
                   ...(c.diagnoses ? { diagnoses: c.diagnoses } : {}),
                   ...(c.visits ? { visits: c.visits } : {}),
                   ...(c.timeline ? { timeline: c.timeline } : {}),
+                  ...(c.progress !== undefined ? { progress: c.progress } : {}),
+                  ...(c.procedure !== undefined ? { procedure: c.procedure } : {}),
                   ...(c._detailAttachments ? { _detailAttachments: c._detailAttachments } : {}),
                   ...(c.review ? { review: c.review } : {}),
                   ...(c.warranty ? { warranty: c.warranty } : {}),
@@ -1688,6 +1803,7 @@ export function AppProvider({ children }) {
                   ...(c.customer_tier_label !== undefined ? { customer_tier_label: c.customer_tier_label } : {}),
                   ...(c.customer_tier_name !== undefined ? { customer_tier_name: c.customer_tier_name } : {}),
                   technician: c.technician,
+                  ...(c.support_technicians ? { support_technicians: c.support_technicians } : {}),
                   journey: c.journey,
                   bill: c.bill,
                   ...(c._evidence ? { _evidence: c._evidence } : {}),
@@ -1753,6 +1869,7 @@ export function AppProvider({ children }) {
             needTech.forEach((r, i) => {
               const t = trackings[i];
               if (t?.ok && t.data?.technician) r.technician = t.data.technician;
+              if (t?.ok && Array.isArray(t.data?.support_technicians)) r.support_technicians = t.data.support_technicians;
               if (t?.ok && t.data?.journey) r.journey = t.data.journey;
             });
             needBill.forEach((r, i) => {
@@ -1777,12 +1894,12 @@ export function AppProvider({ children }) {
                   res.data?.attachments ||
                   (Array.isArray(res.data) ? res.data : [])
                 : null;
-              const combined = [...(Array.isArray(rows) ? rows : []), ...(Array.isArray(r._detailAttachments) ? r._detailAttachments : [])]
-                .filter(
-                  (row) =>
-                    row &&
-                    (!row.procedure_step_id || ["AFTER_REPAIR", "DOCUMENT"].includes(String(row.evidence_type || "").toUpperCase())),
-                );
+              const combined = [
+                ...(Array.isArray(rows) ? rows : []),
+                ...(Array.isArray(r._detailAttachments) ? r._detailAttachments : []),
+                ...(Array.isArray(r._procedureAttachments) ? r._procedureAttachments : []),
+              ]
+                .filter(Boolean);
               if (rows || combined.length) {
                 const seen = new Set();
                 const mergedRows = [];
@@ -1818,7 +1935,7 @@ export function AppProvider({ children }) {
               )
               .forEach((r) => {
                 finishedOrderCache.current.set(String(r.request_id), {
-                  cacheVer: 4,
+                  cacheVer: 6,
                   status: r.request_status,
                   updatedAt: r.updated_at || null,
                   items: r.items,
@@ -1826,6 +1943,8 @@ export function AppProvider({ children }) {
                   diagnoses: r.diagnoses,
                   visits: r.visits,
                   timeline: r.timeline,
+                  progress: r.progress,
+                  procedure: r.procedure,
                   _detailAttachments: r._detailAttachments,
                   review: r.review,
                   warranty: r.warranty,
@@ -1836,6 +1955,7 @@ export function AppProvider({ children }) {
                   customer_tier_label: r.customer_tier_label,
                   customer_tier_name: r.customer_tier_name,
                   technician: r.technician,
+                  support_technicians: r.support_technicians,
                   journey: r.journey,
                   bill: r.bill,
                   _evidence: r._evidence,
@@ -1914,10 +2034,31 @@ export function AppProvider({ children }) {
               ? p.selectedAddressId
               : defaultAddr?.id || null;
             const remoteWithAcc = remoteOrders
-              ? remoteOrders.map((o) => ({
-                  ...o,
-                  customerAccountId: acc.id || o.customerAccountId || null,
-                }))
+              ? remoteOrders.map((o) => {
+                  const matchedAddr = !o.address?.gender
+                    ? nextAddresses.find(
+                        (ad) =>
+                          (ad.full && o.address?.full && ad.full === o.address.full) ||
+                          (ad.phone &&
+                            o.address?.phone &&
+                            ad.phone === o.address.phone &&
+                            ad.name === o.address?.name),
+                      )
+                    : null;
+                  const explicitGender =
+                    o.address?.gender ||
+                    (matchedAddr &&
+                    (genderMap[String(matchedAddr.dbAddressId)] || genderMap[matchedAddr.id])
+                      ? matchedAddr.gender
+                      : null);
+                  return {
+                    ...o,
+                    ...(explicitGender
+                      ? { address: { ...(o.address || {}), gender: explicitGender } }
+                      : {}),
+                    customerAccountId: acc.id || o.customerAccountId || null,
+                  };
+                })
               : null;
             const nextOrdersRaw = remoteWithAcc
               ? mergeBackendOrdersWithLocal(p.orders, remoteWithAcc)
@@ -2104,7 +2245,10 @@ export function AppProvider({ children }) {
               ...paymentJobIds,
             ]),
           ].slice(0, 25);
-          const [photoLists, reqPhotoLists, jobBills] = await Promise.all([
+          const openItemsSlice = openRes.ok && Array.isArray(openRes.data?.items)
+            ? openRes.data.items.filter((r) => r?.request_id).slice(0, 10)
+            : [];
+          const [photoLists, reqPhotoLists, openReqPhotoLists, jobBills] = await Promise.all([
             Promise.all(
               activeJobsList.map((j) =>
                 hrmssApi.listJobPhotos(String(j.assignment_id)).catch(() => null),
@@ -2115,6 +2259,11 @@ export function AppProvider({ children }) {
                 j.request?.request_id
                   ? hrmssApi.listRequestPhotos(j.request.request_id).catch(() => null)
                   : Promise.resolve(null),
+              ),
+            ),
+            Promise.all(
+              openItemsSlice.map((r) =>
+                hrmssApi.listRequestPhotos(r.request_id).catch(() => null),
               ),
             ),
             // Hoá đơn của việc (tiền mặt cần thu, giảm giá): GET /technician/jobs/:id/bill.
@@ -2146,11 +2295,7 @@ export function AppProvider({ children }) {
               const seen = new Set();
               const mergedRows = [];
               [...jobRows, ...reqRows]
-                .filter(
-                  (r) =>
-                    r &&
-                    (!r.procedure_step_id || ["AFTER_REPAIR", "DOCUMENT"].includes(String(r.evidence_type || "").toUpperCase())),
-                )
+                .filter(Boolean)
                 .forEach((r) => {
                   const key = r.attachment_id != null ? `id:${r.attachment_id}` : `uri:${r.image_url || r.file_url || r.url || ''}`;
                   if (!key || key === 'uri:' || seen.has(key)) return;
@@ -2222,18 +2367,29 @@ export function AppProvider({ children }) {
                           ...(mergedAtts.length ? { attachments: mergedAtts } : {}),
                         };
                       }
-                      const rv = o && !o.rating ? reviewOf(j) : null;
-                      if (rv)
-                        o = {
-                          ...o,
-                          rating: {
-                            stars: Number(rv.rating) || 5,
-                            text: rv.review_text || "",
-                            at: rv.created_at
-                              ? new Date(rv.created_at).getTime()
-                              : null,
-                          },
-                        };
+                      const rv = o ? reviewOf(j) : null;
+                      if (rv) {
+                        if (!o.rating) {
+                          o = {
+                            ...o,
+                            rating: {
+                              stars: Number(rv.rating) || 5,
+                              text: rv.review_text || "",
+                              at: rv.created_at
+                                ? new Date(rv.created_at).getTime()
+                                : null,
+                            },
+                          };
+                        } else if (!o.rating.at && rv.created_at) {
+                          o = {
+                            ...o,
+                            rating: {
+                              ...o.rating,
+                              at: new Date(rv.created_at).getTime(),
+                            },
+                          };
+                        }
+                      }
                       return o;
                     })
                     .filter(Boolean)
@@ -2241,12 +2397,36 @@ export function AppProvider({ children }) {
                     (o) => o.assignmentActive || o.status !== "pending",
                   );
             const assignedCodes = new Set(assignedOrders.map((o) => o.code));
+            const openPhotoByReqId = new Map();
+            openItemsSlice.forEach((r, i) => {
+              const pRes = openReqPhotoLists[i];
+              if (pRes?.ok) {
+                const rows =
+                  pRes.data?.items || pRes.data?.attachments || (Array.isArray(pRes.data) ? pRes.data : []);
+                openPhotoByReqId.set(
+                  String(r.request_id),
+                  (Array.isArray(rows) ? rows : []).map((row) => mapBackendPhotoToEvidence(row)).filter(Boolean),
+                );
+              }
+            });
             // Đơn bắn cho thợ đã quá hạn tiếp nhận: bỏ hẳn khỏi danh sách (không lưu, không hiển thị).
             const syncNow = Date.now();
             const openOrders =
               openRes.ok && Array.isArray(openRes.data?.items)
                 ? openRes.data.items
-                    .map(mapBackendOpenRequestToOrder)
+                    .map((r) => {
+                      const mapped = mapBackendOpenRequestToOrder(r);
+                      if (!mapped) return null;
+                      if (!openPhotoByReqId.has(String(r.request_id))) return mapped;
+                      const openEv = openPhotoByReqId.get(String(r.request_id)) || [];
+                      const mergedOpenAtts = extractInitialAttachments(openEv, mapped.attachments);
+                      return {
+                        ...mapped,
+                        evidence: openEv,
+                        _evidenceFetched: true,
+                        attachments: mergedOpenAtts,
+                      };
+                    })
                     .filter(
                       (o) =>
                         o &&
@@ -2543,7 +2723,9 @@ export function AppProvider({ children }) {
       let tickCount = 0;
       timer = setInterval(() => {
         tickCount += 1;
-        const hasActive = (stateRef.current?.orders || []).some(isActiveOrder);
+        const hasActive = (stateRef.current?.orders || []).some(
+          (ord) => isActiveOrder(ord) || (ord.status === "cancelled" && (ord.inspectionFee || 0) > 0 && !isPaid(ord)),
+        );
         if (hasActive || tickCount % 6 === 0) {
           syncRef.current?.(null, true);
         }
@@ -2621,6 +2803,7 @@ export function AppProvider({ children }) {
               lat: data.latitude,
               lng: data.longitude,
               accuracy: data.location_accuracy,
+              ...buildTrackingMeta(data.latitude, data.longitude, cur, data),
               updatedAt: data.updated_at
                 ? new Date(data.updated_at).getTime()
                 : Date.now(),
@@ -3037,11 +3220,8 @@ export function AppProvider({ children }) {
       const rawRows = [
         ...(Array.isArray(photoRows) ? photoRows : []),
         ...(Array.isArray(mergedReq._detailAttachments) ? mergedReq._detailAttachments : []),
-      ].filter(
-        (r) =>
-          r &&
-          (!r.procedure_step_id || ["AFTER_REPAIR", "DOCUMENT"].includes(String(r.evidence_type || "").toUpperCase())),
-      );
+        ...(Array.isArray(mergedReq._procedureAttachments) ? mergedReq._procedureAttachments : []),
+      ].filter(Boolean);
       const seen = new Set();
       const dedupRows = [];
       rawRows.forEach((r) => {
@@ -3078,6 +3258,10 @@ export function AppProvider({ children }) {
           ? {
               ...(cur.report || {}),
               ...(detRes?.ok && remapped?.report ? remapped.report : {}),
+              customerSignature: remapped?.report?.customerSignature || cur.report?.customerSignature || null,
+              safetyChecklist: remapped?.report?.safetyChecklist?.length
+                ? remapped.report.safetyChecklist
+                : (cur.report?.safetyChecklist || []),
               paid: nextPaid,
             }
           : null;
@@ -3100,20 +3284,33 @@ export function AppProvider({ children }) {
             ...(detRes?.ok && remapped?.warrantyEndAt != null ? { warrantyEndAt: remapped.warrantyEndAt } : {}),
             ...(detRes?.ok && remapped?.warrantyCertificateCode ? { warrantyCertificateCode: remapped.warrantyCertificateCode } : {}),
             ...(detRes?.ok && remapped?.rating ? { rating: remapped.rating } : {}),
+            ...(detRes?.ok && remapped?.checkIn ? { checkIn: remapped.checkIn } : {}),
+            ...(detRes?.ok && remapped?.arrivedAt != null ? { arrivedAt: remapped.arrivedAt } : {}),
+            ...(detRes?.ok && remapped?.travelStartedAt != null ? { travelStartedAt: remapped.travelStartedAt } : {}),
+            ...(detRes?.ok && remapped?.lateCompensation ? { lateCompensation: remapped.lateCompensation } : {}),
+            ...(detRes?.ok && remapped?.originalRequestId != null ? { originalRequestId: remapped.originalRequestId } : {}),
+            ...(detRes?.ok && remapped?.warrantyOf ? { warrantyOf: remapped.warrantyOf } : {}),
+            ...(detRes?.ok && remapped?.siteCondition ? { siteCondition: remapped.siteCondition } : {}),
+            ...(detRes?.ok && remapped?.voucher ? { voucher: remapped.voucher } : {}),
+            ...(detRes?.ok && remapped?.procedure !== undefined ? { procedure: remapped.procedure } : {}),
             ...(detRes?.ok && remapped?.customerTier ? { customerTier: remapped.customerTier } : {}),
             ...(detRes?.ok && remapped?.customerTierLabel ? { customerTierLabel: remapped.customerTierLabel } : {}),
             ...(detRes?.ok && remapped?.outOfWarranty !== undefined ? { outOfWarranty: remapped.outOfWarranty } : {}),
             ...(detRes?.ok && remapped?.outOfWarrantyReason ? { outOfWarrantyReason: remapped.outOfWarrantyReason } : {}),
             ...(detRes?.ok && remapped?.followUpRequested !== undefined ? { followUpRequested: remapped.followUpRequested } : {}),
             ...(detRes?.ok && remapped?.followUpReason ? { followUpReason: remapped.followUpReason } : {}),
+            ...(detRes?.ok && remapped?.cancelReason ? { cancelReason: remapped.cancelReason } : {}),
             ...(detRes?.ok && remapped?.kind ? { kind: remapped.kind } : {}),
             ...(detRes?.ok && remapped?.doneAt != null ? { doneAt: remapped.doneAt } : {}),
             ...(detRes?.ok && remapped?.materials ? { materials: remapped.materials } : {}),
+            ...(detRes?.ok && Array.isArray(remapped?.repairNotes) ? { repairNotes: remapped.repairNotes } : {}),
             ...(detRes?.ok && remapped?.pendingExternalEstimates ? { pendingExternalEstimates: remapped.pendingExternalEstimates } : {}),
             ...(detRes?.ok && remapped?.finalizedExternalParts ? { finalizedExternalParts: remapped.finalizedExternalParts } : {}),
             ...(detRes?.ok && remapped?.externalPriceState ? { externalPriceState: remapped.externalPriceState } : {}),
             ...(detRes?.ok && remapped?.history?.length ? { history: remapped.history } : {}),
             ...(remapped?.tech?.code ? { tech: remapped.tech } : {}),
+            ...(detRes?.ok && Array.isArray(remapped?.supportTechnicians) ? { supportTechnicians: remapped.supportTechnicians } : {}),
+            ...(detRes?.ok && Array.isArray(remapped?.materialWarranties) ? { materialWarranties: remapped.materialWarranties } : {}),
             ...(detRes?.ok && remapped?.quote ? { quote: remapped.quote } : {}),
             ...(detRes?.ok && remapped?.diagnosisReport ? { diagnosisReport: remapped.diagnosisReport } : {}),
             ...(nextReport ? { report: nextReport } : {}),
@@ -3147,11 +3344,13 @@ export function AppProvider({ children }) {
       if (!o?.dbAssignmentId || !authTokens.get())
         return { ok: false, error: "Việc chưa đồng bộ với hệ thống." };
       const photoIds = [];
+      const uploadedAttachments = [];
+      const stepEvType = step.step_no === 1 ? "BEFORE_REPAIR" : "AFTER_REPAIR";
       for (const uri of photoUris) {
         const up = await hrmssApi.uploadJobPhoto(
           o.dbAssignmentId,
           uri,
-          step.step_no === 1 ? "BEFORE_REPAIR" : "AFTER_REPAIR",
+          stepEvType,
         );
         if (!up.ok)
           return {
@@ -3161,7 +3360,17 @@ export function AppProvider({ children }) {
                 ? "Ảnh quá lớn."
                 : up.message || "Không tải được ảnh.",
           };
-        photoIds.push(up.data?.attachment?.attachment_id);
+        const attObj = up.data?.attachment || up.data || {};
+        if (attObj.attachment_id != null) photoIds.push(attObj.attachment_id);
+        uploadedAttachments.push(
+          mapBackendPhotoToEvidence({
+            ...attObj,
+            attachment_id: attObj.attachment_id,
+            image_url: attObj.image_url || attObj.file_url || attObj.url || uri,
+            evidence_type: stepEvType,
+            procedure_step_id: step.step_id,
+          }),
+        );
       }
       const body = { status };
       if (Array.isArray(checkedItems) && checkedItems.length)
@@ -3179,6 +3388,11 @@ export function AppProvider({ children }) {
         const msg = {
           INVALID_VISIT_STATE:
             'Bấm "Đã đến nơi" trước khi làm các bước.',
+          LEAD_NOT_STARTED:
+            "Đợi thợ chính xác nhận đến nơi trước khi bắt đầu phần việc.",
+          OUTSIDE_SUPPORT_SCOPE:
+            "Bước này không thuộc danh mục bạn phụ trách.",
+          LEAD_ONLY: "Chỉ thợ chính mới được thực hiện thao tác này.",
           PHOTO_REQUIRED: "Bước này cần ít nhất 1 ảnh.",
           MEASUREMENTS_REQUIRED: "Nhập đủ các chỉ số đo của bước.",
           INVALID_PHOTO: "Ảnh không thuộc việc này. Chụp lại ảnh.",
@@ -3193,8 +3407,20 @@ export function AppProvider({ children }) {
         };
       }
       const proc = res.data?.job?.procedure;
-      if (proc !== undefined)
-        updateOrder(code, (ord) => ({ order: { ...ord, procedure: proc } }));
+      if (proc !== undefined || uploadedAttachments.length > 0) {
+        updateOrder(code, (ord) => {
+          const prevEv = Array.isArray(ord.evidence) ? ord.evidence : [];
+          const existingIds = new Set(prevEv.map((e) => e?.dbAttachmentId).filter((x) => x != null).map(String));
+          const addedEv = uploadedAttachments.filter((e) => e.dbAttachmentId == null || !existingIds.has(String(e.dbAttachmentId)));
+          return {
+            order: {
+              ...ord,
+              ...(proc !== undefined ? { procedure: proc } : {}),
+              ...(addedEv.length ? { evidence: [...prevEv, ...addedEv] } : {}),
+            },
+          };
+        });
+      }
       return { ok: true };
     },
     loadServiceReviews,
@@ -3441,6 +3667,8 @@ export function AppProvider({ children }) {
           INVALID_SERVICE:
             "Có dịch vụ đã ngừng phục vụ. Tải lại danh sách dịch vụ.",
           DUPLICATE_REQUEST: "Bạn đã có đơn trùng dịch vụ và khung giờ này.",
+          NON_WORKING_DAY:
+            "Hệ thống nghỉ Chủ nhật và ngày lễ. Vui lòng chọn ngày làm việc khác.",
         }[res.code];
         ui.alert(
           "Chưa đặt được lịch",
@@ -3458,6 +3686,7 @@ export function AppProvider({ children }) {
       const pics = (payload.attachments || [])
         .filter((x) => x?.uri)
         .slice(0, 5);
+      let uploadedPics = pics;
       if (pics.length) {
         const rs = await Promise.all(
           pics.map((x) =>
@@ -3468,14 +3697,24 @@ export function AppProvider({ children }) {
         );
         if (rs.some((r) => !r?.ok))
           ui.toast("Một số ảnh chưa tải lên được", "⚠️");
+        uploadedPics = pics.map((x, idx) => {
+          const att = rs[idx]?.ok ? (rs[idx].data?.attachment || rs[idx].data || null) : null;
+          const dbId = att?.attachment_id ?? att?.id ?? x.dbAttachmentId ?? null;
+          return {
+            ...x,
+            ...(dbId != null ? { id: `att-${dbId}`, dbAttachmentId: dbId } : {}),
+            uri: att?.image_url || att?.file_url || att?.url || x.uri,
+          };
+        });
       }
       const createdWithPics =
-        created && pics.length
+        created && uploadedPics.length
           ? {
               ...created,
-              attachments: pics,
-              evidence: pics.map((x, idx) => ({
+              attachments: uploadedPics,
+              evidence: uploadedPics.map((x, idx) => ({
                 id: x.id || `local-att-${idx}`,
+                ...(x.dbAttachmentId != null ? { dbAttachmentId: x.dbAttachmentId } : {}),
                 uri: x.uri,
                 stage: "diagnosis",
                 note: x.note || "",
@@ -3664,13 +3903,41 @@ export function AppProvider({ children }) {
       setStack((st) => st.filter((x) => x.params?.code !== code));
       const rel = res.data?.release || {};
       ui.toast(
-        rel.reassigned
-          ? "Đã trả việc · Hệ thống đã gán thợ khác"
-          : "Đã trả việc cho điều phối",
+        rel.severity === "SUPPORT"
+          ? "Đã rời khỏi đội · Hệ thống đang tìm thợ phụ thay thế"
+          : rel.reassigned
+            ? "Đã trả việc · Hệ thống đã gán thợ khác"
+            : "Đã trả việc cho điều phối",
         "↩️",
       );
       syncFromBackend(null, true);
       return { ok: true, release: rel };
+    },
+    // Thợ phụ báo xong phần việc hỗ trợ: POST /technician/jobs/:id/finish-part
+    finishSupportPart: async (code, note = "") => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
+      const res = await hrmssApi.finishSupportPart(o.dbAssignmentId, note);
+      if (!res.ok) {
+        const msg = {
+          NOT_SUPPORT_TECHNICIAN: "Chỉ thợ phụ mới thực hiện được thao tác này.",
+          LEAD_NOT_STARTED: "Đợi thợ chính xác nhận đến nơi trước khi bắt đầu phần việc.",
+          INVALID_VISIT_STATE: "Đơn chưa ở trạng thái Đang thực hiện để báo xong phần việc.",
+          LEAD_ONLY: "Thao tác này chỉ dành cho thợ chính.",
+        }[res.code];
+        ui.alert(
+          "Chưa báo xong được",
+          msg || (res.status > 0 ? res.message : networkError(res)),
+          "⚠️",
+        );
+        syncFromBackend(null, true);
+        return false;
+      }
+      up((p) => ({ orders: p.orders.filter((x) => x.code !== code) }));
+      setStack((st) => st.filter((x) => x.params?.code !== code));
+      ui.toast("Đã báo xong phần việc · Đã gửi thông báo cho thợ chính", "✅");
+      syncFromBackend(null, true);
+      return true;
     },
     // Nhắc khách duyệt báo giá đang chờ
     // Nhắc khách duyệt báo giá: POST /technician/jobs/:id/remind-quote (server chống gửi dồn 10 phút).
@@ -3778,6 +4045,7 @@ export function AppProvider({ children }) {
         return false;
       }
       if (
+        !isSupportAssignment(o) &&
         o.quote &&
         !o.quote.approved &&
         (o.quote.status === "SENT" || o.quote.revisionRequested)
@@ -3819,17 +4087,19 @@ export function AppProvider({ children }) {
           tracking: { updatedAt: now, label: "Thợ vừa xuất phát" },
         }),
       }));
-      getCheckInLocation().then((loc) => {
-        if (loc)
-          hrmssApi
-            .updateTechnicianLocation({
-              latitude: loc.lat,
-              longitude: loc.lng,
-              location_accuracy: loc.accuracy,
-              location_sharing_enabled: true,
-            })
-            .catch(() => {});
-      });
+      if (!isSupportAssignment(o)) {
+        getCheckInLocation().then((loc) => {
+          if (loc)
+            hrmssApi
+              .updateTechnicianLocation({
+                latitude: loc.lat,
+                longitude: loc.lng,
+                location_accuracy: loc.accuracy,
+                location_sharing_enabled: true,
+              })
+              .catch(() => {});
+        });
+      }
       ui.toast("Đã báo khách: đang di chuyển", "🛵");
       await syncFromBackend(null, true);
       return true;
@@ -3839,6 +4109,8 @@ export function AppProvider({ children }) {
       const o = s.orders.find((x) => x.code === code);
       if (!o || o.status !== "onway" || !authTokens.get()) return;
       if (s.auth?.role === "tech") {
+        // Thợ phụ không gửi vị trí đè lên hành trình của thợ chính.
+        if (isSupportAssignment(o)) return;
         const loc = await getCheckInLocation();
         if (loc) {
           // Server phát technician:location cho khách ngay khi nhận vị trí này (không gửi qua socket).
@@ -3858,6 +4130,7 @@ export function AppProvider({ children }) {
                 lat: loc.lat,
                 lng: loc.lng,
                 accuracy: loc.accuracy,
+                ...buildTrackingMeta(loc.lat, loc.lng, ord),
                 updatedAt: Date.now(),
                 label: "Đang chia sẻ vị trí với khách",
               },
@@ -3870,14 +4143,30 @@ export function AppProvider({ children }) {
       const res = await hrmssApi.getRequestTracking(o.dbRequestId);
       if (!res.ok) return;
       const loc = res.data?.location;
+      const srvSupport = Array.isArray(res.data?.support_technicians)
+        ? res.data.support_technicians.map((st) => ({
+            technicianId: st?.technician_id ?? null,
+            name: st?.full_name || "Thợ phụ hỗ trợ",
+            rating: st?.rating_average != null ? Number(st.rating_average) : null,
+            categoryIds: Array.isArray(st?.category_ids)
+              ? st.category_ids.map(Number).filter((n) => Number.isFinite(n) && n > 0)
+              : [],
+          }))
+        : null;
       updateOrder(code, (ord) => ({
         order: {
           ...ord,
+          ...(srvSupport ? { supportTechnicians: srvSupport } : {}),
           tracking: loc
             ? {
+                ...(ord.tracking || {}),
                 lat: loc.latitude,
                 lng: loc.longitude,
                 accuracy: loc.accuracy,
+                ...buildTrackingMeta(loc.latitude, loc.longitude, ord, {
+                  ...res.data,
+                  ...loc,
+                }),
                 updatedAt: loc.recorded_at
                   ? new Date(loc.recorded_at).getTime()
                   : Date.now(),
@@ -3948,6 +4237,13 @@ export function AppProvider({ children }) {
         return false;
       }
       const lateness = res.data?.lateness || {};
+      const srvVisitStatus = String(
+        res.data?.visit?.visit_status ||
+          res.data?.job?.visit?.visit_status ||
+          res.data?.visit_status ||
+          "",
+      ).toUpperCase();
+      const supportWaiting = isSupportAssignment(o) && srvVisitStatus === "SCHEDULED";
       const now = Date.now();
       const checkInPayload = {
         lat: effectiveCheckIn.lat,
@@ -3956,8 +4252,23 @@ export function AppProvider({ children }) {
         label: effectiveCheckIn.label,
         at: now,
       };
+      if (supportWaiting) {
+        updateOrder(code, (ord) => ({
+          order: {
+            ...ord,
+            status: "confirmed",
+            visitStatus: "SCHEDULED",
+            arrivedAt: now,
+            checkIn: checkInPayload,
+          },
+        }));
+        syncFromBackend(null, true);
+        ui.toast("Đã xác nhận đến nơi · Chờ thợ chính tới", "📍");
+        return true;
+      }
       updateOrder(code, (ord) => ({
         order: withStatus(ord, "diagnosing", now, {
+          visitStatus: srvVisitStatus || "IN_PROGRESS",
           arrivedAt: now,
           checkIn: checkInPayload,
           lateCompensation:
@@ -4250,6 +4561,14 @@ export function AppProvider({ children }) {
         );
         return false;
       }
+      if (o.kind === "followup" && hasExtra) {
+        ui.alert(
+          "Đơn hẹn tái khám miễn phí (0đ)",
+          "Đơn hẹn tái khám không tạo báo giá thu thêm phí. Vui lòng bắt đầu sửa hoặc ghi nhận vật tư không tính phí.",
+          "🛡️",
+        );
+        return false;
+      }
       // Tại nhà khách: nếu không có phát sinh thêm, chuyển sang xác nhận chẩn đoán và bắt đầu làm (không gửi báo giá trùng)
       if (!isPre && !hasExtra) {
         return a.startRepairWithoutQuote(code, {
@@ -4302,6 +4621,18 @@ export function AppProvider({ children }) {
           );
           return false;
         }
+        if (l.type === "part") {
+          const wCheck = validateQuoteItemWarrantyFields({
+            isExternalPurchase: Boolean(l.isCustom && !l.isEstimatedRange),
+            warrantyDays: l.warrantyDays,
+            externalWarrantyCode: l.externalWarrantyCode,
+            serialNumber: l.serialNumber,
+          });
+          if (!wCheck.ok) {
+            ui.alert("Bảo hành linh kiện chưa hợp lệ", wCheck.error, "🛡️");
+            return false;
+          }
+        }
       }
       const buildQuoteItemPayload = (l) => {
         if (l.isCustom && l.isEstimatedRange) {
@@ -4316,22 +4647,31 @@ export function AppProvider({ children }) {
             unit_price: 0,
           };
         }
-        return l.type === "part"
-          ? {
-              item_type: "MATERIAL",
-              ...(l.isCustom
-                ? { external_purchase: true }
-                : { material_id: resolveDbMaterialId(l.matId, l.name) }),
-              description_snapshot: l.name || "Linh kiện vật tư",
-              quantity: Math.max(1, Number(l.qty) || 1),
-              unit_price: Math.max(0, Number(l.price) || 0),
-            }
-          : {
-              item_type: "SERVICE",
-              description_snapshot: l.name || "Dịch vụ sửa chữa & bảo dưỡng",
-              quantity: Math.max(1, Number(l.qty) || 1),
-              unit_price: Math.max(0, Number(l.price) || 0),
-            };
+        if (l.type === "part") {
+          const isExtFixed = Boolean(l.isCustom);
+          return {
+            item_type: "MATERIAL",
+            ...(isExtFixed
+              ? { external_purchase: true }
+              : { material_id: resolveDbMaterialId(l.matId, l.name) }),
+            description_snapshot: l.name || "Linh kiện vật tư",
+            quantity: Math.max(1, Number(l.qty) || 1),
+            unit_price: Math.max(0, Number(l.price) || 0),
+            ...buildQuoteItemWarrantyPayload({
+              isMaterial: true,
+              isExternalPurchase: isExtFixed,
+              warrantyDays: l.warrantyDays,
+              externalWarrantyCode: l.externalWarrantyCode,
+              serialNumber: l.serialNumber,
+            }),
+          };
+        }
+        return {
+          item_type: "SERVICE",
+          description_snapshot: l.name || "Dịch vụ sửa chữa & bảo dưỡng",
+          quantity: Math.max(1, Number(l.qty) || 1),
+          unit_price: Math.max(0, Number(l.price) || 0),
+        };
       };
       const items = sendLines.map(buildQuoteItemPayload);
       const hasEstimatedLines = sendLines.some(
@@ -4403,6 +4743,14 @@ export function AppProvider({ children }) {
     submitExternalPartsActualPrice: async (code, { parts, summary } = {}) => {
       const o = s.orders.find((x) => x.code === code);
       if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
+      if (o.kind === "warranty" || o.kind === "followup") {
+        ui.alert(
+          "Đơn miễn phí (0đ)",
+          "Đơn bảo hành / hẹn tái khám miễn phí không hỗ trợ gửi hoá đơn thu phí.",
+          "🛡️",
+        );
+        return false;
+      }
       if (!Array.isArray(parts) || !parts.length) {
         ui.alert(
           "Thiếu vật tư",
@@ -4443,6 +4791,29 @@ export function AppProvider({ children }) {
             `Mức giá cuối của "${name}" không thể thấp hơn mức tối thiểu đã tạm tính (${qty !== origQty ? formatVND(priorDeposit * origQty) : formatVND(priorDeposit)}).`,
             "⚠️",
           );
+          return false;
+        }
+        const isExtPart = !(p.isWarehouse && (p.matId || p.dbMaterialId));
+        const hasExtWarranty = isExtPart && Boolean(
+          (p.warrantyDays != null && String(p.warrantyDays).trim() !== "") ||
+            String(p.externalWarrantyCode || "").trim(),
+        );
+        if (hasExtWarranty && !p.receiptUri && !p.receiptId && !p.receiptUrl) {
+          ui.alert(
+            "Cần ảnh hoá đơn",
+            `Khi nhập bảo hành hãng cho "${name}", vui lòng đính kèm ảnh hoá đơn mua ngoài.`,
+            "📷",
+          );
+          return false;
+        }
+        const wCheck = validateQuoteItemWarrantyFields({
+          isExternalPurchase: isExtPart,
+          warrantyDays: p.warrantyDays,
+          externalWarrantyCode: p.externalWarrantyCode,
+          serialNumber: p.serialNumber,
+        });
+        if (!wCheck.ok) {
+          ui.alert("Bảo hành linh kiện chưa hợp lệ", wCheck.error, "🛡️");
           return false;
         }
       }
@@ -4504,6 +4875,11 @@ export function AppProvider({ children }) {
               description_snapshot: part.name,
               quantity: qty,
               unit_price: actualPrice,
+              ...buildQuoteItemWarrantyPayload({
+                isMaterial: true,
+                isExternalPurchase: false,
+                serialNumber: part.serialNumber,
+              }),
             };
           }
         }
@@ -4526,13 +4902,22 @@ export function AppProvider({ children }) {
             description_snapshot: desc,
             quantity: qty,
             unit_price: unitPrice,
+            ...buildQuoteItemWarrantyPayload({
+              isMaterial: true,
+              isExternalPurchase: true,
+              warrantyDays: part.warrantyDays,
+              externalWarrantyCode: part.externalWarrantyCode,
+              serialNumber: part.serialNumber,
+            }),
           };
         }
+        const serialTrim = String(part.serialNumber || "").trim();
         return {
-          item_type: "SERVICE",
+          item_type: serialTrim ? "OTHER" : "SERVICE",
           description_snapshot: desc,
           quantity: qty,
           unit_price: unitPrice,
+          ...(serialTrim ? { serial_number: serialTrim.slice(0, 100) } : {}),
         };
       });
       const applyZeroDepositFinalization = async (zeroEntries) => {
@@ -4625,7 +5010,7 @@ export function AppProvider({ children }) {
         qRes.data?.quotation?.items ||
         qRes.data?.items ||
         [];
-      const neededReceiptCount = activeResolved.filter((r) => Boolean(r.attachmentId)).length;
+      const neededReceiptCount = activeResolved.filter((r) => Boolean(r.attachmentId) && !r.part?.isWarehouse).length;
       if (
         neededReceiptCount > 0 &&
         (!Array.isArray(createdItems) ||
@@ -4654,7 +5039,7 @@ export function AppProvider({ children }) {
       const failedReceipts = [];
       for (let i = 0; i < activeResolved.length; i += 1) {
         const { part, attachmentId } = activeResolved[i];
-        if (!attachmentId) continue;
+        if (!attachmentId || part?.isWarehouse) continue;
         const normTarget = normalizeExternalPartName(part.name);
         const matched =
           extItems.find(
@@ -4968,11 +5353,14 @@ export function AppProvider({ children }) {
               paymentMethodLocked: false,
               cashClaimLocked: false,
               status: x.status === "cancelled" ? "cancelled" : (isFull ? "done" : x.status),
-              report: {
-                ...(x.report || {}),
-                paid: isFull,
-                at: Date.now(),
-              },
+              report:
+                x.status === "cancelled"
+                  ? null
+                  : {
+                      ...(x.report || {}),
+                      paid: isFull,
+                      at: Date.now(),
+                    },
               bill: {
                 ...(x.bill || {}),
                 cashClaimPending: false,
@@ -5126,6 +5514,7 @@ export function AppProvider({ children }) {
         codes: {
           CANNOT_EDIT: "Chỉ sửa được khi đơn còn chờ thợ.",
           EDIT_TOO_LATE: "Đã quá thời gian được sửa đơn.",
+          NON_WORKING_DAY: "Hệ thống nghỉ Chủ nhật và ngày lễ. Vui lòng chọn ngày làm việc khác.",
         },
         toast: "Đã cập nhật yêu cầu",
         icon: "✏️",
@@ -5831,7 +6220,7 @@ export function AppProvider({ children }) {
     // Đánh giá: POST /customer/requests/:id/review. Điểm thưởng, điểm TB của thợ do server tính; app tải lại.
     rateOrder: async (code, stars, text) => {
       const o = s.orders.find((x) => x.code === code);
-      if (!o || o.status !== "done" || o.rating) return false;
+      if (!o || o.status !== "done" || o.rating || o.kind === "warranty" || o.kind === "followup") return false;
       if (!o.dbRequestId || !authTokens.get()) return notSynced("Đơn này");
       const res = await hrmssApi.reviewCustomerRequest(o.dbRequestId, {
         rating: stars,
@@ -5961,7 +6350,9 @@ export function AppProvider({ children }) {
       }
       if (!res.ok) {
         const msg = {
-          WARRANTY_NOT_STARTED: "Bảo hành chỉ bắt đầu khi đơn đã hoàn thành.",
+          WARRANTY_NOT_STARTED: o.status === "done"
+            ? "Bảo hành sẽ chính thức bắt đầu từ ngày mai."
+            : "Bảo hành chỉ bắt đầu khi đơn đã hoàn thành.",
           WARRANTY_EXPIRED: "Đơn đã hết thời hạn bảo hành.",
           WARRANTY_FINAL_DAY_CUTOFF: "Hôm nay là ngày cuối bảo hành và đã quá ca tiếp nhận của thợ (sau 18h00).",
           WARRANTY_MUST_BE_TODAY: "Ngày cuối bảo hành chỉ được chọn lịch trong ngày hôm nay.",
@@ -5969,6 +6360,8 @@ export function AppProvider({ children }) {
             "Đơn này đang có một yêu cầu bảo hành chưa xử lý xong.",
           INVALID_TIME_SLOT:
             "Khung giờ đã chọn không còn khả dụng. Vui lòng chọn ca khác.",
+          NON_WORKING_DAY:
+            "Hệ thống nghỉ Chủ nhật và ngày lễ. Vui lòng chọn ngày làm việc khác.",
           VALIDATION_ERROR: res.message || "Thông tin gửi bảo hành chưa hợp lệ. Vui lòng kiểm tra lại.",
         }[res.code];
         ui.alert(
@@ -6007,7 +6400,7 @@ export function AppProvider({ children }) {
     checkWarrantyEligibility: async (code) => {
       if (!warrantyEligibilitySupportedRef.current || !authTokens.get()) return null;
       const o = s.orders.find((x) => x.code === code);
-      if (!o?.dbRequestId || o.status !== "done" || o.kind === "warranty") return null;
+      if (!o?.dbRequestId || o.status !== "done" || o.kind === "warranty" || o.kind === "followup") return null;
       const res = await hrmssApi.getWarrantyEligibility(o.dbRequestId).catch(() => null);
       if (!res) return null;
       if (!res.ok) {
@@ -6209,6 +6602,7 @@ export function AppProvider({ children }) {
     "acceptJob",
     "declineJob",
     "releaseJob",
+    "finishSupportPart",
     "confirmPayment",
     "switchPaymentMethod",
     "respondQuote",
@@ -6307,6 +6701,7 @@ export function AppProvider({ children }) {
     workingJobs: s.orders.filter(
       (o) =>
         o.status !== "pending" &&
+        !(isSupportAssignment(o) && (!o.assignmentActive || o.status === "pending_payment")) &&
         (Boolean(o.dbAssignmentId) ||
           Boolean(o.assignmentActive) ||
           (Boolean(myCode) && o.tech?.code === myCode)) &&

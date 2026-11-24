@@ -245,21 +245,25 @@ export function applyServerWarrantyEligibility(baseInfo, serverElig, formatDateF
 
   if (serverElig.eligible === false) {
     const reason = String(serverElig.reason_code || serverElig.reasonCode || baseInfo?.reason || 'WARRANTY_EXPIRED');
-    const noWarranty = totalDays === 0 || reason === 'WARRANTY_NOT_APPLICABLE' || reason === 'NO_WARRANTY';
+    const isNotStarted = reason === 'WARRANTY_NOT_STARTED';
+    const noWarranty = !isNotStarted && (totalDays === 0 || reason === 'WARRANTY_NOT_APPLICABLE' || reason === 'NO_WARRANTY');
     return {
       ...baseInfo,
       ok: false,
       totalDays,
-      daysLeft: 0,
-      isFinalDay: reason === 'WARRANTY_FINAL_DAY_CUTOFF' || Boolean(serverElig.is_final_day),
+      daysLeft: isNotStarted ? totalDays : 0,
+      isFinalDay: !isNotStarted && (reason === 'WARRANTY_FINAL_DAY_CUTOFF' || Boolean(serverElig.is_final_day)),
       isCutoff: reason === 'WARRANTY_FINAL_DAY_CUTOFF',
+      notStarted: isNotStarted,
       noWarranty,
       reason,
       until,
       endYmd,
-      text: toVietnamese(serverElig.message, '') || baseInfo?.text || (noWarranty
-        ? 'Dịch vụ này không áp dụng bảo hành.'
-        : `Đơn đã hết thời hạn bảo hành ${totalDays} ngày.`),
+      text: toVietnamese(serverElig.message, '') || (isNotStarted
+        ? 'Bảo hành sẽ chính thức bắt đầu từ ngày mai.'
+        : (baseInfo?.text || (noWarranty
+          ? 'Dịch vụ này không áp dụng bảo hành.'
+          : `Đơn đã hết thời hạn bảo hành ${totalDays} ngày.`))),
       supportHotline: serverElig.support_hotline || null,
       retentionVoucher: serverElig.retention_voucher || null,
       fromServer: true,
@@ -316,8 +320,11 @@ export function applyServerWarrantyEligibility(baseInfo, serverElig, formatDateF
     const availableDates = Array.isArray(serverElig.available_dates) && serverElig.available_dates.length
       ? serverElig.available_dates
       : baseInfo?.availableDates;
-    const serverSlotsToday = Array.isArray(serverElig.available_slots_today)
+    const rawServerSlotsToday = Array.isArray(serverElig.available_slots_today)
       ? serverElig.available_slots_today
+      : null;
+    const serverSlotsToday = rawServerSlotsToday
+      ? (isFinalDay ? rawServerSlotsToday.filter(isSlotBeforeFinalCutoff) : rawServerSlotsToday)
       : null;
     const dateText = until && typeof formatDateFn === 'function' ? formatDateFn(until) : '';
     const defaultText = totalDays > 0

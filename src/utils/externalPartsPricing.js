@@ -157,11 +157,12 @@ export function matchReceiptsToQuoteLines(lines = [], evidence = []) {
 
   // Pass 4: danh sách ảnh biên lai còn lại chưa gắn được vào dòng cụ thể (hiển thị thành dải đối chiếu).
   const finalMissing = eligibleIndices.filter((i) => !lineReceipts.has(i));
-  const unmatchedReceipts = (
-    finalMissing.length > 0 || (eligibleIndices.length === 0 && lineReceipts.size === 0)
-  )
-    ? receiptPool.filter((ev) => !usedKeys.has(receiptEvKey(ev)))
-    : [];
+  const showGenericUnmatched = finalMissing.length > 0 || (eligibleIndices.length === 0 && lineReceipts.size === 0);
+  const unmatchedReceipts = receiptPool.filter((ev) => {
+    if (usedKeys.has(receiptEvKey(ev))) return false;
+    if (showGenericUnmatched) return true;
+    return Boolean(extractReceiptPartName(ev.note));
+  });
 
   return { lineReceipts, unmatchedReceipts };
 }
@@ -321,8 +322,8 @@ export function computeQuoteRangeTotals(
   const extraMin = fixedExtra + estMinExtra;
   const extraMax = fixedExtra + estMaxExtra;
   const base = isOnSite
-    ? Math.max(0, (Number(bookedBase) || 0) + (Number(priorApprovedExtra) || 0))
-    : Math.max(0, origSum - (Number(prodDisc) || 0) - (Number(comboDisc) || 0));
+    ? ((Number(bookedBase) || 0) + (Number(priorApprovedExtra) || 0))
+    : (origSum > 0 ? (origSum - (Number(prodDisc) || 0) - (Number(comboDisc) || 0)) : 0);
   const deduct = (Number(partDisc) || 0) + (Number(voucherDisc) || 0) + (Number(lateDisc) || 0);
   const grossTotalMin = Math.max(0, base + extraMin);
   const grossTotalMax = Math.max(grossTotalMin, base + extraMax);

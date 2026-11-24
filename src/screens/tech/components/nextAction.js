@@ -2,7 +2,7 @@
 // và thanh hành động ở màn chi tiết.
 import { useCallback } from 'react';
 import { Platform } from 'react-native';
-import { useApp, isQRPayment, isPaid, getPendingExternalEstimates } from '../../../context';
+import { useApp, isQRPayment, isPaid, getPendingExternalEstimates, isSupportAssignment, isSupportWaitingForLead } from '../../../context';
 import { distanceKm, getCheckInLocation } from '../../../utils/geo';
 import { useBusyRunner } from './useBusyRunner';
 
@@ -78,9 +78,19 @@ export function useNextAction({ inDetail = false } = {}) {
   return useCallback((o) => {
     if (!o || !o.status) return null;
     const open = () => nav.push('tech-job', { code: o.code });
+    if (isSupportWaitingForLead(o)) {
+      return {
+        label: 'Chờ thợ chính tới',
+        icon: 'clock',
+        variant: 'ghost',
+        disabled: inDetail,
+        run: inDetail ? () => {} : open,
+      };
+    }
+    const isSupport = isSupportAssignment(o);
     switch (o.status) {
       case 'confirmed': {
-        if (o.quote?.revisionRequested) {
+        if (!isSupport && o.quote?.revisionRequested) {
           return inDetail
             ? null
             : {
@@ -90,7 +100,7 @@ export function useNextAction({ inDetail = false } = {}) {
                 run: open,
               };
         }
-        if (isAwaitingPreQuote(o)) {
+        if (!isSupport && isAwaitingPreQuote(o)) {
           return {
             label: 'Chờ khách đồng ý báo giá',
             icon: 'clock',
@@ -122,27 +132,29 @@ export function useNextAction({ inDetail = false } = {}) {
       }
       case 'diagnosing': {
         if (inDetail) return null;
+        if (isSupport) return { label: 'Làm phần việc hỗ trợ', icon: 'wrench', run: open };
         if (o.externalPriceState === 'revision_requested' || (o.quote?.isExternalFinalization && o.quote?.revisionRequested)) {
           return { label: 'Chỉnh lại giá vật tư', icon: 'receipt-text', variant: 'primary', run: open };
         }
         return { label: 'Chẩn đoán & báo giá', icon: 'receipt-text', run: open };
       }
       case 'out_of_warranty': {
-        return inDetail
-          ? null
-          : { label: 'Báo giá có phí', icon: 'receipt-text', variant: 'primary', run: open };
+        if (inDetail) return null;
+        if (isSupport) return { label: 'Làm phần việc hỗ trợ', icon: 'wrench', run: open };
+        return { label: 'Báo giá có phí', icon: 'receipt-text', variant: 'primary', run: open };
       }
       case 'quoted':
-        return inDetail
-          ? null
-          : {
-              label: o.quote?.isExternalFinalization ? 'Chờ khách xác nhận hoá đơn' : 'Chờ khách duyệt',
-              icon: 'clock',
-              variant: 'ghost',
-              run: open,
-            };
+        if (inDetail) return null;
+        if (isSupport) return { label: 'Làm phần việc hỗ trợ', icon: 'wrench', run: open };
+        return {
+          label: o.quote?.isExternalFinalization ? 'Chờ khách xác nhận hoá đơn' : 'Chờ khách duyệt',
+          icon: 'clock',
+          variant: 'ghost',
+          run: open,
+        };
       case 'repairing': {
         if (inDetail) return null;
+        if (isSupport) return { label: 'Làm phần việc hỗ trợ', icon: 'wrench', run: open };
         if (o.externalPriceState === 'revision_requested') {
           return { label: 'Chỉnh lại giá vật tư', icon: 'receipt-text', variant: 'primary', run: open };
         }
@@ -155,7 +167,7 @@ export function useNextAction({ inDetail = false } = {}) {
         return { label: 'Cập nhật công việc', icon: 'wrench', run: open };
       }
       case 'pending_payment': {
-        if (inDetail || isPaid(o)) return null;
+        if (inDetail || isPaid(o) || isSupport) return null;
         if (isQRPayment(o)) {
           return { label: 'Chờ khách chuyển khoản QR', icon: 'qr-code', variant: 'ghost', run: open };
         }

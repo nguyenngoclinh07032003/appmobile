@@ -6,7 +6,8 @@ import { View, Text, Image, StyleSheet } from 'react-native';
 import { C, R, grad } from '../../theme';
 import { catLabel, SAFETY_CHECKLIST_ITEMS, HOTLINE } from '../../constants/data';
 import { fmtDate, fmtDateTime } from '../../context';
-import { AppIcon } from '../../components';
+import { AppIcon, Badge, Tap } from '../../components';
+import { MATERIAL_WARRANTY_STATUS_META, extractMaterialWarrantiesFromQuotations } from '../../utils/materialWarranty';
 
 function InfoRow({ icon, label, value, last }) {
   if (!value) return null;
@@ -32,11 +33,12 @@ function Section({ icon, title, right, children, style }) {
   );
 }
 
-export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
+export function WarrantyCertificate({ o, winfo, tierWarrantyDays, onPreviewPhoto }) {
   const certCode = o.report?.warrantyCertificateCode || `BH-${o.code}`;
   const totalDays = winfo.totalDays ?? tierWarrantyDays;
   const isActivePending = Boolean(winfo.pending && winfo.stillValid);
-  const daysLeft = (winfo.ok || isActivePending) ? (winfo.daysLeft ?? 0) : 0;
+  const isNotStarted = Boolean(winfo.notStarted || winfo.reason === 'WARRANTY_NOT_STARTED');
+  const daysLeft = (winfo.ok || isActivePending || isNotStarted) ? (winfo.daysLeft ?? totalDays) : 0;
   const ratio = totalDays ? Math.max(0, Math.min(1, daysLeft / totalDays)) : 0;
   const checklist = o.report?.safetyChecklist?.length ? o.report.safetyChecklist : SAFETY_CHECKLIST_ITEMS;
   const device = o.device
@@ -54,7 +56,43 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
     seenInitial.add(key);
     initialPhotos.push(ph);
   });
-  const completionPhotos = evidence.filter((e) => e?.stage === 'after' && e?.uri);
+  const strictCompletionPhotos = evidence.filter(
+    (e) => e?.stage === 'after' && e?.uri && (!e.procedureStepId || /hoàn thành|bàn giao/i.test(String(e.note || ''))),
+  );
+  const completionPhotos = strictCompletionPhotos.length
+    ? strictCompletionPhotos
+    : (o.status === 'done' ? evidence.filter((e) => e?.stage === 'after' && e?.uri) : []);
+  const matWarranties = (o.materialWarranties && o.materialWarranties.length)
+    ? o.materialWarranties
+    : extractMaterialWarrantiesFromQuotations(o.quotations || []);
+  const isMaterialOnly = Boolean((winfo.noWarranty || totalDays <= 0) && matWarranties.length > 0);
+  const activeMatWarranties = matWarranties.filter((mw) =>
+    ['VALID', 'EXPIRING_SOON', 'PENDING'].includes(String(mw.status || '').toUpperCase()) && (Number(mw.warrantyDays) || 0) > 0,
+  );
+  const hasActiveMatWarranty = activeMatWarranties.length > 0;
+  const leadMatWarranty = hasActiveMatWarranty
+    ? activeMatWarranties.reduce((best, mw) => {
+        const bestRem = best.remainingDays != null ? Number(best.remainingDays) : (Number(best.warrantyDays) || 0);
+        const curRem = mw.remainingDays != null ? Number(mw.remainingDays) : (Number(mw.warrantyDays) || 0);
+        if (curRem !== bestRem) return curRem > bestRem ? mw : best;
+        return (Number(mw.warrantyDays) || 0) > (Number(best.warrantyDays) || 0) ? mw : best;
+      })
+    : (matWarranties.length
+        ? matWarranties.reduce((best, mw) => ((Number(mw.warrantyDays) || 0) > (Number(best.warrantyDays) || 0) ? mw : best))
+        : null);
+  const maxMatDays = leadMatWarranty ? (Number(leadMatWarranty.warrantyDays) || 0) : 0;
+  const maxMatRemaining = hasActiveMatWarranty && leadMatWarranty
+    ? (leadMatWarranty.remainingDays != null ? Number(leadMatWarranty.remainingDays) : maxMatDays)
+    : 0;
+  const displayTotalDays = isMaterialOnly ? maxMatDays : totalDays;
+  const displayDaysLeft = isMaterialOnly ? (hasActiveMatWarranty ? maxMatRemaining : 0) : daysLeft;
+  const displayRatio = displayTotalDays ? Math.max(0, Math.min(1, displayDaysLeft / displayTotalDays)) : 0;
+  const isHeroPositive = isMaterialOnly ? hasActiveMatWarranty : (winfo.ok || isActivePending || isNotStarted);
+  const heroToneColor = isMaterialOnly
+    ? (hasActiveMatWarranty ? '#34D399' : '#FCD34D')
+    : (winfo.ok ? '#34D399' : (isActivePending || isNotStarted) ? '#93C5FD' : '#FCD34D');
+  const untilStr = winfo.until ? fmtDate(winfo.until) : '';
+  const notStartedSubtitle = `${winfo.text}${untilStr && !String(winfo.text || '').includes(untilStr) ? ` (hiệu lực đến ${untilStr})` : ''}`;
 
   return (
     <View>
@@ -68,9 +106,13 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
               <Text style={st.heroBrandSub}>Chứng nhận bảo hành điện tử</Text>
             </View>
           </View>
-          <View style={[st.statusPill, { backgroundColor: (winfo.ok || isActivePending) ? 'rgba(16,185,129,0.22)' : 'rgba(255,255,255,0.16)' }]}>
-            <View style={[st.statusDot, { backgroundColor: winfo.ok ? '#34D399' : isActivePending ? '#93C5FD' : '#FCD34D' }]} />
-            <Text style={st.statusText}>{isActivePending ? 'Đang bảo hành' : (winfo.ok ? 'Còn hiệu lực' : 'Hết hiệu lực')}</Text>
+          <View style={[st.statusPill, { backgroundColor: isHeroPositive ? 'rgba(16,185,129,0.22)' : 'rgba(255,255,255,0.16)' }]}>
+            <View style={[st.statusDot, { backgroundColor: heroToneColor }]} />
+            <Text style={st.statusText}>
+              {isMaterialOnly
+                ? (hasActiveMatWarranty ? 'BH linh kiện' : (maxMatDays > 0 ? 'Hết hiệu lực' : 'Không bảo hành'))
+                : (isNotStarted ? 'Chờ kích hoạt' : (isActivePending ? 'Đang bảo hành' : (winfo.ok ? 'Còn hiệu lực' : 'Hết hiệu lực')))}
+            </Text>
           </View>
         </View>
 
@@ -79,13 +121,30 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
             <Text style={st.heroLabel}>Mã chứng nhận</Text>
             <Text style={st.heroCode} numberOfLines={2}>{certCode}</Text>
 
-            <Text style={[st.heroLabel, { marginTop: 12 }]}>Thời hạn bảo hành</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
-              <Text style={st.heroDays}>{daysLeft}</Text>
-              <Text style={st.heroDaysOf}>/ {totalDays} ngày</Text>
-            </View>
-            <View style={st.bar}><View style={[st.barFill, { width: `${ratio * 100}%`, backgroundColor: winfo.ok ? '#34D399' : isActivePending ? '#93C5FD' : '#FCD34D' }]} /></View>
-            <Text style={st.heroUntil}>{winfo.ok ? `Hiệu lực đến ${fmtDate(winfo.until)}` : (isActivePending && winfo.until ? `${winfo.text} (Còn hiệu lực đến ${fmtDate(winfo.until)})` : winfo.text)}</Text>
+            <Text style={[st.heroLabel, { marginTop: 12 }]}>{isMaterialOnly ? 'Bảo hành linh kiện kèm theo' : 'Thời hạn bảo hành'}</Text>
+            {isMaterialOnly && maxMatDays <= 0 ? (
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
+                <Text style={st.heroDays}>{matWarranties.length}</Text>
+                <Text style={st.heroDaysOf}>linh kiện</Text>
+              </View>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 4 }}>
+                <Text style={st.heroDays}>{displayDaysLeft}</Text>
+                <Text style={st.heroDaysOf}>/ {displayTotalDays} ngày</Text>
+              </View>
+            )}
+            <View style={st.bar}><View style={[st.barFill, { width: `${displayRatio * 100}%`, backgroundColor: heroToneColor }]} /></View>
+            <Text style={st.heroUntil}>
+              {isMaterialOnly
+                ? (hasActiveMatWarranty
+                    ? 'Dịch vụ không áp dụng bảo hành riêng · Xem chi tiết bảo hành linh kiện bên dưới.'
+                    : 'Dịch vụ không áp dụng bảo hành · Các linh kiện kèm theo không có hoặc đã hết hạn bảo hành.')
+                : winfo.ok
+                  ? `Hiệu lực đến ${fmtDate(winfo.until)}`
+                  : isNotStarted
+                    ? notStartedSubtitle
+                    : (isActivePending && winfo.until ? `${winfo.text} (Còn hiệu lực đến ${fmtDate(winfo.until)})` : winfo.text)}
+            </Text>
           </View>
           <View style={st.qrWrap}>
             <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
@@ -132,6 +191,80 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
         ) : null}
       </Section>
 
+      {/* ===== Bảo hành linh kiện kèm theo ===== */}
+      {matWarranties.length > 0 ? (
+        <Section icon="shield-check" title={`Bảo hành linh kiện (${matWarranties.length})`}>
+          {matWarranties.map((mw, i) => {
+            const meta = MATERIAL_WARRANTY_STATUS_META[mw.status] || { label: mw.status || 'Theo dõi', tone: 'primary' };
+            const badgeColors =
+              meta.tone === 'green'
+                ? { fg: C.greenInk, bg: C.greenSoft }
+                : meta.tone === 'gold'
+                  ? { fg: C.goldInk, bg: C.goldSoft }
+                  : meta.tone === 'red'
+                    ? { fg: C.redInk, bg: C.redSoft }
+                    : meta.tone === 'neutral'
+                      ? { fg: C.ink2, bg: C.surface }
+                      : meta.tone === 'muted'
+                        ? { fg: C.muted, bg: C.surface }
+                        : { fg: C.primary, bg: C.primarySoft };
+            const receiptUri =
+              mw.receiptUrl
+              || (mw.receiptAttachmentId ? evidence.find((e) => String(e.dbAttachmentId) === String(mw.receiptAttachmentId))?.uri : null)
+              || null;
+            return (
+              <View
+                key={mw.id || `cert_mw_${i}`}
+                style={{
+                  paddingTop: i > 0 ? 8 : 0,
+                  marginTop: i > 0 ? 8 : 0,
+                  borderTopWidth: i > 0 ? 1 : 0,
+                  borderTopColor: C.surface,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                  <Text style={st.itemName}>
+                    {mw.itemName}{mw.quantity > 1 ? ` x${mw.quantity}` : ''}
+                  </Text>
+                  <Badge text={meta.label} fg={badgeColors.fg} bg={badgeColors.bg} />
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                  {mw.isExternalPurchase ? <Badge text="Bảo hành hãng / bên thứ 3" fg={C.goldInk} bg={C.goldSoft} /> : null}
+                  {mw.warrantyDays > 0 ? <Badge text={`${mw.warrantyDays} ngày`} fg={C.ink2} bg={C.surface} /> : null}
+                </View>
+                {mw.serialNumber ? <Text style={{ fontSize: 12, color: C.ink2, marginTop: 4 }}>Số sê-ri: {mw.serialNumber}</Text> : null}
+                {mw.externalWarrantyCode ? (
+                  <Text style={{ fontSize: 12, color: C.goldInk, fontWeight: '700', marginTop: 2 }}>
+                    Mã BH hãng: {mw.externalWarrantyCode}
+                  </Text>
+                ) : null}
+                {mw.startsAt || mw.expiresAt ? (
+                  <Text style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
+                    Hiệu lực: {mw.startsAt ? fmtDate(mw.startsAt) : 'Khi hoàn tất'} → {mw.expiresAt ? fmtDate(mw.expiresAt) : '—'}
+                    {mw.remainingDays != null && mw.remainingDays > 0 && ['VALID', 'EXPIRING_SOON'].includes(mw.status) ? ` (còn ${mw.remainingDays} ngày)` : ''}
+                  </Text>
+                ) : null}
+                {mw.replacesId ? (
+                  <Text style={{ fontSize: 11.5, color: C.muted, marginTop: 2 }}>Thay thế linh kiện #{mw.replacesId}</Text>
+                ) : null}
+                {mw.statusReason ? (
+                  <Text style={{ fontSize: 11.5, color: C.redInk, marginTop: 2 }}>Lý do: {mw.statusReason}</Text>
+                ) : null}
+                {receiptUri && onPreviewPhoto ? (
+                  <Tap
+                    onPress={() => onPreviewPhoto({ uri: receiptUri, title: `Hoá đơn linh kiện · ${mw.itemName}` })}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6, alignSelf: 'flex-start' }}
+                  >
+                    <AppIcon name="receipt-text" size={13} color={C.primary} strokeWidth={2.2} />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: C.primary }}>Xem hoá đơn</Text>
+                  </Tap>
+                ) : null}
+              </View>
+            );
+          })}
+        </Section>
+      ) : null}
+
       {/* ===== An toàn kỹ thuật ===== */}
       <Section
         icon="check-circle-2"
@@ -166,9 +299,14 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
               <Text style={st.photoGroupLabel}>Trước khi sửa (Triệu chứng ban đầu)</Text>
               <View style={st.photoGrid}>
                 {initialPhotos.map((ph, idx) => (
-                  <View key={ph.id || `cert_init_${idx}`} style={st.photoThumb}>
+                  <Tap
+                    key={ph.id || `cert_init_${idx}`}
+                    style={st.photoThumb}
+                    disabled={!onPreviewPhoto}
+                    onPress={() => onPreviewPhoto?.({ uri: ph.uri, title: 'Ảnh trước khi sửa' })}
+                  >
                     <Image source={{ uri: ph.uri }} style={{ width: '100%', height: '100%' }} />
-                  </View>
+                  </Tap>
                 ))}
               </View>
             </View>
@@ -178,9 +316,14 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays }) {
               <Text style={[st.photoGroupLabel, { color: C.green }]}>Sau khi hoàn thành bàn giao</Text>
               <View style={st.photoGrid}>
                 {completionPhotos.map((ph, idx) => (
-                  <View key={ph.id || `cert_after_${idx}`} style={[st.photoThumb, { borderColor: C.greenBorder }]}>
+                  <Tap
+                    key={ph.id || `cert_after_${idx}`}
+                    style={[st.photoThumb, { borderColor: C.greenBorder }]}
+                    disabled={!onPreviewPhoto}
+                    onPress={() => onPreviewPhoto?.({ uri: ph.uri, title: 'Ảnh sau khi hoàn thành bàn giao' })}
+                  >
                     <Image source={{ uri: ph.uri }} style={{ width: '100%', height: '100%' }} />
-                  </View>
+                  </Tap>
                 ))}
               </View>
             </View>

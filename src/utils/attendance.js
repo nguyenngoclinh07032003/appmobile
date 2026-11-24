@@ -15,9 +15,15 @@ export const ATTENDANCE_NOTIF_TYPES = new Set([
   'ATTENDANCE_PERIOD_LOCKED',
 ]);
 
-export const isAttendanceNotifType = (type) => (
-  ATTENDANCE_NOTIF_TYPES.has(String(type || '').trim().toUpperCase())
-);
+export const LEAVE_NOTIF_TYPES = new Set([
+  'LEAVE_RECORDED',
+  'LEAVE_CANCELLED',
+]);
+
+export const isAttendanceNotifType = (type) => {
+  const t = String(type || '').trim().toUpperCase();
+  return ATTENDANCE_NOTIF_TYPES.has(t) || LEAVE_NOTIF_TYPES.has(t);
+};
 
 export const buildAttendanceNotifSignature = (notifs = []) => (
   (Array.isArray(notifs) ? notifs : [])
@@ -33,7 +39,8 @@ export const defaultAttendanceNotifIcon = (type) => {
   if (t === 'ATTENDANCE_REJECTED' || t === 'SHIFT_CANCELLED') return 'x-circle';
   if (t === 'VIOLATION_RECORDED') return 'alert-triangle';
   if (t === 'ATTENDANCE_PERIOD_LOCKED') return 'lock';
-  if (t === 'SHIFT_ASSIGNED' || t === 'SHIFT_UPDATED') return 'calendar-clock';
+  if (t === 'SHIFT_ASSIGNED' || t === 'SHIFT_UPDATED' || t === 'LEAVE_RECORDED') return 'calendar-clock';
+  if (t === 'LEAVE_CANCELLED') return 'calendar';
   return null;
 };
 
@@ -135,7 +142,7 @@ export const formatAttendanceCheckInError = (res = {}) => {
   if (code === 'ATTENDANCE_SHIFT_DUPLICATE') {
     return { title: 'Đã vào ca', message: 'Bạn đã vào ca này rồi.', shouldRefetch: true };
   }
-  if (code === 'TECHNICIAN_SHIFT_NOT_USABLE') {
+  if (code === 'TECHNICIAN_SHIFT_NOT_USABLE' || code === 'SHIFT_NOT_USABLE') {
     return {
       title: 'Ca không còn hiệu lực',
       message: 'Ca này không còn hiệu lực (đã hủy hoặc không phải ca hôm nay).',
@@ -147,6 +154,12 @@ export const formatAttendanceCheckInError = (res = {}) => {
   }
   if (code === 'ATTENDANCE_DAY_OFF') {
     return { title: 'Ngày nghỉ', message: 'Hôm nay bạn được đánh dấu nghỉ.', shouldRefetch: true };
+  }
+  if (code === 'NOT_A_WORKING_DAY') {
+    return { title: 'Ngày nghỉ', message: 'Hôm nay là ngày nghỉ (Chủ nhật hoặc ngày lễ).', shouldRefetch: true };
+  }
+  if (code === 'ON_LEAVE') {
+    return { title: 'Đã ghi nhận nghỉ', message: 'Ca làm việc này đã được ghi nhận nghỉ.', shouldRefetch: true };
   }
   if (code === 'ATTENDANCE_LOCKED') {
     return { title: 'Ngày công đã chốt', message: 'Ngày công đã chốt, không chấm được.', shouldRefetch: true };

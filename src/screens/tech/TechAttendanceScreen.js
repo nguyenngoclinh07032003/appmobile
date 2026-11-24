@@ -282,6 +282,7 @@ export function TechAttendanceScreen() {
   };
 
   const workDate = shiftOptions?.workDate || todayVnNow.dateKey;
+  const nonWorkingDay = shiftOptions?.nonWorkingDay || null;
   const shiftItems = useMemo(
     () => sortTechShifts(Array.isArray(shiftOptions?.items) ? shiftOptions.items : []),
     [shiftOptions],
@@ -348,6 +349,20 @@ export function TechAttendanceScreen() {
             <ActivityIndicator color={C.primary} />
             <Text style={ui.meta}>Đang tải danh sách ca hôm nay…</Text>
           </Card>
+        ) : nonWorkingDay ? (
+          <Card style={st.emptyCard}>
+            <View style={[st.emptyIconWrap, { backgroundColor: C.goldSoft }]}>
+              <AppIcon name="calendar" size={24} color={C.goldInk} />
+            </View>
+            <Text style={[st.emptyTitle, { color: C.goldInk }]}>
+              Hôm nay nghỉ ({nonWorkingDay.reason === 'HOLIDAY' && nonWorkingDay.holidayName ? nonWorkingDay.holidayName : 'Chủ nhật'})
+            </Text>
+            <Text style={[ui.meta, { textAlign: 'center', marginTop: 4 }]}>
+              {nonWorkingDay.reason === 'HOLIDAY'
+                ? 'Hôm nay là ngày lễ theo lịch hệ thống, không thực hiện chấm công ca.'
+                : 'Chủ nhật là ngày nghỉ cố định theo lịch hệ thống.'}
+            </Text>
+          </Card>
         ) : shiftItems.length === 0 ? (
           <Card style={st.emptyCard}>
             <View style={st.emptyIconWrap}>
@@ -391,7 +406,14 @@ export function TechAttendanceScreen() {
                   </View>
                 </View>
 
-                {item.alreadyRecorded ? (
+                {item.onLeave ? (
+                  <View style={st.recordedBox}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <Badge text="Đã ghi nghỉ" fg={C.goldInk} bg={C.goldSoft} />
+                      <Text style={[ui.meta, { marginTop: 0 }]}>Ca này đã được quản lý ghi nhận nghỉ.</Text>
+                    </View>
+                  </View>
+                ) : item.alreadyRecorded ? (
                   <View style={st.recordedBox}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <Badge text="Đã vào ca" fg={C.muted} bg={C.surface} />

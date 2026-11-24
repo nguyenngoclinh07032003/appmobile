@@ -236,6 +236,7 @@ export async function apiRequest(endpoint, options = {}) {
     path.startsWith('/customer/services') ||
     path.startsWith('/customer/materials') ||
     path.startsWith('/config/public') ||
+    path.startsWith('/config/holidays') ||
     path.startsWith('/locations/');
 
   if (!isAuthCall) {
@@ -849,6 +850,14 @@ export const hrmssApi = {
   async releaseTechnicianJob(id, reason) {
     return apiRequest(`/technician/jobs/${encodeURIComponent(id)}/release`, { method: 'POST', body: { reason } });
   },
+  // Thợ phụ báo xong phần việc hỗ trợ.
+  async finishSupportPart(id, note = null) {
+    const cleanNote = typeof note === 'string' ? note.trim() : '';
+    return apiRequest(`/technician/jobs/${encodeURIComponent(id)}/finish-part`, {
+      method: 'POST',
+      body: cleanNote ? { note: cleanNote } : {},
+    });
+  },
   // Bàn giao tiền mặt thợ thu (/technician/handovers).
   async getTechnicianPendingHandovers() {
     return apiRequest('/technician/handovers/pending');
@@ -918,6 +927,14 @@ export const hrmssApi = {
   // Chính sách hệ thống: phí kiểm tra, mức trễ, quy tắc điểm, hạng thành viên.
   async getPublicConfig() {
     return apiRequest('/config/public');
+  },
+  // Ngày lễ / ngày nghỉ cố định từ hệ thống (tối đa 400 ngày).
+  async getPublicHolidays(from, to) {
+    const q = new URLSearchParams();
+    if (from) q.set('from', String(from));
+    if (to) q.set('to', String(to));
+    const qs = q.toString();
+    return apiRequest(`/config/holidays${qs ? `?${qs}` : ''}`);
   },
   // Bảng giá vật tư niêm yết.
   async getPublicMaterials() {

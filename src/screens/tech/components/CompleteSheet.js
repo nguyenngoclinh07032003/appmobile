@@ -26,7 +26,9 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [localPendingUris, setLocalPendingUris] = useState([]);
   const allEvidence = o ? (Array.isArray(evidence) ? evidence : (o.evidence || [])) : [];
-  const serverAfterPhotos = allEvidence.filter((e) => e?.stage === 'after' && e?.uri);
+  const serverAfterPhotos = allEvidence.filter(
+    (e) => e?.stage === 'after' && e?.uri && (!e.procedureStepId || /hoàn thành|bàn giao/i.test(String(e.note || ''))),
+  );
   const [uploadedUris, setUploadedUris] = useState([]);
   const serverCountRef = useRef(serverAfterPhotos.length);
   const lastPickedUriRef = useRef(null);
@@ -74,6 +76,16 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
   const remainDue = amountRemaining(o);
   const extraAmount = billExtraAmount(o);
   const deductAmount = tierPartDiscountAmount(o) + (Number(o.voucherDiscount) || 0) + lateDiscountAmount(o);
+  const approvedRef = o.quote?.approvedTotal != null
+    ? Number(o.quote.approvedTotal)
+    : (o.quote?.approved ? Number(o.quote.total) : null);
+  const serviceReduction = extraAmount === 0 && bookedBase > 0
+    ? (finalTotal > 0
+        ? Math.max(0, Math.round(bookedBase - (finalTotal + deductAmount)))
+        : (approvedRef != null && approvedRef < bookedBase
+            ? Math.max(0, Math.round(bookedBase - approvedRef))
+            : 0))
+    : 0;
 
   const handleAddCompletionPhoto = async (source = 'camera') => {
     if (uploadingPhoto || totalAfterCount >= 5) return;
@@ -202,6 +214,12 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
           <Text style={{ fontSize: 12.5, color: C.ink2 }}>Dịch vụ ban đầu</Text>
           <Text style={{ fontSize: 13, fontWeight: '700', color: C.ink }}>{formatVND(bookedBase)}</Text>
         </View>
+        {serviceReduction > 0 ? (
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
+            <Text style={{ fontSize: 12.5, color: C.green }}>Điều chỉnh giảm dịch vụ</Text>
+            <Text style={{ fontSize: 13, fontWeight: '700', color: C.green }}>-{formatVND(serviceReduction)}</Text>
+          </View>
+        ) : null}
         {extraAmount > 0 ? (
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 3 }}>
             <Text style={{ fontSize: 12.5, color: C.ink2 }}>Vật tư & phát sinh đã chốt</Text>

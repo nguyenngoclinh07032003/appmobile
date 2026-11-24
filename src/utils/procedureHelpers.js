@@ -7,6 +7,8 @@ export function flattenProcedureSteps(procedure) {
     (Array.isArray(sv?.steps) ? sv.steps : []).map((st) => ({
       ...st,
       service_name: sv?.service_name || '',
+      service_id: st?.service_id ?? sv?.service_id ?? null,
+      category_id: st?.category_id ?? st?.service_category_id ?? sv?.category_id ?? sv?.service_category_id ?? null,
     })),
   );
 }

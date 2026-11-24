@@ -21,7 +21,8 @@ import {
   Tap,
 } from '../common';
 import { pickImage, pickCamera } from '../../utils/media';
-import { formatYmd, getSlotsForDate } from '../../utils/warrantyPolicy';
+import { formatYmd, getSlotsForDate, isSlotBeforeFinalCutoff } from '../../utils/warrantyPolicy';
+import { getNonWorkingDayInfo } from '../../utils/workingDays';
 import { normalizeVnPhone, validateVietnamesePhone } from '../../utils/validators';
 import { WEEKDAYS } from '../../utils/dateTime';
 
@@ -91,18 +92,44 @@ export function WarrantyBookingSheet({
   const isFinalDay = Boolean(winfo?.isFinalDay);
   const isIneligible = Boolean(winfo && !winfo.ok && !isCutoff);
   const availableDates = winfo?.availableDates?.length ? winfo.availableDates : [formatYmd(new Date())];
+  const holidayOpts = useMemo(
+    () => ({ holidays: s?.holidays || [], sundaysClosed: s?.sundaysClosed !== false }),
+    [s?.holidays, s?.sundaysClosed],
+  );
+  const firstOpenDate = useMemo(
+    () => availableDates.find((d) => !getNonWorkingDayInfo(d, holidayOpts).blocked) || availableDates[0] || formatYmd(new Date()),
+    [availableDates, holidayOpts],
+  );
 
-  const [selectedDate, setSelectedDate] = useState(availableDates[0] || formatYmd(new Date()));
+  const [selectedDate, setSelectedDate] = useState(firstOpenDate);
   const endYmd = winfo?.endYmd || null;
+
+  const finalDayOff = useMemo(
+    () => (isFinalDay ? getNonWorkingDayInfo(selectedDate, holidayOpts) : null),
+    [isFinalDay, selectedDate, holidayOpts],
+  );
+  const selectedDateOff = useMemo(
+    () => getNonWorkingDayInfo(selectedDate, holidayOpts),
+    [selectedDate, holidayOpts],
+  );
+  const isFinalDayBlocked = Boolean(isFinalDay && finalDayOff?.blocked);
+  const isSelectedDateBlocked = Boolean(selectedDateOff?.blocked);
+  const allDatesBlocked = useMemo(
+    () => availableDates.length > 0 && availableDates.every((d) => getNonWorkingDayInfo(d, holidayOpts).blocked),
+    [availableDates, holidayOpts],
+  );
 
   // Ca khả dụng theo ngày được chọn: dùng danh sách server trả cho hôm nay (nếu có), còn lại bỏ ca đã qua và ca từ 18h00 ở ngày cuối bảo hành.
   const todayYmd = formatYmd(new Date());
   const validSlots = useMemo(() => {
+    if (isFinalDayBlocked || isSelectedDateBlocked) return [];
     if (selectedDate === todayYmd && Array.isArray(winfo?.serverAvailableSlotsToday)) {
-      return winfo.serverAvailableSlotsToday;
+      return isFinalDay
+        ? winfo.serverAvailableSlotsToday.filter(isSlotBeforeFinalCutoff)
+        : winfo.serverAvailableSlotsToday;
     }
     return getSlotsForDate(selectedDate, { now: new Date(), endYmd });
-  }, [selectedDate, todayYmd, winfo?.serverAvailableSlotsToday, endYmd]);
+  }, [isFinalDayBlocked, isSelectedDateBlocked, isFinalDay, selectedDate, todayYmd, winfo?.serverAvailableSlotsToday, endYmd]);
 
   const [selectedSlot, setSelectedSlot] = useState(validSlots[0] || null);
 
@@ -182,7 +209,7 @@ export function WarrantyBookingSheet({
     setImages([]);
 
     const dates = winfo?.availableDates?.length ? winfo.availableDates : [formatYmd(new Date())];
-    const nextDate = dates[0] || formatYmd(new Date());
+    const nextDate = dates.find((d) => !getNonWorkingDayInfo(d, holidayOpts).blocked) || dates[0] || formatYmd(new Date());
     setSelectedDate(nextDate);
     const tYmd = formatYmd(new Date());
     const slots =
@@ -196,7 +223,9 @@ export function WarrantyBookingSheet({
   useEffect(() => {
     if (!visible || !order) return;
     const dates = winfo?.availableDates?.length ? winfo.availableDates : [formatYmd(new Date())];
-    const targetDate = dates.includes(selectedDate) ? selectedDate : (dates[0] || formatYmd(new Date()));
+    const targetDate = (dates.includes(selectedDate) && !getNonWorkingDayInfo(selectedDate, holidayOpts).blocked)
+      ? selectedDate
+      : (dates.find((d) => !getNonWorkingDayInfo(d, holidayOpts).blocked) || dates[0] || formatYmd(new Date()));
     if (targetDate !== selectedDate) setSelectedDate(targetDate);
     const slots =
       targetDate === todayYmd && Array.isArray(winfo?.serverAvailableSlotsToday)
@@ -214,6 +243,7 @@ export function WarrantyBookingSheet({
     todayYmd,
     selectedDate,
     selectedSlot,
+    holidayOpts,
   ]);
 
   // Nếu đơn được hydrate thêm hạng mục sau khi sheet đã mở: tự tick thêm hạng mục mới, giữ nguyên nội dung khách đang nhập.
@@ -311,6 +341,11 @@ export function WarrantyBookingSheet({
 
     if (!availableDates.includes(selectedDate)) {
       u.toast('Ngày hẹn bảo hành không còn khả dụng. Vui lòng chọn lại.', '⚠️');
+      return;
+    }
+    const blockedDay = getNonWorkingDayInfo(selectedDate, holidayOpts);
+    if (blockedDay.blocked) {
+      u.toast(`${blockedDay.label}: Trung tâm nghỉ phục vụ ngày này. Vui lòng chọn ngày làm việc khác.`, '⚠️');
       return;
     }
     if (!selectedSlot || !validSlots.includes(selectedSlot)) {
@@ -515,28 +550,48 @@ export function WarrantyBookingSheet({
         ) : (
           <HScroll contentContainerStyle={styles.dateRow}>
             {availableDates.map((dateStr) => {
-              const isSelected = selectedDate === dateStr;
+              const off = getNonWorkingDayInfo(dateStr, holidayOpts);
+              const isSelected = !off.blocked && selectedDate === dateStr;
               return (
                 <Tap
                   key={dateStr}
-                  style={[styles.dateChip, isSelected && styles.dateChipActive]}
+                  style={[
+                    styles.dateChip,
+                    isSelected && styles.dateChipActive,
+                    off.blocked && { backgroundColor: C.surface, borderColor: C.line, opacity: 0.55 },
+                  ]}
                   onPress={() => {
+                    if (off.blocked) {
+                      u.toast(`${off.label}: Trung tâm không phục vụ vào ngày này.`, '📅');
+                      return;
+                    }
                     setSelectedDate(dateStr);
-                    const slotsOfDay =
+                    const rawTodaySlots =
                       dateStr === todayYmd && Array.isArray(winfo?.serverAvailableSlotsToday)
                         ? winfo.serverAvailableSlotsToday
-                        : getSlotsForDate(dateStr, { now: new Date(), endYmd });
+                        : null;
+                    const slotsOfDay = rawTodaySlots
+                      ? (isFinalDay ? rawTodaySlots.filter(isSlotBeforeFinalCutoff) : rawTodaySlots)
+                      : getSlotsForDate(dateStr, { now: new Date(), endYmd });
                     if (!slotsOfDay.includes(selectedSlot)) {
                       setSelectedSlot(slotsOfDay[0] || null);
                     }
                   }}
                 >
-                  <Text style={[styles.dateChipDay, isSelected && styles.dateChipTextActive]}>
+                  <Text style={[styles.dateChipDay, isSelected && styles.dateChipTextActive, off.blocked && { color: C.muted }]}>
                     {formatWarrantyDateLabel(dateStr)}
                   </Text>
-                  <Text style={[styles.dateChipNum, isSelected && styles.dateChipTextActive]}>
+                  <Text style={[styles.dateChipNum, isSelected && styles.dateChipTextActive, off.blocked && { color: C.muted }]}>
                     {formatDisplayDate(dateStr)}
                   </Text>
+                  {off.blocked ? (
+                    <Text
+                      style={{ fontSize: 9.5, fontWeight: '800', color: off.reason === 'HOLIDAY' ? C.redInk : C.muted, marginTop: 1 }}
+                      numberOfLines={1}
+                    >
+                      {off.shortLabel}
+                    </Text>
+                  ) : null}
                 </Tap>
               );
             })}
@@ -545,7 +600,28 @@ export function WarrantyBookingSheet({
 
         {/* 3. CHỌN KHUNG GIỜ PHỤC VỤ */}
         <Text style={[styles.sectionLabel, { marginTop: 16 }]}>3. CHỌN KHUNG GIỜ PHỤC VỤ</Text>
-        {validSlots.length === 0 ? (
+        {(isFinalDayBlocked || allDatesBlocked || isSelectedDateBlocked) ? (
+          <View style={styles.cutoffCallCard}>
+            <Text style={styles.cutoffCallTitle}>
+              {isFinalDayBlocked
+                ? `Hôm nay (${formatDisplayDate(selectedDate)}) là ${finalDayOff?.label || 'ngày nghỉ'}`
+                : `${formatDisplayDate(selectedDate)} là ${selectedDateOff?.label || 'ngày nghỉ'}`}
+            </Text>
+            <Text style={styles.cutoffCallSub}>
+              {isFinalDayBlocked || allDatesBlocked
+                ? `Các ngày khả dụng còn lại đều rơi vào ngày nghỉ/lễ nên chưa thể đặt ca trực tiếp. Vui lòng gọi tổng đài ${hotline} để được hỗ trợ tiếp nhận ngoại lệ.`
+                : 'Trung tâm không phục vụ vào ngày nghỉ/lễ. Vui lòng chọn ngày làm việc khác bên trên.'}
+            </Text>
+            {(isFinalDayBlocked || allDatesBlocked) ? (
+              <Btn
+                title={`Gọi tổng đài ${hotline}`}
+                variant="danger"
+                style={{ marginTop: 12 }}
+                onPress={() => Linking.openURL(`tel:${hotline.replace(/\s+/g, '')}`).catch(() => {})}
+              />
+            ) : null}
+          </View>
+        ) : validSlots.length === 0 ? (
           <View style={styles.emptySlotCard}>
             <AppIcon name="clock" size={20} color={C.red} />
             <Text style={styles.emptySlotText}>

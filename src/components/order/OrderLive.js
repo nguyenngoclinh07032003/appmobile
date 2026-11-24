@@ -2,7 +2,7 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { C } from '../../theme';
-import { useApp, timeAgo } from '../../context';
+import { useApp, timeAgo, isSupportAssignment } from '../../context';
 import { Card, ui, AppIcon } from '../common';
 
 const TICK_MS = 15000;
@@ -20,8 +20,8 @@ export function TrackingCard({ order, compact, paused = false }) {
   const role = s?.auth?.role || s?.role || 'customer';
   const myTechCode = s?.techProfile?.code;
   const isTechSide = role === 'tech';
-  // Thợ chỉ gửi vị trí cho việc của chính mình; khách luôn được đọc.
-  const shouldTick = active && !paused && (!isTechSide || !o.tech?.code || !myTechCode || o.tech.code === myTechCode);
+  // Thợ chính gửi vị trí thật lên server; thợ phụ không ghi đè hành trình; khách luôn được đọc.
+  const shouldTick = active && !paused && (!isTechSide || (!isSupportAssignment(o) && (!o.tech?.code || !myTechCode || o.tech.code === myTechCode)));
 
   // Ref tới `a` mới nhất: interval không giữ closure cũ (a.tickTracking đọc s.orders tại thời điểm tạo).
   const aRef = useRef(a);
@@ -56,7 +56,7 @@ export function TrackingCard({ order, compact, paused = false }) {
     return () => { cancelled = true; clearInterval(id); };
   }, [shouldTick, o.code, role]);
 
-  if (!active) return null;
+  if (!active || (isTechSide && isSupportAssignment(o))) return null;
 
   // Backend không luôn trả quãng đường / ETA: chỉ vẽ chấm vị trí khi THẬT SỰ có tiến độ, không giả lập giữa đường.
   const hasProgress = tr?.progress != null && Number.isFinite(Number(tr.progress));

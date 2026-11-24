@@ -695,9 +695,12 @@ export function DialogHost() {
   });
   const actions = cfg.actions || [{ label: 'Đã hiểu', variant: sem.btnVariant }];
   const displayIcon = cfg.icon || sem.icon;
-  const stacked = cfg.stacked !== false && actions.length <= 2 && !cfg.rowActions;
-  const orderedActions = stacked && actions.length === 2 && (actions[0].variant === 'ghost' || actions[0].variant === 'outline')
-    ? [actions[1], actions[0]]
+  const stacked = cfg.stacked !== false && !cfg.rowActions;
+  const orderedActions = stacked && actions.length >= 2
+    ? [
+        ...actions.filter((ac) => ac.variant !== 'ghost' && ac.variant !== 'outline'),
+        ...actions.filter((ac) => ac.variant === 'ghost' || ac.variant === 'outline'),
+      ]
     : actions;
 
   return (

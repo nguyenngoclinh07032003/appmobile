@@ -17,6 +17,8 @@ const parseNum = (text) => parseInt(String(text || '').replace(/[^0-9]/g, ''), 1
 export function UsedAndExtraMaterialsCard({
   o,
   mine,
+  isSupport = false,
+  workLocked = false,
   onOpenWarehouseUsage,
   sharedExtraParts,
   onChangeSharedExtraParts,
@@ -74,6 +76,9 @@ export function UsedAndExtraMaterialsCard({
               defaultPrice: l.actualPrice ?? l.price ?? '',
               receiptId: l.receiptId || matched?.dbAttachmentId || null,
               receiptUrl: l.receiptUrl || matched?.uri || null,
+              warrantyDays: l.warrantyDays != null ? String(l.warrantyDays) : '',
+              externalWarrantyCode: l.externalWarrantyCode || '',
+              serialNumber: l.serialNumber || '',
             };
           });
         })()
@@ -88,6 +93,9 @@ export function UsedAndExtraMaterialsCard({
           defaultPrice: est.alreadyBilledUnitPrice > 0 ? est.alreadyBilledUnitPrice : '',
           receiptId: null,
           receiptUrl: null,
+          warrantyDays: est.warrantyDays != null ? String(est.warrantyDays) : '',
+          externalWarrantyCode: est.externalWarrantyCode || '',
+          serialNumber: est.serialNumber || '',
         }));
   const estSourceSig = JSON.stringify(estSource);
 
@@ -113,6 +121,9 @@ export function UsedAndExtraMaterialsCard({
             alreadyBilledUnitPrice: src.alreadyBilledUnitPrice,
             receiptId: existing.receiptId || src.receiptId,
             receiptUrl: existing.receiptUrl || src.receiptUrl || null,
+            warrantyDays: existing.warrantyDays ?? src.warrantyDays ?? '',
+            externalWarrantyCode: existing.externalWarrantyCode ?? src.externalWarrantyCode ?? '',
+            serialNumber: existing.serialNumber ?? src.serialNumber ?? '',
           };
         }
         return {
@@ -131,6 +142,9 @@ export function UsedAndExtraMaterialsCard({
           receiptId: src.receiptId,
           receiptUrl: src.receiptUrl || null,
           receiptUri: null,
+          warrantyDays: src.warrantyDays || '',
+          externalWarrantyCode: src.externalWarrantyCode || '',
+          serialNumber: src.serialNumber || '',
           isAddedInline: false,
         };
       });
@@ -160,21 +174,23 @@ export function UsedAndExtraMaterialsCard({
 
   if (!o) return null;
 
-  // Khách yêu cầu kiểm tra lại giá VT ngoài: thợ nhập lại giá cuối ngay tại card này.
+  // Khách yêu cầu kiểm tra lại giá VT ngoài: thợ chính nhập lại giá cuối ngay tại card này.
   const isRevisionEditable = Boolean(
-    o.quote?.isExternalFinalization && o.quote?.revisionRequested && ['diagnosing', 'quoted'].includes(o.status),
+    !isSupport && o.quote?.isExternalFinalization && o.quote?.revisionRequested && ['diagnosing', 'quoted'].includes(o.status),
   );
-  const editable = mine && (o.status === 'repairing' || isRevisionEditable);
   // Bill đang chờ khách xác nhận: server không nhận Bill mới (409) -> chỉ hiện thông báo chờ khách.
   const billLocked = o.externalPriceState === 'awaiting_customer_approval';
-  const canComposeBill = editable && !billLocked;
-  // Ghi nhận / chỉnh vật tư kho chỉ khi đang sửa chữa.
-  const canEditWarehouse = mine && o.status === 'repairing';
+  const canComposeBill = Boolean(!isSupport && mine && o.kind !== 'warranty' && o.kind !== 'followup' && (o.status === 'repairing' || isRevisionEditable) && !billLocked);
+  // Ghi nhận / chỉnh vật tư kho: thợ chính khi đang sửa; thợ phụ khi không bị khoá chờ thợ chính.
+  const canEditWarehouse = Boolean(
+    mine && !workLocked && (isSupport ? ['diagnosing', 'quoted', 'repairing', 'out_of_warranty'].includes(o.status) : o.status === 'repairing'),
+  );
+  const editable = canEditWarehouse || canComposeBill;
   const warehouseMats = o.materials || [];
   const finalizedApproved = o.finalizedExternalParts || [];
   const pendingEstNames = new Set(getPendingExternalEstimates(o).map((e) => normalizeExternalPartName(e.name)));
   const matNameSet = new Set(warehouseMats.map((m) => normalizeExternalPartName(m.name)));
-  const visibleFinalized = finalizedApproved.filter((f) => !matNameSet.has(normalizeExternalPartName(f.name)));
+  const visibleFinalized = isSupport ? [] : finalizedApproved.filter((f) => !matNameSet.has(normalizeExternalPartName(f.name)));
 
   const busyKey = `used-extra-bill:${o.code}`;
   const busySendBill = isBusy(busyKey);
@@ -348,18 +364,17 @@ export function UsedAndExtraMaterialsCard({
     (sum, p) => sum + (Number(p.alreadyBilledUnitPrice) || 0) * Math.max(1, Number(p.origQty ?? p.qty) || 1),
     0,
   );
+  const baseGross = o.quote?.approvedTotal != null
+    ? (Number(o.quote.approvedTotal) || 0)
+    : (bookedValue(o) + (Number(o.quote?.initialServiceDelta) || 0) + fixedApprovedExtras + billedExternalDeposits);
+  const rawBaseBeforeExtra =
+    baseGross -
+    tierPartDiscountAmount(o) -
+    (Number(o.voucherDiscount) || 0) -
+    lateDiscountAmount(o);
   const baseBeforeExtra = !isRevision && o?.bill && (o.bill.quotationTotal != null || o.bill.supplementalTotal > 0)
-    ? Math.max(0, Number(o.bill.amountDue) || 0)
-    : Math.max(
-        0,
-        bookedValue(o) +
-          (isRevision && o.quote?.priorApprovedExtra != null
-            ? Number(o.quote.priorApprovedExtra) || 0
-            : fixedApprovedExtras + billedExternalDeposits) -
-          tierPartDiscountAmount(o) -
-          (Number(o.voucherDiscount) || 0) -
-          lateDiscountAmount(o),
-      );
+    ? (rawBaseBeforeExtra < 0 ? rawBaseBeforeExtra : Math.min(Number(o.bill.amountDue) || 0, rawBaseBeforeExtra))
+    : rawBaseBeforeExtra;
 
   const extraDisplayTotal = extraParts.reduce(
     (sum, p) => sum + parseNum(p.actualPriceText) * Math.max(1, Number(p.qty) || 1),
@@ -373,7 +388,7 @@ export function UsedAndExtraMaterialsCard({
     },
     0,
   );
-  const projectedBillTotal = baseBeforeExtra + extraAddedDelta;
+  const projectedBillTotal = Math.max(0, baseBeforeExtra + extraAddedDelta);
 
   const sendBillToCustomer = () => run(busyKey, async () => {
     if (!extraParts.length) {
@@ -395,6 +410,10 @@ export function UsedAndExtraMaterialsCard({
         actualPrice: parseNum(p.actualPriceText),
         receiptUri: p.receiptUri,
         receiptId: p.receiptId,
+        receiptUrl: p.receiptUrl || null,
+        serialNumber: String(p.serialNumber || '').trim() || null,
+        warrantyDays: !p.isWarehouse && String(p.warrantyDays || '').trim() !== '' ? Number(p.warrantyDays) : null,
+        externalWarrantyCode: !p.isWarehouse ? (String(p.externalWarrantyCode || '').trim() || null) : null,
       };
     });
     const ok = await Promise.resolve(
@@ -411,18 +430,20 @@ export function UsedAndExtraMaterialsCard({
   });
 
   const canSendBillNow = canComposeBill && extraParts.length > 0;
-  const awaitingApproval = mine && billLocked;
+  const awaitingApproval = !isSupport && mine && billLocked;
 
   return (
     <Card style={{ marginTop: 12 }}>
       <View style={st.headerRow}>
-        <Text style={[tx.h, { marginBottom: 0 }]}>🔩 Vật tư đã sử dụng & Phát sinh</Text>
+        <Text style={[tx.h, { marginBottom: 0 }]}>{isSupport ? '🔩 Vật tư sử dụng' : '🔩 Vật tư đã sử dụng & Phát sinh'}</Text>
         {canComposeBill && extraParts.length > 0 ? (
           <Badge text={`${extraParts.length} mục chờ gửi hoá đơn`} fg={C.orange} bg={C.orangeSoft} />
         ) : null}
       </View>
       <Text style={[ui.meta, { marginTop: 4, marginBottom: 8, lineHeight: 17 }]}>
-        Ghi nhận vật tư sử dụng trong lúc sửa, đồng thời thêm vật tư phát sinh và cấu hình mức giá cuối cùng để gửi hoá đơn cho khách thanh toán.
+        {isSupport
+          ? 'Ghi nhận vật tư kho sử dụng cho phần việc hỗ trợ. Thợ chính sẽ tổng hợp báo giá & hoá đơn cuối cùng.'
+          : 'Ghi nhận vật tư sử dụng trong lúc sửa, đồng thời thêm vật tư phát sinh và cấu hình mức giá cuối cùng để gửi hoá đơn cho khách thanh toán.'}
       </Text>
 
       {/* 1. Vật tư đã ghi nhận (kho nội bộ / báo giá đã duyệt) */}
@@ -450,7 +471,7 @@ export function UsedAndExtraMaterialsCard({
                       <Badge text="Đã đưa vào hoá đơn" fg={C.primary} bg={C.primarySoft} />
                     ) : null}
                   </View>
-                  {unitP > 0 ? (
+                  {!isSupport && unitP > 0 ? (
                     <Text style={[ui.meta, { marginTop: 2 }]}>
                       {isUsage
                         ? `Đơn giá niêm yết: ${formatVND(unitP)} / ${m.unit || 'cái'}`
@@ -575,6 +596,16 @@ export function UsedAndExtraMaterialsCard({
                   style={{ marginTop: 6 }}
                 />
 
+                {(p.serialNumber || (!p.isWarehouse && (p.warrantyDays || p.externalWarrantyCode))) ? (
+                  <Text style={[ui.meta, { marginTop: 4, color: C.primary, fontWeight: '600' }]}>
+                    {[
+                      p.serialNumber ? `Sê-ri: ${p.serialNumber}` : null,
+                      !p.isWarehouse && p.warrantyDays ? `BH hãng: ${p.warrantyDays} ngày` : null,
+                      !p.isWarehouse && p.externalWarrantyCode ? `Mã BH: ${p.externalWarrantyCode}` : null,
+                    ].filter(Boolean).join(' · ')}
+                  </Text>
+                ) : null}
+
                 {actualNum > 0 ? (
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
                     <Text style={{ fontSize: 12, fontWeight: '700', color: hasRange ? (inRange ? C.green : C.orange) : C.ink2, flex: 1 }}>
@@ -588,23 +619,25 @@ export function UsedAndExtraMaterialsCard({
                   </View>
                 ) : null}
 
-                {/* Ảnh biên lai tuỳ chọn */}
-                <View style={st.receiptRow}>
-                  {previewUri ? (
-                    <Image source={{ uri: previewUri }} style={st.receiptThumb} />
-                  ) : null}
-                  <Tap onPress={() => pickReceipt(p.id, true)} style={st.receiptChip}>
-                    <AppIcon name="camera" size={13} color={C.primary} strokeWidth={2.2} />
-                    <Text style={st.receiptChipText}>{previewUri ? 'Chụp lại hoá đơn' : 'Chụp hoá đơn (tuỳ chọn)'}</Text>
-                  </Tap>
-                  <Tap onPress={() => pickReceipt(p.id, false)} style={st.receiptChip}>
-                    <AppIcon name="image" size={13} color={C.ink2} strokeWidth={2.2} />
-                    <Text style={[st.receiptChipText, { color: C.ink2 }]}>Chọn ảnh</Text>
-                  </Tap>
-                  {p.receiptUri || p.receiptId || p.receiptUrl ? (
-                    <Badge text="Có ảnh" fg={C.green} bg={C.greenSoft} />
-                  ) : null}
-                </View>
+                {/* Ảnh biên lai tuỳ chọn (chỉ dành cho VT mua ngoài, VT kho không gắn biên lai) */}
+                {!p.isWarehouse ? (
+                  <View style={st.receiptRow}>
+                    {previewUri ? (
+                      <Image source={{ uri: previewUri }} style={st.receiptThumb} />
+                    ) : null}
+                    <Tap onPress={() => pickReceipt(p.id, true)} style={st.receiptChip}>
+                      <AppIcon name="camera" size={13} color={C.primary} strokeWidth={2.2} />
+                      <Text style={st.receiptChipText}>{previewUri ? 'Chụp lại hoá đơn' : 'Chụp hoá đơn (tuỳ chọn)'}</Text>
+                    </Tap>
+                    <Tap onPress={() => pickReceipt(p.id, false)} style={st.receiptChip}>
+                      <AppIcon name="image" size={13} color={C.ink2} strokeWidth={2.2} />
+                      <Text style={[st.receiptChipText, { color: C.ink2 }]}>Chọn ảnh</Text>
+                    </Tap>
+                    {p.receiptUri || p.receiptId || p.receiptUrl ? (
+                      <Badge text="Có ảnh" fg={C.green} bg={C.greenSoft} />
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
             );
           })}
@@ -613,8 +646,14 @@ export function UsedAndExtraMaterialsCard({
           <View style={st.billBox}>
             <View style={st.billRow}>
               <Text style={st.billLabel}>Dịch vụ & hạng mục đã chốt</Text>
-              <Text style={st.billVal}>{formatVND(baseBeforeExtra)}</Text>
+              <Text style={st.billVal}>{formatVND(Math.max(0, baseBeforeExtra))}</Text>
             </View>
+            {baseBeforeExtra < 0 ? (
+              <View style={[st.billRow, { marginTop: 4 }]}>
+                <Text style={[st.billLabel, { color: C.green }]}>Ưu đãi / voucher còn dư</Text>
+                <Text style={[st.billVal, { color: C.green }]}>-{formatVND(Math.abs(baseBeforeExtra))}</Text>
+              </View>
+            ) : null}
             <View style={[st.billRow, { marginTop: 4 }]}>
               <View style={{ flex: 1 }}>
                 <Text style={[st.billLabel, { flex: 0 }]}>Vật tư phát sinh chốt thêm ({extraParts.length})</Text>
@@ -660,8 +699,8 @@ export function UsedAndExtraMaterialsCard({
                   setSelectedQuickMat({
                     name: m.name,
                     matId: m.id || null,
-                    dbMaterialId: m.dbMaterialId || null,
-                    isWarehouse: Boolean(m.id || m.dbMaterialId),
+                    dbMaterialId: m.dbMaterialId || m.dbId || null,
+                    isWarehouse: Boolean(m.id || m.dbMaterialId || m.dbId),
                   });
                   if (Number(m.price) > 0) setExtraPriceText(formatNumberInput(String(m.price)));
                   else setExtraPriceText('');

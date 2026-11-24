@@ -8,6 +8,7 @@ import { useApp, bookedValue, tierPartDiscountAmount, lateDiscountAmount, getPen
 import { Btn, Field, Sheet, Stepper, Tap, ui, AppIcon, Badge } from '../../../components';
 import { pickCamera, pickImage } from '../../../utils/media';
 import { formatRangeVND, normalizeExternalPartName, matchReceiptsToQuoteLines } from '../../../utils/externalPartsPricing';
+import { validateQuoteItemWarrantyFields } from '../../../utils/materialWarranty';
 import { toVietnamese } from '../../../utils/viText';
 import { useBusyRunner } from './useBusyRunner';
 
@@ -28,6 +29,7 @@ export function ExternalPartsFinalizeSheet({
   const [showAddExtra, setShowAddExtra] = useState(false);
   const [newPartName, setNewPartName] = useState('');
   const [newPartPriceText, setNewPartPriceText] = useState('');
+  const [openWarrantyMap, setOpenWarrantyMap] = useState({});
 
   useEffect(() => {
     if (!visible || !o) return;
@@ -35,6 +37,7 @@ export function ExternalPartsFinalizeSheet({
     setShowAddExtra(false);
     setNewPartName('');
     setNewPartPriceText('');
+    setOpenWarrantyMap({});
 
     const sharedByName = new Map(
       (Array.isArray(sharedExtraParts) ? sharedExtraParts : []).map((p) => [normalizeExternalPartName(p.name), p]),
@@ -69,6 +72,9 @@ export function ExternalPartsFinalizeSheet({
           receiptId: draft?.receiptId || l.receiptId || matched?.dbAttachmentId || null,
           receiptUrl: draft?.receiptUrl || l.receiptUrl || matched?.uri || null,
           receiptUri: draft?.receiptUri || null,
+          warrantyDays: draft?.warrantyDays ?? (l.warrantyDays != null ? String(l.warrantyDays) : ''),
+          externalWarrantyCode: draft?.externalWarrantyCode ?? (l.externalWarrantyCode || ''),
+          serialNumber: draft?.serialNumber ?? (l.serialNumber || ''),
         };
       });
       setParts([...baseParts, ...sharedInline]);
@@ -95,6 +101,9 @@ export function ExternalPartsFinalizeSheet({
           || (est.alreadyBilledUnitPrice > 0 ? formatNumberInput(String(est.alreadyBilledUnitPrice)) : ''),
         receiptId: draft?.receiptId || null,
         receiptUri: draft?.receiptUri || null,
+        warrantyDays: draft?.warrantyDays ?? (est.warrantyDays != null ? String(est.warrantyDays) : ''),
+        externalWarrantyCode: draft?.externalWarrantyCode ?? (est.externalWarrantyCode || ''),
+        serialNumber: draft?.serialNumber ?? (est.serialNumber || ''),
       };
     });
     setParts([...baseParts, ...sharedInline]);
@@ -137,25 +146,24 @@ export function ExternalPartsFinalizeSheet({
     (sum, p) => sum + (Number(p.alreadyBilledUnitPrice) || 0) * Math.max(1, Number(p.origQty ?? p.qty) || 1),
     0,
   );
+  const baseGross = o.quote?.approvedTotal != null
+    ? (Number(o.quote.approvedTotal) || 0)
+    : (bookedValue(o) + (Number(o.quote?.initialServiceDelta) || 0) + fixedApprovedExtras + billedExternalDeposits);
+  const rawBaseBeforeFinalization =
+    baseGross -
+    tierPartDiscountAmount(o) -
+    (Number(o.voucherDiscount) || 0) -
+    lateDiscountAmount(o);
   const baseBeforeFinalization = !isRevision && o?.bill && (o.bill.quotationTotal != null || o.bill.supplementalTotal > 0)
-    ? Math.max(0, Number(o.bill.amountDue) || 0)
-    : Math.max(
-        0,
-        bookedValue(o) +
-          (isRevision && o.quote?.priorApprovedExtra != null
-            ? Number(o.quote.priorApprovedExtra) || 0
-            : fixedApprovedExtras + billedExternalDeposits) -
-          tierPartDiscountAmount(o) -
-          (Number(o.voucherDiscount) || 0) -
-          lateDiscountAmount(o),
-      );
+    ? (rawBaseBeforeFinalization < 0 ? rawBaseBeforeFinalization : Math.min(Number(o.bill.amountDue) || 0, rawBaseBeforeFinalization))
+    : rawBaseBeforeFinalization;
 
   const actualPartsTotal = parts.reduce((sum, p) => sum + parseNum(p.actualPriceText) * p.qty, 0);
   const addedExternalDelta = parts.reduce(
     (sum, p) => sum + Math.max(0, parseNum(p.actualPriceText) * p.qty - (Number(p.alreadyBilledUnitPrice) || 0) * Math.max(1, Number(p.origQty ?? p.qty) || 1)),
     0,
   );
-  const projectedTotal = baseBeforeFinalization + addedExternalDelta;
+  const projectedTotal = Math.max(0, baseBeforeFinalization + addedExternalDelta);
 
   const close = () => {
     if (busy) return;
@@ -190,6 +198,29 @@ export function ExternalPartsFinalizeSheet({
   };
 
   const submit = () => run(busyKey, async () => {
+    for (const p of parts) {
+      const hasExtWarranty = !p.isWarehouse && Boolean(
+        String(p.warrantyDays || '').trim() || String(p.externalWarrantyCode || '').trim(),
+      );
+      if (hasExtWarranty && !p.receiptUri && !p.receiptId && !p.receiptUrl) {
+        u.alert(
+          'Cần ảnh hoá đơn',
+          `${p.name}: Khi nhập bảo hành hãng cho vật tư mua ngoài, vui lòng chụp hoặc chọn ảnh hoá đơn.`,
+          'camera',
+        );
+        return false;
+      }
+      const wCheck = validateQuoteItemWarrantyFields({
+        isExternalPurchase: !p.isWarehouse,
+        warrantyDays: p.isWarehouse ? undefined : p.warrantyDays,
+        externalWarrantyCode: p.isWarehouse ? undefined : p.externalWarrantyCode,
+        serialNumber: p.serialNumber,
+      });
+      if (!wCheck.ok) {
+        u.alert('Thông tin bảo hành chưa hợp lệ', `${p.name}: ${wCheck.error}`, 'alert-triangle');
+        return false;
+      }
+    }
     const payloadParts = parts.map((p) => ({
       name: p.name,
       matId: p.matId || null,
@@ -203,6 +234,10 @@ export function ExternalPartsFinalizeSheet({
       actualPrice: parseNum(p.actualPriceText),
       receiptUri: p.receiptUri,
       receiptId: p.receiptId,
+      receiptUrl: p.receiptUrl || null,
+      serialNumber: String(p.serialNumber || '').trim() || null,
+      warrantyDays: !p.isWarehouse && String(p.warrantyDays || '').trim() !== '' ? Number(p.warrantyDays) : null,
+      externalWarrantyCode: !p.isWarehouse ? (String(p.externalWarrantyCode || '').trim() || null) : null,
     }));
     const ok = await Promise.resolve(
       a.submitExternalPartsActualPrice(o.code, {
@@ -315,47 +350,110 @@ export function ExternalPartsFinalizeSheet({
               </View>
             ) : null}
 
-            <Text style={[ui.fieldLabel, { marginTop: 12, marginBottom: 6 }]}>
-              Ảnh biên lai / hoá đơn (khuyến khích nếu mua ngoài)
-            </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              {previewUri ? (
-                <View style={st.thumb}>
-                  <Image source={{ uri: previewUri }} style={{ width: '100%', height: '100%' }} />
+            {!p.isWarehouse ? (
+              <>
+                <Text style={[ui.fieldLabel, { marginTop: 12, marginBottom: 6 }]}>
+                  Ảnh biên lai / hoá đơn (khuyến khích nếu mua ngoài)
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  {previewUri ? (
+                    <View style={st.thumb}>
+                      <Image source={{ uri: previewUri }} style={{ width: '100%', height: '100%' }} />
+                    </View>
+                  ) : (
+                    <View style={[st.thumb, st.thumbEmpty]}>
+                      <AppIcon name="receipt-text" size={22} color={C.muted} />
+                    </View>
+                  )}
+                  <View style={{ flex: 1, gap: 6 }}>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <Btn
+                        title={previewUri ? 'Chụp lại' : 'Chụp biên lai'}
+                        icon="camera"
+                        small
+                        variant="soft"
+                        style={{ flex: 1 }}
+                        onPress={() => pickReceipt(p.id, true)}
+                      />
+                      <Btn
+                        title="Chọn ảnh"
+                        icon="image"
+                        small
+                        variant="outline"
+                        style={{ flex: 1 }}
+                        onPress={() => pickReceipt(p.id, false)}
+                      />
+                    </View>
+                    {p.receiptUri || p.receiptId || p.receiptUrl ? (
+                      <Badge text="Đã đính kèm hoá đơn" fg={C.green} bg={C.greenSoft} />
+                    ) : (
+                      <Text style={{ fontSize: 11.5, color: C.muted, fontWeight: '600' }}>
+                        Tuỳ chọn: đính kèm ảnh hoá đơn nếu mua ngoài để khách dễ đối chiếu
+                      </Text>
+                    )}
+                  </View>
                 </View>
-              ) : (
-                <View style={[st.thumb, st.thumbEmpty]}>
-                  <AppIcon name="receipt-text" size={22} color={C.muted} />
+              </>
+            ) : null}
+
+            {(() => {
+              const hasWarrantyData = Boolean(
+                String(p.serialNumber || '').trim() ||
+                (!p.isWarehouse && (String(p.warrantyDays || '').trim() || String(p.externalWarrantyCode || '').trim())),
+              );
+              const showWarranty = Boolean(openWarrantyMap[p.id] || hasWarrantyData);
+              const setPartField = (patch) => setParts((prev) => prev.map((x) => (x.id === p.id ? { ...x, ...patch } : x)));
+              return (
+                <View style={{ marginTop: 10, paddingTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line }}>
+                  <Tap
+                    onPress={() => setOpenWarrantyMap((prev) => ({ ...prev, [p.id]: !showWarranty }))}
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <AppIcon name="shield-check" size={14} color={C.primary} strokeWidth={2.2} />
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: C.primary }}>
+                        {p.isWarehouse ? 'Số sê-ri linh kiện (tuỳ chọn)' : 'Bảo hành hãng & Số sê-ri (tuỳ chọn)'}
+                      </Text>
+                    </View>
+                    <View style={{ transform: [{ rotate: showWarranty ? '-90deg' : '90deg' }] }}>
+                      <AppIcon name="chevron-right" size={13} color={C.primary} strokeWidth={2.2} />
+                    </View>
+                  </Tap>
+                  {showWarranty ? (
+                    <View style={{ marginTop: 8, gap: 8 }}>
+                      <Field
+                        label="Số sê-ri / Serial (tuỳ chọn)"
+                        placeholder="VD: SN-LG-2026-001 (tối đa 100 ký tự)"
+                        value={String(p.serialNumber || '')}
+                        maxLength={100}
+                        onChangeText={(t) => setPartField({ serialNumber: t })}
+                        style={{ marginTop: 0 }}
+                      />
+                      {!p.isWarehouse ? (
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                          <Field
+                            label="Bảo hành hãng (ngày)"
+                            placeholder="VD: 180"
+                            keyboardType="numeric"
+                            value={String(p.warrantyDays || '')}
+                            onChangeText={(t) => setPartField({ warrantyDays: t.replace(/[^0-9]/g, '') })}
+                            style={{ flex: 1, marginTop: 0 }}
+                          />
+                          <Field
+                            label="Mã bảo hành hãng"
+                            placeholder="VD: BH-DAIKIN-889"
+                            maxLength={100}
+                            value={String(p.externalWarrantyCode || '')}
+                            onChangeText={(t) => setPartField({ externalWarrantyCode: t })}
+                            style={{ flex: 1.3, marginTop: 0 }}
+                          />
+                        </View>
+                      ) : null}
+                    </View>
+                  ) : null}
                 </View>
-              )}
-              <View style={{ flex: 1, gap: 6 }}>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Btn
-                    title={previewUri ? 'Chụp lại' : 'Chụp biên lai'}
-                    icon="camera"
-                    small
-                    variant="soft"
-                    style={{ flex: 1 }}
-                    onPress={() => pickReceipt(p.id, true)}
-                  />
-                  <Btn
-                    title="Chọn ảnh"
-                    icon="image"
-                    small
-                    variant="outline"
-                    style={{ flex: 1 }}
-                    onPress={() => pickReceipt(p.id, false)}
-                  />
-                </View>
-                {p.receiptUri || p.receiptId || p.receiptUrl ? (
-                  <Badge text="Đã đính kèm hoá đơn" fg={C.green} bg={C.greenSoft} />
-                ) : (
-                  <Text style={{ fontSize: 11.5, color: C.muted, fontWeight: '600' }}>
-                    Tuỳ chọn: đính kèm ảnh hoá đơn nếu mua ngoài để khách dễ đối chiếu
-                  </Text>
-                )}
-              </View>
-            </View>
+              );
+            })()}
           </View>
         );
       })}
@@ -419,6 +517,9 @@ export function ExternalPartsFinalizeSheet({
                   actualPriceText: formatNumberInput(String(priceNum)),
                   receiptId: null,
                   receiptUri: null,
+                  warrantyDays: '',
+                  externalWarrantyCode: '',
+                  serialNumber: '',
                   isAddedInline: true,
                 };
                 setParts((prev) => [...prev, newPart]);

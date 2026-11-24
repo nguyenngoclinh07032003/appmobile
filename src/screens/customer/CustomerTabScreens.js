@@ -106,8 +106,8 @@ function WarrantyView() {
   const { s, a, nav, ui: u, warrantyQuery, setWarrantyQuery, warrantyNonce } = useApp();
   const [result, setResult] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  // Đơn còn hạn bảo hành (kể cả đã gửi yêu cầu hoặc đã chốt ca ngày cuối 18h)
-  const eligible = s.orders.filter((o) => { const w = warrantyInfo(o, s.orders, s.lifetimePoints); return w.ok || w.openCode || w.isCutoff; });
+  // Đơn còn hạn bảo hành (kể cả đã gửi yêu cầu, chờ kích hoạt D+1 hoặc đã chốt ca ngày cuối 18h)
+  const eligible = s.orders.filter((o) => { const w = warrantyInfo(o, s.orders, s.lifetimePoints); return w.ok || w.openCode || w.isCutoff || w.notStarted; });
 
   const { minWarrantyDays, maxWarrantyDays } = useMemo(() => {
     const days = ALL_SERVICES
@@ -144,6 +144,7 @@ function WarrantyView() {
     );
     const found = s.orders.filter((o) => (
       o.kind !== 'warranty' &&
+      o.kind !== 'followup' &&
       (isMine || o.code === t || (isPhoneQuery && o.address?.phone && normalizeVnPhone(o.address.phone) === normQueryPhone))
     ));
     if (!found.length) { setResult({ error: 'Không tìm thấy đơn khớp. Kiểm tra lại số điện thoại hoặc mã đơn ở mục Hoạt động.' }); return; }
@@ -160,6 +161,7 @@ function WarrantyView() {
   const request = (o) => {
     if (!o) return;
     setBookingOrderCode(o.code);
+    a.ensureOrderHydrated?.(o.code)?.catch(() => {});
     a.checkWarrantyEligibility?.(o.code).catch(() => {});
   };
 
@@ -181,9 +183,9 @@ function WarrantyView() {
           </View>
           <StatusChip status={o.status} />
         </Tap>
-        <View style={[sx.wInfo, { backgroundColor: C.surface, borderLeftWidth: 3, borderLeftColor: info.ok ? C.green : info.pending ? C.gold : C.muted, flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
-          <AppIcon name={info.ok ? 'shield-check' : 'info'} size={16} color={info.ok ? C.green : info.pending ? C.gold : C.muted} strokeWidth={2.2} />
-          <Text style={{ color: info.ok ? C.greenInk : info.pending ? C.goldInk : C.ink2, fontWeight: '700', fontSize: 13, flex: 1 }}>
+        <View style={[sx.wInfo, { backgroundColor: C.surface, borderLeftWidth: 3, borderLeftColor: info.ok ? C.green : info.notStarted ? C.primary : info.pending ? C.gold : C.muted, flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+          <AppIcon name={info.ok ? 'shield-check' : info.notStarted ? 'clock' : 'info'} size={16} color={info.ok ? C.green : info.notStarted ? C.primary : info.pending ? C.gold : C.muted} strokeWidth={2.2} />
+          <Text style={{ color: info.ok ? C.greenInk : info.notStarted ? C.ink : info.pending ? C.goldInk : C.ink2, fontWeight: '700', fontSize: 13, flex: 1 }}>
             {info.text}
           </Text>
         </View>
@@ -448,8 +450,8 @@ export function ActivityScreen() {
                 <View style={sx.oFoot}>
                   <View style={{ flexShrink: 0 }}>
                     <Text style={[ui.meta, { marginTop: 0 }]}>Tổng thanh toán</Text>
-                    <Text style={[ui.price, { fontSize: 16, marginTop: 2 }]}>{o.kind === 'warranty' ? 'Miễn phí' : (o.status === 'cancelled' ? formatVND(orderTotal(o)) : formatOrderTotal(o))}</Text>
-                    {o.status === 'done' && isPaid(o) ? <Text style={[ui.meta, { color: C.green, fontWeight: '700' }]}>Đã thanh toán</Text> : null}
+                    <Text style={[ui.price, { fontSize: 16, marginTop: 2 }]}>{(o.kind === 'warranty' || o.kind === 'followup') ? 'Miễn phí' : (o.status === 'cancelled' ? formatVND(orderTotal(o)) : formatOrderTotal(o))}</Text>
+                    {o.status === 'done' && isPaid(o) && o.kind !== 'warranty' && o.kind !== 'followup' ? <Text style={[ui.meta, { color: C.green, fontWeight: '700' }]}>Đã thanh toán</Text> : null}
                     {o.status === 'done' && !isPaid(o) && o.kind !== 'warranty' && o.kind !== 'followup' ? <Text style={[ui.meta, { color: C.goldInk, fontWeight: '700' }]}>Chờ xác nhận TT</Text> : null}
                   </View>
                   <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', flex: 1 }}>
@@ -465,8 +467,8 @@ export function ActivityScreen() {
                     {o.status === 'pending_payment' && o.kind !== 'warranty' && o.kind !== 'followup' ? (
                       <Btn title="Thanh toán" icon="credit-card" small variant="primary" onPress={() => nav.push('order', { code: o.code })} />
                     ) : null}
-                    {o.status === 'done' && !o.rating && o.kind !== 'warranty' ? <Btn title="Đánh giá" icon="star" small variant="primary" onPress={() => nav.push('rate', { code: o.code })} /> : null}
-                    {['done', 'cancelled'].includes(o.status) && o.kind !== 'warranty' ? <Btn title="Đặt lại" icon="rotate-ccw" small variant={o.status === 'done' && !o.rating ? 'outline' : 'soft'} onPress={() => reorder(o)} /> : null}
+                    {o.status === 'done' && !o.rating && o.kind !== 'warranty' && o.kind !== 'followup' ? <Btn title="Đánh giá" icon="star" small variant="primary" onPress={() => nav.push('rate', { code: o.code })} /> : null}
+                    {['done', 'cancelled'].includes(o.status) && o.kind !== 'warranty' && o.kind !== 'followup' ? <Btn title="Đặt lại" icon="rotate-ccw" small variant={o.status === 'done' && !o.rating ? 'outline' : 'soft'} onPress={() => reorder(o)} /> : null}
                     {isActiveOrder(o) && !['quoted', 'pending_payment'].includes(o.status) ? <Btn title="Theo dõi" icon="eye" small variant="soft" onPress={() => nav.push('order', { code: o.code })} /> : null}
                   </View>
                 </View>
