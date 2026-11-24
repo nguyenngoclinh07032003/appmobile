@@ -247,7 +247,7 @@ export function UsedAndExtraMaterialsCard({
           id: `wh_extra_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           matId: mat.matId || null,
           dbMaterialId: mat.dbMaterialId || null,
-          isWarehouse: Boolean(mat.matId || mat.dbMaterialId),
+          isWarehouse: !mat.isCustom,
           name: mat.name,
           minPrice: null,
           maxPrice: null,

@@ -173,6 +173,8 @@ function WarrantyView() {
     const info = warrantyInfo(o, s.orders, s.lifetimePoints);
     const svc0 = getService((o.items || [])[0]?.id);
     const svcTitle = svc0?.name || (o.items || [])[0]?.name || 'Dịch vụ kỹ thuật';
+    const isNotStarted = Boolean(info.notStarted || info.reason === 'WARRANTY_NOT_STARTED');
+    const displayStartMs = info.startsAt || o.warrantyStartAt || (isNotStarted && o.doneAt ? o.doneAt + 86400000 : o.doneAt);
     return (
       <Card style={{ marginTop: 10 }}>
         <Tap style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }} onPress={() => nav.push('order', { code: o.code })}>
@@ -185,11 +187,19 @@ function WarrantyView() {
         </Tap>
         <View style={[sx.wInfo, { backgroundColor: C.surface, borderLeftWidth: 3, borderLeftColor: info.ok ? C.green : info.notStarted ? C.primary : info.pending ? C.gold : C.muted, flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
           <AppIcon name={info.ok ? 'shield-check' : info.notStarted ? 'clock' : 'info'} size={16} color={info.ok ? C.green : info.notStarted ? C.primary : info.pending ? C.gold : C.muted} strokeWidth={2.2} />
-          <Text style={{ color: info.ok ? C.greenInk : info.notStarted ? C.ink : info.pending ? C.goldInk : C.ink2, fontWeight: '700', fontSize: 13, flex: 1 }}>
-            {info.text}
-          </Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: info.ok ? C.greenInk : info.notStarted ? C.ink : info.pending ? C.goldInk : C.ink2, fontWeight: '700', fontSize: 13 }}>
+              {info.text}
+            </Text>
+            {o.status === 'done' && info.totalDays > 0 && !info.noWarranty && info.until ? (
+              <Text style={[ui.meta, { marginTop: 2 }]}>
+                Hiệu lực: {displayStartMs ? fmtDate(displayStartMs) : '—'} → {fmtDate(info.until)}
+              </Text>
+            ) : null}
+          </View>
         </View>
         {(info.ok || info.isCutoff) ? <Btn title="Yêu cầu bảo hành" icon="shield-check" small variant="soft" style={{ marginTop: 10 }} onPress={() => request(o)} /> : null}
+        {isNotStarted && !info.openCode ? <Btn title="Yêu cầu bảo hành (Chờ kích hoạt)" icon="clock" small variant="outline" style={{ marginTop: 10 }} onPress={() => request(o)} /> : null}
         {info.openCode ? <Btn title={`Xem đơn bảo hành ${info.openCode}`} icon="eye" small variant="outline" style={{ marginTop: 10 }} onPress={() => nav.push('order', { code: info.openCode })} /> : null}
       </Card>
     );

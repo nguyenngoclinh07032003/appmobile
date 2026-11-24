@@ -1,7 +1,7 @@
 // Form chẩn đoán & báo giá của thợ (dùng cho báo giá trước khi xuất phát và báo giá tại nhà).
 // State bản nháp nằm ở useQuoteDraft (màn cha giữ để thanh hành động dưới cùng gửi được).
 import React, { useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Image } from 'react-native';
 import { C, R } from '../../../theme';
 import { formatVND, formatNumberInput } from '../../../constants/data';
 import { useApp, bookedValue, tierPartDiscountAmount, lateDiscountAmount, getPendingExternalEstimates, validateQuoteItemWarrantyFields } from '../../../context';
@@ -52,6 +52,8 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
   const [showOowPicker, setShowOowPicker] = useState(false);
   const [oowPreset, setOowPreset] = useState(OOW_REASONS[0]);
   const [oowCustomReason, setOowCustomReason] = useState('');
+  const [oowPhotos, setOowPhotos] = useState([]);
+  const [oowBusy, setOowBusy] = useState(false);
 
   const { lines, setLines } = draft;
   const booked = bookedValue(o);
@@ -276,6 +278,26 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
     });
   };
 
+  const handlePickOowPhoto = async (source = 'camera') => {
+    if (oowBusy || oowPhotos.length >= 4) return;
+    let uri = source === 'camera' ? await pickCamera() : await pickImage();
+    if (source === 'camera' && uri === null) uri = await pickImage();
+    if (uri === null) {
+      u.alert('Chưa hỗ trợ máy ảnh', 'Trên trình duyệt hãy cho phép máy ảnh hoặc chọn ảnh từ thư viện.', 'camera');
+      return;
+    }
+    if (!uri) return;
+    setOowPhotos((prev) => [
+      ...prev,
+      { id: `oow_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, uri },
+    ].slice(0, 4));
+  };
+
+  const handleRemoveOowPhoto = (photoId) => {
+    if (oowBusy) return;
+    setOowPhotos((prev) => prev.filter((p) => p.id !== photoId));
+  };
+
   return (
     <>
       {o.kind === 'warranty' && o.status === 'diagnosing' ? (
@@ -317,21 +339,82 @@ export function QuoteEditor({ o, draft, cats, matsCount, onOpenMaterials, onCanc
                   style={{ marginTop: 4 }}
                 />
               ) : null}
+              <View style={{ marginTop: 6, padding: 10, borderRadius: R.md, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line }}>
+                <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.ink }}>
+                  Ảnh minh chứng ngoài bảo hành ({oowPhotos.length}/4)
+                </Text>
+                <Text style={[ui.meta, { marginTop: 2, lineHeight: 17 }]}>
+                  Chụp hoặc tải ảnh lỗi thực tế (rơi vỡ, chập cháy, dấu hiệu tháo mở…) để lưu hồ sơ & đối chiếu với khách.
+                </Text>
+                {oowPhotos.length > 0 ? (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                    {oowPhotos.map((ph) => (
+                      <View
+                        key={ph.id}
+                        style={{ width: 72, height: 72, borderRadius: R.md, overflow: 'hidden', borderWidth: 1, borderColor: C.line, backgroundColor: C.surface }}
+                      >
+                        <Image source={{ uri: ph.uri }} style={{ width: '100%', height: '100%' }} />
+                        <Tap
+                          onPress={() => handleRemoveOowPhoto(ph.id)}
+                          hitSlop={6}
+                          style={{ position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(15,23,42,0.75)', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <AppIcon name="x" size={12} color="#fff" strokeWidth={2.5} />
+                        </Tap>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                  <Btn
+                    title="Chụp ảnh"
+                    icon="camera"
+                    variant="soft"
+                    small
+                    style={{ flex: 1 }}
+                    disabled={oowBusy || oowPhotos.length >= 4}
+                    onPress={() => handlePickOowPhoto('camera')}
+                  />
+                  <Btn
+                    title="Tải ảnh lên"
+                    icon="image"
+                    variant="outline"
+                    small
+                    style={{ flex: 1 }}
+                    disabled={oowBusy || oowPhotos.length >= 4}
+                    onPress={() => handlePickOowPhoto('library')}
+                  />
+                </View>
+              </View>
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
-                <Btn title="Huỷ" variant="ghost" small style={{ flex: 1 }} onPress={() => setShowOowPicker(false)} />
+                <Btn title="Huỷ" variant="ghost" small style={{ flex: 1 }} disabled={oowBusy} onPress={() => setShowOowPicker(false)} />
                 <Btn
-                  title="Xác nhận chuyển có phí"
+                  title={oowBusy ? 'Đang gửi…' : 'Xác nhận chuyển có phí'}
                   variant="danger"
                   small
                   style={{ flex: 1.6 }}
-                  onPress={() => {
+                  disabled={oowBusy}
+                  onPress={async () => {
                     const finalReason = oowPreset === 'Lý do khác' ? oowCustomReason.trim() : oowPreset;
                     if (finalReason.length < 5) {
                       u.alert('Thiếu lý do', 'Vui lòng mô tả lý do ngoài bảo hành (tối thiểu 5 ký tự).', 'alert-triangle');
                       return;
                     }
-                    setShowOowPicker(false);
-                    a.rejectWarrantyAsOutOfWarranty(o.code, finalReason);
+                    setOowBusy(true);
+                    try {
+                      const ok = await a.rejectWarrantyAsOutOfWarranty(
+                        o.code,
+                        finalReason,
+                        oowPhotos.map((p) => p.uri),
+                      );
+                      if (ok) {
+                        setShowOowPicker(false);
+                        setOowPhotos([]);
+                        setOowCustomReason('');
+                      }
+                    } finally {
+                      setOowBusy(false);
+                    }
                   }}
                 />
               </View>

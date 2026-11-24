@@ -1,7 +1,7 @@
 // Tiện ích xử lý Bảo hành linh kiện (material_warranty): trạng thái, trích xuất từ báo giá,
 // kiểm tra hợp lệ và tạo payload khi thợ lập báo giá hoặc chốt giá vật tư mua ngoài.
 // Giữ thuần JS không phụ thuộc React Native.
-import { sortQuotationsAsc, parseExternalPartDesc } from './externalPartsPricing.js';
+import { sortQuotationsAsc, parseExternalPartDesc, isExternalPurchaseQuoteItem } from './externalPartsPricing.js';
 
 export const MATERIAL_WARRANTY_STATUS_META = {
   PENDING: { label: 'Chờ kích hoạt', tone: 'neutral' },
@@ -24,7 +24,7 @@ export function extractMaterialWarrantiesFromQuotations(quotations = []) {
       const finAtt = it?.receipt_attachment && typeof it.receipt_attachment === 'object' ? it.receipt_attachment : null;
       const receiptAttachmentId = it.receipt_attachment_id ?? finAtt?.attachment_id ?? finAtt?.id ?? null;
       const receiptUrl = it.receipt_url || it.receipt_image_url || finAtt?.image_url || finAtt?.file_url || finAtt?.url || finAtt?.uri || null;
-      const isExternalPurchase = Boolean(it.is_external_purchase || it.external_purchase || (it.item_type === 'MATERIAL' && !it.material_id));
+      const isExternalPurchase = isExternalPurchaseQuoteItem(it);
 
       for (const w of warranties) {
         if (!w || typeof w !== 'object') continue;

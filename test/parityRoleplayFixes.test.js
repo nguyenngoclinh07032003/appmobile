@@ -648,7 +648,7 @@ describe('parityRoleplayFixes: Customer <-> Tech Lead/Support parity', () => {
 
     const techSrc = fs.readFileSync(path.join(__dirname, '..', 'src/screens/tech/TechScreens.js'), 'utf8');
     assert.match(techSrc, /checkedList/);
-    assert.match(techSrc, /measureEntries/);
+    assert.doesNotMatch(techSrc, /st\.measures|st\.measurements|có chỉ số đo/);
     assert.match(techSrc, /!o\.quote && !isQuoteEditorOpen/);
     assert.match(techSrc, /Khách đã thanh toán trước/);
 
@@ -707,18 +707,22 @@ describe('parityRoleplayFixes: Customer <-> Tech Lead/Support parity', () => {
 
     const techSrc = fs.readFileSync(path.join(__dirname, '..', 'src/screens/tech/TechScreens.js'), 'utf8');
     assert.match(techSrc, /grossDraftMax/);
-    assert.match(techSrc, /seenMeasureKeys/);
     assert.match(techSrc, /Còn lại cần thanh toán/);
     assert.match(techSrc, /o\.kind !== 'followup'/);
 
     const ctxSrc = fs.readFileSync(path.join(__dirname, '..', 'src/context/AppContext.js'), 'utf8');
     assert.match(ctxSrc, /remapped\?\.cancelReason/);
     assert.match(ctxSrc, /o\.kind === "followup" && hasExtra/);
+    assert.doesNotMatch(ctxSrc, /body\.measurements|MEASUREMENTS_REQUIRED/);
 
     const miscSrc = fs.readFileSync(path.join(__dirname, '..', 'src/screens/misc/MiscScreens.js'), 'utf8');
     assert.match(miscSrc, /orderNeedsSync/);
     assert.match(miscSrc, /INACTIVE_Q_ST/);
     assert.match(miscSrc, /netReductionMax/);
+    assert.doesNotMatch(miscSrc, /st\.measures|st\.measurements/);
+
+    const procSrc = fs.readFileSync(path.join(__dirname, '..', 'src/utils/procedureHelpers.js'), 'utf8');
+    assert.doesNotMatch(procSrc, /step\?\.measures/);
 
     const compSrc = fs.readFileSync(path.join(__dirname, '..', 'src/screens/tech/components/CompleteSheet.js'), 'utf8');
     assert.match(compSrc, /approvedRef/);
@@ -744,5 +748,149 @@ describe('parityRoleplayFixes: Customer <-> Tech Lead/Support parity', () => {
       request: { request_id: 9401, request_code: 'REQ-9401', request_status: 'IN_PROGRESS' },
     }, { name: 'Thợ Chính', code: 'L1' });
     assert.equal(job.repairNotes[0].text, 'Triệu chứng: Quạt hút yếu, Có mùi · Kết luận: Màng lọc đã quá hạn · Đề xuất: Thay màng lọc mới');
+  });
+
+  test('applyServerWarrantyEligibility bỏ qua cache WARRANTY_NOT_STARTED của ngày hôm trước khi đã sang ngày mới & OrderScreen nâng cấp thẻ bảo hành', () => {
+    const todayNoon = new Date('2026-11-24T12:00:00+07:00');
+    const yesterdayFetchedAt = new Date('2026-11-23T20:54:00+07:00').getTime();
+    const baseToday = {
+      ok: true,
+      totalDays: 3,
+      daysLeft: 3,
+      startsAt: todayNoon.getTime(),
+      startYmd: '2026-11-24',
+      until: new Date('2026-11-26T23:59:59+07:00').getTime(),
+      endYmd: '2026-11-26',
+      text: 'Còn 3/3 ngày bảo hành (đến 26/11/2026).',
+    };
+    const staleRes = applyServerWarrantyEligibility(
+      baseToday,
+      { eligible: false, reason_code: 'WARRANTY_NOT_STARTED', warranty_days: 3, fetchedAt: yesterdayFetchedAt },
+      () => '26/11/2026',
+      todayNoon,
+    );
+    assert.equal(staleRes.ok, true);
+    assert.equal(staleRes.notStarted, undefined);
+    assert.equal(staleRes.daysLeft, 3);
+
+    const sameDayNoon = new Date('2026-11-23T22:00:00+07:00');
+    const sameDayRes = applyServerWarrantyEligibility(
+      baseToday,
+      {
+        eligible: false,
+        reason_code: 'WARRANTY_NOT_STARTED',
+        warranty_days: 3,
+        warranty_start_date: '2026-11-24',
+        warranty_end_date: '2026-11-26',
+        fetchedAt: yesterdayFetchedAt,
+      },
+      (ts) => {
+        const d = new Date(ts + 7 * 3600000);
+        return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
+      },
+      sameDayNoon,
+    );
+    assert.equal(sameDayRes.ok, false);
+    assert.equal(sameDayRes.notStarted, true);
+    assert.equal(sameDayRes.startYmd, '2026-11-24');
+    assert.match(sameDayRes.text, /24\/11\/2026/);
+
+    const miscSrc = fs.readFileSync(path.join(__dirname, '..', 'src/screens/misc/MiscScreens.js'), 'utf8');
+    assert.match(miscSrc, /fetchedDayStr !== todayKeyStr/);
+    assert.match(miscSrc, /Chờ kích hoạt/);
+    assert.match(miscSrc, /showRequestBtn/);
+    assert.match(miscSrc, /Bảo hành chờ kích hoạt/);
+  });
+
+  test('Thẩm định bảo hành tại chỗ hỗ trợ chụp/tải ảnh minh chứng [Ngoài bảo hành] và tách khỏi ảnh đặt đơn ban đầu', () => {
+    const oowEv = sync.mapBackendPhotoToEvidence({
+      attachment_id: 9901,
+      evidence_type: 'PROBLEM_PHOTO',
+      image_url: 'https://cdn.example.com/oow-crack.jpg',
+      description: '[Ngoài bảo hành] Thiết bị rơi vỡ / hư hỏng do ngoại lực bên ngoài',
+    });
+    assert.equal(oowEv.isOowUpload, true);
+    assert.equal(oowEv.isCustomerInitial, false);
+    assert.deepEqual(sync.extractInitialAttachments([oowEv], []), []);
+
+    const qeSrc = fs.readFileSync(path.join(__dirname, '..', 'src/screens/tech/components/QuoteEditor.js'), 'utf8');
+    assert.match(qeSrc, /oowPhotos/);
+    assert.match(qeSrc, /handlePickOowPhoto\('camera'\)/);
+    assert.match(qeSrc, /handlePickOowPhoto\('library'\)/);
+    assert.match(qeSrc, /Ảnh minh chứng ngoài bảo hành/);
+
+    const ctxSrc = fs.readFileSync(path.join(__dirname, '..', 'src/context/AppContext.js'), 'utf8');
+    assert.match(ctxSrc, /\[Ngoài bảo hành\] \$\{r\}/);
+
+    const techSrc = fs.readFileSync(path.join(__dirname, '..', 'src/screens/tech/TechScreens.js'), 'utf8');
+    assert.match(techSrc, /Ảnh minh chứng ngoài bảo hành/);
+
+    const miscSrc = fs.readFileSync(path.join(__dirname, '..', 'src/screens/misc/MiscScreens.js'), 'utf8');
+    assert.match(miscSrc, /Ảnh minh chứng ngoài bảo hành/);
+    assert.match(miscSrc, /Ngoài phạm vi bảo hành/);
+    assert.match(miscSrc, /Chuyển sửa có phí/);
+    assert.match(miscSrc, /Khiếu nại \/ Tổng đài/);
+    assert.match(miscSrc, /Chờ báo giá sửa có phí/);
+
+    const sbvSrc = fs.readFileSync(path.join(__dirname, '..', 'src/components/order/SymptomBreakdownView.js'), 'utf8');
+    assert.match(sbvSrc, /isOowPhoto/);
+  });
+
+  test('isExternalPurchaseQuoteItem tách biệt vật tư kho và linh kiện mua ngoài trong externalParts', async () => {
+    const { isExternalPurchaseQuoteItem } = await import('../src/utils/externalPartsPricing.js');
+    const isKnownWh = (name) => String(name || '').trim().toLowerCase() === 'ống đồng + bảo ôn';
+
+    assert.equal(
+      isExternalPurchaseQuoteItem({ item_type: 'MATERIAL', is_external_purchase: false, material_id: null, description_snapshot: 'Ống đồng + bảo ôn' }, { isKnownWarehouseName: isKnownWh }),
+      false,
+    );
+    assert.equal(
+      isExternalPurchaseQuoteItem({ item_type: 'MATERIAL', material_id: 5, description_snapshot: 'Ống đồng + bảo ôn' }, { isKnownWarehouseName: isKnownWh }),
+      false,
+    );
+    assert.equal(
+      isExternalPurchaseQuoteItem({ item_type: 'MATERIAL', description_snapshot: 'Ống đồng + bảo ôn' }, { isKnownWarehouseName: isKnownWh }),
+      false,
+    );
+    assert.equal(
+      isExternalPurchaseQuoteItem({ item_type: 'MATERIAL', is_external_purchase: true, description_snapshot: 'Ống đồng + bảo ôn' }, { isKnownWarehouseName: isKnownWh }),
+      true,
+    );
+    assert.equal(
+      isExternalPurchaseQuoteItem({ item_type: 'MATERIAL', external_purchase: true, description_snapshot: 'Bo mạch hãng ngoài' }, { isKnownWarehouseName: isKnownWh }),
+      true,
+    );
+    assert.equal(
+      isExternalPurchaseQuoteItem({ item_type: 'MATERIAL', material_id: null, description_snapshot: 'Linh kiện lạ ngoài chợ' }, { isKnownWarehouseName: isKnownWh }),
+      true,
+    );
+
+    const techJob = sync.mapBackendTechJobToOrder({
+      assignment_id: 961,
+      assignment_role: 'LEAD',
+      assignment_status: 'ACTIVE',
+      visit: { visit_number: 1, visit_status: 'IN_PROGRESS', actual_start: isoAt(NOW - 60000) },
+      services: [{ request_service_id: 1, service_id: 103, service_name: 'Sửa máy lạnh', quantity: 1, selected_price: 200000 }],
+      quotations: [{
+        quotation_id: 9610,
+        quotation_type: 'INITIAL',
+        quotation_status: 'APPROVED',
+        total_amount: 530000,
+        sent_at: isoAt(NOW - 30000),
+        items: [
+          { quotation_item_id: 1, item_type: 'MATERIAL', is_external_purchase: false, material_id: null, description_snapshot: 'Ống đồng + bảo ôn', quantity: 1, unit_price: 180000 },
+          { quotation_item_id: 2, item_type: 'MATERIAL', is_external_purchase: true, material_id: null, description_snapshot: 'Bo mạch ngoài', quantity: 1, unit_price: 150000 },
+        ],
+      }],
+      request: { request_id: 9611, request_code: 'REQ-9611', request_status: 'IN_PROGRESS' },
+    }, { name: 'Thợ Chính', code: 'L1' });
+
+    assert.deepEqual(techJob.externalParts.map((p) => p.name), ['Bo mạch ngoài']);
+
+    const symSrc = fs.readFileSync(path.join(__dirname, '..', 'src/screens/tech/components/SymptomSection.js'), 'utf8');
+    assert.match(symSrc, /useState\(false\)/);
+    assert.match(symSrc, /openStep/);
+    assert.match(symSrc, /Thu gọn/);
+    assert.match(symSrc, /Chi tiết/);
   });
 });

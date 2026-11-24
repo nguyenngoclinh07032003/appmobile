@@ -18,6 +18,7 @@ import {
   computeQuoteRangeTotals,
   sortQuotationsAsc,
   isQuotationPendingCustomer,
+  isExternalPurchaseQuoteItem,
 } from '../utils/externalPartsPricing';
 import { parseSymptomPhotoMeta } from '../utils/symptomItems';
 import { isAttendanceNotifType, defaultAttendanceNotifIcon } from '../utils/attendance';
@@ -39,6 +40,7 @@ const PAYMENT_LABELS = {
 };
 export const paymentLabelOf = (method) => PAYMENT_LABELS[String(method || '').toUpperCase()] || 'Tiền mặt';
 const materialPriceOf = (materialId) => MATERIALS.find((m) => m.dbId === Number(materialId))?.price ?? 0;
+const isKnownWarehouseMaterialName = (name) => Boolean(name && resolveDbMaterialId(null, name));
 const ts = (iso) => (iso ? new Date(iso).getTime() : Date.now());
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -325,7 +327,7 @@ export const mapBackendQuotationToAppQuote = (
       qty: qtyNum,
       price: resolvedPrice,
       dbItemId: qi.quotation_item_id || null,
-      isCustom: Boolean(qi.is_external_purchase), // linh kiện thợ mua ngoài
+      isCustom: isExternalPurchaseQuoteItem(qi, { isKnownWarehouseName: isKnownWarehouseMaterialName }), // linh kiện thợ mua ngoài
       receiptId,
       ...(receiptUrl ? { receiptUrl } : {}),
       ...warrantyExtra,
@@ -1225,6 +1227,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
       unit: l.unit,
       qty: l.qty,
       price: l.isFinalizedExternal ? l.actualPrice : l.price,
+      isCustom: Boolean(l.isCustom),
       fromQuote: true,
     }));
   const mergedTechMaterials = [...materialsFromUsages];
@@ -1377,7 +1380,7 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     // Linh kiện mua ngoài trong các báo giá đã duyệt: phải gắn ảnh biên lai trước khi nộp hoàn thành (backend RECEIPT_REQUIRED).
     externalParts: (job.quotations || [])
       .filter((q) => q.quotation_status === 'APPROVED' || q.customer_decision === 'APPROVED')
-      .flatMap((q) => (q.items || []).filter((it) => it.is_external_purchase || it.external_purchase || (it.item_type === 'MATERIAL' && !it.material_id)))
+      .flatMap((q) => (q.items || []).filter((it) => isExternalPurchaseQuoteItem(it, { isKnownWarehouseName: isKnownWarehouseMaterialName })))
       .map((it) => {
         const att = it?.receipt_attachment && typeof it.receipt_attachment === 'object' ? it.receipt_attachment : null;
         return {
@@ -1530,8 +1533,10 @@ export const mapBackendPhotoToEvidence = (row) => {
   const stage = EVIDENCE_STAGE[rawType] || (isReceiptNote ? 'receipt' : (!rawType && !hasJob ? 'diagnosis' : 'after'));
   const uploaderRole = String(row?.uploaded_by_role || row?.uploader_role || row?.role || '').trim().toUpperCase();
   const isWarrantyUpload = /^\[Bảo hành\]/i.test(String(note).trim());
+  const isOowUpload = /^\[Ngoài bảo hành\]/i.test(String(note).trim());
   const isCustomerInitial = Boolean(
     !isWarrantyUpload &&
+    !isOowUpload &&
     stage === 'diagnosis' &&
     (uploaderRole === 'CUSTOMER' || (!hasJob && !parseSymptomPhotoMeta(note))),
   );
@@ -1544,6 +1549,7 @@ export const mapBackendPhotoToEvidence = (row) => {
     evidenceType: rawType || null,
     note,
     isWarrantyUpload,
+    isOowUpload,
     isCustomerInitial,
     at: row?.uploaded_at ? new Date(row.uploaded_at).getTime() : Date.now(),
   };
@@ -1554,8 +1560,8 @@ export const extractInitialAttachments = (evidence = [], rawAttachments = []) =>
   const out = [];
   const seen = new Set();
   const pushOne = (item) => {
-    if (!item?.uri || item.isWarrantyUpload || item.stage === 'receipt') return;
-    if (/^\[Bảo hành\]/i.test(String(item.note || item.description || '').trim())) return;
+    if (!item?.uri || item.isWarrantyUpload || item.isOowUpload || item.stage === 'receipt') return;
+    if (/^\[(Bảo hành|Ngoài bảo hành)\]/i.test(String(item.note || item.description || '').trim())) return;
     const key = item.dbAttachmentId != null ? `id:${item.dbAttachmentId}` : `uri:${item.uri}`;
     if (seen.has(key)) return;
     seen.add(key);

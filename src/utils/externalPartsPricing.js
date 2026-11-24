@@ -490,3 +490,19 @@ export function extractExternalPartLifecycle(quotations = [], progressList = [])
     externalPriceState,
   };
 }
+
+// Phân biệt chính xác dòng linh kiện mua ngoài (cần biên lai) vs vật tư kho (không cần biên lai).
+export function isExternalPurchaseQuoteItem(item, { isKnownWarehouseName } = {}) {
+  if (!item || typeof item !== 'object') return false;
+  if (item.is_external_purchase === true || item.external_purchase === true) return true;
+  if (item.is_external_purchase === false || item.external_purchase === false) return false;
+  if (item.material_id != null && String(item.material_id).trim() !== '') return false;
+  if (parseExternalPartDesc(item.description_snapshot)) return true;
+  if (String(item.item_type || '').toUpperCase() === 'MATERIAL') {
+    if (typeof isKnownWarehouseName === 'function' && isKnownWarehouseName(item.description_snapshot)) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}

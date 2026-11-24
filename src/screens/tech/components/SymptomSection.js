@@ -29,18 +29,21 @@ const togglePhrase = (text, phrase) => {
   return `${cur.replace(/[,;.\s]+$/, '')}, ${phrase}`;
 };
 
-function StepHead({ no, title, hint, done, right }) {
+function StepHead({ no, title, hint, done, open, onPress, right }) {
   return (
-    <View style={st.stepHead}>
+    <Tap onPress={onPress} scaleTo={0.99} style={[st.stepHead, open && st.stepHeadOpen]}>
       <View style={[st.stepNo, done && st.stepNoDone]}>
         {done ? <AppIcon name="check" size={13} color="#fff" strokeWidth={3} /> : <Text style={st.stepNoText}>{no}</Text>}
       </View>
       <View style={{ flex: 1 }}>
         <Text style={st.stepTitle}>{title}</Text>
-        {hint ? <Text style={st.stepHint}>{hint}</Text> : null}
+        {hint ? <Text style={st.stepHint} numberOfLines={1}>{hint}</Text> : null}
       </View>
       {right || null}
-    </View>
+      <View style={[st.stepChevron, open && { transform: [{ rotate: '90deg' }] }]}>
+        <AppIcon name="chevron-right" size={15} color={C.muted} strokeWidth={2.5} />
+      </View>
+    </Tap>
   );
 }
 
@@ -101,6 +104,8 @@ export function SymptomSection({
   } = draft;
   const [symptomInput, setSymptomInput] = useState('');
   const [expandedIds, setExpandedIds] = useState({});
+  const [cardOpen, setCardOpen] = useState(false);
+  const [openStep, setOpenStep] = useState(1);
 
   const resolvedCats = [...new Set(cats.flatMap((c) => [c, categorySlugOf(c)]).filter(Boolean))];
   const deviceTags = [...new Set(resolvedCats.flatMap((c) => DIAG_TAGS[c] || []))];
@@ -144,265 +149,349 @@ export function SymptomSection({
 
   const totalSelectedSymptoms = tags.length + symptomItems.length;
   const hasAnyReco = recommendation.trim().length > 0 || symptomItems.some((it) => Boolean(it.action));
-  const doneCount = [totalSelectedSymptoms > 0, diagnosis.trim().length > 0, hasAnyReco].filter(Boolean).length;
+  const step1Done = totalSelectedSymptoms > 0;
+  const step2Done = diagnosis.trim().length > 0;
+  const step3Done = hasAnyReco;
+  const doneCount = [step1Done, step2Done, step3Done].filter(Boolean).length;
+
+  const selectedSymptomTitles = [...tags, ...symptomItems.map((it) => it.title)].filter(Boolean);
+  const step1Preview = selectedSymptomTitles.length
+    ? `${selectedSymptomTitles.slice(0, 3).join(', ')}${selectedSymptomTitles.length > 3 ? ` (+${selectedSymptomTitles.length - 3})` : ''}`
+    : 'Chưa chọn triệu chứng';
+  const step2Preview = diagnosis.trim() || 'Chưa ghi kết luận';
+  const step3Preview = recommendation.trim() || (hasAnyReco ? 'Đã chọn hướng xử lý theo triệu chứng' : 'Chưa ghi đề xuất');
+  const collapsedSummary = doneCount === 0
+    ? 'Chạm để chọn triệu chứng, kết luận & đề xuất'
+    : [
+        step1Done ? `TC: ${step1Preview}` : null,
+        step2Done ? `KL: ${step2Preview}` : null,
+        step3Done ? `ĐX: ${step3Preview}` : null,
+      ].filter(Boolean).join(' · ');
+
+  const toggleCard = () => {
+    setCardOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        setOpenStep(!step1Done ? 1 : !step2Done ? 2 : !step3Done ? 3 : 1);
+      }
+      return next;
+    });
+  };
+  const toggleStep = (stepNo) => setOpenStep((s) => (s === stepNo ? null : stepNo));
 
   return (
     <Card style={{ marginTop: 12 }}>
-      {/* Tiêu đề + tiến độ */}
-      <View style={st.head}>
-        <View style={st.headIcon}><AppIcon name="search" size={20} color={C.primary} strokeWidth={2.4} /></View>
+      {/* Tiêu đề thu gọn / mở chi tiết */}
+      <Tap onPress={toggleCard} scaleTo={0.99} style={st.head}>
+        <View style={[st.headIcon, doneCount === 3 && { backgroundColor: C.greenSoft }]}>
+          <AppIcon
+            name={doneCount === 3 ? 'check-circle-2' : 'search'}
+            size={18}
+            color={doneCount === 3 ? C.green : C.primary}
+            strokeWidth={2.4}
+          />
+        </View>
         <View style={{ flex: 1 }}>
           <Text style={st.headTitle}>Triệu chứng & chẩn đoán</Text>
-          <Text style={st.headSub}>Chạm để chọn nhanh hoặc nhập triệu chứng chi tiết</Text>
+          <Text style={st.headSub} numberOfLines={1}>{collapsedSummary}</Text>
         </View>
         <View style={[st.progress, doneCount === 3 && { backgroundColor: C.greenSoft }]}>
           <Text style={[st.progressText, doneCount === 3 && { color: C.green }]}>{doneCount}/3</Text>
         </View>
-      </View>
-      <View style={st.progressBar}><View style={[st.progressFill, { width: `${(doneCount / 3) * 100}%` }]} /></View>
-
-      {/* 1. Triệu chứng */}
-      <StepHead
-        no={1}
-        title="Triệu chứng thiết bị"
-        hint={deviceTags.length ? 'Chọn gợi ý hoặc nhập triệu chứng để gắn ảnh & hướng xử lý' : 'Nhập triệu chứng để gắn ảnh & hướng xử lý'}
-        done={totalSelectedSymptoms > 0}
-        right={totalSelectedSymptoms ? <Text style={st.counter}>Đã chọn {totalSelectedSymptoms}</Text> : null}
-      />
-      {deviceTags.length ? (
-        <>
-          <Text style={st.groupLabel}>Theo thiết bị</Text>
-          <View style={st.pillWrap}>
-            {deviceTags.map((t) => <TogglePill key={t} label={t} on={tags.includes(t)} onPress={() => toggleTag(t)} />)}
+        <View style={st.headToggle}>
+          <Text style={st.headToggleText}>{cardOpen ? 'Thu gọn' : 'Chi tiết'}</Text>
+          <View style={cardOpen ? { transform: [{ rotate: '90deg' }] } : null}>
+            <AppIcon name="chevron-right" size={14} color={C.primary} strokeWidth={2.6} />
           </View>
-        </>
-      ) : null}
-      {customTags.length ? (
-        <View style={st.pillWrap}>
-          {customTags.map((t) => (
-            <TogglePill key={t} label={t} on tone="amber" onPress={() => toggleTag(t)} onRemove={() => toggleTag(t)} />
-          ))}
         </View>
-      ) : null}
+      </Tap>
 
-      {/* Ô nhập triệu chứng + nút Xác nhận -> tạo Collapsible */}
-      <Text style={st.groupLabel}>Nhập triệu chứng chi tiết</Text>
-      <View style={st.otherRow}>
-        <TextInput
-          value={symptomInput}
-          onChangeText={setSymptomInput}
-          onSubmitEditing={confirmSymptom}
-          returnKeyType="done"
-          placeholder="Nhập triệu chứng (VD: Chảy nước dàn lạnh, Hỏng tụ…)"
-          placeholderTextColor={C.faint}
-          style={[st.otherInput, !symptomInput.trim() && { borderColor: C.line }]}
-        />
-        <Tap
-          onPress={confirmSymptom}
-          style={[st.otherBtn, !symptomInput.trim() && { opacity: 0.5 }]}
-          disabled={!symptomInput.trim()}
-        >
-          <AppIcon name="check" size={14} color="#fff" strokeWidth={2.8} />
-          <Text style={st.otherBtnText}>Xác nhận</Text>
-        </Tap>
+      {/* Thanh tiến độ 3 bước gọn */}
+      <View style={st.segRow}>
+        {[step1Done, step2Done, step3Done].map((done, idx) => (
+          <View key={idx} style={[st.segBar, done && { backgroundColor: C.green }]} />
+        ))}
       </View>
 
-      {/* Danh sách triệu chứng đã xác nhận dạng Collapsible */}
-      {symptomItems.length ? (
-        <View style={st.symList}>
-          {symptomItems.map((item) => {
-            const titleKey = String(item.title || '').trim().toLowerCase();
-            const matched = photos.filter((e) => (parseSymptomPhotoTitle(e.note) || '').toLowerCase() === titleKey);
-            const photoUri = matched[matched.length - 1]?.uri || item.localPhotoUri || null;
-            const isOpen = Boolean(expandedIds[item.id]);
-            const isBusy = busySymptomPhotoId === item.id;
-            const actionLabel = item.action === 'replace' ? 'Thay thế' : item.action === 'repair' ? 'Sửa chữa' : 'Chọn xử lý';
-            const actionStyle =
-              item.action === 'replace'
-                ? { bg: C.goldSoft, fg: C.goldInk, bd: C.goldBorder }
-                : item.action === 'repair'
-                  ? { bg: C.primarySoft, fg: C.primary, bd: C.primaryBorder }
-                  : { bg: C.surface, fg: C.muted, bd: C.line };
+      {cardOpen ? (
+        <View style={{ marginTop: 4 }}>
+          {/* 1. Triệu chứng */}
+          <StepHead
+            no={1}
+            title="Triệu chứng thiết bị"
+            hint={openStep === 1 ? (deviceTags.length ? 'Chọn gợi ý hoặc nhập triệu chứng' : 'Nhập triệu chứng để gắn ảnh & xử lý') : step1Preview}
+            done={step1Done}
+            open={openStep === 1}
+            onPress={() => toggleStep(1)}
+            right={totalSelectedSymptoms ? <Text style={st.counter}>{totalSelectedSymptoms}</Text> : null}
+          />
+          {openStep === 1 ? (
+            <View style={st.stepBody}>
+              {deviceTags.length ? (
+                <>
+                  <Text style={st.groupLabel}>Theo thiết bị</Text>
+                  <View style={st.pillWrap}>
+                    {deviceTags.map((t) => <TogglePill key={t} label={t} on={tags.includes(t)} onPress={() => toggleTag(t)} />)}
+                  </View>
+                </>
+              ) : null}
+              {customTags.length ? (
+                <View style={st.pillWrap}>
+                  {customTags.map((t) => (
+                    <TogglePill key={t} label={t} on tone="amber" onPress={() => toggleTag(t)} onRemove={() => toggleTag(t)} />
+                  ))}
+                </View>
+              ) : null}
 
-            return (
-              <View key={item.id} style={st.symCard}>
-                <Tap onPress={() => toggleCollapse(item.id)} style={st.symHead} scaleTo={0.99}>
-                  <View style={[st.symChevron, isOpen && { transform: [{ rotate: '90deg' }] }]}>
-                    <AppIcon name="chevron-right" size={16} color={C.ink2} strokeWidth={2.6} />
-                  </View>
-                  <Text style={st.symTitle} numberOfLines={2}>{item.title}</Text>
-                  <View style={st.symHeadRight}>
-                    {photoUri ? (
-                      <View style={st.symPhotoDot}>
-                        <AppIcon name="camera" size={12} color={C.green} strokeWidth={2.4} />
-                      </View>
-                    ) : null}
-                    <View style={[st.symBadge, { backgroundColor: actionStyle.bg, borderColor: actionStyle.bd }]}>
-                      <Text style={[st.symBadgeText, { color: actionStyle.fg }]}>{actionLabel}</Text>
-                    </View>
-                    <Tap
-                      onPress={() => {
-                        setExpandedIds((p) => {
-                          const next = { ...p };
-                          delete next[item.id];
-                          return next;
-                        });
-                        onRemoveSymptomItem?.(item);
-                      }}
-                      hitSlop={8}
-                      style={st.symRemoveBtn}
-                    >
-                      <AppIcon name="x" size={14} color={C.muted} strokeWidth={2.5} />
-                    </Tap>
-                  </View>
+              {/* Ô nhập triệu chứng + nút Xác nhận -> tạo Collapsible */}
+              <Text style={st.groupLabel}>Nhập triệu chứng chi tiết</Text>
+              <View style={st.otherRow}>
+                <TextInput
+                  value={symptomInput}
+                  onChangeText={setSymptomInput}
+                  onSubmitEditing={confirmSymptom}
+                  returnKeyType="done"
+                  placeholder="Nhập triệu chứng (VD: Chảy nước dàn lạnh, Hỏng tụ…)"
+                  placeholderTextColor={C.faint}
+                  style={[st.otherInput, !symptomInput.trim() && { borderColor: C.line }]}
+                />
+                <Tap
+                  onPress={confirmSymptom}
+                  style={[st.otherBtn, !symptomInput.trim() && { opacity: 0.5 }]}
+                  disabled={!symptomInput.trim()}
+                >
+                  <AppIcon name="check" size={14} color="#fff" strokeWidth={2.8} />
+                  <Text style={st.otherBtnText}>Xác nhận</Text>
                 </Tap>
-
-                {isOpen ? (
-                  <View style={st.symBody}>
-                    {/* Hình ảnh (chụp hoặc cập nhật) */}
-                    <Text style={st.symSubLabel}>Hình ảnh tình trạng (chụp hoặc cập nhật)</Text>
-                    {photoUri ? (
-                      <View style={st.symPhotoRow}>
-                        <View style={st.photo}>
-                          <Image source={{ uri: photoUri }} style={{ width: '100%', height: '100%' }} />
-                          <Tap
-                            style={st.photoX}
-                            disabled={isBusy}
-                            onPress={() => onRemoveSymptomPhoto?.(item)}
-                            hitSlop={6}
-                          >
-                            <AppIcon name="x" size={11} color="#fff" strokeWidth={3} />
-                          </Tap>
-                        </View>
-                        <View style={st.symPhotoActions}>
-                          <Tap
-                            style={[st.symActionBtn, isBusy && { opacity: 0.5 }]}
-                            disabled={isBusy}
-                            onPress={() => onPickSymptomPhoto?.(item, 'camera')}
-                            scaleTo={0.97}
-                          >
-                            <AppIcon name="camera" size={14} color={C.primary} strokeWidth={2.3} />
-                            <Text style={st.symActionBtnText}>Chụp mới</Text>
-                          </Tap>
-                          <Tap
-                            style={[st.symActionBtn, isBusy && { opacity: 0.5 }]}
-                            disabled={isBusy}
-                            onPress={() => onPickSymptomPhoto?.(item, 'library')}
-                            scaleTo={0.97}
-                          >
-                            <AppIcon name="refresh-cw" size={14} color={C.primary} strokeWidth={2.3} />
-                            <Text style={st.symActionBtnText}>Cập nhật ảnh</Text>
-                          </Tap>
-                        </View>
-                      </View>
-                    ) : (
-                      <View style={st.symBtnRow}>
-                        <Tap
-                          style={[st.symActionBtn, { flex: 1 }, isBusy && { opacity: 0.5 }]}
-                          disabled={isBusy}
-                          onPress={() => onPickSymptomPhoto?.(item, 'camera')}
-                          scaleTo={0.97}
-                        >
-                          <AppIcon name="camera" size={15} color={C.primary} strokeWidth={2.3} />
-                          <Text style={st.symActionBtnText}>Chụp ảnh</Text>
-                        </Tap>
-                        <Tap
-                          style={[st.symActionBtn, { flex: 1 }, isBusy && { opacity: 0.5 }]}
-                          disabled={isBusy}
-                          onPress={() => onPickSymptomPhoto?.(item, 'library')}
-                          scaleTo={0.97}
-                        >
-                          <AppIcon name="image" size={15} color={C.primary} strokeWidth={2.3} />
-                          <Text style={st.symActionBtnText}>Cập nhật ảnh</Text>
-                        </Tap>
-                      </View>
-                    )}
-                    {isBusy ? (
-                      <Text style={{ fontSize: 11.5, color: C.primary, fontWeight: '600', marginTop: 6 }}>
-                        Đang xử lý ảnh…
-                      </Text>
-                    ) : null}
-
-                    {/* Hướng giải quyết (Thay thế hoặc Sửa chữa) */}
-                    <Text style={[st.symSubLabel, { marginTop: 12 }]}>Hướng giải quyết</Text>
-                    <View style={st.symBtnRow}>
-                      <Tap
-                        style={[
-                          st.symResolveBtn,
-                          item.action === 'replace' && st.symResolveReplaceOn,
-                        ]}
-                        onPress={() => setItemAction(item.id, 'replace')}
-                        scaleTo={0.97}
-                      >
-                        <AppIcon
-                          name="refresh-cw"
-                          size={14}
-                          color={item.action === 'replace' ? C.goldInk : C.ink2}
-                          strokeWidth={2.4}
-                        />
-                        <Text style={[st.symResolveText, item.action === 'replace' && { color: C.goldInk, fontWeight: '800' }]}>
-                          Thay thế
-                        </Text>
-                      </Tap>
-                      <Tap
-                        style={[
-                          st.symResolveBtn,
-                          item.action === 'repair' && st.symResolveRepairOn,
-                        ]}
-                        onPress={() => setItemAction(item.id, 'repair')}
-                        scaleTo={0.97}
-                      >
-                        <AppIcon
-                          name="hammer"
-                          size={14}
-                          color={item.action === 'repair' ? C.primary : C.ink2}
-                          strokeWidth={2.4}
-                        />
-                        <Text style={[st.symResolveText, item.action === 'repair' && { color: C.primary, fontWeight: '800' }]}>
-                          Sửa chữa
-                        </Text>
-                      </Tap>
-                    </View>
-                  </View>
-                ) : null}
               </View>
-            );
-          })}
+
+              {/* Danh sách triệu chứng đã xác nhận dạng Collapsible */}
+              {symptomItems.length ? (
+                <View style={st.symList}>
+                  {symptomItems.map((item) => {
+                    const titleKey = String(item.title || '').trim().toLowerCase();
+                    const matched = photos.filter((e) => (parseSymptomPhotoTitle(e.note) || '').toLowerCase() === titleKey);
+                    const photoUri = matched[matched.length - 1]?.uri || item.localPhotoUri || null;
+                    const isOpen = Boolean(expandedIds[item.id]);
+                    const isBusy = busySymptomPhotoId === item.id;
+                    const actionLabel = item.action === 'replace' ? 'Thay thế' : item.action === 'repair' ? 'Sửa chữa' : 'Chọn xử lý';
+                    const actionStyle =
+                      item.action === 'replace'
+                        ? { bg: C.goldSoft, fg: C.goldInk, bd: C.goldBorder }
+                        : item.action === 'repair'
+                          ? { bg: C.primarySoft, fg: C.primary, bd: C.primaryBorder }
+                          : { bg: C.surface, fg: C.muted, bd: C.line };
+
+                    return (
+                      <View key={item.id} style={st.symCard}>
+                        <Tap onPress={() => toggleCollapse(item.id)} style={st.symHead} scaleTo={0.99}>
+                          <View style={[st.symChevron, isOpen && { transform: [{ rotate: '90deg' }] }]}>
+                            <AppIcon name="chevron-right" size={16} color={C.ink2} strokeWidth={2.6} />
+                          </View>
+                          <Text style={st.symTitle} numberOfLines={2}>{item.title}</Text>
+                          <View style={st.symHeadRight}>
+                            {photoUri ? (
+                              <View style={st.symPhotoDot}>
+                                <AppIcon name="camera" size={12} color={C.green} strokeWidth={2.4} />
+                              </View>
+                            ) : null}
+                            <View style={[st.symBadge, { backgroundColor: actionStyle.bg, borderColor: actionStyle.bd }]}>
+                              <Text style={[st.symBadgeText, { color: actionStyle.fg }]}>{actionLabel}</Text>
+                            </View>
+                            <Tap
+                              onPress={() => {
+                                setExpandedIds((p) => {
+                                  const next = { ...p };
+                                  delete next[item.id];
+                                  return next;
+                                });
+                                onRemoveSymptomItem?.(item);
+                              }}
+                              hitSlop={8}
+                              style={st.symRemoveBtn}
+                            >
+                              <AppIcon name="x" size={14} color={C.muted} strokeWidth={2.5} />
+                            </Tap>
+                          </View>
+                        </Tap>
+
+                        {isOpen ? (
+                          <View style={st.symBody}>
+                            {/* Hình ảnh (chụp hoặc cập nhật) */}
+                            <Text style={st.symSubLabel}>Hình ảnh tình trạng (chụp hoặc cập nhật)</Text>
+                            {photoUri ? (
+                              <View style={st.symPhotoRow}>
+                                <View style={st.photo}>
+                                  <Image source={{ uri: photoUri }} style={{ width: '100%', height: '100%' }} />
+                                  <Tap
+                                    style={st.photoX}
+                                    disabled={isBusy}
+                                    onPress={() => onRemoveSymptomPhoto?.(item)}
+                                    hitSlop={6}
+                                  >
+                                    <AppIcon name="x" size={11} color="#fff" strokeWidth={3} />
+                                  </Tap>
+                                </View>
+                                <View style={st.symPhotoActions}>
+                                  <Tap
+                                    style={[st.symActionBtn, isBusy && { opacity: 0.5 }]}
+                                    disabled={isBusy}
+                                    onPress={() => onPickSymptomPhoto?.(item, 'camera')}
+                                    scaleTo={0.97}
+                                  >
+                                    <AppIcon name="camera" size={14} color={C.primary} strokeWidth={2.3} />
+                                    <Text style={st.symActionBtnText}>Chụp mới</Text>
+                                  </Tap>
+                                  <Tap
+                                    style={[st.symActionBtn, isBusy && { opacity: 0.5 }]}
+                                    disabled={isBusy}
+                                    onPress={() => onPickSymptomPhoto?.(item, 'library')}
+                                    scaleTo={0.97}
+                                  >
+                                    <AppIcon name="refresh-cw" size={14} color={C.primary} strokeWidth={2.3} />
+                                    <Text style={st.symActionBtnText}>Cập nhật ảnh</Text>
+                                  </Tap>
+                                </View>
+                              </View>
+                            ) : (
+                              <View style={st.symBtnRow}>
+                                <Tap
+                                  style={[st.symActionBtn, { flex: 1 }, isBusy && { opacity: 0.5 }]}
+                                  disabled={isBusy}
+                                  onPress={() => onPickSymptomPhoto?.(item, 'camera')}
+                                  scaleTo={0.97}
+                                >
+                                  <AppIcon name="camera" size={15} color={C.primary} strokeWidth={2.3} />
+                                  <Text style={st.symActionBtnText}>Chụp ảnh</Text>
+                                </Tap>
+                                <Tap
+                                  style={[st.symActionBtn, { flex: 1 }, isBusy && { opacity: 0.5 }]}
+                                  disabled={isBusy}
+                                  onPress={() => onPickSymptomPhoto?.(item, 'library')}
+                                  scaleTo={0.97}
+                                >
+                                  <AppIcon name="image" size={15} color={C.primary} strokeWidth={2.3} />
+                                  <Text style={st.symActionBtnText}>Cập nhật ảnh</Text>
+                                </Tap>
+                              </View>
+                            )}
+                            {isBusy ? (
+                              <Text style={{ fontSize: 11.5, color: C.primary, fontWeight: '600', marginTop: 6 }}>
+                                Đang xử lý ảnh…
+                              </Text>
+                            ) : null}
+
+                            {/* Hướng giải quyết (Thay thế hoặc Sửa chữa) */}
+                            <Text style={[st.symSubLabel, { marginTop: 12 }]}>Hướng giải quyết</Text>
+                            <View style={st.symBtnRow}>
+                              <Tap
+                                style={[
+                                  st.symResolveBtn,
+                                  item.action === 'replace' && st.symResolveReplaceOn,
+                                ]}
+                                onPress={() => setItemAction(item.id, 'replace')}
+                                scaleTo={0.97}
+                              >
+                                <AppIcon
+                                  name="refresh-cw"
+                                  size={14}
+                                  color={item.action === 'replace' ? C.goldInk : C.ink2}
+                                  strokeWidth={2.4}
+                                />
+                                <Text style={[st.symResolveText, item.action === 'replace' && { color: C.goldInk, fontWeight: '800' }]}>
+                                  Thay thế
+                                </Text>
+                              </Tap>
+                              <Tap
+                                style={[
+                                  st.symResolveBtn,
+                                  item.action === 'repair' && st.symResolveRepairOn,
+                                ]}
+                                onPress={() => setItemAction(item.id, 'repair')}
+                                scaleTo={0.97}
+                              >
+                                <AppIcon
+                                  name="hammer"
+                                  size={14}
+                                  color={item.action === 'repair' ? C.primary : C.ink2}
+                                  strokeWidth={2.4}
+                                />
+                                <Text style={[st.symResolveText, item.action === 'repair' && { color: C.primary, fontWeight: '800' }]}>
+                                  Sửa chữa
+                                </Text>
+                              </Tap>
+                            </View>
+                          </View>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+
+          <View style={st.divider} />
+
+          {/* 2. Kết luận chẩn đoán */}
+          <StepHead
+            no={2}
+            title="Kết luận chẩn đoán"
+            hint={openStep === 2 ? 'Nguyên nhân / tình trạng thực tế' : step2Preview}
+            done={step2Done}
+            open={openStep === 2}
+            onPress={() => toggleStep(2)}
+          />
+          {openStep === 2 ? (
+            <View style={st.stepBody}>
+              <QuickPhrases items={findings} value={diagnosis} onChange={setDiagnosis} />
+              <Field multiline value={diagnosis} onChangeText={setDiagnosis} placeholder="Chạm gợi ý ở trên hoặc ghi thêm…" inputStyle={st.textArea} />
+            </View>
+          ) : null}
+
+          <View style={st.divider} />
+
+          {/* 3. Đề xuất xử lý */}
+          <StepHead
+            no={3}
+            title="Đề xuất xử lý"
+            hint={openStep === 3 ? 'Phương án sẽ làm cho khách' : step3Preview}
+            done={step3Done}
+            open={openStep === 3}
+            onPress={() => toggleStep(3)}
+          />
+          {openStep === 3 ? (
+            <View style={st.stepBody}>
+              <QuickPhrases items={actions} value={recommendation} onChange={setRecommendation} />
+              <Field multiline value={recommendation} onChangeText={setRecommendation} placeholder="VD: Vệ sinh dàn lạnh + kiểm tra gas…" inputStyle={st.textArea} />
+            </View>
+          ) : null}
         </View>
       ) : null}
-
-      <View style={st.divider} />
-
-      {/* 2. Kết luận chẩn đoán */}
-      <StepHead no={2} title="Kết luận chẩn đoán" hint="Nguyên nhân / tình trạng thực tế" done={diagnosis.trim().length > 0} />
-      <QuickPhrases items={findings} value={diagnosis} onChange={setDiagnosis} />
-      <Field multiline value={diagnosis} onChangeText={setDiagnosis} placeholder="Chạm gợi ý ở trên hoặc ghi thêm…" inputStyle={st.textArea} />
-
-      <View style={st.divider} />
-
-      {/* 3. Đề xuất xử lý */}
-      <StepHead no={3} title="Đề xuất xử lý" hint="Phương án sẽ làm cho khách" done={hasAnyReco} />
-      <QuickPhrases items={actions} value={recommendation} onChange={setRecommendation} />
-      <Field multiline value={recommendation} onChangeText={setRecommendation} placeholder="VD: Vệ sinh dàn lạnh + kiểm tra gas…" inputStyle={st.textArea} />
     </Card>
   );
 }
 
 const st = StyleSheet.create({
-  head: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  headIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
-  headTitle: { fontSize: 16, fontWeight: '800', color: C.ink, letterSpacing: -0.2 },
-  headSub: { fontSize: 12.5, color: C.muted, marginTop: 2 },
-  progress: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: C.surface },
-  progressText: { fontSize: 12.5, fontWeight: '800', color: C.ink2 },
-  progressBar: { height: 4, borderRadius: 4, backgroundColor: C.line, marginTop: 12, marginBottom: 6, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 4, backgroundColor: C.green },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  headIcon: { width: 36, height: 36, borderRadius: 12, backgroundColor: C.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  headTitle: { fontSize: 15, fontWeight: '800', color: C.ink, letterSpacing: -0.2 },
+  headSub: { fontSize: 12, color: C.muted, marginTop: 2 },
+  headToggle: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  headToggleText: { fontSize: 12.5, fontWeight: '700', color: C.primary },
+  progress: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, backgroundColor: C.surface },
+  progressText: { fontSize: 11.5, fontWeight: '800', color: C.ink2 },
+  segRow: { flexDirection: 'row', gap: 6, marginTop: 10 },
+  segBar: { flex: 1, height: 4, borderRadius: 4, backgroundColor: C.line },
 
-  stepHead: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12, marginBottom: 8 },
+  stepHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
+  stepHeadOpen: { paddingBottom: 8 },
+  stepBody: { paddingBottom: 6 },
+  stepChevron: { width: 18, height: 18, alignItems: 'center', justifyContent: 'center' },
   stepNo: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: C.line, alignItems: 'center', justifyContent: 'center', backgroundColor: C.card },
   stepNoDone: { backgroundColor: C.green, borderColor: C.green },
   stepNoText: { fontSize: 12, fontWeight: '800', color: C.ink2 },
-  stepTitle: { fontSize: 14.5, fontWeight: '800', color: C.ink },
+  stepTitle: { fontSize: 14, fontWeight: '800', color: C.ink },
   stepHint: { fontSize: 12, color: C.muted, marginTop: 1 },
   counter: { fontSize: 12, fontWeight: '700', color: C.primary },
 
@@ -445,7 +534,7 @@ const st = StyleSheet.create({
   quickText: { fontSize: 12.5, color: C.ink2, fontWeight: '600' },
   textArea: { minHeight: 76 },
 
-  divider: { height: 1, backgroundColor: C.line, marginTop: 14 },
+  divider: { height: 1, backgroundColor: C.line, marginVertical: 2 },
 
   photo: { width: 84, height: 84, borderRadius: R.md, overflow: 'hidden', backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' },
   photoX: { position: 'absolute', top: 5, right: 5, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(15,23,42,0.65)', alignItems: 'center', justifyContent: 'center' },

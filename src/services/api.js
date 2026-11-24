@@ -996,7 +996,7 @@ export const hrmssApi = {
   },
 
   // 15c. Các bước thực hiện của việc (thợ) và ảnh của bước.
-  // body: { status: 'DONE'|'SKIPPED'|'PENDING', checked_items?, measurements?, photo_ids?, note? }
+  // body: { status: 'DONE'|'SKIPPED'|'PENDING', checked_items?, photo_ids?, note? }
   async updateProcedureStep(jobId, stepId, body) {
     return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/procedure/${encodeURIComponent(stepId)}`, { method: 'PATCH', body });
   },

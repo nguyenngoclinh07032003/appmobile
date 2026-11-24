@@ -13,21 +13,15 @@ export function flattenProcedureSteps(procedure) {
   );
 }
 
-export function stepRequiresMeasures(step) {
-  return Array.isArray(step?.measures) && step.measures.length > 0;
+// BE đã bỏ trường chỉ số đo (measures / measurements): giữ lại hàm tương thích trả rỗng để không chặn hoàn thành.
+export function getBlockingProcedureSteps() {
+  return [];
 }
 
-// Chỉ chặn hoàn thành khi còn bước bắt buộc ở trạng thái PENDING nhưng đòi hỏi thợ nhập chỉ số đo cụ thể.
-export function getBlockingProcedureSteps(procedure) {
-  return flattenProcedureSteps(procedure).filter(
-    (st) => st.is_required && st.status === 'PENDING' && stepRequiresMeasures(st),
-  );
-}
-
-// Các bước bắt buộc PENDING không có chỉ số đo bắt buộc -> có thể tự động đồng bộ DONE khi nộp biên bản.
+// Các bước bắt buộc PENDING -> tự động đồng bộ DONE khi thợ nộp biên bản hoàn thành.
 export function getAutoCompletableProcedureSteps(procedure) {
   return flattenProcedureSteps(procedure).filter(
-    (st) => st.is_required && st.status === 'PENDING' && !stepRequiresMeasures(st),
+    (st) => st.is_required && st.status === 'PENDING',
   );
 }
 

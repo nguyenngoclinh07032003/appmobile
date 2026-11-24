@@ -120,6 +120,7 @@ import {
   normalizeExternalPartName,
   sortQuotationsAsc,
   extractReceiptPartName,
+  isExternalPurchaseQuoteItem,
 } from "../utils/externalPartsPricing";
 import {
   formatSymptomPhotoNote,
@@ -667,6 +668,8 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
   const startYmd = o.warrantyStartAt ? vnDateKey(o.warrantyStartAt) : null;
   const todayYmd = vnDateKey(Date.now());
   const startsInFuture = Boolean(startYmd && todayYmd && startYmd > todayYmd);
+  const resolvedStartsAt = o.warrantyStartAt || o.doneAt || null;
+  const resolvedStartYmd = startYmd || (o.doneAt ? vnDateKey(o.doneAt) : null);
 
   const baseInfo = !schedule.eligible
     ? {
@@ -678,6 +681,8 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
         reason: schedule.reason,
         text:
           schedule.message || `Đơn đã hết thời hạn bảo hành ${totalDays} ngày.`,
+        startsAt: resolvedStartsAt,
+        startYmd: resolvedStartYmd,
         until: schedule.until,
         endYmd: schedule.endYmd,
       }
@@ -689,6 +694,8 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
           daysLeft: totalDays,
           isFinalDay: false,
           reason: "WARRANTY_NOT_STARTED",
+          startsAt: resolvedStartsAt,
+          startYmd: resolvedStartYmd,
           until: schedule.until,
           endYmd: schedule.endYmd,
           text: `Bảo hành ${totalDays} ngày sẽ bắt đầu từ ngày ${fmtDate(o.warrantyStartAt)}${schedule.until ? ` (đến ${fmtDate(schedule.until)})` : ""}.`,
@@ -700,6 +707,8 @@ export const warrantyInfo = (o, orders = [], lifetimePoints = 0) => {
           isFinalDay: schedule.isFinalDay,
           availableDates: schedule.availableDates,
           availableSlots: schedule.availableSlots,
+          startsAt: resolvedStartsAt,
+          startYmd: resolvedStartYmd,
           until: schedule.until,
           endYmd: schedule.endYmd,
           text:
@@ -2966,12 +2975,11 @@ export function AppProvider({ children }) {
     return false;
   };
 
+  const isKnownWarehouseName = (name) => Boolean(name && resolveDbMaterialId(null, name));
   const isExternalQuoteItem = (it) =>
     Boolean(
       it?.quotation_item_id &&
-        (it.is_external_purchase ||
-          it.external_purchase ||
-          (it.item_type === "MATERIAL" && !it.material_id)),
+        isExternalPurchaseQuoteItem(it, { isKnownWarehouseName }),
     );
 
   // Tự động rà soát & gắn các ảnh biên lai đã tải lên (POST /uploads) vào các dòng
@@ -3054,7 +3062,7 @@ export function AppProvider({ children }) {
     return linkedCount;
   };
 
-  // Tự động đồng bộ các bước quy trình bắt buộc không cần nhập chỉ số đo khi thợ nộp biên bản hoàn thành.
+  // Tự động đồng bộ các bước quy trình bắt buộc khi thợ nộp biên bản hoàn thành.
   // Tận dụng ảnh hiện có của việc (ưu tiên ảnh AFTER_REPAIR cho bước sau, ảnh BEFORE_REPAIR riêng cho bước đầu)
   // để giữ 100% tương thích backend HRMSS mà thợ không phải bấm "Xong bước" từng bước.
   const autoCompletePendingProcedureSteps = async (
@@ -3335,7 +3343,6 @@ export function AppProvider({ children }) {
       {
         status = "DONE",
         checkedItems,
-        measurements,
         photoUris = [],
         note,
       } = {},
@@ -3385,8 +3392,6 @@ export function AppProvider({ children }) {
       const body = { status };
       if (Array.isArray(checkedItems) && checkedItems.length)
         body.checked_items = checkedItems;
-      if (measurements && Object.keys(measurements).length)
-        body.measurements = measurements;
       if (photoIds.length) body.photo_ids = photoIds;
       if (note) body.note = note;
       const res = await hrmssApi.updateProcedureStep(
@@ -3404,7 +3409,6 @@ export function AppProvider({ children }) {
             "Bước này không thuộc danh mục bạn phụ trách.",
           LEAD_ONLY: "Chỉ thợ chính mới được thực hiện thao tác này.",
           PHOTO_REQUIRED: "Bước này cần ít nhất 1 ảnh.",
-          MEASUREMENTS_REQUIRED: "Nhập đủ các chỉ số đo của bước.",
           INVALID_PHOTO: "Ảnh không thuộc việc này. Chụp lại ảnh.",
           STEP_REQUIRED: "Bước bắt buộc, không bỏ qua được.",
           PROCEDURE_STEP_NOT_FOUND:
@@ -4659,11 +4663,19 @@ export function AppProvider({ children }) {
         }
         if (l.type === "part") {
           const isExtFixed = Boolean(l.isCustom);
+          const dbMatId = isExtFixed ? null : resolveDbMaterialId(l.matId, l.name);
+          const matIdVal =
+            dbMatId != null && /^[1-9]\d*$/.test(String(dbMatId))
+              ? Number(dbMatId)
+              : dbMatId;
           return {
             item_type: "MATERIAL",
             ...(isExtFixed
               ? { external_purchase: true }
-              : { material_id: resolveDbMaterialId(l.matId, l.name) }),
+              : {
+                  ...(matIdVal != null ? { material_id: matIdVal } : {}),
+                  external_purchase: false,
+                }),
             description_snapshot: l.name || "Linh kiện vật tư",
             quantity: Math.max(1, Number(l.qty) || 1),
             unit_price: Math.max(0, Number(l.price) || 0),
@@ -4878,10 +4890,15 @@ export function AppProvider({ children }) {
         const origQty = Math.max(1, Number(part.origQty ?? part.qty) || 1);
         if (part.isWarehouse && (part.matId || part.dbMaterialId)) {
           const dbMatId = part.dbMaterialId || resolveDbMaterialId(part.matId, part.name);
-          if (dbMatId) {
+          const matIdVal =
+            dbMatId != null && /^[1-9]\d*$/.test(String(dbMatId))
+              ? Number(dbMatId)
+              : dbMatId;
+          if (matIdVal != null) {
             return {
               item_type: "MATERIAL",
-              material_id: dbMatId,
+              material_id: matIdVal,
+              external_purchase: false,
               description_snapshot: part.name,
               quantity: qty,
               unit_price: actualPrice,
@@ -5774,13 +5791,39 @@ export function AppProvider({ children }) {
       return true;
     },
     // Thợ kết luận ngoài bảo hành: POST /technician/jobs/:id/out-of-warranty (đơn chuyển sang sửa có phí).
-    rejectWarrantyAsOutOfWarranty: async (code, reason) => {
+    rejectWarrantyAsOutOfWarranty: async (code, reason, photoUris = []) => {
       const o = s.orders.find((x) => x.code === code);
       if (!o?.dbAssignmentId || !authTokens.get()) return notSynced();
       const r =
         reason ||
         "Hư hỏng do rơi vỡ/ngoại lực tác động, không thuộc phạm vi bảo hành.";
       const res = await hrmssApi.markOutOfWarranty(o.dbAssignmentId, r);
+      const validPhotos = (Array.isArray(photoUris) ? photoUris : [])
+        .filter(Boolean)
+        .slice(0, 4);
+      if (res.ok && validPhotos.length > 0) {
+        const noteText = `[Ngoài bảo hành] ${r}`.slice(0, 500);
+        const uploads = await Promise.all(
+          validPhotos.map(async (uri) => {
+            const up = await hrmssApi
+              .uploadJobPhoto(o.dbAssignmentId, uri, "PROBLEM_PHOTO", noteText)
+              .catch(() => null);
+            if (
+              up?.ok &&
+              up.data?.attachment?.attachment_id &&
+              !up.data.attachment.description
+            ) {
+              await hrmssApi
+                .updatePhotoNote(up.data.attachment.attachment_id, noteText)
+                .catch(() => null);
+            }
+            return Boolean(up?.ok);
+          }),
+        );
+        if (uploads.some((ok) => !ok)) {
+          ui.toast("Một số ảnh minh chứng ngoài bảo hành chưa tải lên được", "⚠️");
+        }
+      }
       return serverDone(res, {
         title: "Không cập nhật được",
         codes: {
@@ -6422,6 +6465,10 @@ export function AppProvider({ children }) {
       if (res.data && typeof res.data === "object") {
         const eligData = { ...res.data, fetchedAt: Date.now() };
         const srvDays = parseWarrantyDays(res.data.warranty_days ?? res.data.warrantyDays);
+        const startYmdStr = normalizeWarrantyEndYmd(
+          res.data.warranty_start_date ?? res.data.warrantyStartDate,
+        );
+        const srvStartMs = startYmdStr ? new Date(`${startYmdStr}T00:00:00+07:00`).getTime() : null;
         const endYmdStr = normalizeWarrantyEndYmd(
           res.data.warranty_end_date ?? res.data.warrantyEndDate,
         );
@@ -6433,6 +6480,7 @@ export function AppProvider({ children }) {
                   ...ord,
                   serverWarrantyEligibility: eligData,
                   ...(typeof srvDays === "number" ? { warrantyDays: srvDays } : {}),
+                  ...(srvStartMs && Number.isFinite(srvStartMs) ? { warrantyStartAt: srvStartMs } : {}),
                   ...(srvEndMs && Number.isFinite(srvEndMs) ? { warrantyEndAt: srvEndMs } : {}),
                 }
               : ord,

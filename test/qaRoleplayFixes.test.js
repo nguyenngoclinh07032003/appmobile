@@ -496,7 +496,7 @@ describe('qaRoleplayFixes: kiểm thử toàn bộ lỗi đồng bộ Khách ↔
     assert.equal(billExtraAmount({ goods: 100000, bill: { bookedAmount: 100000, quotationTotal: 100000, supplementalTotal: 0, amountDue: 100000 } }), 0);
   });
 
-  test('Rút gọn quy trình thợ: phân tách bước có measures bắt buộc vs bước tự động hoàn tất & phân bổ ảnh', () => {
+  test('Rút gọn quy trình thợ: không chặn bước đo & phân bổ ảnh tự động khi hoàn thành', () => {
     const procedure = {
       total_steps: 4,
       done_steps: 1,
@@ -504,24 +504,24 @@ describe('qaRoleplayFixes: kiểm thử toàn bộ lỗi đồng bộ Khách ↔
         {
           service_name: '[TEST] Thử thanh toán 5.000đ',
           steps: [
-            { step_id: 11, step_no: 1, title: 'Kiểm tra và chẩn đoán lỗi', is_required: true, status: 'PENDING', require_photo: true, items: ['Ghi nhận triệu chứng'], measures: [] },
-            { step_id: 12, step_no: 2, title: 'Đo áp suất gas', is_required: true, status: 'PENDING', require_photo: false, items: [], measures: [{ key: 'pressure', label: 'Áp suất gas', unit: 'PSI' }] },
-            { step_id: 13, step_no: 3, title: 'Chạy thử và bàn giao', is_required: true, status: 'PENDING', require_photo: true, items: ['Chạy thử 15 phút'], measures: [] },
-            { step_id: 14, step_no: 4, title: 'Bước tuỳ chọn', is_required: false, status: 'PENDING', require_photo: false, items: [], measures: [] },
+            { step_id: 11, step_no: 1, title: 'Kiểm tra và chẩn đoán lỗi', is_required: true, status: 'PENDING', require_photo: true, items: ['Ghi nhận triệu chứng'] },
+            { step_id: 12, step_no: 2, title: 'Vệ sinh dàn lạnh', is_required: true, status: 'PENDING', require_photo: false, items: [] },
+            { step_id: 13, step_no: 3, title: 'Chạy thử và bàn giao', is_required: true, status: 'PENDING', require_photo: true, items: ['Chạy thử 15 phút'] },
+            { step_id: 14, step_no: 4, title: 'Bước tuỳ chọn', is_required: false, status: 'PENDING', require_photo: false, items: [] },
           ],
         },
       ],
     };
 
     const blocking = getBlockingProcedureSteps(procedure);
-    assert.deepEqual(blocking.map((s) => s.step_id), [12]);
+    assert.deepEqual(blocking, []);
 
     const autoSteps = getAutoCompletableProcedureSteps(procedure);
-    assert.deepEqual(autoSteps.map((s) => s.step_id), [11, 13]);
+    assert.deepEqual(autoSteps.map((s) => s.step_id), [11, 12, 13]);
 
     // Chỉ có 1 ảnh AFTER -> bước 3 nhận ảnh 101, bước 1 đánh dấu needsBeforeUpload để tránh đè FK
     const singleAfterAlloc = pickStepPhotoAllocation(
-      [autoSteps[0], autoSteps[1]],
+      [autoSteps[0], autoSteps[2]],
       { afterPhotoIds: [101], otherPhotoIds: [] },
     );
     assert.equal(singleAfterAlloc.get(13).photoId, 101);
@@ -532,7 +532,7 @@ describe('qaRoleplayFixes: kiểm thử toàn bộ lỗi đồng bộ Khách ↔
 
     // Khi có sẵn ảnh riêng -> cả bước 1 và bước 3 dùng ID khác nhau, không cần upload bổ sung
     const dualAlloc = pickStepPhotoAllocation(
-      [autoSteps[0], autoSteps[1]],
+      [autoSteps[0], autoSteps[2]],
       { afterPhotoIds: [101], otherPhotoIds: [99] },
     );
     assert.equal(dualAlloc.get(13).photoId, 101);

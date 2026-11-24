@@ -21,7 +21,7 @@ import {
 } from '../../components';
 import {
   pickImage, validateVietnamesePhone, validateContactName, computeQuoteRangeTotals, formatRangeVND,
-  parseSymptomPhotoTitle, sanitizeVnPhoneInput, matchReceiptsToQuoteLines, isReceiptEvidence,
+  parseSymptomPhotoTitle, sanitizeVnPhoneInput, matchReceiptsToQuoteLines, isReceiptEvidence, vnDateKey,
 } from '../../utils';
 import { flattenProcedureSteps } from '../../utils/procedureHelpers';
 import {
@@ -359,10 +359,12 @@ export function OrderScreen({ params }) {
   const screenActive = useScreenActive();
   const aRef = useRef(a);
   aRef.current = a;
+  const eligFetchRef = useRef(null);
   const o = (s.orders || []).find((x) => x.code === params?.code);
   const orderReqId = o?.dbRequestId || null;
   const orderCode = o?.code || null;
   const orderStatus = o?.status || null;
+  const serverEligFetchedAt = o?.serverWarrantyEligibility?.fetchedAt || 0;
   const orderNeedsSync = Boolean(
     o && (isActiveOrder(o) || (o.status === 'cancelled' && (o.inspectionFee || 0) > 0 && !isPaid(o))),
   );
@@ -378,17 +380,31 @@ export function OrderScreen({ params }) {
 
   // Bảo đảm đơn cũ / mới mở chi tiết đều tải đủ chẩn đoán & ảnh triệu chứng ban đầu.
   useEffect(() => {
+    eligFetchRef.current = null;
     setShowOrderSteps(false);
     setShowBookingInfo(false);
     if (!orderCode) return;
     aRef.current?.ensureOrderHydrated?.(orderCode);
   }, [orderCode]);
 
-  // Kiểm tra quyền lợi, hạn cuối và khung giờ bảo hành thật từ server khi xem chi tiết đơn đã hoàn thành.
+  // Kiểm tra quyền lợi, hạn cuối và khung giờ bảo hành thật từ server khi xem chi tiết đơn đã hoàn thành
+  // (tự làm mới khi chưa có cache, quá 2 phút, hoặc đã sang ngày mới theo GMT+7).
   useEffect(() => {
-    if (!o || o.status !== 'done' || o.kind === 'warranty' || o.kind === 'followup' || !o.dbRequestId || o.serverWarrantyEligibility) return;
+    if (!o || o.status !== 'done' || o.kind === 'warranty' || o.kind === 'followup' || !o.dbRequestId) return;
+    const nowMs = Date.now();
+    const todayKeyStr = vnDateKey(nowMs);
+    const fetchedDayStr = serverEligFetchedAt ? vnDateKey(serverEligFetchedAt) : '';
+    const isStale =
+      !o.serverWarrantyEligibility ||
+      !serverEligFetchedAt ||
+      fetchedDayStr !== todayKeyStr ||
+      nowMs - serverEligFetchedAt > 2 * 60 * 1000;
+    if (!isStale) return;
+    const fetchKey = `${o.code}:${todayKeyStr}:${serverEligFetchedAt}`;
+    if (eligFetchRef.current === fetchKey) return;
+    eligFetchRef.current = fetchKey;
     aRef.current?.checkWarrantyEligibility?.(o.code)?.catch?.(() => {});
-  }, [o?.code, o?.status, o?.kind, o?.dbRequestId, o?.serverWarrantyEligibility]);
+  }, [o?.code, o?.status, o?.kind, o?.dbRequestId, o?.serverWarrantyEligibility, serverEligFetchedAt]);
 
   // Đồng bộ ngay khi mở màn & mỗi 5s trong lúc đơn đang hoạt động (trường hợp mở 2 cửa sổ song song hoặc socket trễ).
   useEffect(() => {
@@ -787,6 +803,83 @@ export function OrderScreen({ params }) {
           </Card>
         ) : null}
 
+        {/* ===== Thợ kết luận Ngoài phạm vi bảo hành -> Hướng giải quyết cho khách ===== */}
+        {(o.outOfWarranty || o.status === 'out_of_warranty') && o.status !== 'cancelled' ? (() => {
+          const oowEvidence = evidence.filter(
+            (e) => e?.uri && (e.isOowUpload || /^\[Ngoài bảo hành\]/i.test(String(e.note || '').trim())),
+          );
+          const canDiscussOrComplain = ['out_of_warranty', 'quoted'].includes(o.status);
+          return (
+            <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.red }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <AppIcon name="alert-triangle" size={18} color={C.red} strokeWidth={2.2} />
+                  <Text style={[mx.tlTitle, { color: C.redInk, marginBottom: 0, flex: 1 }]}>Ngoài phạm vi bảo hành</Text>
+                </View>
+                <Badge text="Chuyển sửa có phí" fg={C.redInk} bg={C.redSoft} />
+              </View>
+
+              <View style={{ marginTop: 8, padding: 10, borderRadius: R.sm, backgroundColor: C.redSoft, borderWidth: 1, borderColor: C.redBorder }}>
+                <Text style={{ fontSize: 12, fontWeight: '800', color: C.redInk }}>Lý do thợ thẩm định:</Text>
+                <Text style={{ fontSize: 13, color: C.ink, marginTop: 2, lineHeight: 19 }}>
+                  {o.outOfWarrantyReason || 'Thiết bị hư hỏng do ngoại lực / tác động bên ngoài, không thuộc phạm vi bảo hành miễn phí.'}
+                </Text>
+              </View>
+
+              {oowEvidence.length > 0 ? (
+                <View style={{ marginTop: 10 }}>
+                  <Text style={{ fontSize: 12.5, fontWeight: '800', color: C.ink, marginBottom: 6 }}>
+                    Ảnh minh chứng tại chỗ ({oowEvidence.length})
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {oowEvidence.map((ev, idx) => (
+                      <Tap
+                        key={ev.id || `top_oow_${idx}`}
+                        style={mx.thumb}
+                        onPress={() => setPreviewOrderPhoto({ uri: ev.uri, title: ev.note || 'Ảnh minh chứng ngoài bảo hành' })}
+                        scaleTo={0.97}
+                      >
+                        <Image source={{ uri: ev.uri }} style={{ width: '100%', height: '100%' }} />
+                      </Tap>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+
+              <Text style={{ fontSize: 12.5, color: C.ink2, marginTop: 10, lineHeight: 19 }}>
+                {o.status === 'out_of_warranty'
+                  ? 'Hướng xử lý: Thợ đang lập báo giá sửa có phí. Khi nhận báo giá, bạn có toàn quyền Đồng ý sửa, Yêu cầu báo giá lại hoặc Từ chối & Huỷ đơn. Nếu không đồng ý kết luận ngoài bảo hành, vui lòng gọi tổng đài ngay khi thợ đang có mặt.'
+                  : o.status === 'quoted'
+                    ? 'Thợ đã gửi báo giá sửa có phí bên dưới. Vui lòng đối chiếu lý do, ảnh minh chứng và chọn Đồng ý, Báo giá lại hoặc Từ chối & Huỷ đơn.'
+                    : 'Đơn đã được chuyển sang sửa chữa dịch vụ có phí theo kết luận thẩm định tại chỗ.'}
+              </Text>
+
+              {canDiscussOrComplain ? (
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                  {o.tech?.phone ? (
+                    <Btn
+                      title="Gọi thợ trao đổi"
+                      icon="phone"
+                      variant="outline"
+                      small
+                      style={{ flex: 1 }}
+                      onPress={() => Linking.openURL(`tel:${String(o.tech.phone).replace(/\s+/g, '')}`).catch(() => {})}
+                    />
+                  ) : null}
+                  <Btn
+                    title="Khiếu nại / Tổng đài"
+                    icon="headphones"
+                    variant="dangerSoft"
+                    small
+                    style={{ flex: 1 }}
+                    onPress={u.call}
+                  />
+                </View>
+              ) : null}
+            </Card>
+          );
+        })() : null}
+
         {/* ===== Yêu cầu hẹn tái khám ===== */}
         {o.followUpRequested ? (
           <Card style={{ marginTop: 12, backgroundColor: C.card, borderColor: C.line, borderLeftWidth: 3.5, borderLeftColor: C.primary }}>
@@ -893,11 +986,13 @@ export function OrderScreen({ params }) {
                 <Text style={{ fontSize: 12.5, fontWeight: '600', color: C.ink2, lineHeight: 18 }}>
                   {isExternalFinalization
                     ? 'Thợ đã cập nhật mức giá cuối cùng của vật tư thực tế. Vui lòng đối chiếu và bấm xác nhận để chốt tổng hoá đơn trước khi bàn giao thiết bị.'
-                    : isOnSite && isSupplementalQuote
-                      ? 'Thợ đã kiểm tra thực tế và gửi báo giá phát sinh. Bạn có thể đồng ý để thực hiện thêm hoặc chỉ từ chối phần phát sinh này (đơn hàng vẫn tiếp tục phần đã đặt).'
-                      : isOnSite
-                        ? 'Thợ đã đến kiểm tra thực tế tại nhà bạn. Bạn có thể đồng ý để thợ sửa, yêu cầu báo giá lại hoặc từ chối (huỷ sau khi kiểm tra tại nhà có thể áp dụng phí kiểm tra theo chính sách hiện hành).'
-                        : 'Báo giá trước khi thợ xuất phát. Bạn đồng ý thì thợ mới đi. Huỷ lúc này hoàn toàn MIỄN PHÍ (0đ).'}
+                    : o.outOfWarranty && !isSupplementalQuote
+                      ? 'Đơn được thợ thẩm định ngoài phạm vi bảo hành và gửi báo giá sửa có phí. Bạn có thể đồng ý để thợ sửa, yêu cầu báo giá lại hoặc từ chối & huỷ đơn nếu không muốn sửa.'
+                      : isOnSite && isSupplementalQuote
+                        ? 'Thợ đã kiểm tra thực tế và gửi báo giá phát sinh. Bạn có thể đồng ý để thực hiện thêm hoặc chỉ từ chối phần phát sinh này (đơn hàng vẫn tiếp tục phần đã đặt).'
+                        : isOnSite
+                          ? 'Thợ đã đến kiểm tra thực tế tại nhà bạn. Bạn có thể đồng ý để thợ sửa, yêu cầu báo giá lại hoặc từ chối (huỷ sau khi kiểm tra tại nhà có thể áp dụng phí kiểm tra theo chính sách hiện hành).'
+                          : 'Báo giá trước khi thợ xuất phát. Bạn đồng ý thì thợ mới đi. Huỷ lúc này hoàn toàn MIỄN PHÍ (0đ).'}
                 </Text>
               </View>
 
@@ -1484,6 +1579,31 @@ export function OrderScreen({ params }) {
               ) : null}
               {o.note ? <InfoLine icon="file-text" label="Ghi chú" value={o.note} /> : null}
               {o.outOfWarrantyReason ? <InfoLine icon="alert-triangle" label="Lý do ngoài bảo hành" value={o.outOfWarrantyReason} /> : null}
+              {(() => {
+                const oowEvidence = evidence.filter(
+                  (e) => e?.uri && (e.isOowUpload || /^\[Ngoài bảo hành\]/i.test(String(e.note || '').trim())),
+                );
+                if (!oowEvidence.length) return null;
+                return (
+                  <View style={{ marginTop: 4, marginBottom: 4 }}>
+                    <Text style={{ fontSize: 12, color: C.redInk, fontWeight: '700', marginBottom: 6 }}>
+                      Ảnh minh chứng ngoài bảo hành ({oowEvidence.length})
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {oowEvidence.map((ev, idx) => (
+                        <Tap
+                          key={ev.id || `cust_oow_${idx}`}
+                          style={mx.thumb}
+                          onPress={() => setPreviewOrderPhoto({ uri: ev.uri, title: ev.note || 'Ảnh minh chứng ngoài bảo hành' })}
+                          scaleTo={0.97}
+                        >
+                          <Image source={{ uri: ev.uri }} style={{ width: '100%', height: '100%' }} />
+                        </Tap>
+                      ))}
+                    </View>
+                  </View>
+                );
+              })()}
               {(o.attachments || []).length && o.status === 'quoted' && !o.quote ? (
                 <View style={{ marginTop: 4, marginBottom: 4 }}>
                   <Text style={{ fontSize: 12, color: C.muted, fontWeight: '600', marginBottom: 6 }}>Hình ảnh triệu chứng ban đầu</Text>
@@ -1525,7 +1645,9 @@ export function OrderScreen({ params }) {
             (o.quote && (!quoteRejected || activeDisplayLines.length > 0)) ||
             o.diagnosisReport,
           );
-          const hasDiagPhotos = (o.attachments || []).length > 0 || evidence.some((e) => e.stage === 'diagnosis');
+          const hasDiagPhotos =
+            (o.attachments || []).length > 0 ||
+            evidence.some((e) => e.stage === 'diagnosis' && !e.isWarrantyUpload && !e.isOowUpload && !/^\[Ngoài bảo hành\]/i.test(String(e.note || '').trim()));
           if ((!hasDiagData && !hasDiagPhotos) || o.status === 'quoted') return null;
           const diagSource = (!quoteRejected ? o.quote : null) || o.diagnosisReport || o.quote || {};
           const lines = activeDisplayLines;
@@ -1711,14 +1833,6 @@ export function OrderScreen({ params }) {
                 const checkedList = Array.isArray(st.checked_items) && st.checked_items.length
                   ? st.checked_items
                   : (isDoneStep && Array.isArray(st.items) ? st.items : []);
-                const measureEntries = (Array.isArray(st.measures) ? st.measures : [])
-                  .map((m) => ({
-                    key: m.key,
-                    label: m.label || m.key,
-                    unit: m.unit || '',
-                    val: st.measurements?.[m.key],
-                  }))
-                  .filter((m) => m.val != null && m.val !== '');
                 return (
                   <View
                     key={st.step_id || `cust_proc_${idx}`}
@@ -1747,18 +1861,6 @@ export function OrderScreen({ params }) {
                       <View style={{ paddingLeft: 24, marginTop: 4, gap: 2 }}>
                         {checkedList.map((chk, ci) => (
                           <Text key={`chk_${ci}`} style={[ui.meta, { color: C.ink2 }]}>✓ {chk}</Text>
-                        ))}
-                      </View>
-                    ) : null}
-                    {measureEntries.length > 0 ? (
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingLeft: 24, marginTop: 6 }}>
-                        {measureEntries.map((me) => (
-                          <Badge
-                            key={me.key}
-                            text={`${me.label}: ${me.val}${me.unit ? ` ${me.unit}` : ''}`}
-                            fg={C.primary}
-                            bg={C.primarySoft}
-                          />
                         ))}
                       </View>
                     ) : null}
@@ -1896,7 +1998,7 @@ export function OrderScreen({ params }) {
               ) : null}
               {(o.materials || []).length ? <Text style={[ui.meta, { marginTop: 6 }]}>Vật tư: {o.materials.map((m) => `${m.name} (${m.qty} ${m.unit})`).join(', ')}</Text> : null}
               <Text style={[ui.meta, { marginTop: 6 }]}>{fmtDateTime(o.report.at)} · Thợ {o.report.tech}</Text>
-              {o.status === 'done' && isPaid(o) && o.kind !== 'warranty' && o.kind !== 'followup' && ((winfo.totalDays > 0 && !winfo.noWarranty) || (o.materialWarranties && o.materialWarranties.length > 0) || extractMaterialWarrantiesFromQuotations(o.quotations || []).length > 0) ? (
+              {o.status === 'done' && isPaid(o) && o.kind !== 'warranty' && o.kind !== 'followup' && (winfo.noWarranty || winfo.totalDays <= 0) && ((o.materialWarranties && o.materialWarranties.length > 0) || extractMaterialWarrantiesFromQuotations(o.quotations || []).length > 0) ? (
                 <Btn
                   title="Xem Phiếu Nghiệm Thu & Bảo Hành Điện Tử"
                   icon="file-text"
@@ -2047,17 +2149,19 @@ export function OrderScreen({ params }) {
                           ? 'Đã thanh toán phí KT'
                           : (o.bill?.cashClaimPending ? 'Đã báo trả tiền mặt · chờ thợ xác nhận' : 'Cần thanh toán phí KT'))
                       : 'Đã huỷ (0đ)')
-              : isPaid(o)
-                    ? (isQRPayment(o) ? 'Đã chuyển khoản VietQR' : 'Đã thanh toán')
-                    : o.bill?.cashClaimPending
-                      ? 'Đã báo trả tiền mặt · chờ thợ xác nhận'
-                    : o.status === 'pending_payment' && (o.bill?.paidAmount || 0) > 0
-                      ? 'Đã trả một phần · Vui lòng thanh toán phần còn lại'
-                      : o.status === 'pending_payment'
-                        ? (isQRPayment(o) ? 'Chờ thanh toán VietQR' : 'Chờ khách thanh toán')
-                        : isQRPayment(o) ? 'Thanh toán qua QR (Thợ không thu tiền mặt)' : 'Chưa đến bước thanh toán'
+                  : o.status === 'out_of_warranty'
+                    ? 'Chờ báo giá sửa có phí'
+                    : isPaid(o)
+                      ? (isQRPayment(o) ? 'Đã chuyển khoản VietQR' : 'Đã thanh toán')
+                      : o.bill?.cashClaimPending
+                        ? 'Đã báo trả tiền mặt · chờ thợ xác nhận'
+                      : o.status === 'pending_payment' && (o.bill?.paidAmount || 0) > 0
+                        ? 'Đã trả một phần · Vui lòng thanh toán phần còn lại'
+                        : o.status === 'pending_payment'
+                          ? (isQRPayment(o) ? 'Chờ thanh toán VietQR' : 'Chờ khách thanh toán')
+                          : isQRPayment(o) ? 'Thanh toán qua QR (Thợ không thu tiền mặt)' : 'Chưa đến bước thanh toán'
               }
-              green={isPaid(o) || (o.status === 'cancelled' && !(o.inspectionFee > 0))}
+              green={(o.status !== 'out_of_warranty' && isPaid(o)) || (o.status === 'cancelled' && !(o.inspectionFee > 0))}
             />
             {(() => {
               const totalDisplay = o.status === 'cancelled' ? formatVND(o.inspectionFee || 0) : formatOrderTotal(o);
@@ -2156,44 +2260,126 @@ export function OrderScreen({ params }) {
           </Card>
         ) : null}
 
-        {o.kind !== 'warranty' && o.kind !== 'followup' && o.status !== 'cancelled' ? (
-          <Card style={[{ marginTop: 12, backgroundColor: C.card, borderColor: C.line }, winfo.ok && { borderLeftWidth: 3.5, borderLeftColor: C.green }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <IconBox icon="shield-check" size={40} bg={winfo.ok ? C.greenSoft : C.primarySoft} radius={13} />
-              <View style={{ flex: 1 }}>
-                <Text style={mx.tlTitle}>
-                  {winfo.totalDays > 0
-                    ? `Bảo hành ${winfo.totalDays} ngày${o.customerTierLabel ? ` · Hạng ${o.customerTierLabel}` : ''}`
-                    : 'Chính sách bảo hành'}
-                </Text>
-                <Text style={[ui.meta, winfo.ok && { color: C.green, fontWeight: '700' }]}>{winfo.text}</Text>
-              </View>
-            </View>
-            {(winfo.ok || winfo.isCutoff || (winfo.pending && winfo.stillValid) || winfo.notStarted) ? (
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                <Btn
-                  title="Phiếu bảo hành điện tử"
-                  variant="outline"
-                  small
-                  style={{ flex: 1 }}
-                  onPress={() => setShowCertificate(true)}
+        {o.kind !== 'warranty' && o.kind !== 'followup' && o.status !== 'cancelled' ? (() => {
+          const isNotStarted = Boolean(winfo.notStarted || winfo.reason === 'WARRANTY_NOT_STARTED');
+          const isActivePending = Boolean(winfo.pending && winfo.stillValid);
+          const hasServicePeriod = o.status === 'done' && winfo.totalDays > 0 && !winfo.noWarranty;
+          const statusMeta = winfo.ok
+            ? { label: 'Còn hiệu lực', fg: C.greenInk, bg: C.greenSoft, accent: C.green, icon: 'shield-check' }
+            : isNotStarted
+              ? { label: 'Chờ kích hoạt', fg: C.primary, bg: C.primarySoft, accent: C.primary, icon: 'clock' }
+              : winfo.openCode
+                ? { label: 'Đang bảo hành', fg: C.goldInk, bg: C.goldSoft, accent: C.gold, icon: 'wrench' }
+                : winfo.isCutoff
+                  ? { label: 'Quá giờ ngày cuối', fg: C.redInk, bg: C.redSoft, accent: C.red, icon: 'alert-triangle' }
+                  : winfo.noWarranty
+                    ? { label: 'Không áp dụng', fg: C.muted, bg: C.surface, accent: null, icon: 'info' }
+                    : winfo.pending
+                      ? { label: 'Chưa bắt đầu', fg: C.primary, bg: C.primarySoft, accent: C.primary, icon: 'clock' }
+                      : { label: 'Hết hiệu lực', fg: C.muted, bg: C.surface, accent: null, icon: 'shield-alert' };
+          const displayStartMs = winfo.startsAt || o.warrantyStartAt || (isNotStarted && o.doneAt ? o.doneAt + 86400000 : o.doneAt);
+          const displayEndMs = winfo.until || o.warrantyEndAt;
+          const daysLeftDisplay = (winfo.ok || isActivePending || isNotStarted) ? (winfo.daysLeft ?? winfo.totalDays) : 0;
+          const ratio = winfo.totalDays > 0 ? Math.max(0, Math.min(1, daysLeftDisplay / winfo.totalDays)) : 0;
+          const showCertBtn = hasServicePeriod;
+          const showRequestBtn = o.status === 'done' && !winfo.openCode && (winfo.ok || winfo.isCutoff || isNotStarted);
+          return (
+            <Card
+              style={[
+                { marginTop: 12, backgroundColor: C.card, borderColor: C.line },
+                statusMeta.accent && { borderLeftWidth: 3.5, borderLeftColor: statusMeta.accent },
+              ]}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                <IconBox
+                  icon={statusMeta.icon}
+                  size={40}
+                  bg={statusMeta.bg}
+                  color={statusMeta.fg}
+                  radius={13}
                 />
-                {(winfo.ok || winfo.isCutoff) ? (
-                  <Btn
-                    title="Yêu cầu bảo hành"
-                    variant="soft"
-                    small
-                    style={{ flex: 1 }}
-                    onPress={requestWarranty}
-                  />
-                ) : null}
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <Text style={[mx.tlTitle, { flex: 1, marginBottom: 0 }]}>
+                      {winfo.totalDays > 0
+                        ? `Bảo hành ${winfo.totalDays} ngày${o.customerTierLabel ? ` · Hạng ${o.customerTierLabel}` : ''}`
+                        : 'Chính sách bảo hành'}
+                    </Text>
+                    <Badge text={statusMeta.label} fg={statusMeta.fg} bg={statusMeta.bg} />
+                  </View>
+                  <Text style={[ui.meta, { marginTop: 4, lineHeight: 18 }, winfo.ok && { color: C.greenInk, fontWeight: '700' }]}>
+                    {winfo.text}
+                  </Text>
+                </View>
               </View>
-            ) : null}
-            {winfo.openCode ? (
-              <Btn title={`Xem đơn bảo hành ${winfo.openCode}`} variant="outline" small style={{ marginTop: 12 }} onPress={() => openRelatedOrder(winfo.openCode)} />
-            ) : null}
-          </Card>
-        ) : null}
+
+              {hasServicePeriod ? (
+                <View style={{ marginTop: 10, padding: 10, borderRadius: R.sm, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <Text style={[ui.meta, { color: C.ink2, flex: 1 }]}>
+                      Hiệu lực: {displayStartMs ? fmtDate(displayStartMs) : '—'} → {displayEndMs ? fmtDate(displayEndMs) : '—'}
+                    </Text>
+                    <Text style={{ fontSize: 12.5, fontWeight: '800', color: winfo.ok ? C.greenInk : isNotStarted ? C.primary : C.ink2 }}>
+                      {daysLeftDisplay}/{winfo.totalDays} ngày
+                    </Text>
+                  </View>
+                  <Progress
+                    value={ratio}
+                    color={winfo.ok ? C.green : isNotStarted ? C.primary : isActivePending ? C.gold : C.muted}
+                    style={{ marginTop: 6, height: 5 }}
+                  />
+                </View>
+              ) : null}
+
+              {(showCertBtn || showRequestBtn) ? (
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                  {showCertBtn ? (
+                    <Btn
+                      title="Phiếu bảo hành điện tử"
+                      variant="outline"
+                      small
+                      style={{ flex: 1 }}
+                      onPress={() => setShowCertificate(true)}
+                    />
+                  ) : null}
+                  {showRequestBtn ? (
+                    <Btn
+                      title="Yêu cầu bảo hành"
+                      variant={(winfo.ok || winfo.isCutoff) ? 'primary' : 'soft'}
+                      small
+                      style={{ flex: 1 }}
+                      onPress={() => {
+                        if (winfo.ok || winfo.isCutoff) {
+                          requestWarranty();
+                          return;
+                        }
+                        u.dialog({
+                          icon: 'clock',
+                          title: 'Bảo hành chờ kích hoạt',
+                          message: `${winfo.text}${displayStartMs ? `\n\nThời gian hiệu lực: ${fmtDate(displayStartMs)}${displayEndMs ? ` – ${fmtDate(displayEndMs)}` : ''}.` : ''}\nNếu thiết bị gặp sự cố khẩn cấp ngay sau khi sửa, vui lòng gọi tổng đài ${HOTLINE} để được hỗ trợ ngay.`,
+                          actions: [
+                            { label: 'Đã hiểu', variant: 'ghost' },
+                            { label: `Gọi tổng đài ${HOTLINE}`, onPress: u.call },
+                          ],
+                        });
+                      }}
+                    />
+                  ) : null}
+                </View>
+              ) : null}
+
+              {winfo.openCode ? (
+                <Btn
+                  title={`Xem đơn bảo hành ${winfo.openCode}`}
+                  variant="soft"
+                  small
+                  style={{ marginTop: 10 }}
+                  onPress={() => openRelatedOrder(winfo.openCode)}
+                />
+              ) : null}
+            </Card>
+          );
+        })() : null}
 
         {o.kind !== 'warranty' && o.kind !== 'followup' && o.status !== 'cancelled' ? (() => {
           const matWarranties = (o.materialWarranties && o.materialWarranties.length)

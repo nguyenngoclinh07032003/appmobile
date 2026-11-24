@@ -48,7 +48,8 @@ export function SymptomBreakdownView({
   };
   (Array.isArray(initialAttachments) ? initialAttachments : []).forEach((att) => pushInitialPhoto(att, true));
   (Array.isArray(evidence) ? evidence : []).forEach((e) => {
-    if (e?.stage === 'diagnosis' && !e?.isWarrantyUpload && !parseSymptomPhotoMeta(e?.note)) {
+    const isOowPhoto = Boolean(e?.isOowUpload || /^\[Ngoài bảo hành\]/i.test(String(e?.note || '').trim()));
+    if (e?.stage === 'diagnosis' && !e?.isWarrantyUpload && !isOowPhoto && !parseSymptomPhotoMeta(e?.note)) {
       pushInitialPhoto(e, Boolean(e.isCustomerInitial));
     }
   });

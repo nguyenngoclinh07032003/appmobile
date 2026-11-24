@@ -16,7 +16,7 @@ import {
   useApp, orderTotal, amountRemaining, formatOrderTotal, cashToCollect, bookedValue, tierPartDiscountAmount, lateDiscountAmount,
   isActiveOrder, dateKeyOf, todayKey, fmtDate, fmtDateTime, timeAgo,
   assessCancelAfterAccept, slotStartTs, matchJobForTech, isQRPayment, isPaid, latestNotifPerOrder, techStatusMeta,
-  getPendingExternalEstimates, getBlockingProcedureSteps,
+  getPendingExternalEstimates,
   isSupportAssignment, isSupportWaitingForLead, isStepInSupportScope, resolveCategoryNamesByIds,
   getNonWorkingDayInfo, MATERIAL_WARRANTY_STATUS_META,
 } from '../../context';
@@ -1178,18 +1178,14 @@ function ReceiptCard({ o, editable, onPreviewPhoto }) {
   );
 }
 
-// Các bước thực hiện của việc: mặc định thu gọn thành 1 dòng tự đồng bộ khi bàn giao,
-// chỉ tự mở rộng khi có bước bắt buộc đòi hỏi nhập chỉ số đo kỹ thuật.
+// Các bước thực hiện của việc: mặc định thu gọn thành 1 dòng tự đồng bộ khi bàn giao.
 function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
   const { a, ui: u } = useApp();
   const proc = o.procedure;
   const isSupport = isSupportAssignment(o);
-  const blockingSteps = useMemo(() => getBlockingProcedureSteps(proc), [proc]);
-  const hasBlockingMeasures = blockingSteps.length > 0;
-  const [expanded, setExpanded] = useState(hasBlockingMeasures || (isSupport && editable));
+  const [expanded, setExpanded] = useState(isSupport && editable);
   const [openId, setOpenId] = useState(null);
   const [checked, setChecked] = useState([]);
-  const [measures, setMeasures] = useState({});
   const [photos, setPhotos] = useState([]);
   const [busy, setBusy] = useState(false);
 
@@ -1200,19 +1196,6 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
   useEffect(() => {
     if (isSupport && editable) setExpanded(true);
   }, [isSupport, editable]);
-
-  useEffect(() => {
-    if (hasBlockingMeasures) {
-      setExpanded(true);
-      const firstBlocking = blockingSteps[0];
-      if (editable && firstBlocking && isStepInSupportScope(firstBlocking, o, ALL_SERVICES) && openId == null) {
-        setOpenId(firstBlocking.step_id);
-        setChecked([...(firstBlocking.items || [])]);
-        setMeasures(Object.fromEntries((firstBlocking.measures || []).map((m) => [m.key, firstBlocking.measurements?.[m.key] != null ? String(firstBlocking.measurements[m.key]) : ''])));
-        setPhotos([]);
-      }
-    }
-  }, [hasBlockingMeasures]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!proc) return null;
   const steps = flattenProcedureSteps(proc);
@@ -1225,7 +1208,6 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
     }
     setOpenId(openId === st.step_id ? null : st.step_id);
     setChecked([...(st.items || [])]);
-    setMeasures(Object.fromEntries((st.measures || []).map((m) => [m.key, st.measurements?.[m.key] != null ? String(st.measurements[m.key]) : ''])));
     setPhotos([]);
   };
   const addPhoto = async (source = 'camera') => {
@@ -1239,8 +1221,6 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
     setPhotos((p) => (p.includes(uri) ? p : [...p, uri]).slice(0, 5));
   };
   const finish = async (st) => {
-    const missing = (st.measures || []).filter((m) => String(measures[m.key] ?? '').trim() === '' || Number.isNaN(Number(measures[m.key])));
-    if (missing.length) { u.alert('Thiếu chỉ số đo', `Nhập số cho: ${missing.map((m) => m.label).join(', ')}.`, 'wrench'); return; }
     if (st.require_photo && !photos.length && !(st.photo_ids || []).length) { u.alert('Thiếu ảnh', 'Bước này cần ít nhất 1 ảnh.', '📷'); return; }
     if (busy) return;
     setBusy(true);
@@ -1248,7 +1228,6 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
     try {
       res = await Promise.resolve(a.completeProcedureStep(o.code, st, {
         checkedItems: checked,
-        measurements: Object.fromEntries(Object.entries(measures).map(([k, v]) => [k, Number(v)])),
         photoUris: photos,
       }));
     } catch (e) {
@@ -1307,23 +1286,19 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <Text style={[tx.h, { marginBottom: 0, flex: 1 }]}>Các bước thực hiện</Text>
         <Badge text={`${proc.done_steps}/${proc.total_steps} bước`} fg={allDone ? C.green : C.primary} bg={allDone ? C.greenSoft : C.primarySoft} />
-        {!hasBlockingMeasures ? (
-          <Tap
-            onPress={() => setExpanded(false)}
-            hitSlop={8}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingLeft: 4 }}
-          >
-            <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.primary }}>Thu gọn</Text>
-            <View style={{ transform: [{ rotate: '-90deg' }] }}>
-              <AppIcon name="chevron-right" size={13} color={C.primary} strokeWidth={2.3} />
-            </View>
-          </Tap>
-        ) : null}
+        <Tap
+          onPress={() => setExpanded(false)}
+          hitSlop={8}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 3, paddingLeft: 4 }}
+        >
+          <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.primary }}>Thu gọn</Text>
+          <View style={{ transform: [{ rotate: '-90deg' }] }}>
+            <AppIcon name="chevron-right" size={13} color={C.primary} strokeWidth={2.3} />
+          </View>
+        </Tap>
       </View>
       <Text style={[ui.meta, { marginTop: 4, marginBottom: 6 }]}>
-        {hasBlockingMeasures
-          ? 'Nhập các chỉ số đo bắt buộc bên dưới trước khi hoàn thành.'
-          : 'Có thể bấm làm từng bước hoặc để tự động hoàn tất khi nộp biên bản.'}
+        Có thể bấm làm từng bước hoặc để tự động hoàn tất khi nộp biên bản.
       </Text>
       {steps.map((st) => {
         const done = st.status !== 'PENDING';
@@ -1337,25 +1312,6 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
         const checkedList = Array.isArray(st.checked_items) && st.checked_items.length
           ? st.checked_items
           : (done && st.status !== 'SKIPPED' && Array.isArray(st.items) ? st.items : []);
-        const seenMeasureKeys = new Set();
-        const measureEntries = (Array.isArray(st.measures) ? st.measures : [])
-          .map((m) => {
-            seenMeasureKeys.add(m.key);
-            return {
-              key: m.key,
-              label: m.label || m.key,
-              unit: m.unit || '',
-              val: st.measurements?.[m.key],
-            };
-          })
-          .filter((m) => m.val != null && m.val !== '');
-        if (st.measurements && typeof st.measurements === 'object') {
-          Object.entries(st.measurements).forEach(([k, v]) => {
-            if (!seenMeasureKeys.has(k) && v != null && v !== '') {
-              measureEntries.push({ key: k, label: k, unit: '', val: v });
-            }
-          });
-        }
         return (
           <View key={st.step_id} style={{ borderTopWidth: 1, borderTopColor: C.line, paddingVertical: 10, opacity: inScope ? 1 : 0.5 }}>
             <Tap onPress={() => open(st)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -1365,7 +1321,7 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
               <View style={{ flex: 1 }}>
                 <Text style={{ fontWeight: '800', color: C.ink }}>{st.title}{st.is_required ? '' : ' (không bắt buộc)'}</Text>
                 <Text style={ui.meta}>
-                  {st.service_name}{st.require_photo ? ' · cần ảnh' : ''}{(st.measures || []).length ? ' · có chỉ số đo' : ''}
+                  {st.service_name}{st.require_photo ? ' · cần ảnh' : ''}
                   {!inScope ? ' · Ngoài phạm vi phụ trách' : (done ? ` · ${st.status === 'SKIPPED' ? 'Bỏ qua' : 'Đã xong'}` : (editable ? ' · bấm để làm' : ''))}
                 </Text>
               </View>
@@ -1376,18 +1332,6 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
                   <View style={{ paddingLeft: 36, marginTop: 6, gap: 2 }}>
                     {checkedList.map((chk, ci) => (
                       <Text key={`t_chk_${st.step_id}_${ci}`} style={[ui.meta, { color: C.ink2 }]}>✓ {chk}</Text>
-                    ))}
-                  </View>
-                ) : null}
-                {measureEntries.length > 0 ? (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingLeft: 36, marginTop: 6 }}>
-                    {measureEntries.map((me) => (
-                      <Badge
-                        key={me.key}
-                        text={`${me.label}: ${me.val}${me.unit ? ` ${me.unit}` : ''}`}
-                        fg={C.primary}
-                        bg={C.primarySoft}
-                      />
                     ))}
                   </View>
                 ) : null}
@@ -1415,10 +1359,6 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
                 {(st.items || []).map((it) => (
                   <Checkbox key={it} on={checked.includes(it)} label={it}
                     onPress={() => setChecked((p) => (p.includes(it) ? p.filter((x) => x !== it) : [...p, it]))} />
-                ))}
-                {(st.measures || []).map((m) => (
-                  <Field key={m.key} label={`${m.label}${m.unit ? ` (${m.unit})` : ''}`} value={measures[m.key] ?? ''} keyboardType="decimal-pad"
-                    onChangeText={(t) => setMeasures((p) => ({ ...p, [m.key]: t.replace(',', '.').replace(/[^0-9.-]/g, '') }))} />
                 ))}
                 {(() => {
                   const isHandoverStep = Number(st.step_no) > 1 && /bàn giao|hoàn thành|nghiệm thu/i.test(String(st.title || ''));
@@ -1746,11 +1686,6 @@ export function TechJobScreen({ params }) {
     setSummary(defaultSum);
     if (getPendingExternalEstimates(o).length > 0 || o.externalPriceState === 'revision_requested' || extraBillParts.length > 0) {
       setShowFinalizeExt(true);
-      return;
-    }
-    const blockingSteps = getBlockingProcedureSteps(o.procedure);
-    if (blockingSteps.length) {
-      u.alert('Thiếu chỉ số đo kỹ thuật', `Còn ${blockingSteps.length} bước cần nhập chỉ số đo trước khi hoàn thành:\n${blockingSteps.map((st) => `• Bước ${st.step_no}: ${st.title}`).join('\n')}`, '📋');
       return;
     }
     setShowDone(true);
@@ -2534,6 +2469,31 @@ export function TechJobScreen({ params }) {
           {o.outOfWarranty && o.outOfWarrantyReason ? (
             <Text style={[tx.info, { marginTop: 6, color: C.redInk, fontWeight: '700' }]}>⚠️ Lý do ngoài bảo hành: {o.outOfWarrantyReason}</Text>
           ) : null}
+          {(() => {
+            const oowEvidence = (o.evidence || []).filter(
+              (e) => e?.uri && (e.isOowUpload || /^\[Ngoài bảo hành\]/i.test(String(e.note || '').trim())),
+            );
+            if (!oowEvidence.length) return null;
+            return (
+              <View style={{ marginTop: 8 }}>
+                <Text style={[ui.meta, { fontWeight: '700', color: C.redInk, marginBottom: 6 }]}>
+                  Ảnh minh chứng ngoài bảo hành ({oowEvidence.length})
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {oowEvidence.map((ev, idx) => (
+                    <Tap
+                      key={ev.id || `oow_ev_${idx}`}
+                      style={tx.thumb}
+                      onPress={() => setPreviewTechPhoto({ uri: ev.uri, title: ev.note || 'Ảnh minh chứng ngoài bảo hành' })}
+                      scaleTo={0.97}
+                    >
+                      <Image source={{ uri: ev.uri }} style={{ width: '100%', height: '100%' }} />
+                    </Tap>
+                  ))}
+                </View>
+              </View>
+            );
+          })()}
           {(o.attachments || []).length ? (
             <View style={{ marginTop: 8 }}>
               <Text style={[ui.meta, { fontWeight: '700', marginBottom: 6 }]}>Hình ảnh triệu chứng ban đầu ({o.attachments.length})</Text>

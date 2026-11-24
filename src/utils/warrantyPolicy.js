@@ -232,10 +232,25 @@ export function normalizeWarrantyEndYmd(rawEnd) {
  */
 export function applyServerWarrantyEligibility(baseInfo, serverElig, formatDateFn, nowInput = new Date()) {
   if (!serverElig || typeof serverElig !== 'object') return baseInfo;
+  const now = nowInput instanceof Date ? nowInput : new Date(nowInput);
+  const todayYmd = formatYmd(now);
+  if (serverElig.fetchedAt != null) {
+    const fetchedYmd = formatYmd(serverElig.fetchedAt);
+    if (fetchedYmd && todayYmd && fetchedYmd !== todayYmd) {
+      return baseInfo;
+    }
+  }
   const rawSrvDays = serverElig.warranty_days ?? serverElig.warrantyDays;
   const numSrvDays = rawSrvDays != null && rawSrvDays !== '' ? Number(rawSrvDays) : NaN;
   const srvDays = Number.isFinite(numSrvDays) && numSrvDays >= 0 ? Math.round(numSrvDays) : null;
   const totalDays = srvDays != null ? srvDays : (baseInfo?.totalDays ?? 0);
+  const rawStart = serverElig.warranty_start_date || serverElig.warrantyStartDate || null;
+  const normalizedRawStart = normalizeWarrantyEndYmd(rawStart);
+  const startYmd = normalizedRawStart || baseInfo?.startYmd || null;
+  const startMatch = startYmd ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(startYmd) : null;
+  const startsAt = startMatch
+    ? vnTimestamp(Number(startMatch[1]), Number(startMatch[2]), Number(startMatch[3]))
+    : (baseInfo?.startsAt || null);
   const rawEnd = serverElig.warranty_end_date || serverElig.warrantyEndDate || null;
   const normalizedRawEnd = normalizeWarrantyEndYmd(rawEnd);
   const endYmd = normalizedRawEnd || baseInfo?.endYmd || null;
@@ -247,6 +262,9 @@ export function applyServerWarrantyEligibility(baseInfo, serverElig, formatDateF
     const reason = String(serverElig.reason_code || serverElig.reasonCode || baseInfo?.reason || 'WARRANTY_EXPIRED');
     const isNotStarted = reason === 'WARRANTY_NOT_STARTED';
     const noWarranty = !isNotStarted && (totalDays === 0 || reason === 'WARRANTY_NOT_APPLICABLE' || reason === 'NO_WARRANTY');
+    const notStartedFallback = normalizedRawStart && startsAt && typeof formatDateFn === 'function'
+      ? `Bảo hành sẽ chính thức bắt đầu từ ngày ${formatDateFn(startsAt)}${until ? ` (đến ${formatDateFn(until)})` : ''}.`
+      : 'Bảo hành sẽ chính thức bắt đầu từ ngày mai.';
     return {
       ...baseInfo,
       ok: false,
@@ -257,10 +275,12 @@ export function applyServerWarrantyEligibility(baseInfo, serverElig, formatDateF
       notStarted: isNotStarted,
       noWarranty,
       reason,
+      startsAt,
+      startYmd,
       until,
       endYmd,
       text: toVietnamese(serverElig.message, '') || (isNotStarted
-        ? 'Bảo hành sẽ chính thức bắt đầu từ ngày mai.'
+        ? notStartedFallback
         : (baseInfo?.text || (noWarranty
           ? 'Dịch vụ này không áp dụng bảo hành.'
           : `Đơn đã hết thời hạn bảo hành ${totalDays} ngày.`))),
@@ -271,8 +291,6 @@ export function applyServerWarrantyEligibility(baseInfo, serverElig, formatDateF
   }
 
   if (serverElig.eligible === true) {
-    const now = nowInput instanceof Date ? nowInput : new Date(nowInput);
-    const todayYmd = formatYmd(now);
     if (endYmd && todayYmd && todayYmd > endYmd) {
       return {
         ...baseInfo,
@@ -280,6 +298,8 @@ export function applyServerWarrantyEligibility(baseInfo, serverElig, formatDateF
         totalDays,
         daysLeft: 0,
         reason: 'WARRANTY_EXPIRED',
+        startsAt,
+        startYmd,
         until,
         endYmd,
         text: totalDays > 0
@@ -305,6 +325,8 @@ export function applyServerWarrantyEligibility(baseInfo, serverElig, formatDateF
           isFinalDay: true,
           isCutoff: true,
           reason: 'WARRANTY_FINAL_DAY_CUTOFF',
+          startsAt,
+          startYmd,
           until,
           endYmd,
           availableDates: [],
@@ -341,6 +363,8 @@ export function applyServerWarrantyEligibility(baseInfo, serverElig, formatDateF
       availableDates,
       availableSlots: serverSlotsToday?.length ? serverSlotsToday : baseInfo?.availableSlots,
       serverAvailableSlotsToday: serverSlotsToday,
+      startsAt,
+      startYmd,
       until,
       endYmd,
       text: serverElig.notice || defaultText,
