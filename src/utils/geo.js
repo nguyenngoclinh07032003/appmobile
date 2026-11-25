@@ -58,8 +58,12 @@ const webLocation = (timeoutMs) => new Promise((resolve) => {
   }
 });
 
-const nativeLocation = async (timeoutMs) => {
-  const perm = await Location.requestForegroundPermissionsAsync();
+const nativeLocation = async (timeoutMs, { promptPermission = true } = {}) => {
+  let perm = await Location.getForegroundPermissionsAsync();
+  if (perm?.status !== 'granted') {
+    if (!promptPermission) return null;
+    perm = await Location.requestForegroundPermissionsAsync();
+  }
   if (perm?.status !== 'granted') return null;
   const pos = await withTimeout(
     Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High }),
@@ -79,12 +83,33 @@ const nativeLocation = async (timeoutMs) => {
 // mặc định: backend dùng tọa độ này để kiểm tra bán kính check-in và tính trễ hẹn). Không bao giờ reject.
 // - Web: navigator.geolocation.
 // - Native (iOS/Android): expo-location (xin quyền vị trí khi dùng app -> vị trí hiện tại -> vị trí gần nhất).
-export const getCheckInLocation = async ({ timeoutMs = DEFAULT_TIMEOUT_MS } = {}) => {
+export const getCheckInLocation = async ({ timeoutMs = DEFAULT_TIMEOUT_MS, promptPermission = true } = {}) => {
   try {
     if (Platform.OS === 'web') return await withTimeout(webLocation(timeoutMs), Math.max(2500, timeoutMs));
-    return await nativeLocation(timeoutMs);
+    return await nativeLocation(timeoutMs, { promptPermission });
   } catch (e) {
     devWarn('[geo] getCheckInLocation lỗi', e?.message || e);
+    return null;
+  }
+};
+
+/** Chuyển địa chỉ văn bản thành toạ độ (chỉ dùng trên native khi khách chưa bấm lấy GPS). */
+export const geocodeAddress = async (addressText, { timeoutMs = 3500 } = {}) => {
+  try {
+    if (Platform.OS === 'web') return null;
+    const q = String(addressText || '').trim();
+    if (!q || typeof Location.geocodeAsync !== 'function') return null;
+    const list = await withTimeout(Location.geocodeAsync(q), timeoutMs);
+    if (!Array.isArray(list) || !list.length) return null;
+    const match = list.find((item) => {
+      const lat = Number(item?.latitude);
+      const lng = Number(item?.longitude);
+      return Number.isFinite(lat) && Number.isFinite(lng) && lat >= 20.4 && lat <= 21.6 && lng >= 105.0 && lng <= 106.4;
+    });
+    if (!match) return null;
+    return { lat: Number(match.latitude), lng: Number(match.longitude) };
+  } catch (e) {
+    devWarn('[geo] geocodeAddress lỗi', e?.message || e);
     return null;
   }
 };

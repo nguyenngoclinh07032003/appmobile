@@ -32,6 +32,18 @@ export function CompleteSheet({ o, visible, onClose, initialSummary = '', eviden
   const [uploadedUris, setUploadedUris] = useState([]);
   const serverCountRef = useRef(serverAfterPhotos.length);
   const lastPickedUriRef = useRef(null);
+  const prevIncompleteRef = useRef(o?.procedureIncompleteAt || 0);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (o?.procedureIncompleteAt && o.procedureIncompleteAt !== prevIncompleteRef.current) {
+      prevIncompleteRef.current = o.procedureIncompleteAt;
+      onClose?.();
+    } else if (o?.procedureIncompleteAt) {
+      prevIncompleteRef.current = o.procedureIncompleteAt;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, o?.procedureIncompleteAt]);
 
   // Mỗi lần mở sheet: smart-precheck đủ tiêu chuẩn an toàn & điền sẵn tên khách nghiệm thu.
   useEffect(() => {

@@ -73,6 +73,7 @@ const NOTIF_TYPE_VI = {
   OFFER_EXPIRED: { title: 'Quá hạn tiếp nhận', body: 'Lời mời nhận đơn {code} đã hết hạn.' },
   NEW_JOB: { title: 'Có việc mới', body: 'Đơn {code} đang chờ thợ tiếp nhận.' },
   OPEN_REQUEST: { title: 'Có việc mới', body: 'Đơn {code} đang chờ thợ tiếp nhận.' },
+  NEW_OPEN_REQUEST: { title: 'Có việc mới gần bạn', body: 'Đơn {code} đang chờ thợ tiếp nhận.' },
   TECHNICIAN_ON_THE_WAY: { title: 'Thợ đang đến', body: 'Thợ đang di chuyển tới địa chỉ của bạn (đơn {code}).' },
   TECHNICIAN_ARRIVED: { title: 'Thợ đã đến', body: 'Thợ đã có mặt tại địa chỉ của bạn (đơn {code}).' },
   QUOTATION_SENT: { title: 'Có báo giá mới', body: 'Thợ đã gửi báo giá cho đơn {code}, vui lòng xem và duyệt.' },
@@ -177,6 +178,12 @@ const ERROR_CODE_VI = {
   QUOTATION_NOT_FOUND: 'Không tìm thấy báo giá.',
   QUOTATION_PENDING: 'Đang có báo giá chờ khách duyệt.',
   QUOTATION_ALREADY_APPROVED: 'Báo giá đã được duyệt.',
+  NO_LOCATION: 'Bật định vị để hệ thống kiểm tra khoảng cách tới nhà khách, rồi thử lại.',
+  TOO_FAR: 'Bạn đang cách nhà khách hơn 20 km nên không nhận được đơn này.',
+  TECHNICIAN_NOT_ELIGIBLE: 'Kỹ thuật viên không đủ điều kiện nhận đơn này.',
+  PRE_VISIT_QUOTE_NEEDS_APP: 'Khách không dùng app: đến nơi kiểm tra rồi báo giá tại chỗ.',
+  CUSTOMER_HAS_APP: 'Khách dùng app, nhờ khách duyệt trên app.',
+  INVALID_VISIT_STATE: 'Chưa xác nhận đến nơi hoặc đơn không còn ở bước chờ duyệt báo giá.',
   NOT_PAYABLE_YET: 'Đơn chưa đến bước thanh toán.',
   PAYMENT_IN_PROGRESS: 'Đang có giao dịch chuyển khoản chờ xác nhận.',
   ALREADY_PAID: 'Đơn đã được thanh toán.',
@@ -270,6 +277,7 @@ const FIELD_VI = {
   latitude: 'Vĩ độ định vị',
   longitude: 'Kinh độ định vị',
   accuracyM: 'Độ chính xác định vị',
+  photo_ids: 'Ảnh báo giá có chữ ký',
 };
 
 const wb = (pat) => new RegExp(`(?<![a-zA-ZÀ-ỹ])${pat}(?![a-zA-ZÀ-ỹ])`, 'gi');

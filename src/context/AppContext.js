@@ -36,8 +36,17 @@ import {
   getBlockingProcedureSteps,
   getAutoCompletableProcedureSteps,
   pickStepPhotoAllocation,
+  formatProcedureIncompleteAlert,
 } from "../utils/procedureHelpers";
 export { getBlockingProcedureSteps };
+import {
+  LOCATION_PING_MS,
+  shouldPingTechLocation,
+  buildAddressCoordinatesPayload,
+  validateOnsiteApprovalInput,
+  canShowOnsiteQuoteApproval,
+} from "../utils/dispatchHelpers";
+export { canShowOnsiteQuoteApproval };
 import {
   normalizeAssignmentRole,
   isSupportAssignment,
@@ -1623,6 +1632,36 @@ export function AppProvider({ children }) {
   // không bỏ đi mà xếp hàng chạy ngay khi sync hiện tại xong (nếu không sẽ thấy điểm / trạng thái cũ).
   const pendingForceSyncRef = useRef(null);
   const authIdRef = useRef(s.auth?.id || null);
+  const lastLocationPingRef = useRef(0);
+  const locationPromptedRef = useRef(false);
+
+  const pingTechLocation = async ({ force = false, prompt = false, timeoutMs = 6000 } = {}) => {
+    const allowed = shouldPingTechLocation({
+      role: stateRef.current?.auth?.role,
+      hasToken: Boolean(authTokens.get()),
+      lastPingAt: lastLocationPingRef.current,
+      force,
+    });
+    if (!allowed) return null;
+    lastLocationPingRef.current = Date.now();
+    const shouldPrompt = Boolean(prompt) || !locationPromptedRef.current;
+    if (shouldPrompt) locationPromptedRef.current = true;
+    try {
+      const loc = await getCheckInLocation({ timeoutMs, promptPermission: shouldPrompt });
+      if (!loc || loc.lat == null || loc.lng == null) return null;
+      await hrmssApi
+        .updateTechnicianLocation({
+          latitude: loc.lat,
+          longitude: loc.lng,
+          location_accuracy: loc.accuracy,
+          location_sharing_enabled: true,
+        })
+        .catch(() => null);
+      return { ok: true, loc };
+    } catch (_e) {
+      return null;
+    }
+  };
 
   // Đồng bộ danh mục dịch vụ & cấu hình công khai (không cần đăng nhập): GuestHomeScreen và phiên đăng nhập dùng chung.
   const syncPublicCatalog = async (force = false) => {
@@ -1716,7 +1755,7 @@ export function AppProvider({ children }) {
     return catalogSyncPromiseRef.current;
   };
 
-  const syncFromBackend = async (overrideAccount = null, force = false) => {
+  const syncFromBackend = async (overrideAccount = null, force = false, opts = {}) => {
     const acc = overrideAccount || s.auth;
     if (!acc) return;
     // Sync chạy qua nhiều await: nếu trong lúc đó người dùng đăng xuất / đổi tài khoản thì KHÔNG được
@@ -2187,6 +2226,12 @@ export function AppProvider({ children }) {
         }
       } else if (acc.role === "tech") {
         try {
+          if (opts?.refreshLocation || Date.now() - lastLocationPingRef.current >= LOCATION_PING_MS) {
+            await pingTechLocation({
+              force: Boolean(opts?.refreshLocation),
+              timeoutMs: 3500,
+            }).catch(() => null);
+          }
           const [jobsRes, openRes, techMatRes, notifRes, profRes, reviewRes] =
             await Promise.all([
               hrmssApi.getTechnicianJobs("ALL"),
@@ -2705,12 +2750,15 @@ export function AppProvider({ children }) {
   // Tự động đồng bộ khi app quay lại foreground (mobile + focus/visibility trên Web) và định kỳ:
   // mỗi 10s khi còn đơn đang xử lý (dự phòng realtime), 60s khi rảnh.
   useEffect(() => {
+    lastLocationPingRef.current = 0;
+    locationPromptedRef.current = false;
     let lastFocusSync = 0;
     const syncOnResume = () => {
       const now = Date.now();
       if (now - lastFocusSync < 2000) return;
       lastFocusSync = now;
-      syncRef.current?.(null, true);
+      const isTech = stateRef.current?.auth?.role === "tech";
+      syncRef.current?.(null, true, isTech ? { refreshLocation: true } : {});
       reconnectSocket(); // socket bị ngắt khi app chạy nền: kết nối lại ngay (không làm gì nếu đang kết nối)
     };
     const onAppStateChange = (nextState) => {
@@ -2729,6 +2777,9 @@ export function AppProvider({ children }) {
 
     let timer = null;
     if (s.auth) {
+      if (s.auth.role === "tech") {
+        pingTechLocation({ force: true, prompt: true });
+      }
       let tickCount = 0;
       timer = setInterval(() => {
         tickCount += 1;
@@ -2741,6 +2792,7 @@ export function AppProvider({ children }) {
         if (hasActive || tickCount % 6 === 0) {
           reconnectSocket();
         }
+        pingTechLocation({ force: false });
       }, 10000);
     }
     return () => {
@@ -3435,7 +3487,7 @@ export function AppProvider({ children }) {
           };
         });
       }
-      return { ok: true };
+      return { ok: true, procedure: proc };
     },
     loadServiceReviews,
     loadServiceDetail,
@@ -3488,6 +3540,10 @@ export function AppProvider({ children }) {
         contact_name: addr.name || s.user?.name || "",
         contact_phone: cleanPhone,
         is_default: Boolean(addr.isDefault),
+        ...buildAddressCoordinatesPayload(
+          addr.latitude ?? addr.lat,
+          addr.longitude ?? addr.lng,
+        ),
       };
       const res = existing?.dbAddressId
         ? await hrmssApi.updateCustomerAddress(existing.dbAddressId, body)
@@ -3796,6 +3852,30 @@ export function AppProvider({ children }) {
         }
         const res = await hrmssApi.acceptTechnicianOpenRequest(o0.dbRequestId);
         if (!res.ok) {
+          if (res.code === "NO_LOCATION") {
+            const sent = await pingTechLocation({ force: true, prompt: true, timeoutMs: 5000 });
+            ui.alert(
+              "Chưa có vị trí hiện tại",
+              sent?.ok
+                ? "Bật định vị để hệ thống kiểm tra khoảng cách tới nhà khách, rồi thử lại.\n\nApp đã cập nhật vị trí hiện tại — bạn có thể bấm nhận lại ngay."
+                : "Bật định vị để hệ thống kiểm tra khoảng cách tới nhà khách, rồi thử lại.",
+              "📍",
+            );
+            syncFromBackend(null, true);
+            return false;
+          }
+          if (res.code === "TOO_FAR") {
+            up((p) => ({
+              orders: p.orders.filter((x) => x.code !== code),
+            }));
+            ui.alert(
+              "Ngoài bán kính 20 km",
+              "Bạn đang cách nhà khách hơn 20 km nên không nhận được đơn này.",
+              "📍",
+            );
+            syncFromBackend(null, true);
+            return false;
+          }
           const msg = {
             TOO_MANY_ACTIVE_JOBS: `Bạn đang giữ tối đa ${TECH_POLICY.maxActiveJobs} việc. Hoàn thành hoặc trả việc trước khi nhận thêm.`,
             SPECIALTY_MISMATCH: "Việc này không thuộc chuyên môn của bạn.",
@@ -4744,9 +4824,16 @@ export function AppProvider({ children }) {
         // Lần thử lại cũng lỗi -> báo lỗi gốc (lần 1) để thợ thấy nguyên nhân thật.
         qRes = retryRes?.ok ? retryRes : firstRes;
       }
+      if (!qRes.ok && qRes.code === "PRE_VISIT_QUOTE_NEEDS_APP") {
+        updateOrder(code, (ord) => ({
+          order: { ...ord, customerHasApp: false },
+        }));
+      }
       return serverDone(qRes, {
         title: "Không gửi được báo giá",
         codes: {
+          PRE_VISIT_QUOTE_NEEDS_APP:
+            "Khách không dùng app: đến nơi kiểm tra rồi báo giá tại chỗ.",
           QUOTATION_PENDING:
             "Đang có báo giá chờ khách duyệt. Nhắc khách duyệt hoặc chờ khách yêu cầu báo giá lại.",
           QUOTATION_DUPLICATES_BOOKED_SERVICE:
@@ -4760,6 +4847,82 @@ export function AppProvider({ children }) {
         toast: "Đã gửi báo giá cho khách",
         icon: "🧾",
       });
+    },
+    approveQuotationOnSite: async (code, { photoUris = [], note = "" } = {}) => {
+      const o = s.orders.find((x) => x.code === code);
+      if (!o?.dbAssignmentId || !authTokens.get()) {
+        notSynced();
+        return { ok: false, code: "NOT_SYNCED" };
+      }
+      if (isSupportAssignment(o)) {
+        ui.alert(
+          "Không thể thực hiện",
+          "Chỉ thợ chính mới được xác nhận khách đồng ý báo giá tại chỗ.",
+          "ℹ️",
+        );
+        return { ok: false, code: "LEAD_ONLY" };
+      }
+      const check = validateOnsiteApprovalInput({ photoUris, note });
+      if (!check.ok) {
+        ui.alert("Thiếu thông tin", check.error, "📷");
+        return { ok: false, code: "VALIDATION_ERROR" };
+      }
+      const photoIds = [];
+      for (const uri of check.photoUris) {
+        const upRes = await hrmssApi
+          .uploadJobPhoto(
+            o.dbAssignmentId,
+            uri,
+            "DOCUMENT",
+            "Ảnh báo giá có chữ ký khách (đồng ý tại chỗ)",
+          )
+          .catch(() => null);
+        const attId = upRes?.data?.attachment?.attachment_id;
+        if (!upRes?.ok || !attId) {
+          ui.alert(
+            "Không tải được ảnh",
+            upRes?.status > 0
+              ? upRes.message || "Không tải được ảnh báo giá có chữ ký."
+              : networkError(upRes),
+            "📷",
+          );
+          return { ok: false, code: upRes?.code || "UPLOAD_FAILED" };
+        }
+        photoIds.push(attId);
+      }
+      const res = await hrmssApi.approveQuotationOnSite(o.dbAssignmentId, {
+        photo_ids: photoIds,
+        note: check.note || null,
+      });
+      if (!res.ok) {
+        if (res.code === "CUSTOMER_HAS_APP") {
+          updateOrder(code, (ord) => ({
+            order: { ...ord, customerHasApp: true },
+          }));
+          ui.alert("Khách dùng ứng dụng", "Khách dùng app, nhờ khách duyệt trên app.", "📱");
+          await syncFromBackend(null, true);
+          return { ok: false, code: "CUSTOMER_HAS_APP" };
+        }
+        const msg = {
+          INVALID_VISIT_STATE:
+            "Chưa xác nhận đến nơi hoặc đơn không còn ở bước chờ duyệt báo giá. Đang làm mới việc.",
+          QUOTATION_NOT_FOUND: "Chưa gửi báo giá. Vui lòng gửi báo giá trước.",
+          INVALID_PHOTO: "Ảnh không thuộc công việc này. Vui lòng chụp và tải lại.",
+          VALIDATION_ERROR:
+            res.message || "Vui lòng chụp 1–5 ảnh báo giá có chữ ký (ghi chú tối đa 500 ký tự).",
+          LEAD_ONLY: "Chỉ thợ chính mới được xác nhận khách đồng ý báo giá tại chỗ.",
+        }[res.code];
+        ui.alert(
+          "Không duyệt được tại chỗ",
+          msg || (res.status > 0 ? res.message : networkError(res)),
+          "⚠️",
+        );
+        await syncFromBackend(null, true);
+        return { ok: false, code: res.code };
+      }
+      ui.toast("Khách đã đồng ý báo giá tại chỗ", "✅");
+      await syncFromBackend(null, true);
+      return { ok: true };
     },
     // Bước 2: Khi kết thúc sửa chữa, thợ nhập lại giá thực tế vật tư mua ngoài + ảnh biên lai để khách nghiệm thu.
     submitExternalPartsActualPrice: async (code, { parts, summary } = {}) => {
@@ -5731,12 +5894,17 @@ export function AppProvider({ children }) {
       }
       if (!res.ok) {
         if (res.code === "PROCEDURE_INCOMPLETE") {
-          const missing = (res.errors || [])
-            .map((e) => `• ${toVietnamese(e?.message, "Chưa hoàn thành bước bắt buộc")}`)
-            .join("\n");
+          const alertBody = formatProcedureIncompleteAlert(o0.procedure, res.errors);
+          updateOrder(code, (ord) => ({
+            order: {
+              ...ord,
+              procedureIncompleteAt: Date.now(),
+              procedureIncompleteErrors: Array.isArray(res.errors) ? res.errors : [],
+            },
+          }));
           ui.alert(
             "Chưa xong các bước thực hiện",
-            `Đánh dấu xong các bước bắt buộc trong thẻ "Các bước thực hiện" rồi nộp lại.${missing ? `\n\n${missing}` : ""}`,
+            alertBody,
             "📋",
           );
         } else if (res.code === "RECEIPT_REQUIRED") {
@@ -6665,6 +6833,7 @@ export function AppProvider({ children }) {
     "switchPaymentMethod",
     "respondQuote",
     "submitQuote",
+    "approveQuotationOnSite",
     "submitExternalPartsActualPrice",
     "startRepairWithoutQuote",
     "completeJob",

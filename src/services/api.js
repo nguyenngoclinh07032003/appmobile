@@ -894,6 +894,16 @@ export const hrmssApi = {
       body: { items: payload.items || [] },
     });
   },
+  async approveQuotationOnSite(jobId, { photo_ids = [], note = null } = {}) {
+    const cleanNote = typeof note === 'string' ? note.trim() : '';
+    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/quotation/onsite-approval`, {
+      method: 'POST',
+      body: {
+        photo_ids: (Array.isArray(photo_ids) ? photo_ids : []).map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0),
+        ...(cleanNote ? { note: cleanNote.slice(0, 500) } : {}),
+      },
+    });
+  },
   async recordMaterialUsage(id, { material_id, used_quantity = 1, notes = null }) {
     return apiRequest(`/technician/jobs/${id}/materials`, {
       method: 'POST',

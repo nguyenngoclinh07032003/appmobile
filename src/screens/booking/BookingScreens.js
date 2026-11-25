@@ -18,6 +18,7 @@ import {
   TimeRangeSlider, minutesToSlotStr,
 } from '../../components';
 import { pickImage, validateVietnamesePhone, validateStreetAddress, validateContactName, sanitizeVnPhoneInput } from '../../utils';
+import { getCheckInLocation, geocodeAddress } from '../../utils/geo';
 import {
   nextDays, minSelectableMinute, MAX_DAY_MINUTE, LEAD_MINUTES, SLOT_STEP_MINUTES, DEFAULT_SLOT_MINUTE,
 } from '../../utils/dateTime';
@@ -1383,6 +1384,7 @@ export function AddressesScreen({ params }) {
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       <Text style={bx.addrName}>{ad.gender === 'Nữ' ? 'Chị' : 'Anh'} {ad.name}</Text>
                       {ad.isDefault ? <Badge text="Mặc định" fg={C.greenInk} bg={C.greenSoft} /> : null}
+                      {ad.lat != null && ad.lng != null ? <Badge text="Đã định vị" fg={C.primary} bg={C.primarySoft} /> : null}
                     </View>
                     <Text style={[bx.p, { marginTop: 2 }]}>{ad.phone}</Text>
                     <Text style={bx.p}>{ad.full}</Text>
@@ -1467,7 +1469,34 @@ export function AddressFormScreen({ params }) {
   const [street, setStreet] = useState(initialStreet);
   const [isDefault, setIsDefault] = useState(mustBeDefault ? true : (initial ? !!initial.isDefault : false));
   const [showArea, setShowArea] = useState(false);
+  const [coords, setCoords] = useState(() => (
+    initial?.lat != null && initial?.lng != null
+      ? { lat: Number(initial.lat), lng: Number(initial.lng) }
+      : null
+  ));
+  const [locating, setLocating] = useState(false);
+  const [locError, setLocError] = useState('');
+  const coordsClearedRef = useRef(false);
   const [err, setErr] = useState({});
+
+  const pickCurrentLocation = async () => {
+    if (locating) return;
+    setLocating(true);
+    setLocError('');
+    try {
+      const loc = await getCheckInLocation({ timeoutMs: 10000, promptPermission: true });
+      if (loc && loc.lat != null && loc.lng != null) {
+        coordsClearedRef.current = false;
+        setCoords({ lat: loc.lat, lng: loc.lng });
+      } else {
+        setLocError('Không lấy được vị trí GPS. Kiểm tra quyền vị trí trên thiết bị rồi thử lại.');
+      }
+    } catch (_e) {
+      setLocError('Không lấy được vị trí GPS. Kiểm tra quyền vị trí rồi thử lại.');
+    } finally {
+      setLocating(false);
+    }
+  };
 
   const save = async () => {
     const e = {};
@@ -1484,9 +1513,36 @@ export function AddressFormScreen({ params }) {
     setErr(e);
     if (Object.keys(e).length) return;
     await runSaving(async () => {
+      let finalCoords = coords;
+      if (!finalCoords && !coordsClearedRef.current) {
+        const fullAddressText = `${street.trim()}, ${ward.name}, Thành phố Hà Nội`;
+        const geo = await geocodeAddress(fullAddressText, { timeoutMs: 3000 }).catch(() => null);
+        if (geo) {
+          finalCoords = geo;
+          setCoords(geo);
+        } else {
+          const silentLoc = await getCheckInLocation({ timeoutMs: 3000, promptPermission: false }).catch(() => null);
+          if (silentLoc && silentLoc.lat != null && silentLoc.lng != null) {
+            finalCoords = { lat: silentLoc.lat, lng: silentLoc.lng };
+            setCoords(finalCoords);
+          }
+        }
+      }
       let res;
       try {
-        res = (await callAction(a.saveAddress, { id: initial?.id, name: name.trim(), gender, phone: phone.trim(), area, wardCode: ward.code, wardName: ward.name, street: street.trim(), isDefault: mustBeDefault ? true : isDefault })) || {};
+        res = (await callAction(a.saveAddress, {
+          id: initial?.id,
+          name: name.trim(),
+          gender,
+          phone: phone.trim(),
+          area,
+          wardCode: ward.code,
+          wardName: ward.name,
+          street: street.trim(),
+          isDefault: mustBeDefault ? true : isDefault,
+          latitude: finalCoords?.lat ?? null,
+          longitude: finalCoords?.lng ?? null,
+        })) || {};
       } catch (ex) {
         res = { ok: false, error: errorText(ex, 'Không lưu được địa chỉ. Vui lòng thử lại.') };
       }
@@ -1577,6 +1633,46 @@ export function AddressFormScreen({ params }) {
             onPress={() => { if (!mustBeDefault) setIsDefault(!isDefault); }}
             label={mustBeDefault ? 'Đặt làm địa chỉ mặc định (bắt buộc)' : 'Đặt làm địa chỉ mặc định'}
           />
+          <View style={{ marginTop: 12, padding: 10, borderRadius: R.md, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, gap: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <Text style={{ fontSize: 13, fontWeight: '700', color: C.ink, flex: 1 }}>
+                Vị trí định vị (tìm thợ trong 20 km)
+              </Text>
+              {coords ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Badge text="Đã có toạ độ" fg={C.greenInk} bg={C.greenSoft} />
+                  <Tap
+                    onPress={() => {
+                      coordsClearedRef.current = true;
+                      setCoords(null);
+                      setLocError('');
+                    }}
+                    hitSlop={6}
+                  >
+                    <Text style={[ui.link, { color: C.red, fontSize: 12 }]}>Xoá</Text>
+                  </Tap>
+                </View>
+              ) : null}
+            </View>
+            {coords ? (
+              <Text style={[ui.meta, { marginTop: 0 }]}>
+                Toạ độ: {Number(coords.lat).toFixed(5)}, {Number(coords.lng).toFixed(5)}
+              </Text>
+            ) : (
+              <Text style={[ui.meta, { marginTop: 0 }]}>
+                Chưa có toạ độ — lấy GPS tại nhà để tìm thợ gần nhất
+              </Text>
+            )}
+            {locError ? <Text style={{ color: C.red, fontSize: 12 }}>{locError}</Text> : null}
+            <Btn
+              title={locating ? 'Đang định vị…' : 'Lấy vị trí hiện tại (GPS)'}
+              icon="map-pin"
+              variant="soft"
+              small
+              disabled={locating}
+              onPress={pickCurrentLocation}
+            />
+          </View>
         </Card>
         {err.form ? <Text style={{ color: C.red, fontSize: 12.5, fontWeight: '600', marginTop: 10 }}>{err.form}</Text> : null}
       </ScrollView>

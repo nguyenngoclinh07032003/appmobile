@@ -95,6 +95,12 @@ export const extractAreaFromAddress = (addressText = '') => {
 export const mapBackendAddressToApp = (row) => {
   if (!row) return null;
   const full = String(row.address_text || '').trim();
+  const lat = row.latitude != null && row.latitude !== '' && Number.isFinite(Number(row.latitude))
+    ? Number(row.latitude)
+    : null;
+  const lng = row.longitude != null && row.longitude !== '' && Number.isFinite(Number(row.longitude))
+    ? Number(row.longitude)
+    : null;
   return {
     id: `addr-db-${row.address_id}`,
     dbAddressId: Number(row.address_id) || row.address_id,
@@ -104,6 +110,8 @@ export const mapBackendAddressToApp = (row) => {
     wardCode: row.ward_code ?? null,
     wardName: row.ward_name ?? null,
     full,
+    lat,
+    lng,
     isDefault: Boolean(row.is_default),
   };
 };
@@ -1280,6 +1288,11 @@ export const mapBackendTechJobToOrder = (job, techProfile = TECH_ME) => {
     assignmentActive: assignmentStatus === 'ACTIVE',
     dbVisitNumber: visit.visit_number || 1,
     backendStatus: req.request_status,
+    customerHasApp: typeof job.customer_has_app === 'boolean'
+      ? job.customer_has_app
+      : (typeof req.customer_has_app === 'boolean'
+          ? req.customer_has_app
+          : (typeof req.customer?.has_account === 'boolean' ? req.customer.has_account : null)),
     ...(statusUnknown ? { statusUnknown: true } : {}),
     kind: kindOf(req),
     originalRequestId: req.original_request_id || null,
@@ -1500,6 +1513,8 @@ export const mapBackendOpenRequestToOrder = (req) => {
       phone: req.contact_phone || '',
       area: extractAreaFromAddress(fullAddr),
       full: fullAddr,
+      lat: req.service_location?.latitude != null ? Number(req.service_location.latitude) : (req.address?.latitude != null ? Number(req.address.latitude) : null),
+      lng: req.service_location?.longitude != null ? Number(req.service_location.longitude) : (req.address?.longitude != null ? Number(req.address.longitude) : null),
     },
     status: 'pending',
     history: [{ status: 'pending', at: createdAt }],
@@ -1686,6 +1701,13 @@ export const mergeBackendOrdersWithLocal = (localOrders = [], remoteOrders = [])
         assignmentRole: ro.assignmentRole ?? lo.assignmentRole ?? 'LEAD',
         supportCategoryIds: Array.isArray(ro.supportCategoryIds) ? ro.supportCategoryIds : (lo.supportCategoryIds || []),
         visitStatus: ro.visitStatus ?? lo.visitStatus ?? null,
+        customerHasApp: ro.customerHasApp != null ? ro.customerHasApp : (lo.customerHasApp ?? null),
+        ...(ro.status === lo.status && lo.procedureIncompleteAt
+          ? {
+              procedureIncompleteAt: lo.procedureIncompleteAt,
+              procedureIncompleteErrors: lo.procedureIncompleteErrors || [],
+            }
+          : {}),
         supportTechnicians: Array.isArray(ro.supportTechnicians)
           ? ro.supportTechnicians
           : (ro.status === 'pending' && !ro.tech ? [] : (lo.supportTechnicians || [])),
