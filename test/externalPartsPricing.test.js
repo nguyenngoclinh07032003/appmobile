@@ -8,6 +8,8 @@ import {
   computeQuoteRangeTotals,
   extractExternalPartLifecycle,
   sortQuotationsAsc,
+  matchReceiptsToQuoteLines,
+  extractOrderReceiptPhotos,
 } from '../src/utils/externalPartsPricing.js';
 import {
   MATERIALS,
@@ -462,4 +464,93 @@ test('externalPartsPricing: bảo toàn đơn giá chốt khi số lượng cu�
   assert.equal(lc.finalizedApprovedItems[0].actualPrice, 120000);
   assert.equal(lc.finalizedApprovedItems[0].qty, 2);
   assert.equal(lc.finalizedApprovedItems[0].origQty, 1);
+});
+
+test('matchReceiptsToQuoteLines: khớp ảnh hoá đơn cho cả vật tư danh mục phát sinh (Gas R32) và vật tư ngoài', () => {
+  const catalogPart = { name: 'Gas R32', type: 'part', isCustom: false, isOriginal: false, price: 250000, qty: 1 };
+  const customPart = { name: 'Tụ kích lốc máy', type: 'part', isCustom: true, isFinalizedExternal: true, isOriginal: false, price: 150000, qty: 1 };
+
+  const gasReceipt = {
+    id: 'ev-gas',
+    dbAttachmentId: 901,
+    uri: 'https://cdn.example.com/gas-r32.jpg',
+    stage: 'receipt',
+    evidenceType: 'DOCUMENT',
+    note: 'Biên lai vật tư phát sinh: Gas R32',
+  };
+  const customReceipt = {
+    id: 'ev-tu',
+    dbAttachmentId: 902,
+    uri: 'https://cdn.example.com/tu-kich.jpg',
+    stage: 'receipt',
+    evidenceType: 'DOCUMENT',
+    note: 'Biên lai vật tư phát sinh: Tụ kích lốc máy',
+  };
+  const genericReceipt = {
+    id: 'ev-gen',
+    dbAttachmentId: 903,
+    uri: 'https://cdn.example.com/generic.jpg',
+    stage: 'receipt',
+    evidenceType: 'DOCUMENT',
+    note: 'Hoá đơn mua linh kiện',
+  };
+
+  // 1) Hoá đơn ghi tên vật tư danh mục ("Biên lai vật tư phát sinh: Gas R32") khớp đúng dòng catalogPart
+  const resCatalog = matchReceiptsToQuoteLines([catalogPart], [gasReceipt]);
+  assert.equal(resCatalog.lineReceipts.get(0)?.dbAttachmentId, 901);
+  assert.equal(resCatalog.unmatchedReceipts.length, 0);
+
+  // 2) Hoá đơn không ghi tên KHÔNG bị gán nhầm vào vật tư kho khi không có dòng custom; vẫn hiện ở dải đối chiếu
+  const resGenericCatalogOnly = matchReceiptsToQuoteLines([catalogPart], [genericReceipt]);
+  assert.equal(resGenericCatalogOnly.lineReceipts.get(0), undefined);
+  assert.equal(resGenericCatalogOnly.unmatchedReceipts.length, 1);
+
+  // 3) Kết hợp cả vật tư danh mục + vật tư ngoài, mỗi dòng đều khớp đúng hoá đơn tương ứng và không bị trùng
+  const resBoth = matchReceiptsToQuoteLines([catalogPart, customPart], [gasReceipt, customReceipt]);
+  assert.equal(resBoth.lineReceipts.get(0)?.dbAttachmentId, 901);
+  assert.equal(resBoth.lineReceipts.get(1)?.dbAttachmentId, 902);
+  assert.equal(resBoth.unmatchedReceipts.length, 0);
+});
+
+test('extractOrderReceiptPhotos: gom đủ hoá đơn từ evidence/quotations, giữ bản mới nhất khi thợ cập nhật lại', () => {
+  const order = {
+    evidence: [
+      { id: 'ev-before', dbAttachmentId: 10, uri: 'https://cdn.example.com/before.jpg', stage: 'before', evidenceType: 'BEFORE_REPAIR', note: 'Trước sửa' },
+      { id: 'ev-after', dbAttachmentId: 11, uri: 'https://cdn.example.com/after.jpg', stage: 'after', evidenceType: 'AFTER_REPAIR', note: 'Sau sửa' },
+      { id: 'ev-old', dbAttachmentId: 100, uri: 'https://cdn.example.com/gas-old.jpg', stage: 'receipt', evidenceType: 'DOCUMENT', note: 'Biên lai vật tư phát sinh: Gas R32', at: 1000 },
+      { id: 'ev-new', dbAttachmentId: 101, uri: 'https://cdn.example.com/gas-new.jpg', stage: 'receipt', evidenceType: 'DOCUMENT', note: 'Biên lai vật tư phát sinh: Gas R32', at: 2000 },
+      { id: 'ev-gen', dbAttachmentId: 102, uri: 'https://cdn.example.com/gen.jpg', stage: 'receipt', evidenceType: 'DOCUMENT', note: 'Hoá đơn mua ngoài', at: 2500 },
+    ],
+    quote: {
+      lines: [
+        { name: 'Gas R32', receiptId: 101, receiptUrl: 'https://cdn.example.com/gas-new.jpg' },
+      ],
+    },
+    quotations: [
+      {
+        quotation_id: 50,
+        sent_at: '2026-11-26T00:00:00Z',
+        items: [
+          {
+            quotation_item_id: 501,
+            description_snapshot: '[VT ngoài chốt giá] Tụ kích lốc máy',
+            receipt_attachment_id: 103,
+            receipt_attachment: {
+              attachment_id: 103,
+              image_url: 'https://cdn.example.com/tu-kich.jpg',
+              evidence_type: 'DOCUMENT',
+              description: 'Biên lai vật tư phát sinh: Tụ kích lốc máy',
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const receipts = extractOrderReceiptPhotos(order);
+  assert.deepEqual(receipts.map((r) => r.dbAttachmentId), [103, 102, 101]);
+  assert.equal(receipts[0].label, 'Tụ kích lốc máy');
+  assert.equal(receipts[1].label, 'Hoá đơn vật tư phát sinh');
+  assert.equal(receipts[2].label, 'Gas R32');
+  assert.equal(receipts[2].uri, 'https://cdn.example.com/gas-new.jpg');
 });

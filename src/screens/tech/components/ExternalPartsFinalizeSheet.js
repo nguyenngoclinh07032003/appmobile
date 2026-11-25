@@ -19,6 +19,7 @@ export function ExternalPartsFinalizeSheet({
   visible,
   onClose,
   initialSummary = '',
+  onPreviewPhoto,
   sharedExtraParts,
   onChangeSharedExtraParts,
 }) {
@@ -29,6 +30,7 @@ export function ExternalPartsFinalizeSheet({
   const [showAddExtra, setShowAddExtra] = useState(false);
   const [newPartName, setNewPartName] = useState('');
   const [newPartPriceText, setNewPartPriceText] = useState('');
+  const [newPartReceiptUri, setNewPartReceiptUri] = useState(null);
   const [openWarrantyMap, setOpenWarrantyMap] = useState({});
 
   useEffect(() => {
@@ -37,6 +39,7 @@ export function ExternalPartsFinalizeSheet({
     setShowAddExtra(false);
     setNewPartName('');
     setNewPartPriceText('');
+    setNewPartReceiptUri(null);
     setOpenWarrantyMap({});
 
     const sharedByName = new Map(
@@ -114,7 +117,7 @@ export function ExternalPartsFinalizeSheet({
   const busyKey = `finalize-ext:${o.code}`;
   const busy = isBusy(busyKey);
 
-  const pickReceipt = async (partId, useCamera) => {
+  const pickReceiptImage = async (useCamera, onPicked) => {
     try {
       let uri = useCamera ? await pickCamera() : await pickImage();
       if (uri === null && useCamera) uri = await pickImage();
@@ -124,11 +127,21 @@ export function ExternalPartsFinalizeSheet({
         }
         return;
       }
-      setParts((prev) => prev.map((p) => (p.id === partId ? { ...p, receiptUri: uri } : p)));
+      onPicked?.(uri);
     } catch (e) {
       u.alert('Không tải được ảnh', toVietnamese(e?.message, 'Vui lòng thử lại.') || 'Vui lòng thử lại.', 'camera');
     }
   };
+
+  const pickReceipt = (partId, useCamera) =>
+    pickReceiptImage(useCamera, (uri) => {
+      setParts((prev) => prev.map((p) => (p.id === partId ? { ...p, receiptUri: uri } : p)));
+    });
+
+  const pickNewPartReceipt = (useCamera) =>
+    pickReceiptImage(useCamera, (uri) => {
+      setNewPartReceiptUri(uri);
+    });
 
   const isRevision = o.externalPriceState === 'revision_requested' && o.quote?.isExternalFinalization;
   const pendingEstNames = new Set(getPendingExternalEstimates(o).map((e) => normalizeExternalPartName(e.name)));
@@ -350,51 +363,62 @@ export function ExternalPartsFinalizeSheet({
               </View>
             ) : null}
 
-            {!p.isWarehouse ? (
-              <>
-                <Text style={[ui.fieldLabel, { marginTop: 12, marginBottom: 6 }]}>
-                  Ảnh biên lai / hoá đơn (khuyến khích nếu mua ngoài)
-                </Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  {previewUri ? (
-                    <View style={st.thumb}>
-                      <Image source={{ uri: previewUri }} style={{ width: '100%', height: '100%' }} />
-                    </View>
-                  ) : (
-                    <View style={[st.thumb, st.thumbEmpty]}>
-                      <AppIcon name="receipt-text" size={22} color={C.muted} />
-                    </View>
-                  )}
-                  <View style={{ flex: 1, gap: 6 }}>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <Btn
-                        title={previewUri ? 'Chụp lại' : 'Chụp biên lai'}
-                        icon="camera"
-                        small
-                        variant="soft"
-                        style={{ flex: 1 }}
-                        onPress={() => pickReceipt(p.id, true)}
-                      />
-                      <Btn
-                        title="Chọn ảnh"
-                        icon="image"
-                        small
-                        variant="outline"
-                        style={{ flex: 1 }}
-                        onPress={() => pickReceipt(p.id, false)}
-                      />
-                    </View>
-                    {p.receiptUri || p.receiptId || p.receiptUrl ? (
-                      <Badge text="Đã đính kèm hoá đơn" fg={C.green} bg={C.greenSoft} />
-                    ) : (
-                      <Text style={{ fontSize: 11.5, color: C.muted, fontWeight: '600' }}>
-                        Tuỳ chọn: đính kèm ảnh hoá đơn nếu mua ngoài để khách dễ đối chiếu
-                      </Text>
-                    )}
+            <>
+              <Text style={[ui.fieldLabel, { marginTop: 12, marginBottom: 6 }]}>
+                Ảnh biên lai / hoá đơn (tuỳ chọn)
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                {previewUri ? (
+                  <View style={{ position: 'relative' }}>
+                    <Tap onPress={() => onPreviewPhoto?.({ uri: previewUri, title: `Hoá đơn vật tư · ${p.name}` })}>
+                      <View style={st.thumb}>
+                        <Image source={{ uri: previewUri }} style={{ width: '100%', height: '100%' }} />
+                      </View>
+                    </Tap>
+                    {p.receiptUri ? (
+                      <Tap
+                        onPress={() => setParts((prev) => prev.map((x) => (x.id === p.id ? { ...x, receiptUri: null } : x)))}
+                        hitSlop={6}
+                        style={{ position: 'absolute', top: -5, right: -5, width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(15,23,42,0.78)', alignItems: 'center', justifyContent: 'center' }}
+                      >
+                        <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>✕</Text>
+                      </Tap>
+                    ) : null}
                   </View>
+                ) : (
+                  <View style={[st.thumb, st.thumbEmpty]}>
+                    <AppIcon name="receipt-text" size={22} color={C.muted} />
+                  </View>
+                )}
+                <View style={{ flex: 1, gap: 6 }}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <Btn
+                      title={previewUri ? 'Chụp lại' : 'Chụp hoá đơn'}
+                      icon="camera"
+                      small
+                      variant="soft"
+                      style={{ flex: 1 }}
+                      onPress={() => pickReceipt(p.id, true)}
+                    />
+                    <Btn
+                      title="Tải ảnh lên"
+                      icon="image"
+                      small
+                      variant="outline"
+                      style={{ flex: 1 }}
+                      onPress={() => pickReceipt(p.id, false)}
+                    />
+                  </View>
+                  {p.receiptUri || p.receiptId || p.receiptUrl ? (
+                    <Badge text="Đã đính kèm hoá đơn" fg={C.green} bg={C.greenSoft} />
+                  ) : (
+                    <Text style={{ fontSize: 11.5, color: C.muted, fontWeight: '600' }}>
+                      Đính kèm ảnh hoá đơn / biên lai để khách hàng đối chiếu minh bạch
+                    </Text>
+                  )}
                 </View>
-              </>
-            ) : null}
+              </View>
+            </>
 
             {(() => {
               const hasWarrantyData = Boolean(
@@ -480,6 +504,52 @@ export function ExternalPartsFinalizeSheet({
             keyboardType="numeric"
             style={{ marginTop: 8 }}
           />
+          <View style={{ marginTop: 10 }}>
+            <Text style={[ui.fieldLabel, { marginBottom: 6 }]}>Ảnh hoá đơn / biên lai (tuỳ chọn)</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              {newPartReceiptUri ? (
+                <View style={{ position: 'relative' }}>
+                  <Tap onPress={() => onPreviewPhoto?.({ uri: newPartReceiptUri, title: `Hoá đơn vật tư · ${newPartName.trim() || 'Vật tư phát sinh'}` })}>
+                    <View style={st.thumb}>
+                      <Image source={{ uri: newPartReceiptUri }} style={{ width: '100%', height: '100%' }} />
+                    </View>
+                  </Tap>
+                  <Tap
+                    onPress={() => setNewPartReceiptUri(null)}
+                    hitSlop={6}
+                    style={{ position: 'absolute', top: -5, right: -5, width: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(15,23,42,0.78)', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 10, fontWeight: '800' }}>✕</Text>
+                  </Tap>
+                </View>
+              ) : (
+                <View style={[st.thumb, st.thumbEmpty]}>
+                  <AppIcon name="receipt-text" size={22} color={C.muted} />
+                </View>
+              )}
+              <View style={{ flex: 1, gap: 6 }}>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Btn
+                    title={newPartReceiptUri ? 'Chụp lại' : 'Chụp hoá đơn'}
+                    icon="camera"
+                    small
+                    variant="soft"
+                    style={{ flex: 1 }}
+                    onPress={() => pickNewPartReceipt(true)}
+                  />
+                  <Btn
+                    title="Tải ảnh lên"
+                    icon="image"
+                    small
+                    variant="outline"
+                    style={{ flex: 1 }}
+                    onPress={() => pickNewPartReceipt(false)}
+                  />
+                </View>
+                {newPartReceiptUri ? <Badge text="Đã đính kèm hoá đơn" fg={C.green} bg={C.greenSoft} /> : null}
+              </View>
+            </View>
+          </View>
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
             <Btn
               title="Huỷ"
@@ -490,6 +560,7 @@ export function ExternalPartsFinalizeSheet({
                 setShowAddExtra(false);
                 setNewPartName('');
                 setNewPartPriceText('');
+                setNewPartReceiptUri(null);
               }}
             />
             <Btn
@@ -516,7 +587,7 @@ export function ExternalPartsFinalizeSheet({
                   alreadyBilledUnitPrice: 0,
                   actualPriceText: formatNumberInput(String(priceNum)),
                   receiptId: null,
-                  receiptUri: null,
+                  receiptUri: newPartReceiptUri || null,
                   warrantyDays: '',
                   externalWarrantyCode: '',
                   serialNumber: '',
@@ -529,6 +600,7 @@ export function ExternalPartsFinalizeSheet({
                 ]);
                 setNewPartName('');
                 setNewPartPriceText('');
+                setNewPartReceiptUri(null);
                 setShowAddExtra(false);
               }}
             />

@@ -47,6 +47,8 @@ import {
   getDefaultOpenServiceKeys,
   computeNextOpenServiceKeysAfterTick,
   getIncompleteRequiredServiceKeys,
+  getProcedureStepDisplayPhotos,
+  stepRequiresPhoto,
 } from '../../utils/procedureHelpers';
 import { TrackingCard, SymptomBreakdownView } from '../../components/order';
 
@@ -1163,9 +1165,10 @@ function ReceiptCard({ o, editable, onPreviewPhoto }) {
             )}
             <Text style={{ flex: 1, color: C.ink, fontWeight: '600' }} numberOfLines={2}>{p.name}</Text>
             {p.receiptId && editable ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                 <Badge text="Đã có" fg={C.greenInk} bg={C.greenSoft} />
-                <Btn title={busyId === p.itemId ? 'Đang tải…' : 'Đổi ảnh'} small variant="ghost" disabled={Boolean(busyId)} onPress={() => attach(p, true)} />
+                <Btn title={busyId === p.itemId ? 'Đang tải…' : 'Chụp lại'} small variant="ghost" disabled={Boolean(busyId)} onPress={() => attach(p, true)} />
+                <Btn title="Tải ảnh" small variant="ghost" disabled={Boolean(busyId)} onPress={() => attach(p, false)} />
               </View>
             ) : p.receiptId ? (
               <Badge text="Đã có biên lai" fg={C.greenInk} bg={C.greenSoft} />
@@ -1257,7 +1260,7 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
     setPhotos((p) => (p.includes(uri) ? p : [...p, uri]).slice(0, 5));
   };
   const finish = async (st) => {
-    if (st.require_photo && !photos.length && !(st.photo_ids || []).length) { u.alert('Thiếu ảnh', 'Bước này cần ít nhất 1 ảnh.', '📷'); return; }
+    if (stepRequiresPhoto(st) && !photos.length && !(st.photo_ids || []).length) { u.alert('Thiếu ảnh', 'Bước này cần ít nhất 1 ảnh.', '📷'); return; }
     if (busy) return;
     setBusy(true);
     let res = null;
@@ -1332,11 +1335,7 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
                   const done = st.status !== 'PENDING';
                   const isOpen = openId === st.step_id;
                   const inScope = isStepInSupportScope(st, o, ALL_SERVICES);
-                  const stepPhotos = (Array.isArray(evidence) ? evidence : []).filter((e) => {
-                    if (!e?.uri) return false;
-                    if (e.procedureStepId != null && String(e.procedureStepId) === String(st.step_id)) return true;
-                    return Array.isArray(st.photo_ids) && e.dbAttachmentId != null && st.photo_ids.some((pid) => String(pid) === String(e.dbAttachmentId));
-                  });
+                  const stepPhotos = getProcedureStepDisplayPhotos(st, evidence);
                   const checkedList = Array.isArray(st.checked_items) && st.checked_items.length
                     ? st.checked_items
                     : (done && st.status !== 'SKIPPED' && Array.isArray(st.items) ? st.items : []);
@@ -1349,7 +1348,7 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
                         <View style={{ flex: 1 }}>
                           <Text style={{ fontWeight: '800', color: C.ink }}>{st.title}{st.is_required ? '' : ' (không bắt buộc)'}</Text>
                           <Text style={ui.meta}>
-                            {st.require_photo ? 'cần ảnh' : 'không bắt buộc ảnh'}
+                            {stepRequiresPhoto(st) ? 'cần ảnh' : 'không bắt buộc ảnh'}
                             {!inScope ? ' · Ngoài phạm vi phụ trách' : (done ? ` · ${st.status === 'SKIPPED' ? 'Bỏ qua' : 'Đã xong'}` : (editable ? ' · bấm để làm' : ''))}
                           </Text>
                         </View>
@@ -1388,8 +1387,8 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
                             <Checkbox key={it} on={checked.includes(it)} label={it}
                               onPress={() => setChecked((p) => (p.includes(it) ? p.filter((x) => x !== it) : [...p, it]))} />
                           ))}
-                          {(() => {
-                            const isHandoverStep = Number(st.step_no) > 1 && /bàn giao|hoàn thành|nghiệm thu/i.test(String(st.title || ''));
+                          {Number(st.step_no) > 1 ? (() => {
+                            const isHandoverStep = /bàn giao|hoàn thành|nghiệm thu/i.test(String(st.title || ''));
                             const photoLabel = st.require_photo
                               ? (isHandoverStep ? 'Ảnh hoàn thành / bàn giao (bắt buộc)' : 'Ảnh bước (bắt buộc)')
                               : (isHandoverStep ? 'Ảnh hoàn thành / bàn giao' : 'Ảnh minh chứng (tuỳ chọn)');
@@ -1418,7 +1417,7 @@ function ProcedureCard({ o, editable, evidence = [], onPreviewPhoto }) {
                                 </View>
                               </View>
                             );
-                          })()}
+                          })() : null}
                           <Field
                             label="Ghi chú bước (tuỳ chọn)"
                             value={stepNote}
@@ -1472,6 +1471,7 @@ export function TechJobScreen({ params }) {
   const [previewTechPhoto, setPreviewTechPhoto] = useState(null);
   const [summary, setSummary] = useState('');
   const [extraBillParts, setExtraBillParts] = useState([]);
+  const [hasUnsavedExtraDraft, setHasUnsavedExtraDraft] = useState(false);
   const [refreshingJob, setRefreshingJob] = useState(false);
   const onRefreshJob = async () => {
     setRefreshingJob(true);
@@ -1490,6 +1490,7 @@ export function TechJobScreen({ params }) {
 
   useEffect(() => {
     setExtraBillParts([]);
+    setHasUnsavedExtraDraft(false);
     setShowOnsiteApprove(false);
     setOnsitePhotos([]);
     setOnsiteNote('');
@@ -1738,6 +1739,14 @@ export function TechJobScreen({ params }) {
 
   const evidence = o.evidence || [];
   const openComplete = () => {
+    if (hasUnsavedExtraDraft) {
+      u.alert(
+        'Vật tư phát sinh chưa được lưu',
+        'Bạn đang nhập vật tư phát sinh kèm hoá đơn nhưng chưa bấm "Thêm vào danh sách hoá đơn". Vui lòng bấm thêm và gửi hoá đơn cho khách trước khi hoàn thành.',
+        '🧾',
+      );
+      return;
+    }
     const names = (o.items || []).map((it) => getService(it.id)?.name || it.name).filter(Boolean).join(', ');
     const diagText = o.quote?.diagnosis || o.diagnosisReport?.diagnosis || '';
     const defaultSum = `Đã hoàn thành: ${names || 'dịch vụ kỹ thuật'}.${diagText ? ` Tình trạng: ${diagText}.` : ''} Thiết bị hoạt động ổn định, đã dọn dẹp khu vực.`;
@@ -2079,6 +2088,8 @@ export function TechJobScreen({ params }) {
             isSupport={isSupport}
             workLocked={waitingForLead || (isSupport && !o.arrivedAt && !o.checkIn)}
             onOpenWarehouseUsage={() => setMatMode('usage')}
+            onPreviewPhoto={setPreviewTechPhoto}
+            onDraftChange={setHasUnsavedExtraDraft}
             sharedExtraParts={extraBillParts}
             onChangeSharedExtraParts={setExtraBillParts}
           />
@@ -3301,6 +3312,7 @@ export function TechJobScreen({ params }) {
         visible={showFinalizeExt}
         onClose={() => setShowFinalizeExt(false)}
         initialSummary={summary}
+        onPreviewPhoto={setPreviewTechPhoto}
         sharedExtraParts={extraBillParts}
         onChangeSharedExtraParts={setExtraBillParts}
       />

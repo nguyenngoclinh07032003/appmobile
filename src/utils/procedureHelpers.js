@@ -137,11 +137,30 @@ export function getAutoCompletableProcedureSteps(procedure) {
   );
 }
 
+// Chỉ yêu cầu ảnh từ Bước > 1 (ví dụ Bước 3: Chạy thử và bàn giao); Bước 1 không gắn/không bắt ảnh.
+export function stepRequiresPhoto(step) {
+  return Boolean(step?.require_photo) && Number(step?.step_no) > 1;
+}
+
+// Ảnh hiển thị theo từng bước quy trình: bỏ qua Bước 1 và bỏ qua ảnh kiểm tra tự động ẩn.
+export function getProcedureStepDisplayPhotos(step, evidence = []) {
+  if (!step || Number(step.step_no) <= 1) return [];
+  const list = Array.isArray(evidence) ? evidence : [];
+  return list.filter((e) => {
+    if (!e?.uri) return false;
+    if (/ảnh kiểm tra quy trình tự động/i.test(String(e.note || ''))) return false;
+    if (e.procedureStepId != null && String(e.procedureStepId) === String(step.step_id)) return true;
+    return (
+      Array.isArray(step.photo_ids) &&
+      e.dbAttachmentId != null &&
+      step.photo_ids.some((pid) => String(pid) === String(e.dbAttachmentId))
+    );
+  });
+}
+
 // Phân bổ photo_ids cho các bước yêu cầu ảnh khi tự động đồng bộ:
-// - Bước sau (step_no > 1) ưu tiên ảnh AFTER_REPAIR.
-// - Bước đầu (step_no === 1) ưu tiên ảnh riêng trong otherPhotoIds hoặc ảnh AFTER thứ hai;
-//   nếu chỉ có 1 ảnh AFTER duy nhất đã dùng cho bước sau, trả needsBeforeUpload: true để caller
-//   upload thêm 1 ảnh BEFORE_REPAIR riêng (tránh ghi đè FK đơn procedure_step_id trên backend).
+// - Chỉ các bước sau (step_no > 1, như Bước 3: Chạy thử và bàn giao) nhận ảnh AFTER_REPAIR.
+// - Bước 1 (step_no <= 1) không gắn ảnh hoàn thành và không upload ảnh thay thế.
 export function pickStepPhotoAllocation(
   stepsNeedingPhoto = [],
   { afterPhotoIds = [], otherPhotoIds = [] } = {},
@@ -179,28 +198,16 @@ export function pickStepPhotoAllocation(
     });
   }
 
-  // Phân bổ cho bước step_no <= 1 (ưu tiên ảnh chưa dùng để không đè FK của bước sau).
+  // Bước 1 (step_no <= 1): không gắn ảnh hoàn thành cuối cùng.
   const firstSteps = safeSteps.filter((st) => !(Number(st?.step_no) > 1));
   for (const st of firstSteps) {
-    const uniqueId = takeUnused(otherPool) ?? takeUnused(afterPool);
-    if (uniqueId != null) {
-      allocations.set(st.step_id, {
-        stepId: st.step_id,
-        stepNo: st.step_no,
-        photoId: uniqueId,
-        fallbackPhotoId: uniqueId,
-        needsBeforeUpload: false,
-      });
-    } else {
-      const fallbackId = afterPool[0] ?? otherPool[0] ?? null;
-      allocations.set(st.step_id, {
-        stepId: st.step_id,
-        stepNo: st.step_no,
-        photoId: null,
-        fallbackPhotoId: fallbackId,
-        needsBeforeUpload: true,
-      });
-    }
+    allocations.set(st.step_id, {
+      stepId: st.step_id,
+      stepNo: st.step_no,
+      photoId: null,
+      fallbackPhotoId: null,
+      needsBeforeUpload: false,
+    });
   }
 
   return allocations;

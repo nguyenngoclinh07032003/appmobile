@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import './helpers/register-loader.mjs';
 
-const { formatMinutesToSlotStr, MIN_DAY_MINUTE, MAX_DAY_MINUTE } = await import('../src/utils/dateTime.js');
+const { ALLOW_ALL_TIME_SLOTS, formatMinutesToSlotStr, MIN_DAY_MINUTE, MAX_DAY_MINUTE } = await import('../src/utils/dateTime.js');
 const { applyServerWarrantyEligibility, formatYmd } = await import('../src/utils/warrantyPolicy.js');
 const { syncCatalogFromBackend, MATERIALS } = await import('../src/constants/data.js');
 const { formatEstimatedExternalDesc, formatFinalizedExternalDesc } = await import('../src/utils/externalPartsPricing.js');
@@ -31,9 +31,11 @@ const isoAt = (ms) => new Date(ms).toISOString();
 
 describe('syncParityFixes: slot formatting, payment lock, and quote calculations', () => {
   test('Bug #1: formatMinutesToSlotStr chuẩn và UIComponents export minutesToSlotStr', () => {
-    assert.equal(formatMinutesToSlotStr(MIN_DAY_MINUTE), '08h00 - 10h00');
+    assert.equal(formatMinutesToSlotStr(8 * 60), '08h00 - 10h00');
     assert.equal(formatMinutesToSlotStr(15 * 60 + 45), '15h45 - 17h45');
-    assert.equal(formatMinutesToSlotStr(MAX_DAY_MINUTE), '20h00 - 22h00');
+    assert.equal(formatMinutesToSlotStr(20 * 60), '20h00 - 22h00');
+    assert.equal(formatMinutesToSlotStr(MIN_DAY_MINUTE), ALLOW_ALL_TIME_SLOTS ? '00h00 - 02h00' : '08h00 - 10h00');
+    assert.equal(formatMinutesToSlotStr(MAX_DAY_MINUTE), ALLOW_ALL_TIME_SLOTS ? '23h45 - 24h00' : '20h00 - 22h00');
     const uiSrc = readFileSync(new URL('../src/components/common/UIComponents.js', import.meta.url), 'utf8');
     assert.match(uiSrc, /import\s*\{\s*formatMinutesToSlotStr\s*\}\s*from\s*'\.\.\/\.\.\/utils\/dateTime'/);
     assert.match(uiSrc, /export const minutesToSlotStr = formatMinutesToSlotStr/);

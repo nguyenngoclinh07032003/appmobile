@@ -159,6 +159,7 @@ import {
   mapRedeemOption,
   mapPointHistory,
   mapBackendPhotoToEvidence,
+  selectTechJobsForHydration,
 } from "../services/syncService";
 import {
   TECH_POLICY,
@@ -1828,7 +1829,7 @@ export function AppProvider({ children }) {
               const c = isFinished(r)
                 ? finishedOrderCache.current.get(String(r.request_id))
                 : null;
-              return c && c.cacheVer === 6 && c.status === r.request_status && (c.updatedAt || null) === (r.updated_at || null) ? c : null;
+              return c && c.cacheVer === 7 && c.status === r.request_status && (c.updatedAt || null) === (r.updated_at || null) ? c : null;
             };
             rawRequests.forEach((r) => {
               const c = cached(r);
@@ -1927,7 +1928,7 @@ export function AppProvider({ children }) {
             const needPhotos = prioritySorted
               .filter((r) => {
                 const st = String(r.request_status || "").toUpperCase();
-                return r.request_id && !st.startsWith("CANCEL") && (!cached(r) || !r._evidence);
+                return r.request_id && !st.startsWith("CANCEL") && (!cached(r) || !r._evidence || !r._evidenceFetched);
               })
               .slice(0, 25);
             const photoLists = await Promise.all(
@@ -1967,12 +1968,12 @@ export function AppProvider({ children }) {
                 r._evidence = r._detailAttachments.map(mapBackendPhotoToEvidence);
               }
             });
-            // Ghi nhớ đơn đã xong / huỷ khi đã có hoá đơn & chi tiết (không cache đơn huỷ còn nợ phí kiểm tra).
+            // Ghi nhớ đơn đã xong / huỷ khi đã có hoá đơn & chi tiết & ảnh (không cache đơn huỷ còn nợ phí kiểm tra).
             rawRequests
               .filter(
                 (r) => {
-                  if (!isFinished(r) || !r.bill || !r._detailLoaded || cached(r)) return false;
                   const isCancelled = String(r.request_status || "").toUpperCase().startsWith("CANCELLED");
+                  if (!isFinished(r) || !r.bill || !r._detailLoaded || (!isCancelled && !r._evidenceFetched) || cached(r)) return false;
                   if (isCancelled) {
                     const due = Number(r.bill?.bill?.amount_due) || 0;
                     const ps = String(r.bill?.payment_status || "").toUpperCase();
@@ -1983,7 +1984,7 @@ export function AppProvider({ children }) {
               )
               .forEach((r) => {
                 finishedOrderCache.current.set(String(r.request_id), {
-                  cacheVer: 6,
+                  cacheVer: 7,
                   status: r.request_status,
                   updatedAt: r.updated_at || null,
                   items: r.items,
@@ -2025,6 +2026,7 @@ export function AppProvider({ children }) {
                   return {
                     ...mapped,
                     ...(ev ? { evidence: ev } : {}),
+                    ...(r._evidenceFetched ? { _evidenceFetched: true } : {}),
                     ...(atts.length ? { attachments: atts } : {}),
                     ...(r._detailLoaded ? { _detailHydrated: true } : {}),
                   };
@@ -2256,52 +2258,20 @@ export function AppProvider({ children }) {
           const specialtyInfo = profRes.ok
             ? readTechnicianSpecialties(profRes.data)
             : null;
-          // Hoá đơn: ưu tiên toàn bộ việc đang chờ thanh toán / trả thiếu (kể cả khi assignment_status='ENDED'), sau đó mới tới ACTIVE khác.
-          const PAYMENT_STATUSES = [
-            "PENDING_PAYMENT",
-            "PARTIALLY_PAID_RECEIVABLE",
-            "PENDING_REVIEW",
-          ];
-          const isBillPriorityJob = (j) =>
-            PAYMENT_STATUSES.includes(j.request?.request_status) ||
-            (String(j.request?.request_status || "").toUpperCase().startsWith("CANCELLED") &&
-              Boolean(j.arrived_at || Number(j.request?.inspection_fee) > 0 || Number(j.bill?.bill?.amount_due) > 0));
+          // Hoá đơn & ảnh: chỉ lấy cho phân công ACTIVE / ENDED (bỏ qua CANCELLED / thu hồi để tránh 404).
           const allJobsRaw =
             jobsRes.ok && Array.isArray(jobsRes.data?.items)
               ? jobsRes.data.items
               : [];
-          const activeJobsList = [
-            ...allJobsRaw.filter((j) => j.assignment_status === "ACTIVE" && j.assignment_id),
-            ...allJobsRaw.filter(
-              (j) =>
-                j.assignment_status !== "ACTIVE" &&
-                j.assignment_id &&
-                isBillPriorityJob(j),
-            ),
-            ...allJobsRaw.filter(
-              (j) =>
-                j.assignment_status !== "ACTIVE" &&
-                j.assignment_id &&
-                !isBillPriorityJob(j),
-            ),
-          ].slice(0, 15);
-          const activeJobIds = activeJobsList.map((j) => String(j.assignment_id));
-          const paymentJobIds = allJobsRaw
-            .filter(
-              (j) =>
-                j.assignment_id &&
-                isBillPriorityJob(j),
-            )
-            .map((j) => String(j.assignment_id));
-          const billJobIds = [
-            ...new Set([
-              ...activeJobIds,
-              ...paymentJobIds,
-            ]),
-          ].slice(0, 25);
-          const openItemsSlice = openRes.ok && Array.isArray(openRes.data?.items)
-            ? openRes.data.items.filter((r) => r?.request_id).slice(0, 10)
-            : [];
+          const openItemsRaw =
+            openRes.ok && Array.isArray(openRes.data?.items)
+              ? openRes.data.items
+              : [];
+          const {
+            activeJobsList,
+            billJobIds,
+            openItemsWithPhotoAccess,
+          } = selectTechJobsForHydration(allJobsRaw, openItemsRaw);
           const [photoLists, reqPhotoLists, openReqPhotoLists, jobBills] = await Promise.all([
             Promise.all(
               activeJobsList.map((j) =>
@@ -2316,7 +2286,7 @@ export function AppProvider({ children }) {
               ),
             ),
             Promise.all(
-              openItemsSlice.map((r) =>
+              openItemsWithPhotoAccess.map((r) =>
                 hrmssApi.listRequestPhotos(r.request_id).catch(() => null),
               ),
             ),
@@ -2452,7 +2422,7 @@ export function AppProvider({ children }) {
                   );
             const assignedCodes = new Set(assignedOrders.map((o) => o.code));
             const openPhotoByReqId = new Map();
-            openItemsSlice.forEach((r, i) => {
+            openItemsWithPhotoAccess.forEach((r, i) => {
               const pRes = openReqPhotoLists[i];
               if (pRes?.ok) {
                 const rows =
@@ -3138,12 +3108,13 @@ export function AppProvider({ children }) {
     }
 
     const stepsNeedingPhoto = pendingAuto.filter(
-      (st) => st.require_photo && !(Array.isArray(st.photo_ids) && st.photo_ids.length > 0),
+      (st) => Number(st.step_no) > 1 && st.require_photo && !(Array.isArray(st.photo_ids) && st.photo_ids.length > 0),
     );
     let allocations = new Map();
-    let uploadedBeforeId = null;
+    let otherPhotoIds = [];
+    let uploadedHiddenStep1Id = null;
 
-    if (stepsNeedingPhoto.length > 0) {
+    if (stepsNeedingPhoto.length > 0 || pendingAuto.some((st) => Number(st.step_no) <= 1 && st.require_photo)) {
       const photosRes = await hrmssApi.listJobPhotos(assignmentId).catch(() => null);
       const rawRows = photosRes?.ok
         ? photosRes.data?.items ||
@@ -3165,7 +3136,7 @@ export function AppProvider({ children }) {
           .filter((r) => String(r.evidence_type || "").toUpperCase() === "AFTER_REPAIR")
           .map((r) => r.attachment_id),
       ];
-      const otherPhotoIds = nonReceiptRows
+      otherPhotoIds = nonReceiptRows
         .filter((r) => {
           const evType = String(r.evidence_type || "").toUpperCase();
           const desc = String(r.description || r.note || "").trim();
@@ -3174,33 +3145,15 @@ export function AppProvider({ children }) {
         })
         .map((r) => r.attachment_id);
 
-      allocations = pickStepPhotoAllocation(stepsNeedingPhoto, {
-        afterPhotoIds,
-        otherPhotoIds,
-      });
-
-      const needsBefore = [...allocations.values()].some(
-        (al) => al?.needsBeforeUpload && al?.photoId == null,
-      );
-      const isLocalUri =
-        typeof fallbackPhotoUri === "string" &&
-        /^(data:|blob:|file:|content:|ph:\/\/)/i.test(fallbackPhotoUri.trim());
-      if (needsBefore && isLocalUri) {
-        const upBefore = await hrmssApi
-          .uploadJobPhoto(
-            assignmentId,
-            fallbackPhotoUri,
-            "BEFORE_REPAIR",
-            "Ảnh kiểm tra quy trình tự động",
-          )
-          .catch(() => null);
-        if (upBefore?.ok && upBefore.data?.attachment?.attachment_id != null) {
-          uploadedBeforeId = upBefore.data.attachment.attachment_id;
-        }
+      if (stepsNeedingPhoto.length > 0) {
+        allocations = pickStepPhotoAllocation(stepsNeedingPhoto, {
+          afterPhotoIds,
+          otherPhotoIds,
+        });
       }
     }
 
-    // Chạy step_no <= 1 trước, các bước sau chạy sau để nếu fallback trùng ID thì bước AFTER vẫn giữ bản mới nhất.
+    // Chạy step_no <= 1 trước, các bước sau chạy sau để bước hoàn thành luôn giữ ảnh AFTER_REPAIR cuối cùng.
     const orderedSteps = [...pendingAuto].sort(
       (a, b) => (Number(a.step_no) || 0) - (Number(b.step_no) || 0),
     );
@@ -3211,22 +3164,55 @@ export function AppProvider({ children }) {
       if (Array.isArray(st.items) && st.items.length > 0) {
         body.checked_items = st.items;
       }
-      if (st.require_photo) {
+      if (Number(st.step_no) > 1 && st.require_photo) {
         if (Array.isArray(st.photo_ids) && st.photo_ids.length > 0) {
           body.photo_ids = st.photo_ids;
         } else {
           const alloc = allocations.get(st.step_id);
-          const chosenId =
-            alloc?.photoId ??
-            (alloc?.needsBeforeUpload ? (uploadedBeforeId ?? alloc?.fallbackPhotoId) : alloc?.fallbackPhotoId);
+          const chosenId = alloc?.photoId ?? alloc?.fallbackPhotoId ?? null;
           if (chosenId != null) {
             body.photo_ids = [chosenId];
           }
         }
       }
-      const stepRes = await hrmssApi
+      let stepRes = await hrmssApi
         .updateProcedureStep(assignmentId, st.step_id, body)
         .catch(() => null);
+      // Nếu server vẫn bắt buộc photo_ids cho Bước 1 (400/422 PHOTO_REQUIRED), dùng ảnh khác hoặc tải bản ẩn riêng, KHÔNG đụng tới ảnh hoàn thành Bước 3.
+      if (
+        !stepRes?.ok &&
+        Number(st.step_no) <= 1 &&
+        st.require_photo &&
+        !body.photo_ids &&
+        ([400, 422].includes(Number(stepRes?.status)) || /PHOTO/i.test(String(stepRes?.code || "")))
+      ) {
+        let compatId = otherPhotoIds[0] ?? uploadedHiddenStep1Id;
+        const isLocalUri =
+          typeof fallbackPhotoUri === "string" &&
+          /^(data:|blob:|file:|content:|ph:\/\/)/i.test(fallbackPhotoUri.trim());
+        if (compatId == null && isLocalUri) {
+          const upHidden = await hrmssApi
+            .uploadJobPhoto(
+              assignmentId,
+              fallbackPhotoUri,
+              "BEFORE_REPAIR",
+              "[Ẩn] Ảnh kiểm tra quy trình tự động",
+            )
+            .catch(() => null);
+          if (upHidden?.ok && upHidden.data?.attachment?.attachment_id != null) {
+            uploadedHiddenStep1Id = upHidden.data.attachment.attachment_id;
+            compatId = uploadedHiddenStep1Id;
+          }
+        }
+        if (compatId != null) {
+          stepRes = await hrmssApi
+            .updateProcedureStep(assignmentId, st.step_id, {
+              ...body,
+              photo_ids: [compatId],
+            })
+            .catch(() => null);
+        }
+      }
       if (stepRes?.ok) {
         completedCount += 1;
         if (stepRes.data?.job?.procedure !== undefined) {

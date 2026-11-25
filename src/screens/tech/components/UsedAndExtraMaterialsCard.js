@@ -20,6 +20,8 @@ export function UsedAndExtraMaterialsCard({
   isSupport = false,
   workLocked = false,
   onOpenWarehouseUsage,
+  onPreviewPhoto,
+  onDraftChange,
   sharedExtraParts,
   onChangeSharedExtraParts,
 }) {
@@ -33,6 +35,7 @@ export function UsedAndExtraMaterialsCard({
   const [extraName, setExtraName] = useState('');
   const [extraPriceText, setExtraPriceText] = useState('');
   const [extraQty, setExtraQty] = useState(1);
+  const [extraReceiptUri, setExtraReceiptUri] = useState(null);
   const [selectedQuickMat, setSelectedQuickMat] = useState(null);
   // Số lượng vật tư kho hiển thị lạc quan trong lúc chờ server: id -> { qty, base } (base = qty server lúc bấm).
   const [localMatQty, setLocalMatQty] = useState({});
@@ -47,10 +50,15 @@ export function UsedAndExtraMaterialsCard({
     setExtraName('');
     setExtraPriceText('');
     setExtraQty(1);
+    setExtraReceiptUri(null);
     setSelectedQuickMat(null);
     setLocalMatQty({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderCode]);
+
+  useEffect(() => {
+    onDraftChange?.(Boolean(showAddExtra && (extraName.trim() || extraPriceText.trim() || extraReceiptUri)));
+  }, [showAddExtra, extraName, extraPriceText, extraReceiptUri, onDraftChange]);
 
   const estSource = !o
     ? []
@@ -289,6 +297,7 @@ export function UsedAndExtraMaterialsCard({
                 qty: (Number(p.qty) || 1) + addQty,
                 qtyTouched: true,
                 actualPriceText: formatNumberInput(String(priceNum)),
+                receiptUri: extraReceiptUri || p.receiptUri || null,
                 ...(isQuickMatch
                   ? {
                       matId: p.matId || selectedQuickMat.matId || null,
@@ -303,6 +312,7 @@ export function UsedAndExtraMaterialsCard({
       setExtraName('');
       setExtraPriceText('');
       setExtraQty(1);
+      setExtraReceiptUri(null);
       setSelectedQuickMat(null);
       setShowAddExtra(false);
       u.toast(`Đã cập nhật "${clean}" trong hoá đơn`, 'check-circle-2');
@@ -322,19 +332,20 @@ export function UsedAndExtraMaterialsCard({
         alreadyBilledUnitPrice: 0,
         actualPriceText: formatNumberInput(String(priceNum)),
         receiptId: null,
-        receiptUri: null,
+        receiptUri: extraReceiptUri || null,
         isAddedInline: true,
       },
     ]);
     setExtraName('');
     setExtraPriceText('');
     setExtraQty(1);
+    setExtraReceiptUri(null);
     setSelectedQuickMat(null);
     setShowAddExtra(false);
     u.toast(`Đã thêm "${clean}" (${formatVND(priceNum)}) vào hoá đơn`, 'check-circle-2');
   };
 
-  const pickReceipt = async (partId, useCamera) => {
+  const pickReceiptImage = async (useCamera, onPicked) => {
     try {
       let uri = useCamera ? await pickCamera() : await pickImage();
       if (uri === null && useCamera) uri = await pickImage();
@@ -344,11 +355,21 @@ export function UsedAndExtraMaterialsCard({
         }
         return;
       }
-      setExtraParts((prev) => prev.map((p) => (p.id === partId ? { ...p, receiptUri: uri } : p)));
+      onPicked?.(uri);
     } catch (e) {
       u.alert('Không tải được ảnh', toVietnamese(e?.message, 'Vui lòng thử lại.') || 'Vui lòng thử lại.', 'camera');
     }
   };
+
+  const pickReceipt = (partId, useCamera) =>
+    pickReceiptImage(useCamera, (uri) => {
+      setExtraParts((prev) => prev.map((p) => (p.id === partId ? { ...p, receiptUri: uri } : p)));
+    });
+
+  const pickInlineReceipt = (useCamera) =>
+    pickReceiptImage(useCamera, (uri) => {
+      setExtraReceiptUri(uri);
+    });
 
   const extraPartNames = new Set(extraParts.map((p) => normalizeExternalPartName(p.name)));
   const fixedApprovedExtras = (o.quote?.lines || [])
@@ -511,19 +532,40 @@ export function UsedAndExtraMaterialsCard({
       )}
 
       {/* Vật tư phát sinh đã chốt hoá đơn & được khách duyệt trước đó */}
-      {visibleFinalized.length > 0 ? (
-        <View style={st.sectionBox}>
-          <Text style={st.sectionTitleGreen}>✅ Vật tư phát sinh đã chốt hoá đơn ({visibleFinalized.length})</Text>
-          {visibleFinalized.map((f, idx) => (
-            <View key={`fin_${f.itemId || idx}`} style={st.finRow}>
-              <Text style={{ flex: 1, color: C.ink, fontWeight: '600' }} numberOfLines={2}>
-                {f.name} x{f.qty}
-              </Text>
-              <Text style={{ color: C.green, fontWeight: '800' }}>{formatVND(f.actualPrice * f.qty)}</Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
+      {visibleFinalized.length > 0 ? (() => {
+        const finReceiptMatch = matchReceiptsToQuoteLines(
+          visibleFinalized.map((f) => ({ ...f, isFinalizedExternal: true })),
+          o.evidence || [],
+        );
+        return (
+          <View style={st.sectionBox}>
+            <Text style={st.sectionTitleGreen}>✅ Vật tư phát sinh đã chốt hoá đơn ({visibleFinalized.length})</Text>
+            {visibleFinalized.map((f, idx) => {
+              const rEv = finReceiptMatch.lineReceipts.get(idx) || null;
+              const imgUri = f.receiptUrl || rEv?.uri || null;
+              return (
+                <View key={`fin_${f.itemId || idx}`} style={{ paddingVertical: 3 }}>
+                  <View style={st.finRow}>
+                    <Text style={{ flex: 1, color: C.ink, fontWeight: '600' }} numberOfLines={2}>
+                      {f.name} x{f.qty}
+                    </Text>
+                    <Text style={{ color: C.green, fontWeight: '800' }}>{formatVND(f.actualPrice * f.qty)}</Text>
+                  </View>
+                  {imgUri ? (
+                    <Tap
+                      style={{ marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }}
+                      onPress={() => onPreviewPhoto?.({ uri: imgUri, title: `Hoá đơn vật tư · ${f.name}` })}
+                    >
+                      <Image source={{ uri: imgUri }} style={st.receiptThumb} />
+                      <Text style={[ui.meta, { fontSize: 11, color: C.primary, fontWeight: '700' }]}>Xem hoá đơn đính kèm</Text>
+                    </Tap>
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        );
+      })() : null}
 
       {/* 2. Danh sách vật tư phát sinh đang cấu hình giá cuối để gửi hoá đơn */}
       {canComposeBill && extraParts.length > 0 ? (
@@ -619,25 +661,41 @@ export function UsedAndExtraMaterialsCard({
                   </View>
                 ) : null}
 
-                {/* Ảnh biên lai tuỳ chọn (chỉ dành cho VT mua ngoài, VT kho không gắn biên lai) */}
-                {!p.isWarehouse ? (
-                  <View style={st.receiptRow}>
+                {/* Ảnh hoá đơn / biên lai đính kèm cho vật tư phát sinh */}
+                <View style={{ marginTop: 8 }}>
+                  <Text style={{ fontSize: 11.5, fontWeight: '700', color: C.ink2, marginBottom: 4 }}>
+                    Ảnh hoá đơn / biên lai (tuỳ chọn)
+                  </Text>
+                  <View style={[st.receiptRow, { marginTop: 0 }]}>
                     {previewUri ? (
-                      <Image source={{ uri: previewUri }} style={st.receiptThumb} />
+                      <View style={{ position: 'relative' }}>
+                        <Tap onPress={() => onPreviewPhoto?.({ uri: previewUri, title: `Hoá đơn vật tư · ${p.name}` })}>
+                          <Image source={{ uri: previewUri }} style={st.receiptThumb} />
+                        </Tap>
+                        {p.receiptUri ? (
+                          <Tap
+                            onPress={() => setExtraParts((prev) => prev.map((x) => (x.id === p.id ? { ...x, receiptUri: null } : x)))}
+                            hitSlop={6}
+                            style={st.receiptClearBtn}
+                          >
+                            <Text style={{ color: '#fff', fontSize: 9, fontWeight: '800' }}>✕</Text>
+                          </Tap>
+                        ) : null}
+                      </View>
                     ) : null}
                     <Tap onPress={() => pickReceipt(p.id, true)} style={st.receiptChip}>
                       <AppIcon name="camera" size={13} color={C.primary} strokeWidth={2.2} />
-                      <Text style={st.receiptChipText}>{previewUri ? 'Chụp lại hoá đơn' : 'Chụp hoá đơn (tuỳ chọn)'}</Text>
+                      <Text style={st.receiptChipText}>{previewUri ? 'Chụp lại' : 'Chụp hoá đơn'}</Text>
                     </Tap>
                     <Tap onPress={() => pickReceipt(p.id, false)} style={st.receiptChip}>
                       <AppIcon name="image" size={13} color={C.ink2} strokeWidth={2.2} />
-                      <Text style={[st.receiptChipText, { color: C.ink2 }]}>Chọn ảnh</Text>
+                      <Text style={[st.receiptChipText, { color: C.ink2 }]}>Tải ảnh lên</Text>
                     </Tap>
                     {p.receiptUri || p.receiptId || p.receiptUrl ? (
-                      <Badge text="Có ảnh" fg={C.green} bg={C.greenSoft} />
+                      <Badge text="Có hoá đơn" fg={C.green} bg={C.greenSoft} />
                     ) : null}
                   </View>
-                ) : null}
+                </View>
               </View>
             );
           })}
@@ -741,6 +799,41 @@ export function UsedAndExtraMaterialsCard({
             </View>
           </View>
 
+          <View style={{ marginTop: 10 }}>
+            <Text style={[ui.fieldLabel, { marginBottom: 6 }]}>Ảnh hoá đơn / biên lai (tuỳ chọn)</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              {extraReceiptUri ? (
+                <View style={{ position: 'relative' }}>
+                  <Tap onPress={() => onPreviewPhoto?.({ uri: extraReceiptUri, title: `Hoá đơn vật tư · ${extraName.trim() || 'Vật tư phát sinh'}` })}>
+                    <Image source={{ uri: extraReceiptUri }} style={[st.receiptThumb, { width: 44, height: 44 }]} />
+                  </Tap>
+                  <Tap
+                    onPress={() => setExtraReceiptUri(null)}
+                    hitSlop={6}
+                    style={st.receiptClearBtn}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 9, fontWeight: '800' }}>✕</Text>
+                  </Tap>
+                </View>
+              ) : (
+                <View style={[st.receiptThumb, { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: C.card }]}>
+                  <AppIcon name="receipt-text" size={18} color={C.muted} />
+                </View>
+              )}
+              <Tap onPress={() => pickInlineReceipt(true)} style={st.receiptChip}>
+                <AppIcon name="camera" size={13} color={C.primary} strokeWidth={2.2} />
+                <Text style={st.receiptChipText}>{extraReceiptUri ? 'Chụp lại' : 'Chụp hoá đơn'}</Text>
+              </Tap>
+              <Tap onPress={() => pickInlineReceipt(false)} style={st.receiptChip}>
+                <AppIcon name="image" size={13} color={C.ink2} strokeWidth={2.2} />
+                <Text style={[st.receiptChipText, { color: C.ink2 }]}>Tải ảnh lên</Text>
+              </Tap>
+              {extraReceiptUri ? (
+                <Badge text="Đã đính kèm hoá đơn" fg={C.green} bg={C.greenSoft} />
+              ) : null}
+            </View>
+          </View>
+
           <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
             <Btn
               title="Huỷ"
@@ -752,6 +845,7 @@ export function UsedAndExtraMaterialsCard({
                 setExtraName('');
                 setExtraPriceText('');
                 setExtraQty(1);
+                setExtraReceiptUri(null);
                 setSelectedQuickMat(null);
               }}
             />
@@ -887,6 +981,17 @@ const st = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: C.line,
+  },
+  receiptClearBtn: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: 'rgba(15,23,42,0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   receiptChip: {
     flexDirection: 'row',

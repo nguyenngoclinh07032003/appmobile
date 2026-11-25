@@ -8,6 +8,7 @@ import { catLabel, SAFETY_CHECKLIST_ITEMS, HOTLINE } from '../../constants/data'
 import { fmtDate, fmtDateTime } from '../../context';
 import { AppIcon, Badge, Tap } from '../../components';
 import { MATERIAL_WARRANTY_STATUS_META, extractMaterialWarrantiesFromQuotations } from '../../utils/materialWarranty';
+import { extractOrderReceiptPhotos, normalizeExternalPartName } from '../../utils/externalPartsPricing';
 
 function InfoRow({ icon, label, value, last }) {
   if (!value) return null;
@@ -47,6 +48,7 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays, onPreviewPhoto
   const techName = o.tech?.name || o.report?.tech || 'Thợ Minh Đức';
   const techCode = o.tech?.code || o.report?.techCode;
   const evidence = Array.isArray(o.evidence) ? o.evidence : [];
+  const receiptPhotos = extractOrderReceiptPhotos(o);
   const initialPhotos = [];
   const seenInitial = new Set();
   [...(o.attachments || []), ...evidence.filter((e) => e?.stage === 'diagnosis' && !e?.isWarrantyUpload)].forEach((ph) => {
@@ -208,9 +210,13 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays, onPreviewPhoto
                       : meta.tone === 'muted'
                         ? { fg: C.muted, bg: C.surface }
                         : { fg: C.primary, bg: C.primarySoft };
+            const matchedReceiptPhoto = receiptPhotos.find(
+              (rp) => normalizeExternalPartName(rp.label) === normalizeExternalPartName(mw.itemName),
+            );
             const receiptUri =
               mw.receiptUrl
               || (mw.receiptAttachmentId ? evidence.find((e) => String(e.dbAttachmentId) === String(mw.receiptAttachmentId))?.uri : null)
+              || matchedReceiptPhoto?.uri
               || null;
             return (
               <View
@@ -289,6 +295,29 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays, onPreviewPhoto
           <Text style={st.signName}>{typeof o.report.customerSignature === 'string' ? o.report.customerSignature : o.report.customerSignature?.name}</Text>
           <Text style={st.signNote}>✓ Thiết bị hoạt động bình thường, bàn giao an toàn</Text>
         </View>
+      ) : null}
+
+      {/* ===== Hoá đơn vật tư phát sinh ===== */}
+      {receiptPhotos.length > 0 ? (
+        <Section icon="receipt-text" title={`Hoá đơn vật tư phát sinh (${receiptPhotos.length})`}>
+          <View style={st.photoGrid}>
+            {receiptPhotos.map((ph, idx) => (
+              <Tap
+                key={ph.id || `cert_rcpt_${idx}`}
+                style={{ width: 80, alignItems: 'flex-start' }}
+                disabled={!onPreviewPhoto}
+                onPress={() => onPreviewPhoto?.({ uri: ph.uri, title: `Hoá đơn vật tư · ${ph.label}` })}
+              >
+                <View style={[st.photoThumb, { borderColor: C.primaryBorder }]}>
+                  <Image source={{ uri: ph.uri }} style={{ width: '100%', height: '100%' }} />
+                </View>
+                <Text style={{ fontSize: 11, color: C.primary, fontWeight: '700', marginTop: 3 }} numberOfLines={2}>
+                  {ph.label}
+                </Text>
+              </Tap>
+            ))}
+          </View>
+        </Section>
       ) : null}
 
       {/* ===== Hình ảnh đối chứng Trước & Sau ===== */}

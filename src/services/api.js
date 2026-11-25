@@ -352,6 +352,7 @@ async function rawRequest(endpoint, options = {}) {
     noAuth = false, // true: không gắn Bearer (vd. gọi refresh)
     formData = null, // multipart (tải ảnh): gửi nguyên FormData, không đặt Content-Type
     _retried = false,
+    silentNotFoundCodes = null, // danh sách mã 404 hợp lệ (vd. hết quyền xem việc đã huỷ) -> không log warn
   } = options;
 
   const baseUrl = API_BASE_URL;
@@ -395,6 +396,22 @@ async function rawRequest(endpoint, options = {}) {
     }
 
     if (!res.ok) {
+      const isSilentNoAccess = Boolean(
+        res.status === 404 &&
+        Array.isArray(silentNotFoundCodes) &&
+        silentNotFoundCodes.includes(resData?.code),
+      );
+      if (isSilentNoAccess) {
+        return {
+          ok: false,
+          status: 404,
+          code: resData?.code || 'NOT_FOUND',
+          noAccess: true,
+          message: 'Không còn quyền xem dữ liệu này.',
+          data: null,
+          errors: [],
+        };
+      }
       const willAutoRefresh = res.status === 401 && !_retried && !noAuth && Boolean(authTokens.getRefresh());
       if (!willAutoRefresh) {
         // eslint-disable-next-line no-console
@@ -790,11 +807,15 @@ export const hrmssApi = {
   },
   // Hóa đơn của việc (số tiền mặt cần thu).
   async getTechnicianJobBill(jobId) {
-    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/bill`);
+    return apiRequest(`/technician/jobs/${encodeURIComponent(jobId)}/bill`, {
+      silentNotFoundCodes: ['JOB_NOT_FOUND'],
+    });
   },
   // Ảnh của việc (thợ) / của đơn (khách): GET /uploads?job_id= | ?request_id=.
   async listJobPhotos(jobId) {
-    return apiRequest(`/uploads?job_id=${encodeURIComponent(jobId)}`);
+    return apiRequest(`/uploads?job_id=${encodeURIComponent(jobId)}`, {
+      silentNotFoundCodes: ['JOB_NOT_FOUND', 'REQUEST_NOT_FOUND'],
+    });
   },
   // Khách gắn ảnh vào đơn của mình (POST /uploads: file + request_id).
   async uploadRequestPhoto(requestId, uri, description = null) {
@@ -804,7 +825,9 @@ export const hrmssApi = {
     });
   },
   async listRequestPhotos(requestId) {
-    return apiRequest(`/uploads?request_id=${encodeURIComponent(requestId)}`);
+    return apiRequest(`/uploads?request_id=${encodeURIComponent(requestId)}`, {
+      silentNotFoundCodes: ['REQUEST_NOT_FOUND', 'JOB_NOT_FOUND'],
+    });
   },
   async updatePhotoNote(attachmentId, description) {
     return apiRequest(`/uploads/${encodeURIComponent(attachmentId)}`, { method: 'PATCH', body: { description: description || null } });

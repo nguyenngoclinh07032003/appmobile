@@ -114,15 +114,19 @@ export function matchReceiptsToQuoteLines(lines = [], evidence = []) {
   });
 
   const eligibleIndices = [];
+  const nameMatchIndices = [];
   safeLines.forEach((l, i) => {
-    if (l && !l.isOriginal && !l.isEstimatedRange && (l.isFinalizedExternal || l.isCustom)) {
+    if (!l || l.isOriginal || l.isEstimatedRange) return;
+    // Mọi vật tư phát sinh / thay thế (kể cả vật tư danh mục chọn nhanh) đều khớp theo tên ghi chú ảnh biên lai.
+    nameMatchIndices.push(i);
+    if (l.isFinalizedExternal || l.isCustom) {
       eligibleIndices.push(i);
     }
   });
-  const missingIndices = eligibleIndices.filter((i) => !lineReceipts.has(i));
+  const missingNameIndices = nameMatchIndices.filter((i) => !lineReceipts.has(i));
 
   // Pass 2: khớp theo tên linh kiện ghi trong mô tả ảnh (description / note).
-  for (const i of missingIndices) {
+  for (const i of missingNameIndices) {
     const normLine = normalizeExternalPartName(safeLines[i]?.name);
     if (!normLine) continue;
     const matched = receiptPool.find((ev) => {
@@ -165,6 +169,142 @@ export function matchReceiptsToQuoteLines(lines = [], evidence = []) {
   });
 
   return { lineReceipts, unmatchedReceipts };
+}
+
+/**
+ * Gom toàn bộ ảnh hoá đơn / biên lai vật tư phát sinh của đơn hàng (từ evidence, báo giá,
+ * quotations gốc, danh sách đã chốt và bảo hành linh kiện) để hiển thị nhất quán phía khách hàng.
+ * Nếu thợ chụp lại / cập nhật hoá đơn mới cho cùng một vật tư, chỉ giữ bản mới nhất.
+ */
+export function extractOrderReceiptPhotos(order) {
+  if (!order || typeof order !== 'object') return [];
+  const rawEv = Array.isArray(order.evidence) ? order.evidence : [];
+  const byAttId = new Map();
+  rawEv.forEach((ev) => {
+    if (ev?.dbAttachmentId != null && ev?.uri && !byAttId.has(String(ev.dbAttachmentId))) {
+      byAttId.set(String(ev.dbAttachmentId), ev);
+    }
+  });
+
+  const candidates = [];
+  rawEv.forEach((ev) => {
+    if (isReceiptEvidence(ev)) {
+      candidates.push({
+        id: ev.id || (ev.dbAttachmentId != null ? `att-${ev.dbAttachmentId}` : `ev-${candidates.length}`),
+        dbAttachmentId: ev.dbAttachmentId ?? null,
+        uri: ev.uri,
+        stage: 'receipt',
+        evidenceType: ev.evidenceType || ev.evidence_type || 'DOCUMENT',
+        note: String(ev.note || ev.description || '').trim(),
+        at: Number(ev.at) || 0,
+      });
+    }
+  });
+
+  const pushFromRef = ({ attId, url, name, fallbackId, at = 0 }) => {
+    const evMatch = attId != null ? byAttId.get(String(attId)) : null;
+    const resolvedUri = url || evMatch?.uri || '';
+    if (!resolvedUri) return;
+    const note = String(evMatch?.note || evMatch?.description || '').trim()
+      || (name ? `Hoá đơn vật tư phát sinh: ${String(name).trim()}` : '');
+    candidates.push({
+      id: evMatch?.id || (attId != null ? `att-${attId}` : fallbackId),
+      dbAttachmentId: attId ?? evMatch?.dbAttachmentId ?? null,
+      uri: resolvedUri,
+      stage: 'receipt',
+      evidenceType: evMatch?.evidenceType || 'DOCUMENT',
+      note,
+      at: Number(evMatch?.at) || Number(at) || 0,
+    });
+  };
+
+  (Array.isArray(order.quote?.lines) ? order.quote.lines : []).forEach((l, idx) => {
+    if (!l || (!l.receiptUrl && l.receiptId == null)) return;
+    pushFromRef({
+      attId: l.receiptId ?? null,
+      url: l.receiptUrl || '',
+      name: l.name,
+      fallbackId: `qline-rcpt-${idx}`,
+    });
+  });
+
+  (Array.isArray(order.quotations) ? order.quotations : []).forEach((q, qIdx) => {
+    const qAt = q?.sent_at || q?.created_at ? new Date(q.sent_at || q.created_at).getTime() : 0;
+    (Array.isArray(q?.items) ? q.items : []).forEach((qi, iIdx) => {
+      const att = qi?.receipt_attachment && typeof qi.receipt_attachment === 'object' ? qi.receipt_attachment : null;
+      const attUrl = att?.image_url || att?.file_url || att?.url || att?.uri || qi?.receipt_url || qi?.receipt_image_url || '';
+      const attId = qi?.receipt_attachment_id ?? att?.attachment_id ?? att?.id ?? null;
+      if (!attUrl && attId == null) return;
+      const cleanName = parseExternalPartDesc(qi?.description_snapshot)?.cleanName || qi?.description_snapshot || '';
+      pushFromRef({
+        attId,
+        url: attUrl,
+        name: cleanName,
+        fallbackId: `qitem-rcpt-${qIdx}-${iIdx}`,
+        at: att?.uploaded_at ? new Date(att.uploaded_at).getTime() : qAt,
+      });
+    });
+  });
+
+  (Array.isArray(order.finalizedExternalParts) ? order.finalizedExternalParts : []).forEach((f, idx) => {
+    if (!f || (!f.receiptUrl && f.receiptId == null)) return;
+    pushFromRef({
+      attId: f.receiptId ?? null,
+      url: f.receiptUrl || '',
+      name: f.name,
+      fallbackId: `fin-rcpt-${idx}`,
+    });
+  });
+
+  (Array.isArray(order.materialWarranties) ? order.materialWarranties : []).forEach((mw, idx) => {
+    if (!mw || (!mw.receiptUrl && mw.receiptAttachmentId == null)) return;
+    pushFromRef({
+      attId: mw.receiptAttachmentId ?? null,
+      url: mw.receiptUrl || '',
+      name: mw.itemName,
+      fallbackId: `mw-rcpt-${idx}`,
+    });
+  });
+
+  // Sắp xếp mới nhất trước (ưu tiên dbAttachmentId lớn hơn rồi tới at lớn hơn), sau đó khử trùng id/uri.
+  candidates.sort((a, b) => {
+    const ia = Number(a.dbAttachmentId);
+    const ib = Number(b.dbAttachmentId);
+    if (Number.isFinite(ia) && Number.isFinite(ib) && ia !== ib) return ib - ia;
+    if (Number.isFinite(ib) && !Number.isFinite(ia)) return 1;
+    if (Number.isFinite(ia) && !Number.isFinite(ib)) return -1;
+    return (Number(b.at) || 0) - (Number(a.at) || 0);
+  });
+
+  const seenById = new Set();
+  const seenByUri = new Set();
+  const deduped = [];
+  for (const item of candidates) {
+    const idKey = item.dbAttachmentId != null ? String(item.dbAttachmentId) : '';
+    const uriKey = String(item.uri || '');
+    if (!uriKey) continue;
+    if ((idKey && seenById.has(idKey)) || seenByUri.has(uriKey)) continue;
+    if (idKey) seenById.add(idKey);
+    seenByUri.add(uriKey);
+    deduped.push(item);
+  }
+
+  // Nếu thợ cập nhật ảnh mới cho cùng 1 vật tư (cùng tên vật tư trong mô tả), chỉ giữ bản mới nhất.
+  const seenPartNames = new Set();
+  const out = [];
+  for (const item of deduped) {
+    const partNorm = extractReceiptPartName(item.note);
+    if (partNorm) {
+      if (seenPartNames.has(partNorm)) continue;
+      seenPartNames.add(partNorm);
+    }
+    const strippedLabel = item.note ? item.note.replace(RECEIPT_PREFIX_RE, '').trim() : '';
+    out.push({
+      ...item,
+      label: strippedLabel || 'Hoá đơn vật tư phát sinh',
+    });
+  }
+  return out;
 }
 
 // Báo giá đang chờ khách hàng duyệt (hỗ trợ cả các mã trạng thái tương đương nếu API trả SENT/PENDING).

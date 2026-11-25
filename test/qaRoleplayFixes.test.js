@@ -19,6 +19,8 @@ const {
   getBlockingProcedureSteps,
   getAutoCompletableProcedureSteps,
   pickStepPhotoAllocation,
+  getProcedureStepDisplayPhotos,
+  stepRequiresPhoto,
 } = await import('../src/utils/procedureHelpers.js');
 const sync = await import('../src/services/syncService.js');
 const ctx = await import('../src/context/AppContext.js');
@@ -519,7 +521,7 @@ describe('qaRoleplayFixes: kiểm thử toàn bộ lỗi đồng bộ Khách ↔
     const autoSteps = getAutoCompletableProcedureSteps(procedure);
     assert.deepEqual(autoSteps.map((s) => s.step_id), [11, 12, 13]);
 
-    // Chỉ có 1 ảnh AFTER -> bước 3 nhận ảnh 101, bước 1 đánh dấu needsBeforeUpload để tránh đè FK
+    // Chỉ gắn ảnh hoàn thành cuối cùng cho Bước 3 (step_no > 1), Bước 1 bỏ hẳn ảnh
     const singleAfterAlloc = pickStepPhotoAllocation(
       [autoSteps[0], autoSteps[2]],
       { afterPhotoIds: [101], otherPhotoIds: [] },
@@ -527,17 +529,29 @@ describe('qaRoleplayFixes: kiểm thử toàn bộ lỗi đồng bộ Khách ↔
     assert.equal(singleAfterAlloc.get(13).photoId, 101);
     assert.equal(singleAfterAlloc.get(13).needsBeforeUpload, false);
     assert.equal(singleAfterAlloc.get(11).photoId, null);
-    assert.equal(singleAfterAlloc.get(11).fallbackPhotoId, 101);
-    assert.equal(singleAfterAlloc.get(11).needsBeforeUpload, true);
+    assert.equal(singleAfterAlloc.get(11).fallbackPhotoId, null);
+    assert.equal(singleAfterAlloc.get(11).needsBeforeUpload, false);
 
-    // Khi có sẵn ảnh riêng -> cả bước 1 và bước 3 dùng ID khác nhau, không cần upload bổ sung
+    // Kể cả khi có sẵn ảnh khác, Bước 1 vẫn không nhận ảnh hoàn thành / tự động
     const dualAlloc = pickStepPhotoAllocation(
       [autoSteps[0], autoSteps[2]],
       { afterPhotoIds: [101], otherPhotoIds: [99] },
     );
     assert.equal(dualAlloc.get(13).photoId, 101);
-    assert.equal(dualAlloc.get(11).photoId, 99);
+    assert.equal(dualAlloc.get(11).photoId, null);
     assert.equal(dualAlloc.get(11).needsBeforeUpload, false);
+
+    assert.equal(stepRequiresPhoto({ step_no: 1, require_photo: true }), false);
+    assert.equal(stepRequiresPhoto({ step_no: 3, require_photo: true }), true);
+
+    const step1 = { step_id: 11, step_no: 1, photo_ids: [100] };
+    const step3 = { step_id: 13, step_no: 3, photo_ids: [101] };
+    const sampleEv = [
+      { id: 'ev-100', dbAttachmentId: 100, procedureStepId: 11, uri: 'https://cdn.example.com/step1.jpg', note: 'Ảnh kiểm tra quy trình tự động' },
+      { id: 'ev-101', dbAttachmentId: 101, procedureStepId: 13, uri: 'https://cdn.example.com/done.jpg', note: 'Ảnh hoàn thành bàn giao thiết bị' },
+    ];
+    assert.deepEqual(getProcedureStepDisplayPhotos(step1, sampleEv), []);
+    assert.deepEqual(getProcedureStepDisplayPhotos(step3, sampleEv).map((e) => e.dbAttachmentId), [101]);
   });
 
   test('Rút gọn quy trình thợ: vật tư mua ngoài giá cố định tính tổng chính xác không tạo khoảng dao động', () => {

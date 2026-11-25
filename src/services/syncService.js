@@ -9,6 +9,7 @@ import {
   parseWarrantyDays,
 } from '../constants/data';
 import { toVnParts, vnDateKey } from '../utils/vnTime';
+import { formatMinutesToSlotStr } from '../utils/dateTime';
 import { viNotification, toVietnamese } from '../utils/viText';
 import {
   parseExternalPartDesc,
@@ -63,11 +64,7 @@ export const formatSlotFromIso = (isoStr) => {
   if (!p) return '08h00 - 10h00';
   const h = p.hour;
   const m = p.minute || 0;
-  if (h < 6) return '08h00 - 10h00';
-  if (h > 20 || (h === 20 && m > 0)) return '18h00 - 20h00';
-  const startMins = h * 60 + m;
-  const endMins = Math.min(startMins + 120, 22 * 60);
-  return `${pad(h)}h${pad(m)} - ${pad(Math.floor(endMins / 60))}h${pad(endMins % 60)}`;
+  return formatMinutesToSlotStr(h * 60 + m);
 };
 
 export const buildPreferredTimeIso = (dateKey, slot) => {
@@ -1520,6 +1517,64 @@ export const mapBackendOpenRequestToOrder = (req) => {
     history: [{ status: 'pending', at: createdAt }],
     createdAt,
     tech: null,
+  };
+};
+
+// Phân công còn quyền xem hóa đơn / ảnh phía thợ (chỉ ACTIVE hoặc ENDED; bỏ qua CANCELLED / thu hồi / hết hạn).
+const VIEWABLE_TECH_ASSIGNMENT_STATUSES = new Set(['ACTIVE', 'ENDED']);
+const TECH_BILL_PAYMENT_STATUSES = [
+  'PENDING_PAYMENT',
+  'PARTIALLY_PAID_RECEIVABLE',
+  'PENDING_REVIEW',
+];
+
+export const isTechAssignmentViewable = (job) => {
+  if (!job?.assignment_id) return false;
+  const st = String(job.assignment_status || 'ACTIVE').toUpperCase();
+  return VIEWABLE_TECH_ASSIGNMENT_STATUSES.has(st);
+};
+
+export const isTechBillPriorityJob = (job) => {
+  if (!isTechAssignmentViewable(job)) return false;
+  const rs = String(job?.request?.request_status || '').toUpperCase();
+  return (
+    TECH_BILL_PAYMENT_STATUSES.includes(rs) ||
+    (rs.startsWith('CANCELLED') &&
+      Boolean(job.arrived_at || Number(job.request?.inspection_fee) > 0 || Number(job.bill?.bill?.amount_due) > 0))
+  );
+};
+
+/**
+ * Chọn danh sách việc của thợ được phép gọi thêm API ảnh & hóa đơn khi đồng bộ.
+ * Bỏ qua hoàn toàn các phân công đã CANCELLED / thu hồi (backend cố ý trả 404 JOB_NOT_FOUND / REQUEST_NOT_FOUND).
+ */
+export const selectTechJobsForHydration = (allJobsRaw = [], openItemsRaw = []) => {
+  const viewableJobs = (Array.isArray(allJobsRaw) ? allJobsRaw : []).filter(isTechAssignmentViewable);
+  const isActiveStatus = (j) => String(j.assignment_status || 'ACTIVE').toUpperCase() === 'ACTIVE';
+  const activeJobsList = [
+    ...viewableJobs.filter((j) => isActiveStatus(j)),
+    ...viewableJobs.filter((j) => !isActiveStatus(j) && isTechBillPriorityJob(j)),
+    ...viewableJobs.filter((j) => !isActiveStatus(j) && !isTechBillPriorityJob(j)),
+  ].slice(0, 15);
+  const activeJobIds = activeJobsList.map((j) => String(j.assignment_id));
+  const paymentJobIds = viewableJobs
+    .filter((j) => isTechBillPriorityJob(j))
+    .map((j) => String(j.assignment_id));
+  const billJobIds = [...new Set([...activeJobIds, ...paymentJobIds])].slice(0, 25);
+  const viewableRequestIds = new Set(
+    viewableJobs
+      .map((j) => j.request?.request_id)
+      .filter((id) => id != null)
+      .map(String),
+  );
+  // GET /uploads?request_id= cho thợ chỉ được phép khi thợ có phân công ACTIVE hoặc ENDED trên đơn đó.
+  const openItemsWithPhotoAccess = (Array.isArray(openItemsRaw) ? openItemsRaw : [])
+    .filter((r) => r?.request_id != null && viewableRequestIds.has(String(r.request_id)))
+    .slice(0, 10);
+  return {
+    activeJobsList,
+    billJobIds,
+    openItemsWithPhotoAccess,
   };
 };
 

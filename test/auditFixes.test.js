@@ -120,12 +120,12 @@ test('syncService: mergeBackendOrdersWithLocal kiểm tra đổi thợ, revision
 });
 
 const { toVnParts, vnTimestamp } = await import('../src/utils/vnTime.js');
-const { isDayOutOfSlots } = await import('../src/utils/dateTime.js');
+const { ALLOW_ALL_TIME_SLOTS, isDayOutOfSlots } = await import('../src/utils/dateTime.js');
 const { getCancellationWindowStatus, assessCancelAfterAccept } = await import('../src/constants/techPolicy.js');
 const { viServerMessage } = await import('../src/utils/viText.js');
 const { isOnSiteQuote, draftFromOrder } = await import('../src/screens/tech/components/useQuoteDraft.js');
 
-test('vnTime & dateTime: weekday GMT+7 và ngưỡng hết ca 19:15 / 19:20 VN', () => {
+test('vnTime & dateTime: weekday GMT+7 và kiểm tra hết ca theo cấu hình ALLOW_ALL_TIME_SLOTS', () => {
   // 2026-11-22 18:00 UTC = 2026-11-23 01:00 VN (Thứ Hai -> weekday 1)
   const p = toVnParts(Date.UTC(2026, 10, 22, 18, 0, 0));
   assert.equal(p.year, 2026);
@@ -133,8 +133,14 @@ test('vnTime & dateTime: weekday GMT+7 và ngưỡng hết ca 19:15 / 19:20 VN',
   assert.equal(p.day, 23);
   assert.equal(p.weekday, 1);
 
-  assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 19, 15))), false);
-  assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 19, 20))), true);
+  if (ALLOW_ALL_TIME_SLOTS) {
+    assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 19, 15))), false);
+    assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 19, 20))), false);
+    assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 23, 55))), false);
+  } else {
+    assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 19, 15))), false);
+    assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 19, 20))), true);
+  }
 });
 
 test('techPolicy: cửa sổ huỷ miễn phí 60 phút và mức phạt out_of_warranty', () => {
@@ -153,9 +159,11 @@ test('techPolicy: cửa sổ huỷ miễn phí 60 phút và mức phạt out_of_
 });
 
 test('syncService: giữ nguyên khung giờ lẻ và không nhảy sang repairing khi needs_quotation = true', () => {
+  assert.equal(sync.formatSlotFromIso('2026-11-22T01:00:00+07:00'), '01h00 - 03h00');
   assert.equal(sync.formatSlotFromIso('2026-11-22T09:00:00+07:00'), '09h00 - 11h00');
   assert.equal(sync.formatSlotFromIso('2026-11-22T15:00:00+07:00'), '15h00 - 17h00');
   assert.equal(sync.formatSlotFromIso('2026-11-22T19:00:00+07:00'), '19h00 - 21h00');
+  assert.equal(sync.formatSlotFromIso('2026-11-22T22:30:00+07:00'), '22h30 - 24h00');
 
   const mapped = sync.mapBackendCustomerRequestToOrder({
     request_id: 950,

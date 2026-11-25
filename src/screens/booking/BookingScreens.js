@@ -20,7 +20,7 @@ import {
 import { pickImage, validateVietnamesePhone, validateStreetAddress, validateContactName, sanitizeVnPhoneInput } from '../../utils';
 import { getCheckInLocation, geocodeAddress } from '../../utils/geo';
 import {
-  nextDays, minSelectableMinute, MAX_DAY_MINUTE, LEAD_MINUTES, SLOT_STEP_MINUTES, DEFAULT_SLOT_MINUTE,
+  nextDays, minSelectableMinute, defaultSelectableMinute, MAX_DAY_MINUTE, LEAD_MINUTES, SLOT_STEP_MINUTES, DEFAULT_SLOT_MINUTE,
 } from '../../utils/dateTime';
 import { OTP_TTL_MINUTES, BASE_WARRANTY_DAYS } from '../../constants';
 import {
@@ -450,13 +450,11 @@ export function CheckoutScreen({ params }) {
   const [dayIdx, setDayIdx] = useState(() => (firstWorkingIdx >= 0 ? firstWorkingIdx : 1));
   const [timeMinutes, setTimeMinutes] = useState(() => {
     const startIdx = firstWorkingIdx >= 0 ? firstWorkingIdx : 1;
-    const minM = getMinSelectable(startIdx);
-    return Math.min(Math.max(DEFAULT_SLOT_MINUTE, minM), MAX_DAY_MINUTE);
+    return defaultSelectableMinute(startIdx);
   });
   const [slot, setSlot] = useState(() => {
     const startIdx = firstWorkingIdx >= 0 ? firstWorkingIdx : 1;
-    const minM = getMinSelectable(startIdx);
-    return minutesToSlotStr(Math.min(Math.max(DEFAULT_SLOT_MINUTE, minM), MAX_DAY_MINUTE));
+    return minutesToSlotStr(defaultSelectableMinute(startIdx));
   });
 
   const minAvailable = getMinSelectable(dayIdx);
@@ -866,6 +864,7 @@ export function CheckoutScreen({ params }) {
           minMinutes={minAvailable}
           maxMinutes={MAX_DAY_MINUTE}
           step={SLOT_STEP_MINUTES}
+          leadMinutes={LEAD_MINUTES}
           isToday={dayIdx === 0}
           onSelectTomorrow={() => handleDaySelect(fallbackNextWorkingIdx)}
         />

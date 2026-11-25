@@ -4,11 +4,15 @@ import { toVnParts } from './vnTime.js';
 
 export const WEEKDAYS = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 
+// Chế độ test: mở toàn bộ khung giờ 00:00 – 23:45 (không giới hạn giờ làm việc / không chặn lead time).
+// Đổi về false khi cần bật lại khung giờ chuẩn 08:00 – 20:00 (đặt trước tối thiểu 45 phút).
+export const ALLOW_ALL_TIME_SLOTS = true;
+
 // Khung giờ nhận lịch trong ngày (phút tính từ 00:00).
-export const MIN_DAY_MINUTE = 8 * 60; // 08:00
-export const MAX_DAY_MINUTE = 20 * 60; // 20:00
+export const MIN_DAY_MINUTE = ALLOW_ALL_TIME_SLOTS ? 0 : 8 * 60; // 00:00 (chuẩn: 08:00)
+export const MAX_DAY_MINUTE = ALLOW_ALL_TIME_SLOTS ? 23 * 60 + 45 : 20 * 60; // 23:45 (chuẩn: 20:00)
 // Thợ cần tối thiểu N phút chuẩn bị + di chuyển khi đặt trong hôm nay.
-export const LEAD_MINUTES = 45;
+export const LEAD_MINUTES = ALLOW_ALL_TIME_SLOTS ? 0 : 45;
 // Bước chọn giờ của thanh trượt.
 export const SLOT_STEP_MINUTES = 15;
 // Giờ mặc định gợi ý khi mở màn chọn lịch.
@@ -31,11 +35,24 @@ export const nextDays = (n, base = new Date()) => {
 
 /** Phút sớm nhất có thể chọn cho ngày thứ dayIdx (0 = hôm nay, tính theo giờ Việt Nam GMT+7). */
 export const minSelectableMinute = (dayIdx, now = new Date()) => {
-  if (dayIdx > 0) return MIN_DAY_MINUTE;
+  if (ALLOW_ALL_TIME_SLOTS || dayIdx > 0) return MIN_DAY_MINUTE;
   const vn = toVnParts(now) || toVnParts(Date.now());
   const nowTotal = vn.hour * 60 + vn.minute;
   const earliest = Math.ceil((nowTotal + LEAD_MINUTES) / SLOT_STEP_MINUTES) * SLOT_STEP_MINUTES;
   return Math.max(MIN_DAY_MINUTE, earliest);
+};
+
+/** Giờ mặc định khi mở màn đặt lịch: hôm nay gợi ý mốc gần nhất sắp tới, ngày khác dùng DEFAULT_SLOT_MINUTE. */
+export const defaultSelectableMinute = (dayIdx, now = new Date()) => {
+  const minM = minSelectableMinute(dayIdx, now);
+  if (dayIdx === 0) {
+    const vn = toVnParts(now) || toVnParts(Date.now());
+    const nowTotal = vn.hour * 60 + vn.minute;
+    const nextStep = Math.ceil((nowTotal + LEAD_MINUTES) / SLOT_STEP_MINUTES) * SLOT_STEP_MINUTES;
+    const suggested = ALLOW_ALL_TIME_SLOTS ? nextStep : Math.max(DEFAULT_SLOT_MINUTE, nextStep);
+    return Math.min(Math.max(suggested, minM), MAX_DAY_MINUTE);
+  }
+  return Math.min(Math.max(DEFAULT_SLOT_MINUTE, minM), MAX_DAY_MINUTE);
 };
 
 /** Hôm nay đã hết giờ nhận lịch chưa. */
