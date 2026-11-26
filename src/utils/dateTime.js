@@ -34,11 +34,12 @@ export const nextDays = (n, base = new Date()) => {
 };
 
 /** Phút sớm nhất có thể chọn cho ngày thứ dayIdx (0 = hôm nay, tính theo giờ Việt Nam GMT+7). */
+// Hôm nay luôn chặn giờ đã qua (kể cả chế độ mở mọi khung giờ) vì server từ chối preferred_time ở quá khứ.
 export const minSelectableMinute = (dayIdx, now = new Date()) => {
-  if (ALLOW_ALL_TIME_SLOTS || dayIdx > 0) return MIN_DAY_MINUTE;
+  if (dayIdx > 0) return MIN_DAY_MINUTE;
   const vn = toVnParts(now) || toVnParts(Date.now());
   const nowTotal = vn.hour * 60 + vn.minute;
-  const earliest = Math.ceil((nowTotal + LEAD_MINUTES) / SLOT_STEP_MINUTES) * SLOT_STEP_MINUTES;
+  const earliest = Math.ceil((nowTotal + Math.max(LEAD_MINUTES, 1)) / SLOT_STEP_MINUTES) * SLOT_STEP_MINUTES;
   return Math.max(MIN_DAY_MINUTE, earliest);
 };
 
@@ -48,7 +49,7 @@ export const defaultSelectableMinute = (dayIdx, now = new Date()) => {
   if (dayIdx === 0) {
     const vn = toVnParts(now) || toVnParts(Date.now());
     const nowTotal = vn.hour * 60 + vn.minute;
-    const nextStep = Math.ceil((nowTotal + LEAD_MINUTES) / SLOT_STEP_MINUTES) * SLOT_STEP_MINUTES;
+    const nextStep = Math.ceil((nowTotal + Math.max(LEAD_MINUTES, 1)) / SLOT_STEP_MINUTES) * SLOT_STEP_MINUTES;
     const suggested = ALLOW_ALL_TIME_SLOTS ? nextStep : Math.max(DEFAULT_SLOT_MINUTE, nextStep);
     return Math.min(Math.max(suggested, minM), MAX_DAY_MINUTE);
   }

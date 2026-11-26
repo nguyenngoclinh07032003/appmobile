@@ -2167,9 +2167,10 @@ export function TechJobScreen({ params }) {
                         {(o.quote.lines || []).map((l, i) => {
                           const receiptEv = lineReceipts.get(i) || null;
                           const warrantyMeta = [
+                            l.warrantyCode ? `Mã BH linh kiện: ${l.warrantyCode}` : null,
                             l.serialNumber ? `Sê-ri: ${l.serialNumber}` : null,
                             l.warrantyDays > 0 ? `${l.isCustom ? 'BH hãng' : 'Bảo hành'}: ${l.warrantyDays} ngày` : null,
-                            l.externalWarrantyCode ? `Mã BH: ${l.externalWarrantyCode}` : null,
+                            l.externalWarrantyCode ? `Mã BH hãng: ${l.externalWarrantyCode}` : null,
                           ].filter(Boolean).join(' · ');
                           return (
                             <View key={`${l.name}-${i}`}>
@@ -2480,8 +2481,9 @@ export function TechJobScreen({ params }) {
                     {mw.isExternalPurchase ? <Badge text="Bảo hành hãng / bên thứ 3" fg={C.goldInk} bg={C.goldSoft} /> : null}
                     {mw.warrantyDays > 0 ? <Badge text={`${mw.warrantyDays} ngày`} fg={C.ink2} bg={C.surface} /> : null}
                   </View>
+                  {mw.warrantyCode ? <Text style={[ui.meta, { marginTop: 3, color: C.primary, fontWeight: '800' }]}>Mã bảo hành linh kiện: {mw.warrantyCode}</Text> : null}
                   {mw.serialNumber ? <Text style={[ui.meta, { marginTop: 3 }]}>Số sê-ri: {mw.serialNumber}</Text> : null}
-                  {mw.externalWarrantyCode ? <Text style={[ui.meta, { marginTop: 2, color: C.goldInk, fontWeight: '700' }]}>Mã BH hãng: {mw.externalWarrantyCode}</Text> : null}
+                  {mw.externalWarrantyCode ? <Text style={[ui.meta, { marginTop: 2, color: C.goldInk, fontWeight: '700' }]}>Mã bảo hành hãng: {mw.externalWarrantyCode}</Text> : null}
                   {mw.startsAt || mw.expiresAt ? (
                     <Text style={[ui.meta, { marginTop: 2 }]}>
                       Hiệu lực: {mw.startsAt ? fmtDate(mw.startsAt) : 'Khi hoàn tất'} → {mw.expiresAt ? fmtDate(mw.expiresAt) : '—'}

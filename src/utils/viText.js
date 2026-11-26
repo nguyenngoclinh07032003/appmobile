@@ -118,6 +118,29 @@ const NOTIF_TYPE_VI = {
   ATTENDANCE_REJECTED: { title: 'Chấm công bị từ chối', body: 'Ca vào làm của bạn bị quản lý từ chối. Mở mục Chấm công để xem lý do.' },
   VIOLATION_RECORDED: { title: 'Ghi nhận vi phạm mới', body: 'Bạn vừa có một ghi nhận vi phạm mới. Mở mục Chấm công để xem chi tiết.' },
   ATTENDANCE_PERIOD_LOCKED: { title: 'Đã chốt kỳ công', body: 'Văn phòng đã chốt bảng công kỳ này.' },
+  // Luồng 2: đặt đơn & phân việc (23/11)
+  REQUEST_CREATED_BY_STAFF: { title: 'Văn phòng đã tạo đơn cho bạn', body: 'Văn phòng đã tạo đơn {code} cho bạn qua tổng đài.' },
+  TECH_ASSIGNED: { title: 'Đã có thợ nhận đơn', body: 'Đơn {code} đã có kỹ thuật viên phụ trách.' },
+  JOB_RESCHEDULED: { title: 'Khách đổi giờ hẹn', body: 'Khách vừa đổi giờ hẹn của đơn {code}. Kiểm tra giờ mới trong chi tiết việc.' },
+  QUOTE_REMINDER: { title: 'Nhắc duyệt báo giá', body: 'Báo giá đơn {code} đang chờ bạn duyệt. Sau 24 giờ không phản hồi, đơn sẽ tự huỷ.' },
+  QUOTATION_REVISION: { title: 'Khách yêu cầu báo giá lại', body: 'Vui lòng gửi lại báo giá cho đơn {code}.' },
+  TECH_ON_THE_WAY: { title: 'Thợ đang đến', body: 'Thợ đang di chuyển tới địa chỉ của bạn (đơn {code}).' },
+  TECH_ARRIVED: { title: 'Thợ đã đến', body: 'Thợ đã có mặt tại địa chỉ của bạn (đơn {code}).' },
+  LATE_COMPENSATION: { title: 'Voucher bồi thường thợ đến muộn', body: 'Bạn nhận được mã giảm giá bồi thường cho đơn {code}.' },
+  REPAIR_NOTE: { title: 'Ghi chú từ thợ', body: 'Thợ vừa cập nhật ghi chú cho đơn {code}.' },
+  TECH_RELEASED: { title: 'Đổi thợ cho đơn', body: 'Thợ trước không thể tiếp tục đơn {code}. Hệ thống đang tìm thợ khác.' },
+  APOLOGY_VOUCHER: { title: 'Voucher xin lỗi', body: 'Bạn nhận được mã giảm giá xin lỗi vì đổi thợ cho đơn {code}.' },
+  PAYMENT_DUE: { title: 'Thợ đã sửa xong', body: 'Đơn {code} đã sửa xong, vui lòng kiểm tra rồi thanh toán.' },
+  JOB_SUBMITTED: { title: 'Đơn đã hoàn thành', body: 'Đơn {code} đã hoàn thành.' },
+  ACCEPTANCE_APPROVED: { title: 'Văn phòng đã duyệt nghiệm thu', body: 'Văn phòng đã duyệt nghiệm thu đơn {code}.' },
+  FOLLOW_UP_REQUESTED: { title: 'Hẹn lịch tái khám', body: 'Thợ đã hẹn lịch tái khám cho đơn {code}.' },
+  OUT_OF_WARRANTY: { title: 'Thiết bị ngoài phạm vi bảo hành', body: 'Thợ xác định thiết bị của đơn {code} nằm ngoài phạm vi bảo hành.' },
+  REQUEST_CANCELLED_BY_STAFF: { title: 'Đơn đã bị huỷ', body: 'Đơn {code} đã bị tổng đài huỷ.' },
+  REQUEST_UNASSIGNED: { title: 'Đơn chưa có thợ nhận', body: 'Đơn {code} chưa có thợ nhận.' },
+  REQUEST_AUTO_CANCELLED: { title: 'Đơn tự huỷ', body: 'Đơn {code} đã tự huỷ.' },
+  TECHNICIAN_LATE: { title: 'Đã tới giờ hẹn', body: 'Đã tới giờ hẹn của đơn {code} nhưng bạn chưa bấm xuất phát.' },
+  TECHNICIAN_DELAYED: { title: 'Thợ đang đến muộn', body: 'Thợ đơn {code} đang đến muộn so với giờ hẹn.' },
+  QUOTATION_APPROVED_ON_SITE: { title: 'Khách đồng ý báo giá tại chỗ', body: 'Báo giá đơn {code} đã được khách ký đồng ý tại chỗ.' },
   SYSTEM: { title: 'Thông báo hệ thống', body: '' },
 };
 
@@ -156,7 +179,7 @@ const ERROR_CODE_VI = {
   OTP_INVALID: 'Mã xác thực không đúng.',
   INVALID_WARD: 'Phường/xã được chọn chưa hợp lệ. Vui lòng chọn lại.',
   REQUEST_NOT_FOUND: 'Không tìm thấy đơn hàng.',
-  REQUEST_DECLINED: 'Đơn hàng đã bị từ chối.',
+  REQUEST_DECLINED: 'Bạn đã từ chối hoặc trả đơn này trước đó nên không nhận lại được.',
   JOB_NOT_FOUND: 'Không tìm thấy công việc.',
   REQUEST_NOT_AVAILABLE: 'Việc đã có thợ khác nhận hoặc không còn chờ nhận.',
   REQUEST_CLOSED: 'Đơn đã đóng.',
@@ -237,6 +260,31 @@ const ERROR_CODE_VI = {
   MATERIAL_WARRANTY_NOT_FOUND: 'Không tìm thấy thông tin bảo hành linh kiện trên đơn này.',
   MATERIAL_WARRANTY_NOT_ACTIVE: 'Bảo hành linh kiện chưa kích hoạt, đã hết hạn hoặc đã đóng.',
   MATERIAL_WARRANTY_CLOSED: 'Bảo hành linh kiện này đã đóng trước đó.',
+  // Luồng 2: đặt đơn & phân việc (bảng mã lỗi mục 8)
+  EMAIL_NOT_VERIFIED: 'Bạn cần xác thực thư điện tử trước khi đặt lịch.',
+  ADDRESS_NOT_FOUND: 'Địa chỉ đã chọn không còn trong sổ địa chỉ. Vui lòng chọn lại.',
+  INVALID_SERVICE: 'Có dịch vụ không tồn tại hoặc đã ngừng phục vụ. Tải lại danh sách dịch vụ.',
+  DUPLICATE_REQUEST: 'Bạn vừa đặt một đơn y hệt trong 2 phút trước.',
+  CANNOT_CANCEL: 'Trạng thái đơn hiện tại không cho phép huỷ. Vui lòng gọi tổng đài.',
+  CANCEL_TOO_LATE: 'Đã quá thời gian tự huỷ (còn dưới 1 giờ tới giờ hẹn hoặc thợ đã xuất phát). Vui lòng gọi tổng đài.',
+  CANNOT_EDIT: 'Đơn không còn sửa được. Vui lòng gọi tổng đài.',
+  EDIT_TOO_LATE: 'Còn dưới 1 giờ tới giờ hẹn nên không sửa được. Vui lòng gọi tổng đài.',
+  TECHNICIAN_NOT_FOUND: 'Không tìm thấy kỹ thuật viên đang hoạt động.',
+  CANNOT_REASSIGN: 'Thợ chính đã xuất phát hoặc đã bắt đầu, không đổi được.',
+  TOO_MANY_ACTIVE_JOBS: 'Bạn đang giữ tối đa 3 việc. Hoàn thành hoặc trả bớt việc trước khi nhận thêm.',
+  NOT_ACCEPTING_JOBS: 'Bạn đang tắt nhận việc. Bật "Nhận việc" để nhận đơn này.',
+  SPECIALTY_MISMATCH: 'Đơn này nằm ngoài chuyên môn của bạn.',
+  TIME_CONFLICT: 'Đơn này trùng giờ với việc bạn đang giữ.',
+  TRAVEL_NOT_STARTED: 'Bấm "Bắt đầu di chuyển" trước khi xác nhận đến nơi.',
+  ALREADY_ARRIVED: 'Bạn đã xác nhận đến nơi rồi.',
+  TOO_FAR_FROM_CUSTOMER: 'Bạn đang ở quá xa nhà khách. Đến gần hơn và bật định vị chính xác rồi thử lại.',
+  QUOTATION_REVISION_PENDING: 'Khách yêu cầu báo giá lại. Vui lòng gửi báo giá mới.',
+  QUOTATION_DUPLICATES_BOOKED_SERVICE: 'Báo giá phát sinh chỉ ghi phần làm thêm, không ghi lại dịch vụ khách đã đặt.',
+  REMIND_TOO_SOON: 'Chỉ nhắc khách tối đa 1 lần mỗi 10 phút.',
+  NO_PENDING_QUOTATION: 'Không có báo giá nào đang chờ khách duyệt.',
+  PHOTO_REQUIRED: 'Bước này cần ít nhất 1 ảnh.',
+  STEP_REQUIRED: 'Bước bắt buộc, không bỏ qua được.',
+  PAYMENT_REQUIRED: 'Khách chưa thanh toán đủ, chưa nghiệm thu được.',
   TIMEOUT: 'Kết nối máy chủ quá hạn. Vui lòng thử lại.',
   NETWORK_ERROR: 'Không kết nối được máy chủ. Kiểm tra mạng và thử lại.',
 };
@@ -492,6 +540,33 @@ export const viServerMessage = (message, code, status) => {
   if (byCode) return byCode; // có mã lỗi đã biết: dùng câu chuẩn thay vì dịch từng cụm
   const out = toVietnamese(raw, '');
   return out && !looksEnglish(out) ? out : fallback;
+};
+
+// Chi tiết lỗi NON_WORKING_DAY: errors[].message = "SUNDAY" | "HOLIDAY:<tên ngày lễ>".
+export const viNonWorkingDayDetail = (errors = []) => {
+  const list = Array.isArray(errors) ? errors : [];
+  for (const e of list) {
+    const raw = String((e && typeof e === 'object' ? e.message : e) || '').trim();
+    if (!raw) continue;
+    if (/^SUNDAY$/i.test(raw)) return 'Ngày đã chọn là Chủ nhật (nghỉ). Vui lòng chọn ngày làm việc khác.';
+    const m = /^HOLIDAY(?::\s*(.*))?$/i.exec(raw);
+    if (m) {
+      const name = String(m[1] || '').trim();
+      return `Ngày đã chọn là ngày lễ${name ? ` (${name})` : ''}. Vui lòng chọn ngày làm việc khác.`;
+    }
+  }
+  return '';
+};
+
+// DUPLICATE_REQUEST: errors[0].message = mã đơn vừa tạo trước đó.
+export const extractDuplicateRequestCode = (errors = []) => {
+  const list = Array.isArray(errors) ? errors : [];
+  for (const e of list) {
+    const raw = String((e && typeof e === 'object' ? e.message : e) || '').trim();
+    const m = /\b([A-Z]{2,5}-[A-Z0-9-]+)\b/.exec(raw);
+    if (m) return m[1];
+  }
+  return '';
 };
 
 /** Việt hoá một dòng lỗi theo trường ({ field, message }). */

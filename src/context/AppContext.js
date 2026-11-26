@@ -160,6 +160,7 @@ import {
   mapPointHistory,
   mapBackendPhotoToEvidence,
   selectTechJobsForHydration,
+  mapQuotePreview,
 } from "../services/syncService";
 import {
   TECH_POLICY,
@@ -170,7 +171,7 @@ import {
   isOfferExpired,
 } from "../constants/techPolicy";
 import { getCheckInLocation, distanceKm } from "../utils/geo";
-import { viNotification } from "../utils/viText";
+import { viNotification, viNonWorkingDayDetail, extractDuplicateRequestCode } from "../utils/viText";
 import { isAttendanceNotifType } from "../utils/attendance";
 export {
   TECH_POLICY,
@@ -192,6 +193,30 @@ const networkError = (res) =>
   res?.code === "TIMEOUT"
     ? `Máy chủ ${API_BASE_URL} phản hồi quá lâu. Kiểm tra mạng rồi thử lại.`
     : `Không kết nối được máy chủ ${API_BASE_URL}. Kiểm tra mạng rồi thử lại.`;
+
+// Body chung cho POST /customer/requests và POST /customer/requests/quote-preview (cùng công thức tính tiền phía server).
+export const buildCustomerRequestBody = (payload = {}, address = null) => {
+  const orderedItems = (payload.items || []).slice(0, 10);
+  const svc0 = getService(orderedItems[0]?.id);
+  const method =
+    PAYMENT_METHODS.find(
+      (m) => m.label === payload.payment || m.id === payload.payment,
+    )?.apiMethod || "CASH";
+  return {
+    ...(address?.dbAddressId ? { service_address_id: String(address.dbAddressId) } : {}),
+    ...(payload.dateKey && payload.slot
+      ? { preferred_time: buildPreferredTimeIso(payload.dateKey, payload.slot) }
+      : {}),
+    problem_description: payload.note || svc0?.name || null,
+    ...(payload.siteCondition?.id ? { site_condition: payload.siteCondition.id } : {}),
+    preferred_payment_method: method,
+    ...(payload.voucher?.code ? { voucher_code: payload.voucher.code } : {}),
+    items: orderedItems.map((it) => ({
+      service_id: resolveDbServiceId(it.id),
+      quantity: Math.min(20, Math.max(1, Number(it.qty) || 1)),
+    })),
+  };
+};
 
 const buildTrackingMeta = (lat, lng, ord, serverData = {}) => {
   const numLat = lat != null ? Number(lat) : null;
@@ -956,6 +981,15 @@ export const EXPIRED_META = {
   bg: C.redSoft,
 };
 export const customerStatusMeta = (o, now = Date.now()) => {
+  // Đơn chưa có thợ đã quá giờ hẹn: server giữ RECEIVED tối đa ~1 ngày rồi mới tự huỷ (26/11).
+  if (o?.status === "pending" && !o?.offerExpiresAt && isOfferExpired(o, now)) {
+    return {
+      label: "Đang tìm thợ",
+      fg: C.goldInk,
+      bg: C.goldSoft,
+      desc: "Đang tìm thợ – đã quá giờ hẹn, HRMSS sẽ liên hệ bạn.",
+    };
+  }
   if (isOfferExpired(o, now)) {
     return {
       ...EXPIRED_META,
@@ -3669,6 +3703,27 @@ export function AppProvider({ children }) {
 
     // Đơn hàng (Ghi trực tiếp vào bảng hrmss.service_request, service_request_service, repair_visit)
     // Đặt lịch: POST /customer/requests TRƯỚC; mã đơn, giá, trạng thái lấy từ server. Lỗi thì báo, không tạo đơn trên máy.
+    // Xem trước tiền khi đặt lịch: POST /customer/requests/quote-preview (không tạo đơn, không hiện thông báo lỗi).
+    previewOrderQuote: async (payload) => {
+      if (!authTokens.get() || s.auth?.role !== "customer") return null;
+      if (!Array.isArray(payload?.items) || !payload.items.length) return null;
+      const res = await hrmssApi
+        .previewCustomerRequestQuote(buildCustomerRequestBody(payload, address))
+        .catch(() => null);
+      if (!res) return null;
+      if (!res.ok) {
+        return {
+          ok: false,
+          code: res.code || "ERROR",
+          message:
+            res.code === "NON_WORKING_DAY"
+              ? viNonWorkingDayDetail(res.errors) || res.message
+              : res.message,
+        };
+      }
+      const preview = mapQuotePreview(res.data);
+      return preview ? { ok: true, preview } : null;
+    },
     placeOrder: async (payload) => {
       if (s.auth?.role === "customer" && !s.auth.emailVerified) {
         ui.alert(
@@ -3676,7 +3731,7 @@ export function AppProvider({ children }) {
           `Vui lòng xác thực địa chỉ thư điện tử (${s.user?.email || s.auth?.email || ""}) bằng mã xác thực 6 chữ số trước khi đặt lịch dịch vụ.`,
           "📧",
         );
-        return null;
+        return { needsEmailVerify: true };
       }
       if (!authTokens.get()) {
         ui.alert("Chưa đăng nhập", "Đăng nhập để đặt lịch.", "🔐");
@@ -3690,40 +3745,66 @@ export function AppProvider({ children }) {
         );
         return null;
       }
-      const svc0 = getService(payload.items[0]?.id);
       const orderedItems = (payload.items || []).slice(0, 10);
-      const items = orderedItems.map((it) => ({
-        service_id: resolveDbServiceId(it.id),
-        quantity: Math.min(20, Math.max(1, Number(it.qty) || 1)),
-      }));
-      const method =
-        PAYMENT_METHODS.find(
-          (m) => m.label === payload.payment || m.id === payload.payment,
-        )?.apiMethod || "CASH";
-      const res = await hrmssApi.createCustomerRequest({
-        service_address_id: String(address.dbAddressId),
-        preferred_time: buildPreferredTimeIso(payload.dateKey, payload.slot),
-        problem_description: payload.note || svc0?.name || null,
-        ...(payload.siteCondition?.id
-          ? { site_condition: payload.siteCondition.id }
-          : {}),
-        preferred_payment_method: method,
-        ...(payload.voucher?.code
-          ? { voucher_code: payload.voucher.code }
-          : {}),
-        items,
-      });
+      const reqBody = buildCustomerRequestBody(payload, address);
+      if (!reqBody.preferred_time || new Date(reqBody.preferred_time).getTime() <= Date.now()) {
+        ui.alert(
+          "Khung giờ đã qua",
+          "Khung giờ đã qua, vui lòng chọn giờ khác.",
+          "⏰",
+        );
+        return { needsReschedule: true };
+      }
+      const res = await hrmssApi.createCustomerRequest(reqBody);
       if (!res.ok || !res.data?.request) {
+        const errFields = Array.isArray(res.errors) ? res.errors : [];
+        if (
+          Number(res.status) === 400 &&
+          errFields.some((e) => String(e?.field || "") === "preferred_time") &&
+          res.code !== "NON_WORKING_DAY"
+        ) {
+          ui.alert(
+            "Khung giờ đã qua",
+            "Khung giờ đã qua, vui lòng chọn giờ khác.",
+            "⏰",
+          );
+          return { needsReschedule: true };
+        }
+        if (res.code === "EMAIL_NOT_VERIFIED") {
+          const curAuth = stateRef.current?.auth;
+          if (curAuth) up(() => ({ auth: upsertBackendAccount({ ...curAuth, emailVerified: false }) }));
+          ui.alert(
+            "Chưa xác thực thư điện tử",
+            `Hệ thống yêu cầu xác thực thư điện tử (${s.user?.email || s.auth?.email || ""}) trước khi đặt lịch. Nhập mã 6 chữ số được gửi tới hộp thư để tiếp tục.`,
+            "📧",
+          );
+          return { needsEmailVerify: true };
+        }
+        if (res.code === "DUPLICATE_REQUEST") {
+          const dupCode = extractDuplicateRequestCode(res.errors);
+          await syncFromBackend(null, true).catch(() => null);
+          const exists = dupCode && (stateRef.current?.orders || []).some((x) => x.code === dupCode);
+          if (exists) {
+            ui.toast(`Đơn ${dupCode} đã được tạo trước đó, không tạo trùng`, "ℹ️");
+            return dupCode;
+          }
+          ui.alert(
+            "Đơn đã được tạo",
+            `Bạn vừa đặt một đơn y hệt trong 2 phút trước${dupCode ? ` (mã ${dupCode})` : ""}. Xem lại trong mục Hoạt động.`,
+            "ℹ️",
+          );
+          return null;
+        }
         const msg = {
           VOUCHER_NOT_APPLICABLE: "Mã giảm giá không dùng được cho đơn này.",
           VOUCHER_EXPIRED: "Mã giảm giá đã hết hạn.",
           VOUCHER_NOT_AVAILABLE: "Mã giảm giá đã hết lượt dùng.",
           VOUCHER_NOT_FOUND: "Mã giảm giá không tồn tại.",
-          ADDRESS_NOT_FOUND: "Địa chỉ không còn trong sổ địa chỉ.",
+          ADDRESS_NOT_FOUND: "Địa chỉ không còn trong sổ địa chỉ. Vui lòng chọn lại.",
           INVALID_SERVICE:
             "Có dịch vụ đã ngừng phục vụ. Tải lại danh sách dịch vụ.",
-          DUPLICATE_REQUEST: "Bạn đã có đơn trùng dịch vụ và khung giờ này.",
           NON_WORKING_DAY:
+            viNonWorkingDayDetail(res.errors) ||
             "Hệ thống nghỉ Chủ nhật và ngày lễ. Vui lòng chọn ngày làm việc khác.",
         }[res.code];
         ui.alert(
@@ -5622,9 +5703,16 @@ export function AppProvider({ children }) {
       const o = s.orders.find((x) => x.code === code);
       if (!o?.dbRequestId || !authTokens.get()) return notSynced("Đơn này");
       const prevAtts = Array.isArray(o.attachments) ? o.attachments : [];
+      const nextPreferredIso = patch.dateKey && patch.slot
+        ? buildPreferredTimeIso(patch.dateKey, patch.slot)
+        : null;
+      if (patch.dateKey && patch.slot && (!nextPreferredIso || new Date(nextPreferredIso).getTime() <= Date.now())) {
+        ui.alert("Khung giờ đã qua", "Khung giờ đã qua, vui lòng chọn giờ khác.", "⏰");
+        return false;
+      }
       const body = {
-        ...(patch.dateKey && patch.slot
-          ? { preferred_time: buildPreferredTimeIso(patch.dateKey, patch.slot) }
+        ...(nextPreferredIso
+          ? { preferred_time: nextPreferredIso }
           : {}),
         ...(patch.note != null
           ? { problem_description: String(patch.note).slice(0, 1000) || null }

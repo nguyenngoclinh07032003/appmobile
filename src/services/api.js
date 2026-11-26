@@ -2,7 +2,7 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { API_BASE_URL, APP_CONFIG } from '../constants/config';
-import { viServerMessage, viFieldError, toVietnamese } from '../utils/viText';
+import { viServerMessage, viFieldError, toVietnamese, viNonWorkingDayDetail, extractDuplicateRequestCode } from '../utils/viText';
 
 // Mã lỗi nghĩa là việc không còn được giao cho thợ / đã hết hạn / đã có thợ khác nhận.
 // AppContext đăng ký onJobGone để gỡ việc khỏi màn hình thợ ngay.
@@ -434,7 +434,13 @@ async function rawRequest(endpoint, options = {}) {
       }
       // Backend có thể trả lỗi tiếng Anh: luôn Việt hoá trước khi hiển thị.
       let errMsg = viServerMessage(resData?.message, resData?.code, res.status);
-      if (Array.isArray(resData?.errors) && resData.errors.length > 0) {
+      const errCode = String(resData?.code || '').toUpperCase();
+      if (errCode === 'NON_WORKING_DAY') {
+        errMsg = viNonWorkingDayDetail(resData?.errors) || errMsg;
+      } else if (errCode === 'DUPLICATE_REQUEST') {
+        const dupCode = extractDuplicateRequestCode(resData?.errors);
+        errMsg = dupCode ? `${viServerMessage(null, 'DUPLICATE_REQUEST', res.status)} Mã đơn: ${dupCode}.` : errMsg;
+      } else if (Array.isArray(resData?.errors) && resData.errors.length > 0) {
         const details = resData.errors.map(viFieldError).join(', ');
         errMsg = `${errMsg} (${details})`;
       }
@@ -656,6 +662,10 @@ export const hrmssApi = {
   },
   async createCustomerRequest(payload) {
     return apiRequest('/customer/requests', { method: 'POST', body: payload });
+  },
+  // Xem trước tiền (giảm giá, combo, voucher, số ngày bảo hành) giống hệt lúc đặt thật nhưng không tạo đơn.
+  async previewCustomerRequestQuote(payload) {
+    return apiRequest('/customer/requests/quote-preview', { method: 'POST', body: payload });
   },
   async cancelCustomerRequest(id, reason) {
     return apiRequest(`/customer/requests/${id}/cancel`, {

@@ -136,7 +136,7 @@ test('vnTime & dateTime: weekday GMT+7 và kiểm tra hết ca theo cấu hình 
   if (ALLOW_ALL_TIME_SLOTS) {
     assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 19, 15))), false);
     assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 19, 20))), false);
-    assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 23, 55))), false);
+    assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 23, 55))), true);
   } else {
     assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 19, 15))), false);
     assert.equal(isDayOutOfSlots(0, new Date(vnTimestamp(2026, 11, 22, 19, 20))), true);

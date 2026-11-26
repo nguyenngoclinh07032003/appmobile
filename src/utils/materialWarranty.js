@@ -40,6 +40,8 @@ export function extractMaterialWarrantiesFromQuotations(quotations = []) {
           receiptAttachmentId,
           receiptUrl,
           serialNumber: w.serial_number || null,
+          // Mã bảo hành linh kiện do server tự sinh (BHLK-<mã đơn>[-n]); dòng cũ có thể null.
+          warrantyCode: w.warranty_code || null,
           externalWarrantyCode: w.external_warranty_code || null,
           warrantyDays: w.warranty_days != null ? Number(w.warranty_days) : null,
           startsAt: w.starts_at || null,

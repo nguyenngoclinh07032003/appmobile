@@ -28,16 +28,17 @@ test('nextDays: tạo danh sách ngày hợp lệ', () => {
   assert.match(days[0].key, /^\d{4}-\d{2}-\d{2}$/);
 });
 
-test('minSelectableMinute & isDayOutOfSlots: cho phép đặt mọi khung giờ cả hôm nay và ngày mai', () => {
+test('minSelectableMinute & isDayOutOfSlots: mở mọi khung giờ nhưng hôm nay luôn chặn giờ đã qua (giờ VN)', () => {
   const lateNight = new Date(vnTimestamp(2026, 11, 25, 22, 30));
   const almostMidnight = new Date(vnTimestamp(2026, 11, 25, 23, 55));
+  const earlyMorning = new Date(vnTimestamp(2026, 11, 25, 1, 7));
 
-  assert.equal(minSelectableMinute(0, lateNight), 0);
-  assert.equal(minSelectableMinute(0, almostMidnight), 0);
+  assert.equal(minSelectableMinute(0, lateNight), 22 * 60 + 45);
+  assert.equal(minSelectableMinute(0, earlyMorning), 1 * 60 + 15);
   assert.equal(minSelectableMinute(1, lateNight), MIN_DAY_MINUTE);
 
   assert.equal(isDayOutOfSlots(0, lateNight), false);
-  assert.equal(isDayOutOfSlots(0, almostMidnight), false);
+  assert.equal(isDayOutOfSlots(0, almostMidnight), true);
 });
 
 test('defaultSelectableMinute & formatMinutesToSlotStr: gợi ý mốc sắp tới và định dạng cả sáng sớm / đêm muộn', () => {

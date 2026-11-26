@@ -207,12 +207,14 @@ function QuoteLineWarrantyMeta({ line }) {
   const hasSn = Boolean(line.serialNumber);
   const hasDays = Number(line.warrantyDays) > 0;
   const hasCode = Boolean(line.externalWarrantyCode);
-  if (!hasSn && !hasDays && !hasCode) return null;
+  const hasLkCode = Boolean(line.warrantyCode);
+  if (!hasSn && !hasDays && !hasCode && !hasLkCode) return null;
   return (
     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
       {hasDays ? <Badge text={`BH ${line.warrantyDays} ngày`} fg={C.ink2} bg={C.surface} /> : null}
+      {hasLkCode ? <Text style={[ui.meta, { fontSize: 11.5, color: C.primary, fontWeight: '800' }]}>Mã bảo hành linh kiện: {line.warrantyCode}</Text> : null}
       {hasSn ? <Text style={[ui.meta, { fontSize: 11.5 }]}>Sê-ri: {line.serialNumber}</Text> : null}
-      {hasCode ? <Text style={[ui.meta, { fontSize: 11.5, color: C.goldInk, fontWeight: '700' }]}>Mã BH hãng: {line.externalWarrantyCode}</Text> : null}
+      {hasCode ? <Text style={[ui.meta, { fontSize: 11.5, color: C.goldInk, fontWeight: '700' }]}>Mã bảo hành hãng: {line.externalWarrantyCode}</Text> : null}
     </View>
   );
 }
@@ -2523,6 +2525,11 @@ export function OrderScreen({ params }) {
                       {mw.isExternalPurchase ? <Badge text="Bảo hành hãng / bên thứ 3" fg={C.goldInk} bg={C.goldSoft} /> : null}
                       {mw.warrantyDays > 0 ? <Badge text={`${mw.warrantyDays} ngày`} fg={C.ink2} bg={C.surface} /> : null}
                     </View>
+                    {mw.warrantyCode ? (
+                      <Text style={[ui.meta, { marginTop: 4, color: C.primary, fontWeight: '800' }]}>
+                        Mã bảo hành linh kiện: {mw.warrantyCode}
+                      </Text>
+                    ) : null}
                     {mw.serialNumber ? (
                       <Text style={[ui.meta, { marginTop: 4 }]}>Số sê-ri: {mw.serialNumber}</Text>
                     ) : null}

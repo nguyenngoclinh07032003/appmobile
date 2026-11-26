@@ -238,10 +238,15 @@ export function WarrantyCertificate({ o, winfo, tierWarrantyDays, onPreviewPhoto
                   {mw.isExternalPurchase ? <Badge text="Bảo hành hãng / bên thứ 3" fg={C.goldInk} bg={C.goldSoft} /> : null}
                   {mw.warrantyDays > 0 ? <Badge text={`${mw.warrantyDays} ngày`} fg={C.ink2} bg={C.surface} /> : null}
                 </View>
+                {mw.warrantyCode ? (
+                  <Text style={{ fontSize: 12, color: C.primary, fontWeight: '800', marginTop: 4 }}>
+                    Mã bảo hành linh kiện: {mw.warrantyCode}
+                  </Text>
+                ) : null}
                 {mw.serialNumber ? <Text style={{ fontSize: 12, color: C.ink2, marginTop: 4 }}>Số sê-ri: {mw.serialNumber}</Text> : null}
                 {mw.externalWarrantyCode ? (
                   <Text style={{ fontSize: 12, color: C.goldInk, fontWeight: '700', marginTop: 2 }}>
-                    Mã BH hãng: {mw.externalWarrantyCode}
+                    Mã bảo hành hãng: {mw.externalWarrantyCode}
                   </Text>
                 ) : null}
                 {mw.startsAt || mw.expiresAt ? (

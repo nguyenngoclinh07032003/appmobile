@@ -67,17 +67,20 @@ export const formatSlotFromIso = (isoStr) => {
   return formatMinutesToSlotStr(h * 60 + m);
 };
 
+// Giờ hẹn gửi server (giờ VN +07:00, giữ đủ giờ:phút của khung). Dữ liệu sai -> null (KHÔNG tự lấy giờ hiện tại,
+// vì giờ hiện tại đã là quá khứ khi tới server -> đơn bị từ chối / tự huỷ).
 export const buildPreferredTimeIso = (dateKey, slot) => {
   try {
-    const baseDate = dateKey && /^\d{4}-\d{2}-\d{2}$/.test(dateKey)
-      ? dateKey
-      : formatDateKeyFromIso(new Date().toISOString());
-    const m = /(\d{1,2})\s*[h:](\d{2})?/i.exec(slot || '');
-    const hour = m ? pad(Math.min(23, Math.max(0, Number(m[1])))) : '09';
-    const minute = m && m[2] != null ? pad(Math.min(59, Math.max(0, Number(m[2])))) : '00';
-    return new Date(`${baseDate}T${hour}:${minute}:00+07:00`).toISOString();
+    if (!dateKey || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateKey))) return null;
+    const m = /(\d{1,2})\s*[h:](\d{2})?/i.exec(String(slot || ''));
+    if (!m) return null;
+    const hourNum = Number(m[1]);
+    const minNum = m[2] != null ? Number(m[2]) : 0;
+    if (!Number.isFinite(hourNum) || hourNum > 23 || !Number.isFinite(minNum) || minNum > 59) return null;
+    const d = new Date(`${dateKey}T${pad(hourNum)}:${pad(minNum)}:00+07:00`);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
   } catch (e) {
-    return new Date().toISOString();
+    return null;
   }
 };
 
@@ -256,10 +259,15 @@ export const mapBackendQuotationToAppQuote = (
     const sn = qi.serial_number || w0?.serial_number || null;
     const wDaysRaw = qi.warranty_days ?? w0?.warranty_days;
     const wCode = qi.external_warranty_code || w0?.external_warranty_code || null;
+    // Mã bảo hành linh kiện server tự sinh (BHLK-...): lấy dòng mới nhất có mã (đổi linh kiện vẫn giữ nguyên mã).
+    const lkCode = Array.isArray(qi.warranties)
+      ? ([...qi.warranties].reverse().find((w) => w && w.warranty_code)?.warranty_code || null)
+      : (qi.warranty_code || null);
     const warrantyExtra = {
       ...(sn ? { serialNumber: sn } : {}),
       ...(wDaysRaw != null && wDaysRaw !== '' ? { warrantyDays: Number(wDaysRaw) } : {}),
       ...(wCode ? { externalWarrantyCode: wCode } : {}),
+      ...(lkCode ? { warrantyCode: lkCode } : {}),
       ...(Array.isArray(qi.warranties) && qi.warranties.length ? { warranties: qi.warranties } : {}),
     };
     if (extMeta?.kind === 'estimated_external') {
@@ -1575,6 +1583,41 @@ export const selectTechJobsForHydration = (allJobsRaw = [], openItemsRaw = []) =
     activeJobsList,
     billJobIds,
     openItemsWithPhotoAccess,
+  };
+};
+
+// Ảnh của việc (GET /uploads?job_id= hoặc ?request_id=) -> evidence trên app.
+// Kết quả POST /customer/requests/quote-preview -> số tiền hiển thị khi đặt lịch (cùng công thức với lúc đặt thật).
+// Đọc linh hoạt nhiều dạng response (data.preview | data.quote | data.bill.bill | data). Thiếu tổng tiền -> null.
+export const mapQuotePreview = (data) => {
+  if (!data || typeof data !== 'object') return null;
+  const src = (data.preview && typeof data.preview === 'object' && data.preview)
+    || (data.quote && typeof data.quote === 'object' && data.quote)
+    || (data.bill?.bill && typeof data.bill.bill === 'object' && data.bill.bill)
+    || (data.bill && typeof data.bill === 'object' && data.bill)
+    || (data.request && typeof data.request === 'object' && data.request)
+    || data;
+  const num = (...vals) => {
+    for (const v of vals) {
+      if (v == null || v === '') continue;
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+    return null;
+  };
+  const total = num(src.estimated_total, src.total_amount, src.amount_due, src.total, data.estimated_total, data.total);
+  if (total == null) return null;
+  const goods = num(src.goods_amount, src.subtotal, data.goods_amount);
+  const rawWarranty = num(src.warranty_days, data.warranty_days);
+  return {
+    goods,
+    productDiscount: num(src.product_discount_amount, data.product_discount_amount) ?? 0,
+    comboDiscount: num(src.combo_discount_amount, data.combo_discount_amount) ?? 0,
+    comboLabel: toVietnamese(src.combo_label || data.combo_label || '', ''),
+    voucherDiscount: num(src.voucher_discount_amount, data.voucher_discount_amount) ?? 0,
+    voucherCode: src.voucher_code || data.voucher_code || null,
+    total: Math.max(0, total),
+    warrantyDays: rawWarranty != null && rawWarranty > 0 ? Math.round(rawWarranty) : (rawWarranty === 0 ? 0 : null),
   };
 };
 

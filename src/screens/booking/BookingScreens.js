@@ -558,6 +558,62 @@ export function CheckoutScreen({ params }) {
   const nowTs = Date.now();
   const allVouchers = getValidVouchers(s.myVouchers, s.publicVouchers, nowTs);
 
+  // Xem trước tiền từ server (POST /customer/requests/quote-preview): cùng công thức với lúc đặt thật.
+  const [serverPreview, setServerPreview] = useState(null);
+  const [previewIssue, setPreviewIssue] = useState(null);
+  const previewSig = JSON.stringify({
+    items: lines.map(({ id, qty }) => [id, qty]),
+    v: voucher?.code || '',
+    addr: d.address?.dbAddressId || '',
+    day: days[dayIdx]?.key || '',
+    slot,
+    site: siteConditionId,
+    pay: payment,
+  });
+  useEffect(() => {
+    if (!lines.length || !a.previewOrderQuote || s.auth?.role !== 'customer') {
+      setServerPreview(null);
+      setPreviewIssue(null);
+      return undefined;
+    }
+    let alive = true;
+    const timer = setTimeout(async () => {
+      try {
+        const r = await a.previewOrderQuote({
+          items: lines.map(({ id, qty }) => ({ id, qty })),
+          voucher: voucher && vDiscount > 0 ? voucher : null,
+          dateKey: days[dayIdx]?.key,
+          slot,
+          note,
+          siteCondition: selectedSite,
+          payment,
+        });
+        if (!alive) return;
+        if (r?.ok && r.preview) {
+          setServerPreview(r.preview);
+          setPreviewIssue(null);
+        } else if (r && !r.ok) {
+          setServerPreview(null);
+          setPreviewIssue(/^VOUCHER_/.test(String(r.code || '')) || r.code === 'NON_WORKING_DAY' ? r.message : null);
+        } else {
+          setServerPreview(null);
+          setPreviewIssue(null);
+        }
+      } catch (_e) {
+        if (alive) { setServerPreview(null); setPreviewIssue(null); }
+      }
+    }, 600);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [previewSig]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pv = serverPreview;
+  const shownGoods = pv?.goods != null ? pv.goods : goods;
+  const shownProductDiscount = pv ? pv.productDiscount : productDiscount;
+  const shownCombo = pv ? pv.comboDiscount : combo.amount;
+  const shownComboLabel = (pv && pv.comboLabel) || combo.label;
+  const shownVoucherDiscount = pv ? pv.voucherDiscount : vDiscount;
+  const shownTotal = pv ? pv.total : total;
+
   // Tự áp dụng mã đã chọn từ màn "Quyền lợi của tôi"
   React.useEffect(() => {
     if (!pendingVoucher) return;
@@ -746,6 +802,23 @@ export function CheckoutScreen({ params }) {
         dateLabel: `${days[dayIdx].label} (${days[dayIdx].ddmm})`, dateKey: days[dayIdx].key, slot, payment, note, workerCode: '',
         attachments, fromCart: !!params.fromCart,
       });
+      if (code && typeof code === 'object' && code.needsEmailVerify) {
+        setShowEmailOtp(true);
+        if (!otpSent) handleSendEmailOtp();
+        return;
+      }
+      if (code && typeof code === 'object' && code.needsReschedule) {
+        // Đưa khách về bước chọn giờ với mốc sớm nhất còn hợp lệ (theo giờ VN).
+        const freshMin = getMinSelectable(dayIdx);
+        if (dayIdx === 0 && freshMin > MAX_DAY_MINUTE) {
+          handleDaySelect(fallbackNextWorkingIdx);
+        } else {
+          const nextMin = Math.min(Math.max(timeMinutes, freshMin), MAX_DAY_MINUTE);
+          setTimeMinutes(nextMin);
+          setSlot(minutesToSlotStr(nextMin));
+        }
+        return;
+      }
       if (code) nav.replace('success', { code });
     } catch (e) {
       u.alert('Chưa đặt được lịch', errorText(e, 'Không gửi được yêu cầu đặt lịch. Vui lòng kiểm tra kết nối và thử lại.'), '⚠️');
@@ -971,15 +1044,23 @@ export function CheckoutScreen({ params }) {
 
         <Card style={{ marginTop: 18 }}>
           <Text style={bx.h}>Chi tiết thanh toán</Text>
-          <Row l="Tổng tiền dịch vụ" v={formatVND(goods)} />
+          <Row l="Tổng tiền dịch vụ" v={formatVND(shownGoods)} />
           <Row l="Phí đi lại" v="Miễn phí" green />
-          {productDiscount ? <Row l="Giảm giá dịch vụ" v={`-${formatVND(productDiscount)}`} green /> : null}
-          {combo.amount ? <Row l={`Ưu đãi ${combo.label}`} v={`-${formatVND(combo.amount)}`} green /> : null}
-          {vDiscount ? <Row l={`Mã giảm giá ${voucher.code}`} v={`-${formatVND(vDiscount)}`} green /> : null}
+          {shownProductDiscount ? <Row l="Giảm giá dịch vụ" v={`-${formatVND(shownProductDiscount)}`} green /> : null}
+          {shownCombo ? <Row l={`Ưu đãi ${shownComboLabel}`} v={`-${formatVND(shownCombo)}`} green /> : null}
+          {shownVoucherDiscount && voucher ? <Row l={`Mã giảm giá ${voucher.code}`} v={`-${formatVND(shownVoucherDiscount)}`} green /> : null}
           <View style={bx.totalRow}>
             <Text style={{ fontWeight: '800', color: C.ink, fontSize: 15 }}>Tổng thanh toán</Text>
-            <Text style={[bx.price, { fontSize: 20 }]}>{formatVND(total)}</Text>
+            <Text style={[bx.price, { fontSize: 20 }]}>{formatVND(shownTotal)}</Text>
           </View>
+          {pv ? (
+            <Text style={[ui.meta, { marginTop: 4, color: C.green, fontWeight: '700' }]}>
+              ✓ Số tiền đã được hệ thống tính lại theo giá hiện hành{pv.warrantyDays > 0 ? ` · Bảo hành ${pv.warrantyDays} ngày` : ''}
+            </Text>
+          ) : null}
+          {previewIssue ? (
+            <Text style={[ui.fieldErr, { marginTop: 4 }]}>{previewIssue}</Text>
+          ) : null}
           <View style={{ marginTop: 10, padding: 10, borderRadius: R.md, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <Badge text={curTier.label} fg={curTier.color} bg={curTier.bg || C.primarySoft} />
             <Text style={{ flex: 1, fontSize: 12, fontWeight: '700', color: C.ink2, lineHeight: 17 }}>
@@ -987,7 +1068,7 @@ export function CheckoutScreen({ params }) {
               {curTier.partDiscountPercent ? ` · Giảm ${curTier.partDiscountPercent}% vật tư phát sinh` : ''}
             </Text>
           </View>
-          <Text style={[ui.meta, { color: C.muted, marginTop: 8 }]}>Tích luỹ +{Math.max(1, Math.floor(total / 10000))} điểm khi hoàn tất</Text>
+          <Text style={[ui.meta, { color: C.muted, marginTop: 8 }]}>Tích luỹ +{Math.max(1, Math.floor(shownTotal / 10000))} điểm khi hoàn tất</Text>
         </Card>
       </ScrollView>
 
@@ -996,7 +1077,7 @@ export function CheckoutScreen({ params }) {
           <Text style={{ color: C.ink2, fontWeight: '700', flex: 1 }} numberOfLines={1}>
             {isTodayOutOfSlots ? `${days[dayIdx].label} · Hết ca nhận lịch` : `${days[dayIdx].label} · ${slot}`}
           </Text>
-          <Text style={[bx.price, { fontSize: 20 }]}>{formatVND(total)}</Text>
+          <Text style={[bx.price, { fontSize: 20 }]}>{formatVND(shownTotal)}</Text>
         </View>
         <Btn
           title={placing ? 'Đang gửi yêu cầu…' : s.auth?.role === 'customer' && !s.auth.emailVerified ? 'Xác thực thư điện tử để đặt lịch' : 'Xác nhận đặt lịch'}
